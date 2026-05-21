@@ -1,0 +1,10 @@
+{
+	"title": "OpenOpps",
+	"pages": [
+		"index",
+		"cli-reference",
+		"configuration",
+		"providers",
+		"operations"
+	]
+}

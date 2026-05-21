@@ -1,0 +1,103 @@
+---
+title: Providers
+description: Source catalogs, provider support levels, route probing, and health checks.
+---
+
+OpenOpps separates aggregate source adapters from job-capable provider adapters. Source adapters discover company boards; provider adapters detect or fetch postings from public board providers.
+
+Python plugins can contribute additional source adapters and job providers through the `openopps.plugins` entry point group. Plugin capabilities appear in `admin providers list` and registry surfaces when loaded successfully, and load failures are visible in `plugins list`.
+
+Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a packaged plugin with a `pyproject.toml` entry point.
+
+## Default Sources
+
+| Source key        | Adapter         | Notes                                                          |
+| ----------------- | --------------- | -------------------------------------------------------------- |
+| `a16z`            | `consider_a16z` | Consider-backed a16z companies board.                          |
+| `lsvp`            | `consider`      | Consider-backed investor board.                                |
+| `sequoia`         | `consider`      | Consider-backed investor board.                                |
+| `bvp`             | `consider`      | Consider-backed investor board.                                |
+| `greylock`        | `consider`      | Consider-backed investor board.                                |
+| `kleinerperkins`  | `consider`      | Consider-backed investor board.                                |
+| `accel`           | `getro`         | Getro-backed investor board.                                   |
+| `generalcatalyst` | `getro`         | Getro-backed investor board.                                   |
+| `yc`              | `ycombinator`   | YC companies from the public companies page and Algolia index. |
+
+## Support Levels
+
+| Level         | Meaning                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `detect`      | OpenOpps can preserve provider metadata and route hints but does not reliably fetch jobs. |
+| `jobs`        | OpenOpps can fetch public postings for the provider.                                      |
+| `unsupported` | The provider is known only as raw upstream metadata.                                      |
+
+## Job-Capable Providers
+
+| Provider     | Support | Public route behavior                                                              |
+| ------------ | ------- | ---------------------------------------------------------------------------------- |
+| `greenhouse` | `jobs`  | Uses public Greenhouse job board APIs.                                             |
+| `lever`      | `jobs`  | Uses public Lever postings JSON APIs.                                              |
+| `ashbyhq`    | `jobs`  | Uses Ashby public posting API data derived from hosted board URLs or board tokens. |
+| `workday`    | `jobs`  | Uses public Workday CXS careers-site listing and detail endpoints.                 |
+
+## Detect-Only Providers
+
+`teamtailor`, `manatal`, and `gem` are preserved as board metadata until stable public fetching is added. Health reports group these under `notCovered` so they are visible without being treated as failed job syncs.
+
+## Provider Coverage
+
+Provider coverage reports on the persisted SQLite dataset only. It does not perform live HTTP checks, source fetches, route probes, or job syncs, so published percentages must be measured from representative persisted source snapshots:
+
+```bash
+uv run openopps providers coverage
+uv run openopps providers coverage --source a16z --provider any --json
+uv run openopps providers coverage --source a16z --provider greenhouse
+uv run openopps providers audit --source a16z --json
+```
+
+Use coverage to answer whether the local data is complete enough for analysis. The JSON report includes source, board, route, and job counts; route counts by provider, support level, and last status; executable route counts; missing route metadata counts; duplicate route skips derived from the durable route registry; job counts by provider, source, and board; non-supported provider coverage; detect-only provider examples; boards with job-capable hints but no executable route; and boards with executable routes but zero persisted jobs.
+
+Coverage also reports enrichment completeness percentages from deterministic provider-field mapping. These data-quality metrics cover posting URLs, apply URLs, locations, departments, descriptions, normalized compensation or salary, remote level, and employment type.
+
+`providers audit` reports persisted-board evidence for SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR. It includes candidate route and board counts, example boards, and do-not-adopt rationales for providers that do not yet have reliable generic public fetching in v0.1.
+
+## Route Probing
+
+Some sources report provider hints without the public route token required for job fetching. Route probing tries candidate tokens derived from upstream slugs, remote ids, names, domains, and websites. Source-scoped board keys such as `a16z:acme` are durable record identifiers, not provider route-token candidates.
+
+```bash
+uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
+```
+
+By default, probing only checks routes missing token or URL metadata and does not persist results. Use `--include-existing` to recheck existing routes and `--apply` to persist matched metadata.
+
+## Provider Health
+
+Provider health samples source adapters and job-capable routes, then reports status counts:
+
+```bash
+uv run openopps providers health --source a16z --provider any --limit 25 --json
+```
+
+Health checks report `active`, `empty`, `error`, `missing_route`, `not_covered`, and duplicate route skips. Add `--apply` to persist source health under `raw_metadata.health` and board-provider route health under `last_status`.
+
+Use provider health for live sampled HTTP status. Use provider coverage for offline persisted route coverage and enrichment quality. Use provider audit for candidate-provider adoption evidence.
+
+## Board Route Registry
+
+The `board_providers` registry is the executable route layer between discovered boards and job sync. Use it before large syncs to confirm which routes are ready:
+
+```bash
+uv run openopps admin providers registry --provider any
+uv run openopps admin providers registry --provider any --passed-probe-only --json
+uv run openopps admin providers registry --provider any --include-missing --limit 50
+```
+
+By default, `admin providers registry` skips job-capable hints that still lack executable metadata, such as an Ashby board token or complete Workday CXS route. `--passed-probe-only` narrows output to routes verified by a persisted `admin providers probe-routes --apply` result.
+
+## Provider Limits
+
+- Workday support is limited to public postings visible through careers sites; it is not official tenant API access.
+- Ashby sync excludes `isListed: false` direct-link-only postings from normal output.
+- Overlapping board records from multiple sources are preserved with source-scoped keys, but provider requests are deduped before route probes and job syncs.
+- Installed Python plugins are not sandboxed and run in the same process as OpenOpps.

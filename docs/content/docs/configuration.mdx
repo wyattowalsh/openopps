@@ -1,0 +1,50 @@
+---
+title: Configuration
+description: Runtime settings, environment variables, and concurrency controls.
+---
+
+OpenOpps loads settings from `OPENOPPS_` environment variables and an optional local `.env` file. Unknown `.env` keys are ignored.
+
+## Environment Variables
+
+| Variable                        | Default                                                   | Purpose                                                           |
+| ------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| `OPENOPPS_DB_URL`               | `sqlite:///openopps.db`                                   | Database URL used by storage commands and sync jobs.              |
+| `OPENOPPS_MAX_CONNECTIONS`      | `40`                                                      | Maximum HTTP connection pool size.                                |
+| `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.         |
+| `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Board-level concurrency during sync workflows.                    |
+| `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Provider job-fetch concurrency across job-capable routes.         |
+| `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests.  |
+| `OPENOPPS_JOB_SYNC_SOURCES`     | empty                                                     | Optional comma-separated default source scope for `jobs sync`.    |
+| `OPENOPPS_DB_BATCH_SIZE`        | `500`                                                     | Batch size for SQLite writes.                                     |
+| `OPENOPPS_HTTP_TIMEOUT`         | `30.0`                                                    | HTTP timeout in seconds.                                          |
+| `OPENOPPS_RETRY_ATTEMPTS`       | `3`                                                       | Number of retry attempts for retriable upstream requests.         |
+| `OPENOPPS_USER_AGENT`           | `openopps/0.1 (+https://github.com/wyattowalsh/openopps)` | User agent sent to public source and provider endpoints.          |
+| `OPENOPPS_CACHE_ENABLED`        | `true`                                                    | Enables the shared SQLite JSON request cache.                     |
+| `OPENOPPS_CACHE_TTL_SECONDS`    | `3600`                                                    | Default cache freshness window in seconds.                        |
+| `OPENOPPS_CACHE_REFRESH`        | `false`                                                   | Bypasses cache reads while still updating successful responses.   |
+| `OPENOPPS_CACHE_STALE_ON_ERROR` | `false`                                                   | Allows eligible stale cache data after retryable upstream errors. |
+
+## Examples
+
+```bash
+OPENOPPS_DB_URL=sqlite:///data/openopps.db uv run openopps admin db status
+OPENOPPS_PROVIDER_CONCURRENCY=4 uv run openopps jobs sync --provider workday --profile
+OPENOPPS_USER_AGENT='openopps/0.1 (contact: jobs@example.com)' uv run openopps admin sources test yc
+```
+
+For repeated local use, place values in `.env` at the repository root:
+
+```dotenv
+OPENOPPS_DB_URL=sqlite:///openopps.db
+OPENOPPS_SOURCE_CONCURRENCY=4
+OPENOPPS_PROVIDER_CONCURRENCY=12
+OPENOPPS_JOB_SYNC_SOURCES=a16z,yc
+OPENOPPS_CACHE_TTL_SECONDS=3600
+```
+
+When `OPENOPPS_JOB_SYNC_SOURCES` is unset or empty, `jobs sync` targets all persisted ready routes. When it is set, unscoped `jobs sync` uses those sources by default; explicit `--source` or `--board` flags still override the configured default.
+
+For CLI one-offs, prefer command flags such as `--source` and `--refresh-cache` over setting global defaults.
+
+Do not commit `.env` files with private or environment-specific values.

@@ -1,0 +1,195 @@
+---
+title: CLI Reference
+description: Command groups, common flags, and output modes for the OpenOpps CLI.
+---
+
+OpenOpps exposes the `openopps` console script from `openopps.cli:app`.
+
+```bash
+uv run openopps --help
+```
+
+## Command Groups
+
+| Surface     | Commands                                        | Purpose                                                                    |
+| ----------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
+| `status`    | top-level                                       | Report database, cache, plugin, and next-action status.                    |
+| `doctor`    | top-level                                       | Status output with setup-oriented next-step guidance.                      |
+| `sources`   | `list`, `show`, `sync`                          | Inspect aggregate discovery catalogs and import board records.             |
+| `boards`    | `list`, `show`, `enrich`, `export`              | Inspect, enrich, and export firm or company hiring board records.          |
+| `jobs`      | `sync`, `list`, `show`, `export`                | Fetch, inspect, and export normalized public postings.                     |
+| `providers` | `health`, `coverage`, `audit`                   | Inspect provider readiness, persisted coverage, and audit evidence.        |
+| `cache`     | `status`                                        | Inspect the SQLite request cache.                                          |
+| `plugins`   | `list`                                          | Inspect installed plugin entry points, capabilities, and failures.         |
+| `examples`  | `seed`                                          | Seed deterministic synthetic demo data.                                    |
+| `admin`     | `sources`, `boards`, `providers`, `cache`, `db` | Advanced registration, route diagnostics, cache purge, and DB maintenance. |
+
+## Status Commands
+
+```bash
+uv run openopps status
+uv run openopps status --json
+uv run openopps doctor --json
+```
+
+JSON status output is machine-readable and includes database counts, cache totals, plugin load status, and a `nextAction` string.
+
+## Source Commands
+
+```bash
+uv run openopps sources list --json
+uv run openopps sources show a16z
+uv run openopps admin sources test a16z --page-size 5
+uv run openopps sources sync a16z --metrics-json --refresh-cache
+uv run openopps sources sync --profile
+```
+
+`admin sources test` and `sources sync` use the shared JSON request cache by default. Add `--refresh-cache` to bypass cache reads while refreshing successful responses. `sources sync` persists to SQLite by default. Use `--no-db --output <path>` for explicit JSONL output without touching the database:
+
+```bash
+uv run openopps sources sync a16z --no-db --output /tmp/a16z-boards.jsonl
+```
+
+## Board Commands
+
+```bash
+uv run openopps boards list --source a16z --limit 10 --json
+uv run openopps boards list --provider ashbyhq --market AI --has-jobs --json
+uv run openopps boards show example-board
+uv run openopps boards enrich --source a16z --json
+uv run openopps admin boards detect-provider example-board --url https://jobs.ashbyhq.com/example
+uv run openopps admin boards add-provider example-board ashbyhq --token example
+uv run openopps boards export --provider ashbyhq --has-jobs --format csv --output /tmp/openopps-boards.csv
+```
+
+`boards list` and `boards export` share the same filters:
+
+| Flag          | Semantics                                                                     |
+| ------------- | ----------------------------------------------------------------------------- |
+| `--source`    | Exact source key, such as `a16z` or `yc`.                                     |
+| `--provider`  | Exact detected board-provider route id. `any` and `all` mean no filter.       |
+| `--market`    | Case-insensitive substring match against normalized board market tags.        |
+| `--location`  | Case-insensitive substring match against normalized board locations.          |
+| `--domain`    | Case-insensitive substring match against the normalized board domain.         |
+| `--has-jobs`  | Keep boards with a positive board job hint, provider job hint, or synced job. |
+| `--min-staff` | Keep boards with `staff_count` greater than or equal to the value.            |
+| `--max-staff` | Keep boards with `staff_count` less than or equal to the value.               |
+| `--limit`     | Apply a final limit after filters.                                            |
+| `--json`      | JSON output mode for `boards list`.                                           |
+
+Manual provider route metadata can include a URL, token, or Workday CXS fields:
+
+```bash
+uv run openopps admin boards add-provider example-board workday \
+  --host example.wd1.myworkdayjobs.com \
+  --tenant example \
+  --site Careers
+```
+
+## Job Commands
+
+```bash
+uv run openopps jobs sync --provider ashbyhq --metrics-json --refresh-cache
+uv run openopps jobs sync --source a16z --provider any --profile
+uv run openopps jobs list --remote Full --skill Python --salary-min 150000 --json
+uv run openopps jobs show <job-id>
+uv run openopps jobs export --source a16z --type full --format parquet --output /tmp/openopps-jobs.parquet
+```
+
+`jobs sync` targets the full known set of job-capable board routes unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for no provider filter. Add `--refresh-cache` when you need a fresh upstream read.
+
+`jobs list` and `jobs export` share the same filters. They use normalized job fields from OpenOpps enrichment, not provider-specific `raw_listing` or `raw_detail` payloads:
+
+| Flag                          | Semantics                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| `--source`                    | Exact source key via the job's board record.                                                   |
+| `--board`                     | Exact source-scoped board key, such as `a16z:acme`.                                            |
+| `--provider`                  | Exact job provider id. `any` and `all` mean no filter.                                         |
+| `--location`                  | Case-insensitive substring match against normalized job locations.                             |
+| `--department`                | Case-insensitive substring match against normalized department.                                |
+| `--team`                      | Case-insensitive substring match against normalized team.                                      |
+| `--workplace-type`            | Case-insensitive substring match against normalized workplace type.                            |
+| `--remote`                    | Case-insensitive exact match against normalized remote level: `Full`, `Hybrid`, or `None`.     |
+| `--employment-type`, `--type` | Case-insensitive substring match against normalized employment type.                           |
+| `--salary-min`                | Keep jobs whose normalized salary range overlaps this lower bound.                             |
+| `--salary-max`                | Keep jobs whose normalized salary range overlaps this upper bound.                             |
+| `--skill`                     | Case-insensitive substring match against normalized skill name, level, or keywords.            |
+| `--query`                     | Case-insensitive substring match across normalized title, company, and plain-text description. |
+| `--posted-after`              | Inclusive lower bound for ISO-style normalized `posted_at` dates.                              |
+| `--posted-before`             | Inclusive upper bound for ISO-style normalized `posted_at` dates.                              |
+| `--limit`                     | Apply a final limit after filters.                                                             |
+| `--json`                      | JSON output mode for `jobs list`.                                                              |
+
+Date filters intentionally only match jobs whose normalized `posted_at` starts with `YYYY-MM-DD`, such as ISO timestamps. Relative provider text such as `Posted Yesterday` is not used for public filtering semantics.
+
+## Provider Commands
+
+```bash
+uv run openopps admin providers list --json
+uv run openopps admin providers detect https://jobs.lever.co/example
+uv run openopps admin providers explain workday
+uv run openopps providers coverage --source a16z --provider any --json
+uv run openopps providers audit --source a16z --json
+uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
+uv run openopps admin providers registry --provider any --passed-probe-only --json
+uv run openopps providers health --source a16z --provider any --limit 25 --json
+```
+
+Route probing and provider health checks are dry runs by default. Add `--apply` only when you want to persist matched route metadata or health statuses.
+
+`providers coverage` is an offline persisted-data report. It reads SQLite records only and reports source, board, route, and job counts; executable route and missing route metadata totals; detect-only provider examples; boards with route coverage gaps; and enrichment completeness percentages. It accepts `--source`, `--provider`, and `--json`.
+
+`providers audit` reports persisted-board evidence for candidate providers such as SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR. Use it to decide whether a provider has enough local evidence for reliable adoption.
+
+`admin providers registry` inspects the durable `board_providers` registry that sits between board discovery and job execution. It selects executable routes by default, accepts the same `--source`, `--board`, and `--provider` filters as job sync, and can include incomplete hints with `--include-missing`.
+
+## Database Commands
+
+```bash
+uv run openopps admin db init
+uv run openopps admin db status
+uv run openopps admin db vacuum
+```
+
+SQLite is the default storage backend and uses the configured `OPENOPPS_DB_URL`.
+
+## Cache Commands
+
+```bash
+uv run openopps cache status
+uv run openopps cache status --json
+uv run openopps admin cache purge --namespace http-json --json
+```
+
+`admin cache purge` deletes all cache records by default. Pass `--namespace` to invalidate one cache namespace.
+
+## Plugin Commands
+
+```bash
+uv run openopps plugins list
+uv run openopps plugins list --json
+```
+
+Plugins are discovered through Python entry points in the `openopps.plugins` group. Installed Python plugins are not sandboxed; install only plugins you trust.
+
+The repo includes a minimal plugin package template at `examples/plugins/minimal-openopps-plugin/`.
+
+## Example Commands
+
+```bash
+uv run openopps examples seed --seed 42 --boards 4 --jobs-per-board 2 --json
+```
+
+`examples seed` writes deterministic synthetic sources, boards, routes, jobs, and cache records into the configured local database/cache.
+
+## Export Formats
+
+`boards export` and `jobs export` support:
+
+| Format    | Use case                                                         |
+| --------- | ---------------------------------------------------------------- |
+| `jsonl`   | Streaming and audit-friendly line-delimited records.             |
+| `csv`     | Spreadsheet inspection and lightweight exchange.                 |
+| `parquet` | Analytics workflows with Polars, DuckDB, or warehouse ingestion. |
+
+JSONL exports stream line-delimited records and empty JSONL/CSV exports produce empty files. Empty Parquet exports produce a readable empty Parquet table. CSV exports neutralize spreadsheet formula-leading strings by prefixing a single quote. JSONL and Parquet exports preserve normalized values as-is.

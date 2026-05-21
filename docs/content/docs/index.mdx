@@ -1,0 +1,68 @@
+---
+title: OpenOpps CLI
+description: Discover boards from sources and fetch public jobs from providers.
+---
+
+OpenOpps is a CLI-only Python app for discovering firm hiring boards from aggregate sources, detecting public provider routes, syncing normalized jobs, caching repeated HTTP JSON requests, and exporting an auditable local opportunity ledger.
+
+## Domain
+
+- `sources` are aggregate discovery catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, and `yc`.
+- `boards` are firm/company hiring boards discovered from sources.
+- `jobs` are normalized postings fetched from boards.
+- `providers` are adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, and Workday.
+- `cache`, `plugins`, and `examples` cover operational cache inspection, installed Python plugin discovery, and deterministic demo data.
+
+## Quickstart
+
+```bash
+uv sync
+uv run openopps status
+uv run openopps examples seed --json
+uv run openopps sources list
+uv run openopps admin sources test a16z
+uv run openopps sources sync a16z --metrics-json --refresh-cache
+uv run openopps sources sync accel --metrics-json
+uv run openopps sources sync greylock --metrics-json
+uv run openopps boards list --source a16z --limit 10
+uv run openopps providers health --source a16z --provider any --limit 25 --json
+uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
+uv run openopps jobs sync --provider ashbyhq --metrics-json --refresh-cache
+uv run openopps cache status --json
+uv run openopps plugins list --json
+```
+
+List, export, and sync commands default to the full known superset unless narrowed by `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for the full supported provider set.
+
+Overlapping source coverage is preserved with source-scoped board keys such as `a16z:acme`, but provider requests are deduped before route probing or job sync. The relevant metrics include `duplicateRoutesSkipped`.
+
+## Provider Levels
+
+| Level         | Meaning                                                  |
+| ------------- | -------------------------------------------------------- |
+| `detect`      | OpenOpps can preserve provider metadata and route hints. |
+| `jobs`        | OpenOpps can fetch public jobs for the provider.         |
+| `unsupported` | The provider is known only as raw metadata.              |
+
+Ashby, Greenhouse, Lever, and public Workday CXS boards are job-capable in v0.1. Teamtailor, Manatal, and Gem hints are detect-only until stable public fetching is added.
+
+Ashby postings marked `isListed: false` are direct-link-only and are excluded from normal job sync output.
+
+## Documentation Map
+
+| Page                                 | Use it for                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
+| [CLI Reference](/docs/cli-reference) | Command groups, common flags, JSON output, and exports.                       |
+| [Configuration](/docs/configuration) | `OPENOPPS_` environment variables, defaults, and `.env` loading.              |
+| [Providers](/docs/providers)         | Source catalogs, provider support levels, route diagnostics, and limitations. |
+| [Operations](/docs/operations)       | Storage, exports, validation, and troubleshooting workflows.                  |
+
+## Route Probing Summary
+
+Provider hints from source catalogs may not include the token or URL needed for job fetching. `admin providers probe-routes` tries candidate tokens from upstream slugs, remote ids, names, domains, and websites, then reports both matched routes and unknown boards with the candidate tokens it tried. Its JSON output includes per-provider selected/matched counts, unresolved reason counts, and duplicate route skips.
+
+```bash
+uv run openopps admin providers probe-routes --source a16z --provider all --limit 25 --json
+```
+
+Probing is read-only unless `--apply` is passed.

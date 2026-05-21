@@ -1,0 +1,22 @@
+{
+  "name": "OpenOpps",
+  "short_name": "OpenOpps",
+  "description": "OpenOpps discovers public hiring boards, detects provider routes, and syncs normalized job postings.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f1df",
+  "theme_color": "#2f6f50",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

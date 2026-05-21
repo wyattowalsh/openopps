@@ -1,0 +1,147 @@
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Database, GitBranch, Radar } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+
+const sourceStats = [
+	["sources", "9", "aggregate catalogs"],
+	["providers", "4", "job-capable routes"],
+	["exports", "3", "jsonl/csv/parquet"],
+] as const;
+
+const providerRows = [
+	["ashbyhq", "jobs", "listed=true"],
+	["greenhouse", "jobs", "route matched"],
+	["lever", "jobs", "token resolved"],
+	["workday", "jobs", "cxs public"],
+] as const;
+
+export default function HomePage() {
+	return (
+		<div className="relative isolate overflow-hidden px-5 py-10 sm:px-8 lg:px-10">
+			<div className="absolute inset-x-0 top-0 -z-10 h-80 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--accent)_24%,transparent),transparent_58%)]" />
+			<div className="mx-auto grid min-h-[78vh] w-full max-w-7xl items-center gap-8 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
+				<section className="space-y-8">
+					<div className="inline-flex items-center gap-2 rounded-full border bg-card/75 px-3 py-1.5 text-xs font-semibold text-muted-foreground shadow-sm backdrop-blur">
+						<Image
+							src="/brand/openopps-logo.png"
+							alt=""
+							width={20}
+							height={20}
+							className="size-5 rounded-md"
+							priority
+						/>
+						<span>public jobs intelligence, route-first</span>
+						<Radar className="size-3.5 text-primary" />
+					</div>
+
+					<div className="space-y-5">
+						<p className="opps-kicker">OpenOpps developer docs</p>
+						<h1 className="max-w-5xl text-balance text-5xl font-bold leading-[0.9] tracking-[-0.075em] sm:text-6xl lg:text-7xl">
+							Map the hiring web without pretending it is tidy.
+						</h1>
+						<p className="max-w-2xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">
+							OpenOpps discovers portfolio-company job boards, detects their
+							public provider routes, syncs normalized postings, and exports
+							data without hiding the messy edge cases.
+						</p>
+					</div>
+
+					<div className="flex flex-col gap-3 sm:flex-row">
+						<Button asChild size="lg">
+							<Link href="/docs">
+								Read the docs
+								<ArrowRight className="ml-2 size-4" />
+							</Link>
+						</Button>
+						<Button asChild variant="outline" size="lg">
+							<Link href="/docs/cli-reference">CLI reference</Link>
+						</Button>
+					</div>
+
+					<div className="grid max-w-2xl gap-3 sm:grid-cols-3">
+						{sourceStats.map(([label, value, detail]) => (
+							<div key={label} className="opps-panel rounded-2xl p-4">
+								<div className="text-3xl font-bold tracking-[-0.08em] text-primary">
+									{value}
+								</div>
+								<div className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+									{label}
+								</div>
+								<div className="mt-2 text-xs text-muted-foreground">
+									{detail}
+								</div>
+							</div>
+						))}
+					</div>
+				</section>
+
+				<section className="opps-panel opps-scanline relative overflow-hidden p-4 sm:p-6">
+					<div className="absolute right-4 top-4 flex gap-1.5">
+						<span className="size-2.5 rounded-full bg-destructive" />
+						<span className="size-2.5 rounded-full bg-accent" />
+						<span className="size-2.5 rounded-full bg-primary" />
+					</div>
+
+					<div className="mb-6 flex items-center gap-3 border-b pb-4">
+						<div className="flex size-10 items-center justify-center rounded-xl border bg-background/75">
+							<Database className="size-4 text-primary" />
+						</div>
+						<div>
+							<p className="text-sm font-semibold">route probe session</p>
+							<p className="text-xs text-muted-foreground">
+								uv run openopps providers health --json
+							</p>
+						</div>
+					</div>
+
+					<div className="space-y-3 font-mono text-sm">
+						<div className="rounded-2xl border bg-background/70 p-4 shadow-inner">
+							<p className="mb-3 text-xs uppercase tracking-[0.24em] text-muted-foreground">
+								provider coverage
+							</p>
+							<div className="space-y-2">
+								{providerRows.map(([provider, status, note]) => (
+									<div
+										key={provider}
+										className="grid grid-cols-[1fr_auto] gap-3 rounded-lg border bg-card/70 px-3 py-2"
+									>
+										<span>{provider}</span>
+										<span className="text-primary">{status}</span>
+										<span className="col-span-2 text-xs text-muted-foreground">
+											{note}
+										</span>
+									</div>
+								))}
+							</div>
+						</div>
+
+						<div className="grid gap-3 sm:grid-cols-2">
+							<div className="rounded-2xl border bg-primary p-4 text-primary-foreground">
+								<GitBranch className="mb-4 size-4" />
+								<p className="text-2xl font-bold tracking-[-0.06em]">
+									duplicateRoutesSkipped
+								</p>
+								<p className="mt-1 text-xs opacity-75">
+									source overlap preserved, provider requests deduped
+								</p>
+							</div>
+							<div className="rounded-2xl border bg-accent p-4 text-accent-foreground">
+								<p className="mb-4 text-xs uppercase tracking-[0.24em] opacity-75">
+									export modes
+								</p>
+								<p className="text-2xl font-bold tracking-[-0.06em]">
+									jsonl csv parquet
+								</p>
+								<p className="mt-1 text-xs opacity-75">
+									analysis-ready, no warehouse required
+								</p>
+							</div>
+						</div>
+					</div>
+				</section>
+			</div>
+		</div>
+	);
+}
