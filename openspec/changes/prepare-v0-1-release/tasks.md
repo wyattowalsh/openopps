@@ -1,0 +1,16 @@
+- [x] Freeze and validate this OpenSpec change before implementation lanes begin.
+- [x] Update repo-local instructions to distinguish stable v0.1 commands from advanced/admin/debug commands.
+- [x] Redesign the Typer command surface around the stable v0.1 user journey and move low-level commands behind advanced/admin/debug surfaces.
+- [x] Add status or doctor output covering database, sources, boards, routes, jobs, cache, plugins, provider readiness, and next actions.
+- [x] Add the SQLite-backed cache with deterministic keys, TTL, refresh bypass, conditional request reuse, stale-on-error, namespace isolation, metrics, and inspection/purge controls.
+- [x] Add the plugin manager, validated hooks/contracts, entry-point discovery, failure isolation, conflict reporting, disabling/allow-listing, and plugin inspection.
+- [x] Add a plugin template or example with a minimal `pyproject.toml` entry point.
+- [x] Add metadata enrichment from source payloads, provider route pages, and job sync payloads while preserving raw payloads.
+- [x] Add board-level provider coverage metrics and a provider coverage audit for SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
+- [x] Add deterministic generated examples and bounded Hypothesis strategies for storage/filter/export/cache/plugin invariants.
+- [x] Preserve JSON cleanliness and dry-run/apply safety across CLI, cache, plugins, provider health, and route probing.
+- [x] Update README and docs for v0.1 quickstart, stable/admin commands, cache, plugins, examples, provider coverage, metadata, storage/export, and troubleshooting.
+- [x] Keep `jobs sync` defaulted to all persisted job-capable sources unless `OPENOPPS_JOB_SYNC_SOURCES` config narrows the unscoped default or explicit `--source`/`--board` flags override it.
+- [x] Write an acceptance matrix with evidence artifacts and validation status.
+- [x] Run targeted tests for CLI, cache, plugins, coverage, examples, storage/export, providers, routes, and health.
+- [x] Run full validation: `uv run pytest`, strict OpenSpec validation, `cd docs && pnpm types:check`, `cd docs && pnpm build`, JSON parse smoke checks, generated-example smoke path, cache/plugin smoke path, and provider coverage report.

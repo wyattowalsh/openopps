@@ -1,0 +1,41 @@
+# OpenOpps v0.1 Acceptance Matrix
+
+Status legend: `pass` means validated in this workspace, `partial` means implemented or documented but still missing part of the approved v0.1 scope, and `blocked` means validation cannot be completed from the current local state.
+
+| Area                             | Status  | Evidence                                                                                                 | Notes                                                                                                                                                                                                       |
+| -------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenSpec contract                | pass    | `rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict`                        | Local v0.1 change validates strictly.                                                                                                                                                                       |
+| CLI status/doctor                | pass    | `tests/test_cli.py`; `uv run pytest`                                                                     | `status` and `doctor` report database/cache/plugin status and JSON output is parseable.                                                                                                                     |
+| JSON cleanliness                 | pass    | `tests/test_cli.py`; `uv run pytest`                                                                     | JSON tests use `json.loads`; intro output remains off stdout for JSON paths.                                                                                                                                |
+| Cache core                       | pass    | `tests/test_cache.py`, `tests/test_http.py`; `uv run pytest`                                             | Deterministic keying, TTL, refresh bypass, conditional 304 reuse, stale-on-error, namespace purge, and connection lifecycle are covered.                                                                    |
+| Cache integration                | pass    | `src/openopps/http.py`, `src/openopps/route_probe.py`; `tests/test_http.py`, `tests/test_route_probe.py` | Shared JSON request helper is cached for source adapters, job providers, and route probes. Route-probe tests cover cache reuse and explicit refresh.                                                        |
+| Plugin core                      | pass    | `src/openopps/plugins.py`; `tests/test_plugins.py`; `uv run pytest`                                      | Entry-point loading, validation, failure isolation, disabled/allow-list behavior, conflicts, and JSON-safe status are covered.                                                                              |
+| Plugin provider wiring           | pass    | `src/openopps/providers/`; `tests/test_plugins.py`; `tests/test_registry.py`                             | Plugin source/job provider capabilities can be built and appear in the provider registry without overriding built-ins.                                                                                      |
+| Plugin example/template          | pass    | `examples/plugins/minimal-openopps-plugin/`                                                              | Minimal `pyproject.toml` entry point and no-op source/provider/route/metadata/cache/CLI contribution template added.                                                                                        |
+| Deterministic examples           | pass    | `src/openopps/examples.py`; `tests/test_examples.py`; `tests/test_cli.py`                                | `examples seed` writes deterministic synthetic sources, boards, routes, jobs, and cache records.                                                                                                            |
+| Provider coverage metrics        | pass    | `src/openopps/coverage.py`; `tests/test_coverage.py`                                                     | Board-level non-supported provider metrics and enrichment completeness are covered.                                                                                                                         |
+| Provider coverage audit snapshot | blocked | `src/openopps/coverage.py`; `tests/test_coverage.py`                                                     | `providers audit` reports candidate-provider evidence and do-not-adopt rationales from persisted boards, but representative persisted source snapshots are still needed before publishing real percentages. |
+| CLI stable/admin regrouping      | pass    | `src/openopps/cli.py`; `tests/test_cli.py`                                                               | Stable public surfaces remain focused on everyday workflows; low-level source, board-route, provider-route, cache purge, and DB maintenance commands now live under `admin`.                                |
+| Metadata preservation/enrichment | pass    | `src/openopps/enrichment.py`; `tests/test_enrichment.py`; `tests/test_cli.py`                            | `boards enrich` dry-runs by default and can promote preserved payload metadata into normalized board fields with `--apply` while keeping raw payloads intact.                                               |
+| Dry-run/apply diagnostics        | pass    | `tests/test_route_probe.py`, `tests/test_health.py`; `uv run pytest`                                     | Route probing and provider health remain dry-run by default and require apply-style flags for mutation.                                                                                                     |
+| Storage/export parity            | pass    | `tests/test_storage_export.py`; `uv run pytest`                                                          | Board/job list and export filter parity remain covered.                                                                                                                                                     |
+| Docs and README                  | pass    | `cd docs && pnpm types:check`; `cd docs && pnpm build`                                                   | README and Fumadocs pages now cover status, admin commands, cache, plugins, examples, provider coverage/audit, metadata enrichment, job sync source defaults, and v0.1 wording.                             |
+| Full Python suite                | pass    | `uv run pytest`                                                                                          | `181 passed`.                                                                                                                                                                                               |
+| Docs type/build                  | pass    | `cd docs && pnpm types:check`; `cd docs && pnpm build`                                                   | Both docs validation commands pass.                                                                                                                                                                         |
+| Generated artifact hygiene       | pass    | `.gitignore`; `git diff --check`                                                                         | `openopps.cache.db*` is ignored; generated cache DB was removed from the worktree.                                                                                                                          |
+
+## Validation Log
+
+```bash
+uv run ruff check
+uv run ty check
+uv run pytest
+rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
+cd docs && pnpm types:check
+cd docs && pnpm build
+rtk git diff --check
+```
+
+## Remaining Release Gaps
+
+- Generate representative persisted source snapshots and publish measured provider audit percentages and do-not-adopt rationales.

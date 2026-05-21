@@ -1,0 +1,18 @@
+schema: spec-driven
+context: |
+  Repository: openopps.
+  Purpose: high-performance CLI for discovering opportunity boards from aggregate sources and fetching jobs from supported public board providers.
+  Source tree: src/openopps contains the Python package; docs contains the Fumadocs site.
+  Tooling: uv with pyproject.toml, Typer CLI, Pydantic/Pydantic Settings, SQLModel, Tenacity, HTTPX, Polars, Loguru.
+rules:
+  proposal:
+    - Use sources, boards, jobs, and providers as the public domain nouns.
+    - Capture DB-backed and no-DB behavior when public CLI behavior changes.
+  specs:
+    - Requirements must cover default superset behavior and filtered behavior.
+    - Provider requirements must explicitly state support levels to avoid overclaiming.
+  design:
+    - Prefer bounded async I/O, streaming data flow, and batched persistence.
+    - Preserve raw upstream payloads for auditability.
+  tasks:
+    - Include OpenSpec validation, tests, docs, and nested AGENTS updates.

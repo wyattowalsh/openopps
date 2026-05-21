@@ -1,0 +1,14 @@
+- [x] Initialize project-local OpenSpec config and validate the change/spec files.
+- [x] Add runtime/test dependencies and CLI entry point to `pyproject.toml`.
+- [x] Implement settings, Pydantic contracts, SQLModel tables, metrics, and utility helpers.
+- [x] Implement provider registry plus Consider, Getro, Ashby, Greenhouse, Lever, Workday CXS, and detect-only provider adapters.
+- [x] Implement SQLite storage, JSONL sinks, and Polars exports.
+- [x] Implement source sync and job sync pipelines with bounded async concurrency.
+- [x] Implement Typer command groups for `sources`, `boards`, `jobs`, `providers`, and `db`.
+- [x] Add best-effort route probing for Ashby, Greenhouse, Lever, and Workday provider hints that lack fetch routes.
+- [x] Add default sources for Accel, General Catalyst, Lightspeed, Sequoia, Bessemer, Greylock, and Kleiner Perkins.
+- [x] Add `any`/`all` provider filter aliases and richer route-probe diagnostics.
+- [x] Dedupe overlapping source board/provider routes before external probe and job-sync requests.
+- [x] Add tests for CLI scope semantics, fixtures, providers, storage/export, and pipeline behavior.
+- [x] Update nested package instructions and README/docs.
+- [x] Run OpenSpec validation, tests, and CLI smoke checks; fix failures.

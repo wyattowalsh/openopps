@@ -1,0 +1,82 @@
+- OpenOpps v0.1 is a local-first CLI release for technical job seekers, talent/recruiting operators, and builders who want startup hiring data they can inspect and export.
+- The v0.1 headline promise is: from investor and company source lists to queryable, exportable public startup jobs in one local CLI.
+- The v0.1 release prioritizes CLI reliability over adding new providers or sources.
+- The v0.1 release is CLI-only and excludes TUI, Textual, interactive prompt flows, browser UI, and web UI behavior.
+- The v0.1 release includes enough README and docs-site polish for a fresh user to understand the happy path without reading source code.
+- A fresh clone can run `uv sync` and `uv run pytest` successfully.
+- A fresh user can discover boards from at least one representative built-in source through documented commands.
+- A fresh user can resolve or inspect provider routes well enough to understand why a board can or cannot fetch jobs.
+- A fresh user can sync jobs from at least one supported job provider path through documented commands.
+- Source sync preserves upstream source metadata such as collection identifiers, pagination cursors, totals, ETags, or health markers in `SourceRecord.raw_metadata` when those values are available.
+- Board sync preserves raw upstream company or board payloads while promoting reusable metadata into normalized board fields such as website URL, domain, description, markets, locations, staff count, job count hints, funding or batch tags, and source-specific identifiers when available.
+- Board route discovery preserves raw upstream provider-route payloads while promoting reusable metadata into normalized route fields such as provider label, support level, count hint, board URL, token, host, tenant, site, last status, and detection timestamp when available.
+- The v0.1 release should include an automatic board metadata refresh or enrichment path that can improve existing boards from source payloads, provider route pages, and job sync payloads without requiring manual board edits.
+- Metadata enrichment must prefer generic source/provider payload extraction over one-off bespoke company website scraping.
+- Status, doctor, list, show, and export views should expose useful normalized metadata without requiring users to inspect raw JSON payloads.
+- A fresh user can list jobs using normalized filters for source, board, provider, location, department, remote level, employment type, salary, skill, text query, and posted date.
+- A fresh user can export filtered jobs to JSONL, CSV, and Parquet.
+- Board exports and job exports use the same filtering semantics as their matching list commands.
+- JSON output remains machine-readable and free of decorative terminal output.
+- Table output remains readable for humans and does not require JSON parsing for basic inspection.
+- Common CLI errors explain what failed and what the user can do next.
+- Live-network failures are isolated to the affected source, board, route, or provider and summarized without crashing unrelated work.
+- Dry-run diagnostic commands do not mutate persisted state unless the user explicitly passes an apply-style option.
+- Source sync, provider route probing, and job sync use bounded concurrency.
+- The v0.1 release includes a simple, robust, and performant caching layer for source pages, route probes, provider job requests, and metadata enrichment where caching improves speed or reduces duplicate upstream traffic.
+- Cache keys are deterministic and include enough request identity to avoid mixing source, provider, route, query, and pagination results.
+- Cache records preserve response metadata such as status code, ETag, Last-Modified, fetched timestamp, expiration policy, and stale-on-error eligibility when available.
+- Cache behavior is observable through status, doctor, metrics, or cache-inspection output and includes clear invalidation or refresh controls.
+- Caching must never hide explicit user refreshes, corrupt JSON output, or reuse stale results across incompatible provider routes.
+- Cache validation covers TTL expiry, explicit refresh bypass, conditional request reuse, stale-on-error, duplicate in-flight request suppression, namespace isolation, and no stale reuse across source, provider, route, query, and page boundaries.
+- Sync and diagnostic metrics expose elapsed time, board counts, job counts, skipped counts, and duplicate provider-route request counts where relevant.
+- Duplicate provider requests are avoided when multiple sources discover overlapping company boards.
+- SQLite remains the default local persistence layer for v0.1.
+- The docs explain where the SQLite database lives, how to initialize it, how to inspect it, and how to reset or recreate it.
+- The docs explain how sources, boards, board-provider routes, jobs, and exports relate to each other.
+- Exports preserve raw provider payloads where available for auditability and future reprocessing.
+- Exports include normalized enriched fields for company, title, locations, departments, workplace type, employment type, remote level, compensation, salary range, skills, and description data where available.
+- The v0.1 public CLI is intentionally redesigned around everyday user workflows rather than every internal operation.
+- The everyday public CLI makes the core flow obvious: discover boards, prepare routes, sync jobs, search/list data, export data, and inspect local status.
+- The v0.1 release includes a plugin system so community developers can extend OpenOpps without editing the core package.
+- Plugins are discovered through documented Python package entry points.
+- The plugin system uses explicit hookspecs or equivalent validated contracts so source adapters, job-provider adapters, route detectors, metadata enrichers, cache policy contributors, export contributors, and CLI command contributors extend only documented seams.
+- Plugins can contribute source adapters and job-provider adapters that use the same normalized OpenOpps records, settings, HTTP, caching, storage, and metrics boundaries as built-in adapters.
+- Plugin loading failures do not prevent built-in OpenOpps functionality from running.
+- Plugin conflicts, load failures, and capability metadata are visible in status, doctor, or plugin-inspection output.
+- The v0.1 plugin API is a documented first-version product surface managed through git history, PyPI versions, GitHub releases, tests, and release notes.
+- The v0.1 release includes a small plugin template or example plugin that demonstrates source, provider, route, metadata, cache policy, and CLI extension points where applicable.
+- Plugin documentation includes a minimal `pyproject.toml` entry-point example, plugin lifecycle guarantees, plugin lifecycle non-guarantees, disabling or allow-listing controls, capability namespace rules, conflict behavior, and the fact that installed Python plugins are not sandboxed.
+- The v0.1 release includes a local status or doctor-style command that checks database configuration, record counts, provider/source readiness, and common setup problems.
+- The v0.1 release includes offline-friendly examples and smoke paths so a new user can see OpenOpps behavior even when live provider endpoints are unavailable or flaky.
+- Example data is built from typed dataclasses or equivalent factories that generate coherent sources, boards, routes, jobs, provider payloads, and cache records.
+- Faker can be used to generate realistic sample content, while Hypothesis strategies can be used to generate edge cases and validate storage, filtering, export, cache, and plugin invariants.
+- Deterministic example commands or documented smoke paths produce reproducible golden outputs for README and docs snippets.
+- The v0.1 release includes clear next-step guidance after empty results, missing route metadata, unsupported providers, and live-network failures.
+- Advanced provider diagnostics, route registry inspection, manual board creation, manual route attachment, provider detection, database maintenance, and adapter explainers are moved behind clearly marked advanced, debug, admin, or private-facing command surfaces.
+- Existing low-level functionality remains available for maintainers and power users when it is needed to diagnose provider coverage or repair route metadata.
+- Help text distinguishes stable v0.1 user-facing commands from advanced commands that are versioned through future PyPI and GitHub releases.
+- The baseline v0.1 job-fetching providers are Ashby, Greenhouse, Lever, and Workday.
+- The v0.1 plan should include a provider coverage audit for high-coverage public ATS providers that may materially improve board coverage without bespoke per-company logic.
+- The provider coverage audit reports the measured percentage of persisted boards with any non-supported provider hints, using distinct persisted boards in the current report scope as the denominator.
+- The provider coverage audit separately reports boards with job-capable baseline providers, adopted v0.1 providers, detect-only providers, unsupported or unknown providers, only non-supported provider hints, and missing executable route metadata.
+- The provider coverage audit publishes snapshot date, source set, denominator, numerator, percentage, examples, before-and-after deltas for candidate providers, and do-not-adopt rationales for rejected providers.
+- Candidate high-coverage provider audit targets include SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
+- Candidate providers should only become v0.1 job-fetching providers if route discovery and job fetching can be implemented through generic public endpoints or stable hosted-board payloads.
+- Teamtailor, Manatal, and Gem remain detect-only metadata in v0.1 unless reliable public fetching already exists or the provider audit proves a generic public job-fetching implementation is low risk.
+- The supported v0.1 aggregate sources are the built-in sources already documented in the README, subject to test and live-health verification.
+- Public Python API stability is not a v0.1 guarantee.
+- The supported v0.1 surface is the CLI behavior, persisted local data behavior, and documented export formats.
+- The supported v0.1 surface includes documented plugin hooks and plugin metadata contracts.
+- v0.1 is the first public ground-truth release, so obsolete internal command paths do not need compatibility aliases.
+- Version control, PyPI releases, GitHub releases, and release notes are the mechanism for managing future behavior changes.
+- Backwards-compatible migrations are only required when persisted schema expectations would break known local users or a prior public release.
+- Hosted service behavior is out of scope for v0.1.
+- Web app UI behavior is out of scope for v0.1.
+- Paid, private, or authenticated job-board integrations are out of scope for v0.1.
+- Authenticated scraping and browser automation are out of scope for v0.1.
+- Email alerts, user accounts, and automated job applications are out of scope for v0.1.
+- Broad v1.0-style stability guarantees are out of scope for v0.1.
+- The README includes a concise quickstart, command examples, provider support matrix, route probing explanation, cache explanation, plugin explanation, generated examples, storage explanation, export explanation, troubleshooting notes, and a short explanation of why OpenOpps exists.
+- The docs site mirrors or expands the README's v0.1 user journey without becoming a separate large content project.
+- The done condition is that the documented quickstart works from a fresh clone and demonstrates discovery, route readiness, job sync, caching, plugin inspection, generated examples, filtering, export, and failure interpretation.
+- The done condition includes passing full pytest, strict OpenSpec validation, docs type-check/build, JSON parseability checks, cache/plugin/example smoke paths, provider coverage reporting, and fresh-clone quickstart validation.
