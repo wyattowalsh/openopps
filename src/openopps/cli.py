@@ -1,0 +1,1933 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+from typing import Annotated, Any
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from openopps.cache import HttpCache
+from openopps.coverage import build_coverage_report, build_provider_audit_report
+from openopps.enrichment import enrich_metadata
+from openopps.examples import build_example_dataset
+from openopps.export import export_records
+from openopps.health import check_provider_health
+from openopps.http import build_async_client
+from openopps.ingest import default_sources, sync_jobs, sync_sources
+from openopps.intro import play_intro
+from openopps.models import (
+    BoardProviderRecord,
+    BoardRecord,
+    ExportFormat,
+    ProviderSupport,
+    SourceRecord,
+    utc_now,
+)
+from openopps.plugins import load_plugins
+from openopps.providers.registry import default_registry
+from openopps.providers.sources import build_source_adapter
+from openopps.route_registry import BoardRouteRegistry
+from openopps.route_probe import probe_routes
+from openopps.route_select import normalize_provider_filter
+from openopps.settings import OpenOppsSettings
+from openopps.storage import OpenOppsStore
+from openopps.storage import BoardFilters, JobFilters
+from openopps.url_validation import validate_provider_host, validate_public_https_url
+from openopps.utils import slugify, stable_id
+
+
+console = Console()
+PANEL_OUTPUT = "Output"
+PANEL_SCOPE = "Scope filters"
+PANEL_ROUTE = "Route metadata"
+PANEL_SYNC = "Sync controls"
+PANEL_DIAGNOSTICS = "Diagnostics"
+PANEL_STORAGE = "Storage"
+
+JSON_HELP = "Emit machine-readable JSON instead of a table."
+PROVIDER_FILTER_HELP = (
+    "Provider id to match, or 'any'/'all' for every job-capable provider."
+)
+SOURCE_FILTER_HELP = "Limit results to one aggregate source key, such as a16z or yc."
+BOARD_FILTER_HELP = "Limit results to one board key."
+LIMIT_HELP = "Maximum number of records to return."
+EXPORT_FORMAT_HELP = "Export file format."
+OUTPUT_FILE_HELP = "Destination file path."
+
+app = typer.Typer(
+    help=(
+        "[bold]OpenOpps[/bold] maps public hiring boards into a local, "
+        "queryable opportunity ledger: discover sources, resolve provider routes, "
+        "sync normalized jobs, and export clean data."
+    ),
+    epilog=(
+        "[dim]Examples[/dim]\n"
+        "  [bold]openopps sources sync a16z --metrics-json[/bold]\n"
+        "  [bold]openopps admin providers probe-routes --source a16z --provider any --json[/bold]\n"
+        "  [bold]openopps jobs list --remote Full --skill Python --json[/bold]"
+    ),
+)
+sources_app = typer.Typer(
+    help="Discover, test, and sync aggregate source catalogs such as a16z, YC, and Getro boards."
+)
+boards_app = typer.Typer(
+    help="Inspect discovered company boards and manage provider route metadata."
+)
+jobs_app = typer.Typer(
+    help="Sync, filter, inspect, and export normalized public job postings."
+)
+providers_app = typer.Typer(
+    help="Inspect provider readiness, live health, coverage gaps, and audit evidence."
+)
+plugins_app = typer.Typer(
+    help="Inspect installed OpenOpps plugins and extension hooks."
+)
+cache_app = typer.Typer(help="Inspect and maintain the local OpenOpps request cache.")
+examples_app = typer.Typer(help="Seed deterministic synthetic example data for demos.")
+admin_app = typer.Typer(help="Advanced maintenance and diagnostic commands.")
+admin_sources_app = typer.Typer(
+    help="Advanced source registration and adapter sampling."
+)
+admin_boards_app = typer.Typer(help="Advanced board and route metadata maintenance.")
+admin_providers_app = typer.Typer(
+    help="Advanced provider adapter and route diagnostics."
+)
+admin_cache_app = typer.Typer(help="Advanced cache maintenance commands.")
+admin_db_app = typer.Typer(
+    help="Initialize, inspect, and maintain the local SQLite ledger."
+)
+
+app.add_typer(sources_app, name="sources")
+app.add_typer(boards_app, name="boards")
+app.add_typer(jobs_app, name="jobs")
+app.add_typer(providers_app, name="providers")
+app.add_typer(plugins_app, name="plugins")
+app.add_typer(cache_app, name="cache")
+app.add_typer(examples_app, name="examples")
+app.add_typer(admin_app, name="admin")
+admin_app.add_typer(admin_sources_app, name="sources")
+admin_app.add_typer(admin_boards_app, name="boards")
+admin_app.add_typer(admin_providers_app, name="providers")
+admin_app.add_typer(admin_cache_app, name="cache")
+admin_app.add_typer(admin_db_app, name="db")
+
+
+@app.callback()
+def main(
+    intro: Annotated[
+        bool,
+        typer.Option(
+            "--intro/--no-intro",
+            help="Show the startup portal animation when the terminal is interactive.",
+            rich_help_panel="Experience",
+        ),
+    ] = True,
+) -> None:
+    if _help_requested():
+        return
+    play_intro(enabled=intro)
+
+
+def _help_requested(argv: list[str] | None = None) -> bool:
+    args = sys.argv[1:] if argv is None else argv
+    return any(arg in {"--help", "-h"} for arg in args)
+
+
+def _settings() -> OpenOppsSettings:
+    return OpenOppsSettings()
+
+
+def _store() -> OpenOppsStore:
+    return OpenOppsStore(_settings())
+
+
+def _cache() -> HttpCache:
+    return HttpCache(_settings().cache_path)
+
+
+def _settings_with_cache_refresh(refresh_cache: bool) -> OpenOppsSettings:
+    settings = _settings()
+    if not refresh_cache:
+        return settings
+    return settings.model_copy(update={"cache_refresh": True})
+
+
+def _default_source(key: str) -> SourceRecord | None:
+    return next((source for source in default_sources() if source.key == key), None)
+
+
+def _json(data: object) -> None:
+    console.print_json(json.dumps(data, default=str))
+
+
+def _metrics(metrics, metrics_json: bool, profile: bool) -> None:
+    if metrics_json:
+        _json(metrics.as_dict())
+    elif profile:
+        data = metrics.as_dict()
+        console.print(
+            f"{data['name']} completed in {data['elapsedSeconds']:.2f}s "
+            f"boards={data['boards']} jobs={data['jobs']} pages={data['pages']} "
+            f"skipped={data['skipped']} duplicate_routes_skipped={data['duplicateRoutesSkipped']}"
+        )
+
+
+def _table(title: str, columns: list[str], rows: list[list[object]]) -> None:
+    table = Table(title=title)
+    for column in columns:
+        table.add_column(column)
+    for row in rows:
+        table.add_row(*(str(value) if value is not None else "" for value in row))
+    console.print(table)
+
+
+def _status_payload() -> dict[str, Any]:
+    store = _store()
+    settings = _settings()
+    return {
+        "database": {
+            "url": settings.db_url,
+            "path": str(settings.sqlite_path) if settings.sqlite_path else None,
+            "counts": store.status(),
+        },
+        "cache": _cache().status(),
+        "plugins": load_plugins().as_dict(),
+        "nextAction": _next_action(store.status()),
+    }
+
+
+def _next_action(counts: dict[str, int]) -> str:
+    if counts["sources"] == 0:
+        return "Run `openopps sources list` to inspect built-in sources, then sync one."
+    if counts["boards"] == 0:
+        return "Run `openopps sources sync <source>` to discover boards."
+    if counts["boardProviders"] == 0:
+        return "Run provider coverage or route probing to inspect provider readiness."
+    if counts["jobs"] == 0:
+        return "Run `openopps jobs sync` after routes are ready."
+    return "Run `openopps jobs list` or export filtered results."
+
+
+def _board_filters(
+    *,
+    source: str | None = None,
+    provider: str | None = None,
+    market: str | None = None,
+    location: str | None = None,
+    domain: str | None = None,
+    has_jobs: bool = False,
+    min_staff: int | None = None,
+    max_staff: int | None = None,
+    limit: int | None = None,
+) -> BoardFilters:
+    return BoardFilters(
+        source_key=source,
+        provider_id=normalize_provider_filter(provider),
+        market=market,
+        location=location,
+        domain=domain,
+        has_jobs=has_jobs,
+        min_staff=min_staff,
+        max_staff=max_staff,
+        limit=limit,
+    )
+
+
+def _job_filters(
+    *,
+    source: str | None = None,
+    board: str | None = None,
+    provider: str | None = None,
+    location: str | None = None,
+    department: str | None = None,
+    team: str | None = None,
+    workplace_type: str | None = None,
+    remote: str | None = None,
+    employment_type: str | None = None,
+    salary_min: float | None = None,
+    salary_max: float | None = None,
+    skill: str | None = None,
+    query: str | None = None,
+    posted_after: str | None = None,
+    posted_before: str | None = None,
+    limit: int | None = None,
+) -> JobFilters:
+    return JobFilters(
+        source_key=source,
+        board_key=board,
+        provider_id=normalize_provider_filter(provider),
+        location=location,
+        department=department,
+        team=team,
+        workplace_type=workplace_type,
+        remote=remote,
+        employment_type=employment_type,
+        salary_min=salary_min,
+        salary_max=salary_max,
+        skill=skill,
+        query=query,
+        posted_after=posted_after,
+        posted_before=posted_before,
+        limit=limit,
+    )
+
+
+@app.command(
+    "status",
+    help="Show local OpenOpps database, cache, plugin, and next-action status.",
+)
+def status(
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    data = _status_payload()
+    if json_output:
+        _json(data)
+        return
+    counts = data["database"]["counts"]
+    cache = data["cache"]
+    plugins = data["plugins"]
+    _table(
+        "OpenOpps Status",
+        [
+            "sources",
+            "boards",
+            "routes",
+            "jobs",
+            "cache_records",
+            "plugins",
+            "failed_plugins",
+        ],
+        [
+            [
+                counts["sources"],
+                counts["boards"],
+                counts["boardProviders"],
+                counts["jobs"],
+                cache["total"],
+                plugins["loaded"],
+                plugins["failed"],
+            ]
+        ],
+    )
+    console.print(f"Next action: {data['nextAction']}")
+
+
+@app.command("doctor", help="Alias for status with setup-oriented next-step guidance.")
+def doctor(
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    status(json_output=json_output)
+
+
+@plugins_app.command("list", help="List installed OpenOpps plugins and load status.")
+def plugins_list(
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    data = load_plugins().as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "OpenOpps Plugins",
+        ["entry_point", "plugin", "version", "loaded", "capabilities", "error"],
+        [
+            [
+                plugin["entryPoint"],
+                (plugin["metadata"] or {}).get("name", ""),
+                (plugin["metadata"] or {}).get("version", ""),
+                plugin["loaded"],
+                len(plugin["capabilities"]),
+                plugin["error"] or "",
+            ]
+            for plugin in data["plugins"]
+        ],
+    )
+
+
+@cache_app.command(
+    "status", help="Show local cache path, record count, and namespaces."
+)
+def cache_status(
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    data = _cache().status()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "OpenOpps Cache",
+        ["path", "records", "namespaces"],
+        [[data["path"], data["total"], len(data["byNamespace"])]],
+    )
+
+
+@admin_cache_app.command("purge", help="Delete local cache records.")
+def cache_purge(
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Limit purge to one cache namespace."),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    deleted = _cache().purge(namespace=namespace)
+    data = {"deleted": deleted, "namespace": namespace}
+    if json_output:
+        _json(data)
+        return
+    console.print(f"Deleted {deleted} cache record(s).")
+
+
+@examples_app.command(
+    "seed", help="Seed deterministic synthetic example data into the local database."
+)
+def examples_seed(
+    seed: Annotated[
+        int, typer.Option("--seed", help="Deterministic Faker seed.")
+    ] = 1001,
+    boards: Annotated[
+        int, typer.Option("--boards", min=1, help="Number of synthetic boards.")
+    ] = 4,
+    jobs_per_board: Annotated[
+        int,
+        typer.Option("--jobs-per-board", min=0, help="Jobs per job-capable board."),
+    ] = 2,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    dataset = build_example_dataset(
+        seed=seed, board_count=boards, jobs_per_board=jobs_per_board
+    )
+    store = _store()
+    for source in dataset.sources:
+        store.upsert_source(source)
+    store.upsert_boards(dataset.boards)
+    store.upsert_board_providers(dataset.routes)
+    store.upsert_jobs(dataset.jobs)
+    cache = _cache()
+    for record in dataset.cache_records:
+        cache.put_json(
+            "get",
+            record.url,
+            record.payload,
+            namespace=record.namespace,
+            status_code=record.status_code,
+        )
+    data = {
+        "sources": len(dataset.sources),
+        "boards": len(dataset.boards),
+        "routes": len(dataset.routes),
+        "jobs": len(dataset.jobs),
+        "cacheRecords": len(dataset.cache_records),
+        "seed": seed,
+    }
+    if json_output:
+        _json(data)
+        return
+    console.print(
+        f"Seeded {data['boards']} boards, {data['routes']} routes, "
+        f"{data['jobs']} jobs, and {data['cacheRecords']} cache records."
+    )
+
+
+@admin_sources_app.command(
+    "add", help="Register a custom source catalog in the local OpenOpps ledger."
+)
+def sources_add(
+    key: Annotated[str, typer.Argument(help="Stable source key, for example a16z.")],
+    url: Annotated[str, typer.Option("--url", help="Public source catalog URL.")],
+    provider: Annotated[
+        str,
+        typer.Option("--provider", help="Source adapter id used to parse the catalog."),
+    ] = "consider_a16z",
+    enabled: Annotated[
+        bool,
+        typer.Option(
+            "--enabled/--disabled", help="Include this source in default sync runs."
+        ),
+    ] = True,
+) -> None:
+    try:
+        validate_public_https_url(url, allow_manual=True)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    store = _store()
+    store.upsert_source(
+        SourceRecord(key=key, url=url, provider_id=provider, enabled=enabled)
+    )
+    console.print(f"Added source {key}")
+
+
+@sources_app.command(
+    "list", help="List configured sources, falling back to built-in defaults."
+)
+def sources_list(
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    settings = _settings()
+    records = []
+    if not settings.sqlite_path or settings.sqlite_path.exists():
+        records = OpenOppsStore(settings).list_sources()
+    if not records:
+        records = default_sources()
+    if json_output:
+        _json([record.model_dump(mode="json") for record in records])
+        return
+    _table(
+        "Sources",
+        ["key", "provider", "enabled", "url"],
+        [
+            [record.key, record.provider_id, record.enabled, record.url]
+            for record in records
+        ],
+    )
+
+
+@sources_app.command("show", help="Show one source record as JSON.")
+def sources_show(
+    key: Annotated[str, typer.Argument(help="Source key to inspect, such as a16z.")],
+) -> None:
+    record = _store().get_source(key) or _default_source(key)
+    if not record:
+        raise typer.BadParameter(f"Unknown source: {key}")
+    _json(record.model_dump(mode="json"))
+
+
+@admin_sources_app.command(
+    "test", help="Sample a source adapter without writing boards to storage."
+)
+def sources_test(
+    key: Annotated[str, typer.Argument(help="Source key to sample.")] = "a16z",
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=1,
+            max=200,
+            help="Maximum source page size to request during the sample.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = 5,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-cache",
+            help="Bypass cache reads and update cache records from fresh responses.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+) -> None:
+    async def _run() -> None:
+        settings = _settings_with_cache_refresh(refresh_cache)
+        source = _store().get_source(key) or _default_source(key)
+        if not source:
+            raise typer.BadParameter(f"Unknown source: {key}")
+        adapter = build_source_adapter(source.provider_id, settings)
+        if not adapter:
+            raise typer.BadParameter(
+                f"No source adapter for provider: {source.provider_id}"
+            )
+        async with build_async_client(settings) as client:
+            async for boards, providers, meta in adapter.iter_boards(
+                client, source, page_size=page_size
+            ):
+                _json(
+                    {
+                        "boards": len(boards),
+                        "boardProviders": len(providers),
+                        "meta": meta,
+                    }
+                )
+                return
+
+    asyncio.run(_run())
+
+
+@sources_app.command(
+    "sync", help="Discover boards from one source or all enabled sources."
+)
+def sources_sync(
+    source_key: Annotated[
+        str | None,
+        typer.Argument(help="Optional source key; omit to sync all enabled sources."),
+    ] = None,
+    no_db: Annotated[
+        bool,
+        typer.Option(
+            "--no-db",
+            help="Skip SQLite writes and require --output for JSONL records.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            help="Write discovered board records to a JSONL file.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = None,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=1,
+            max=500,
+            help="Maximum upstream page size for source adapters that support paging.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = 100,
+    metrics_json: Annotated[
+        bool,
+        typer.Option(
+            "--metrics-json",
+            help="Print sync metrics as JSON.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    profile: Annotated[
+        bool,
+        typer.Option(
+            "--profile",
+            help="Print a compact human-readable sync summary.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-cache",
+            help="Bypass cache reads and update cache records from fresh responses.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+) -> None:
+    if no_db and output is None:
+        raise typer.BadParameter("--output is required with --no-db")
+    store = None if no_db else _store()
+    metrics = asyncio.run(
+        sync_sources(
+            settings=_settings_with_cache_refresh(refresh_cache),
+            store=store,
+            source_key=source_key,
+            output=output,
+            page_size=page_size,
+        )
+    )
+    _metrics(metrics, metrics_json, profile)
+
+
+@admin_boards_app.command(
+    "add", help="Create a manual company board record for ad hoc route testing."
+)
+def boards_add(
+    key: Annotated[str, typer.Argument(help="Stable board key to create.")],
+    name: Annotated[str, typer.Option("--name", help="Firm or company name.")],
+    source: Annotated[
+        str,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = "manual",
+    website_url: Annotated[
+        str | None,
+        typer.Option(
+            "--website-url",
+            help="Public careers or company website URL for provider detection.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+    domain: Annotated[
+        str | None,
+        typer.Option(
+            "--domain",
+            help="Company domain used by filters and route hints.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+) -> None:
+    store = _store()
+    if not store.get_source(source):
+        store.upsert_source(
+            SourceRecord(
+                key=source, url="manual://source", provider_id="manual", enabled=True
+            )
+        )
+    board = BoardRecord(
+        key=slugify(key),
+        source_key=source,
+        remote_id=key,
+        remote_slug=key,
+        name=name,
+        website_url=website_url,
+        domain=domain,
+        synced_at=utc_now(),
+    )
+    store.upsert_boards([board])
+    console.print(f"Added board {board.key}")
+
+
+@admin_boards_app.command(
+    "add-provider", help="Attach explicit provider route metadata to a board."
+)
+def boards_add_provider(
+    board_key: Annotated[str, typer.Argument(help="Board key to update.")],
+    provider_id: Annotated[
+        str, typer.Argument(help="Provider adapter id, such as greenhouse or ashbyhq.")
+    ],
+    url: Annotated[
+        str | None,
+        typer.Option(
+            "--url",
+            help="Public hosted board URL to detect or store for this provider.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+    token: Annotated[
+        str | None,
+        typer.Option(
+            "--token",
+            help="Provider board token or slug, when the adapter requires one.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+    host: Annotated[
+        str | None,
+        typer.Option(
+            "--host",
+            help="Provider host for routes that need a careers-site hostname.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+    tenant: Annotated[
+        str | None,
+        typer.Option(
+            "--tenant",
+            help="Provider tenant identifier for adapters that expose one.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+    site: Annotated[
+        str | None,
+        typer.Option(
+            "--site",
+            help="Provider site identifier, such as a Workday CXS site name.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+) -> None:
+    try:
+        if url:
+            validate_public_https_url(url)
+        if provider_id == "workday" and host:
+            host = validate_provider_host(host, "myworkdayjobs.com")
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    store = _store()
+    board = store.get_board(board_key)
+    if not board:
+        raise typer.BadParameter(f"Unknown board: {board_key}")
+    registry = default_registry()
+    detected = (
+        registry.detect_url(url, board_key=board.key, source_key=board.source_key)
+        if url
+        else None
+    )
+    support_level = registry.support_level(provider_id)
+    record = detected or BoardProviderRecord(
+        id=stable_id(board.source_key, board.key, provider_id),
+        source_key=board.source_key,
+        board_key=board.key,
+        provider_id=provider_id,
+        support_level=support_level,
+        detected_at=utc_now(),
+    )
+    record = record.model_copy(
+        update={
+            "provider_id": provider_id,
+            "support_level": support_level,
+            "board_url": url or record.board_url,
+            "token": token or record.token,
+            "host": host or record.host,
+            "tenant": tenant or record.tenant,
+            "site": site or record.site,
+        }
+    )
+    store.upsert_board_providers([record])
+    _json(record.model_dump(mode="json"))
+
+
+@boards_app.command(
+    "list", help="List boards with source, provider, and company filters."
+)
+def boards_list(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    market: Annotated[
+        str | None,
+        typer.Option(
+            "--market",
+            help="Case-insensitive market text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    location: Annotated[
+        str | None,
+        typer.Option(
+            "--location",
+            help="Case-insensitive location text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    domain: Annotated[
+        str | None,
+        typer.Option(
+            "--domain",
+            help="Case-insensitive company domain filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    has_jobs: Annotated[
+        bool,
+        typer.Option(
+            "--has-jobs",
+            help="Only include boards with a positive jobs hint.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = False,
+    min_staff: Annotated[
+        int | None,
+        typer.Option(
+            "--min-staff",
+            min=0,
+            help="Only include boards with at least this staff count.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    max_staff: Annotated[
+        int | None,
+        typer.Option(
+            "--max-staff",
+            min=0,
+            help="Only include boards with at most this staff count.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    boards = _store().list_boards(
+        filters=_board_filters(
+            source=source,
+            provider=provider,
+            market=market,
+            location=location,
+            domain=domain,
+            has_jobs=has_jobs,
+            min_staff=min_staff,
+            max_staff=max_staff,
+            limit=limit,
+        )
+    )
+    if json_output:
+        _json([board.model_dump(mode="json") for board in boards])
+        return
+    _table(
+        "Boards",
+        ["key", "source", "name", "providers", "jobs_hint"],
+        [
+            [
+                board.key,
+                board.source_key,
+                board.name,
+                ",".join(provider.provider_id for provider in board.providers),
+                board.num_jobs_hint,
+            ]
+            for board in boards
+        ],
+    )
+
+
+@boards_app.command("show", help="Show one board record as JSON, including routes.")
+def boards_show(
+    board_key: Annotated[str, typer.Argument(help="Board key to inspect.")],
+) -> None:
+    board = _store().get_board(board_key)
+    if not board:
+        raise typer.BadParameter(f"Unknown board: {board_key}")
+    _json(board.model_dump(mode="json"))
+
+
+@boards_app.command(
+    "enrich", help="Promote preserved payload metadata into normalized board fields."
+)
+def boards_enrich(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Persist enriched board and route metadata.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    summary = enrich_metadata(
+        _store(), source_key=source, board_key=board, limit=limit, apply=apply
+    )
+    data = summary.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Board Metadata Enrichment",
+        ["checked", "board_changes", "route_changes", "applied"],
+        [
+            [
+                data["checkedBoards"],
+                data["boardChangeCount"],
+                data["routeChangeCount"],
+                data["applied"],
+            ]
+        ],
+    )
+
+
+@admin_boards_app.command(
+    "detect-provider", help="Detect and persist provider metadata for one board URL."
+)
+def boards_detect_provider(
+    board_key: Annotated[str, typer.Argument(help="Board key to inspect.")],
+    url: Annotated[
+        str | None,
+        typer.Option(
+            "--url",
+            help="Override the board website URL before detecting its provider.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = None,
+) -> None:
+    store = _store()
+    board = store.get_board(board_key)
+    if not board:
+        raise typer.BadParameter(f"Unknown board: {board_key}")
+    detected = default_registry().detect_url(
+        url or board.website_url or "", board_key=board.key, source_key=board.source_key
+    )
+    if not detected:
+        raise typer.BadParameter("No provider detected")
+    store.upsert_board_providers([detected])
+    _json(detected.model_dump(mode="json"))
+
+
+@admin_boards_app.command(
+    "refresh", help="Recount stored boards for a source without fetching jobs."
+)
+def boards_refresh(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+) -> None:
+    boards = _store().list_boards(source_key=source, limit=limit)
+    console.print(f"Refreshed {len(boards)} boards")
+
+
+@boards_app.command(
+    "export", help="Export filtered board records to JSONL, CSV, or Parquet."
+)
+def boards_export(
+    output: Annotated[
+        Path,
+        typer.Option("--output", help=OUTPUT_FILE_HELP, rich_help_panel=PANEL_OUTPUT),
+    ],
+    format_: Annotated[
+        ExportFormat,
+        typer.Option("--format", help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = ExportFormat.JSONL,
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    market: Annotated[
+        str | None,
+        typer.Option(
+            "--market",
+            help="Case-insensitive market text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    location: Annotated[
+        str | None,
+        typer.Option(
+            "--location",
+            help="Case-insensitive location text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    domain: Annotated[
+        str | None,
+        typer.Option(
+            "--domain",
+            help="Case-insensitive company domain filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    has_jobs: Annotated[
+        bool,
+        typer.Option(
+            "--has-jobs",
+            help="Only include boards with a positive jobs hint.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = False,
+    min_staff: Annotated[
+        int | None,
+        typer.Option(
+            "--min-staff",
+            min=0,
+            help="Only include boards with at least this staff count.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    max_staff: Annotated[
+        int | None,
+        typer.Option(
+            "--max-staff",
+            min=0,
+            help="Only include boards with at most this staff count.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+) -> None:
+    count = export_records(
+        _store().list_boards(
+            filters=_board_filters(
+                source=source,
+                provider=provider,
+                market=market,
+                location=location,
+                domain=domain,
+                has_jobs=has_jobs,
+                min_staff=min_staff,
+                max_staff=max_staff,
+                limit=limit,
+            )
+        ),
+        output,
+        format_,
+    )
+    console.print(f"Exported {count} boards to {output}")
+
+
+@jobs_app.command("sync", help="Fetch normalized jobs from ready provider routes.")
+def jobs_sync(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            help="Also stream synced jobs to this JSONL file.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = None,
+    metrics_json: Annotated[
+        bool,
+        typer.Option(
+            "--metrics-json",
+            help="Print sync metrics as JSON.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    profile: Annotated[
+        bool,
+        typer.Option(
+            "--profile",
+            help="Print a compact human-readable sync summary.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-cache",
+            help="Bypass cache reads and update cache records from fresh responses.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+) -> None:
+    metrics = asyncio.run(
+        sync_jobs(
+            settings=_settings_with_cache_refresh(refresh_cache),
+            store=_store(),
+            source_key=source,
+            board_key=board,
+            provider_id=normalize_provider_filter(provider),
+            output=output,
+        )
+    )
+    _metrics(metrics, metrics_json, profile)
+
+
+@jobs_app.command("list", help="List jobs with normalized metadata filters.")
+def jobs_list(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    location: Annotated[
+        str | None,
+        typer.Option(
+            "--location",
+            help="Case-insensitive location text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    department: Annotated[
+        str | None,
+        typer.Option(
+            "--department",
+            help="Case-insensitive department text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    team: Annotated[
+        str | None,
+        typer.Option(
+            "--team",
+            help="Case-insensitive team text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    workplace_type: Annotated[
+        str | None,
+        typer.Option(
+            "--workplace-type",
+            help="Workplace type filter, such as Remote or Onsite.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    remote: Annotated[
+        str | None,
+        typer.Option(
+            "--remote",
+            help="Remote policy filter, such as Full, Hybrid, or None.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    employment_type: Annotated[
+        str | None,
+        typer.Option(
+            "--employment-type",
+            "--type",
+            help="Employment type filter, such as full-time or contract.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    salary_min: Annotated[
+        float | None,
+        typer.Option(
+            "--salary-min",
+            help="Only include jobs whose salary range reaches this minimum.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    salary_max: Annotated[
+        float | None,
+        typer.Option(
+            "--salary-max",
+            help="Only include jobs whose salary range stays under this maximum.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    skill: Annotated[
+        str | None,
+        typer.Option(
+            "--skill",
+            help="Match normalized skill names or keywords.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            help="Search title, company, description, and metadata text.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    posted_after: Annotated[
+        str | None,
+        typer.Option(
+            "--posted-after",
+            help="Only include jobs posted on or after this date.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    posted_before: Annotated[
+        str | None,
+        typer.Option(
+            "--posted-before",
+            help="Only include jobs posted on or before this date.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    jobs = _store().list_jobs(
+        filters=_job_filters(
+            source=source,
+            board=board,
+            provider=provider,
+            location=location,
+            department=department,
+            team=team,
+            workplace_type=workplace_type,
+            remote=remote,
+            employment_type=employment_type,
+            salary_min=salary_min,
+            salary_max=salary_max,
+            skill=skill,
+            query=query,
+            posted_after=posted_after,
+            posted_before=posted_before,
+            limit=limit,
+        )
+    )
+    if json_output:
+        _json([job.model_dump(mode="json") for job in jobs])
+        return
+    _table(
+        "Jobs",
+        ["id", "board", "provider", "title", "locations"],
+        [
+            [j.id, j.board_key, j.provider_id, j.title, ", ".join(j.locations)]
+            for j in jobs
+        ],
+    )
+
+
+@jobs_app.command("show", help="Show one normalized job record as JSON.")
+def jobs_show(
+    job_id: Annotated[str, typer.Argument(help="Job id to inspect.")],
+) -> None:
+    job = _store().get_job(job_id)
+    if not job:
+        raise typer.BadParameter(f"Unknown job: {job_id}")
+    _json(job.model_dump(mode="json"))
+
+
+@jobs_app.command("export", help="Export filtered jobs to JSONL, CSV, or Parquet.")
+def jobs_export(
+    output: Annotated[
+        Path,
+        typer.Option("--output", help=OUTPUT_FILE_HELP, rich_help_panel=PANEL_OUTPUT),
+    ],
+    format_: Annotated[
+        ExportFormat,
+        typer.Option("--format", help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = ExportFormat.JSONL,
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    location: Annotated[
+        str | None,
+        typer.Option(
+            "--location",
+            help="Case-insensitive location text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    department: Annotated[
+        str | None,
+        typer.Option(
+            "--department",
+            help="Case-insensitive department text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    team: Annotated[
+        str | None,
+        typer.Option(
+            "--team",
+            help="Case-insensitive team text filter.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    workplace_type: Annotated[
+        str | None,
+        typer.Option(
+            "--workplace-type",
+            help="Workplace type filter, such as Remote or Onsite.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    remote: Annotated[
+        str | None,
+        typer.Option(
+            "--remote",
+            help="Remote policy filter, such as Full, Hybrid, or None.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    employment_type: Annotated[
+        str | None,
+        typer.Option(
+            "--employment-type",
+            "--type",
+            help="Employment type filter, such as full-time or contract.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    salary_min: Annotated[
+        float | None,
+        typer.Option(
+            "--salary-min",
+            help="Only include jobs whose salary range reaches this minimum.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    salary_max: Annotated[
+        float | None,
+        typer.Option(
+            "--salary-max",
+            help="Only include jobs whose salary range stays under this maximum.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    skill: Annotated[
+        str | None,
+        typer.Option(
+            "--skill",
+            help="Match normalized skill names or keywords.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            help="Search title, company, description, and metadata text.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    posted_after: Annotated[
+        str | None,
+        typer.Option(
+            "--posted-after",
+            help="Only include jobs posted on or after this date.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    posted_before: Annotated[
+        str | None,
+        typer.Option(
+            "--posted-before",
+            help="Only include jobs posted on or before this date.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+) -> None:
+    count = export_records(
+        _store().list_jobs(
+            filters=_job_filters(
+                source=source,
+                board=board,
+                provider=provider,
+                location=location,
+                department=department,
+                team=team,
+                workplace_type=workplace_type,
+                remote=remote,
+                employment_type=employment_type,
+                salary_min=salary_min,
+                salary_max=salary_max,
+                skill=skill,
+                query=query,
+                posted_after=posted_after,
+                posted_before=posted_before,
+                limit=limit,
+            )
+        ),
+        output,
+        format_,
+    )
+    console.print(f"Exported {count} jobs to {output}")
+
+
+@admin_providers_app.command(
+    "list", help="List built-in source and job provider adapters."
+)
+def providers_list(
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    providers = default_registry().list()
+    if json_output:
+        _json(
+            [
+                provider.__dict__
+                | {
+                    "kind": provider.kind.value,
+                    "support_level": provider.support_level.value,
+                }
+                for provider in providers
+            ]
+        )
+        return
+    _table(
+        "Providers",
+        ["id", "kind", "support", "label"],
+        [[p.id, p.kind.value, p.support_level.value, p.label] for p in providers],
+    )
+
+
+@admin_providers_app.command(
+    "detect", help="Detect a provider adapter from a public board URL."
+)
+def providers_detect(
+    url: Annotated[str, typer.Argument(help="Public board URL to inspect.")],
+) -> None:
+    detected = default_registry().detect_url(url)
+    if not detected:
+        raise typer.BadParameter("No provider detected")
+    _json(detected.model_dump(mode="json"))
+
+
+@admin_providers_app.command(
+    "explain", help="Describe one provider adapter and support level."
+)
+def providers_explain(
+    provider_id: Annotated[str, typer.Argument(help="Provider adapter id to explain.")],
+) -> None:
+    provider = default_registry().get(provider_id)
+    if not provider:
+        _json(
+            {
+                "id": provider_id,
+                "supportLevel": ProviderSupport.UNSUPPORTED.value,
+                "description": "Unknown provider",
+            }
+        )
+        return
+    _json(
+        {
+            "id": provider.id,
+            "label": provider.label,
+            "supportLevel": provider.support_level.value,
+            "description": provider.description,
+        }
+    )
+
+
+@admin_providers_app.command(
+    "probe-routes",
+    help="Try provider route candidates and report which boards can fetch jobs.",
+)
+def providers_probe_routes(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Persist matched token, URL, or site metadata.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = False,
+    include_existing: Annotated[
+        bool,
+        typer.Option(
+            "--include-existing",
+            help="Also probe routes that already have token, URL, or site metadata.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = False,
+    max_candidates: Annotated[
+        int,
+        typer.Option(
+            "--max-candidates",
+            min=1,
+            max=50,
+            help="Maximum candidate slugs or sites to try per board.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = 12,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    summary = asyncio.run(
+        probe_routes(
+            settings=_settings(),
+            store=_store(),
+            source_key=source,
+            board_key=board,
+            provider_id=normalize_provider_filter(provider),
+            only_missing=not include_existing,
+            apply=apply,
+            max_candidates=max_candidates,
+            limit=limit,
+        )
+    )
+    data = summary.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Route Probe Summary",
+        ["checked", "matched", "unknown", "errors"],
+        [
+            [
+                data["checked"],
+                data["matchedCount"],
+                data["unknownCount"],
+                json.dumps(data["errors"]),
+            ]
+        ],
+    )
+    if summary.matched:
+        _table(
+            "Matched Routes",
+            ["board", "provider", "token/site", "observed_jobs"],
+            [
+                [
+                    match.board_key,
+                    match.provider_id,
+                    match.token or match.site or match.board_url,
+                    match.observed_jobs,
+                ]
+                for match in summary.matched
+            ],
+        )
+    if summary.unknown:
+        _table(
+            "Unknown Routes",
+            ["board", "provider", "reason", "candidates"],
+            [
+                [
+                    item.board_key,
+                    item.provider_id,
+                    item.reason,
+                    ", ".join(item.candidates[:8]),
+                ]
+                for item in summary.unknown
+            ],
+        )
+
+
+@admin_providers_app.command(
+    "registry", help="Inspect executable board route metadata."
+)
+def providers_registry(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    passed_probe_only: Annotated[
+        bool,
+        typer.Option(
+            "--passed-probe-only",
+            help="Show only routes persisted by a successful probe-routes --apply run.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = False,
+    include_missing: Annotated[
+        bool,
+        typer.Option(
+            "--include-missing",
+            help="Include job-capable routes that still lack executable metadata.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = False,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    selection = BoardRouteRegistry(_store()).select(
+        source_key=source,
+        board_key=board,
+        provider_id=normalize_provider_filter(provider),
+        ready_only=not include_missing,
+        verified_only=passed_probe_only,
+        limit=limit,
+    )
+    data = selection.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Board Route Registry",
+        ["board", "source", "provider", "route", "verified", "status"],
+        [
+            [
+                entry.board.key,
+                entry.board.source_key,
+                entry.route.provider_id,
+                entry.route.token or entry.route.site or entry.route.board_url,
+                entry.verified,
+                entry.route.last_status,
+            ]
+            for entry in selection.entries
+        ],
+    )
+    if data["missingRouteMetadataSkipped"] or data["unverifiedRoutesSkipped"]:
+        _table(
+            "Registry Skips",
+            ["missing_route_metadata", "unverified", "duplicates"],
+            [
+                [
+                    data["missingRouteMetadataSkipped"],
+                    data["unverifiedRoutesSkipped"],
+                    data["duplicateRoutesSkipped"],
+                ]
+            ],
+        )
+
+
+@providers_app.command(
+    "health", help="Dry-run provider routes and summarize live fetch readiness."
+)
+def providers_health(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=1,
+            max=50,
+            help="Maximum provider page size for health probes.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = 5,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Persist source and board-provider health statuses.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    summary = asyncio.run(
+        check_provider_health(
+            settings=_settings(),
+            store=_store(),
+            source_key=source,
+            board_key=board,
+            provider_id=normalize_provider_filter(provider),
+            page_size=page_size,
+            limit=limit,
+            apply=apply,
+        )
+    )
+    data = summary.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Provider Health Summary",
+        ["sources", "routes", "not_covered", "duplicates", "applied"],
+        [
+            [
+                data["sourceStatus"],
+                data["routeStatus"],
+                data["notCoveredCount"],
+                data["duplicateRoutesSkipped"],
+                data["applied"],
+            ]
+        ],
+    )
+    if summary.not_covered:
+        _table(
+            "Not Covered Providers",
+            ["provider", "support", "discovered", "examples"],
+            [
+                [
+                    item.provider_id,
+                    item.support_level,
+                    item.discovered,
+                    ", ".join(item.examples),
+                ]
+                for item in sorted(
+                    summary.not_covered.values(), key=lambda value: value.provider_id
+                )
+            ],
+        )
+
+
+@providers_app.command(
+    "coverage", help="Summarize provider coverage, route gaps, and data completeness."
+)
+def providers_coverage(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    report = build_coverage_report(
+        _store(), source_key=source, provider_id=normalize_provider_filter(provider)
+    )
+    data = report.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Provider Coverage Summary",
+        [
+            "sources",
+            "boards",
+            "routes",
+            "executable",
+            "jobs",
+            "detect_only",
+            "non_supported_boards",
+            "non_supported_pct",
+            "only_non_supported_boards",
+        ],
+        [
+            [
+                data["sources"]["total"],
+                data["boards"]["total"],
+                data["routes"]["total"],
+                data["routes"]["executable"],
+                data["jobs"]["total"],
+                len(data["gaps"]["detectOnlyProviders"]),
+                data["boards"]["withNonSupportedProviderHints"],
+                f"{data['boards']['nonSupportedProviderCoverage']['percentage']:.2f}%",
+                data["boards"]["withOnlyNonSupportedProviderHints"],
+            ]
+        ],
+    )
+    _table(
+        "Data Quality Missing Fields",
+        ["field", "missing", "complete"],
+        [
+            [field, metric["missing"], f"{metric['percentage']:.2f}%"]
+            for field, metric in data["dataQuality"]["completeness"].items()
+        ],
+    )
+
+
+@providers_app.command(
+    "audit", help="Publish persisted-board audit evidence for candidate providers."
+)
+def providers_audit(
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+    ] = False,
+) -> None:
+    report = build_provider_audit_report(_store(), source_key=source)
+    data = report.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Provider Audit Snapshot",
+        ["sources", "boards", "representative"],
+        [
+            [
+                data["snapshot"]["sourceCount"],
+                data["snapshot"]["denominator"],
+                data["snapshot"]["representative"],
+            ]
+        ],
+    )
+    _table(
+        "Candidate Providers",
+        ["provider", "support", "boards", "coverage", "adopted"],
+        [
+            [
+                item["provider"],
+                item["currentSupportLevel"],
+                item["boards"],
+                f"{item['coverage']['percentage']:.2f}%",
+                item["adoptedForV01"],
+            ]
+            for item in data["candidates"]
+        ],
+    )
+
+
+@admin_db_app.command(
+    "init", help="Create the local SQLite schema if it does not exist."
+)
+def db_init() -> None:
+    _store().init_db()
+    console.print("Database initialized")
+
+
+@admin_db_app.command(
+    "status", help="Show local database path and record counts as JSON."
+)
+def db_status() -> None:
+    _json(_store().status())
+
+
+@admin_db_app.command("vacuum", help="Compact the local SQLite database file.")
+def db_vacuum() -> None:
+    _store().vacuum()
+    console.print("Database vacuumed")

@@ -1,0 +1,25 @@
+Python package for the OpenOpps CLI.
+
+- The package is configured by `pyproject.toml` and exposes `openopps = "openopps.cli:app"`.
+- Keep module responsibilities clear: `cli.py` wires Typer commands; `settings.py` owns `OPENOPPS_` configuration; `http.py` owns shared HTTP client behavior; `cache.py` owns SQLite-backed HTTP JSON caching; `ingest.py` coordinates source and job sync; `models.py` defines normalized Pydantic/SQLModel records; `storage.py` owns SQLite persistence; `export.py` owns JSONL/CSV/Parquet exports; `enrichment.py` owns deterministic normalized job enrichment; `coverage.py`, `health.py`, `route_probe.py`, `route_registry.py`, and `route_select.py` handle provider diagnostics and executable route selection; `plugins.py` owns entry-point plugin loading; `examples.py` owns deterministic demo data; `intro.py` owns the interactive startup animation.
+- Keep the v0.1 public CLI centered on everyday workflows: top-level `status`/`doctor`, plus `sources`, `boards`, `jobs`, `providers`, `cache`, `plugins`, and `examples`. Keep low-level diagnostics and maintenance under `admin sources`, `admin boards`, `admin providers`, `admin cache`, and `admin db` instead of adding prompt, TUI, browser, web UI, or hosted-service flows.
+- Use Pydantic models as the normalized boundary between providers, storage, exports, and tests.
+- Provider adapters must report or preserve support levels: `detect`, `jobs`, or `unsupported`.
+- Keep firm aggregator board source adapters in `providers/sources/` and per-board job providers in `providers/boards/`; these hierarchies must not share adapter registries. Use `providers/registry.py` for provider definitions and `providers/base.py` for shared provider protocols.
+- Treat `--provider any` and `--provider all` as aliases for no provider filter across job-capable providers.
+- Preserve overlapping board-source records, but dedupe provider requests before probing or syncing jobs.
+- Prefer async HTTPX clients, bounded concurrency, Tenacity retries, streaming JSONL, and batched DB writes for ingestion work.
+- Preserve raw upstream payloads on normalized records for auditability.
+- Keep persisted fields source-scoped where aggregate sources overlap; generated board keys should remain durable identifiers such as `source:slug` while upstream slugs remain available as `remote_slug`.
+- Keep cache behavior explicit: shared request caching uses `cache.py`, `OPENOPPS_CACHE_*` settings, `--refresh-cache`, and `admin cache purge`; do not bypass it in source or job providers without a specific reason.
+- Keep plugin loading isolated through the `openopps.plugins` entry point group. Plugin load failures and capability conflicts should be visible through `plugins list` rather than crashing the CLI.
+- YC support uses the public companies page to discover the current Algolia API key, then queries `YCCompany_By_Launch_Date_production` by batch; treat it as detect-only company-board metadata unless a reliable job route is present in another source.
+- Ashby support uses the public job posting API only; derive the job board name from `jobs.ashbyhq.com/{name}` or route-probe candidates, detect hosted board URLs rather than `api.ashbyhq.com` API URLs, and exclude `isListed: false` direct-link postings from normal job sync output.
+- Greenhouse support uses public board tokens and the public job board API.
+- Lever support uses public postings JSON endpoints and preserves structured sections where available.
+- Workday support is public CXS careers-site extraction only; do not represent it as official tenant API access.
+- Keep provider route probing best-effort and dry-run by default; only persist discovered tokens, URLs, or Workday CXS fields when an explicit `--apply` path is used.
+- Keep provider health checks dry-run by default; only persist source `raw_metadata.health` and board-provider `last_status` when an explicit `--apply` path is used.
+- Keep provider coverage and audit commands based on persisted SQLite evidence; they should not fetch, probe, or sample live jobs.
+- Add focused pytest coverage for new provider behavior, CLI scope semantics, cache behavior, plugin loading, storage/export behavior, and performance-sensitive batching.
+- Run `uv run pytest` before handing off Python package changes.
