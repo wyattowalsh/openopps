@@ -1,17 +1,21 @@
+import json
+
 import httpx
 import pytest
 import respx
 
 from openopps.http import build_async_client
-from openopps.providers.sources import DEFAULT_BOARD_SOURCES
+from openopps.providers.sources import BOARD_SOURCE_CATALOG
 from openopps.providers.sources.consider import (
-    DEFAULT_A16Z_SOURCE,
-    DEFAULT_CONSIDER_SOURCES,
+    A16Z_SOURCE,
+    CONSIDER_SOURCE_CATALOG,
     ConsiderA16zSourceAdapter,
 )
-from openopps.providers.sources.getro import DEFAULT_GETRO_SOURCES, GetroSourceAdapter
-from openopps.providers.sources.ycombinator import (
-    DEFAULT_YCOMBINATOR_SOURCE,
+from openopps.providers.sources.getro import GETRO_SOURCE_CATALOG, GetroSourceAdapter
+from openopps.providers.sources.special import (
+    SOUTHPARKCOMMONS_SOURCE,
+    SouthParkCommonsSourceAdapter,
+    YCOMBINATOR_SOURCE,
     YCombinatorSourceAdapter,
 )
 from openopps.settings import OpenOppsSettings
@@ -35,7 +39,7 @@ async def test_consider_a16z_normalizes_boards_and_provider_hints():
                         "jobSources": [
                             {"id": "greenhouse", "label": "Greenhouse", "count": 131}
                         ],
-                        "website": {"url": "https://fivetran.com/"},
+                        "website": {"url": "http://fivetran.com/"},
                     }
                 ],
                 "total": 1,
@@ -49,12 +53,13 @@ async def test_consider_a16z_normalizes_boards_and_provider_hints():
         pages = [
             page
             async for page in ConsiderA16zSourceAdapter(settings).iter_boards(
-                client, DEFAULT_A16Z_SOURCE, page_size=1
+                client, A16Z_SOURCE, page_size=1
             )
         ]
 
     boards, providers, meta = pages[0]
     assert boards[0].key == "a16z:fivetran"
+    assert boards[0].website_url == "https://fivetran.com/"
     assert boards[0].num_jobs_hint == 131
     assert providers[0].provider_id == "greenhouse"
     assert providers[0].support_level == "jobs"
@@ -96,7 +101,7 @@ async def test_getro_normalizes_company_boards():
         pages = [
             page
             async for page in GetroSourceAdapter(settings).iter_boards(
-                client, DEFAULT_GETRO_SOURCES["accel"], page_size=12
+                client, GETRO_SOURCE_CATALOG["accel"], page_size=12
             )
         ]
 
@@ -132,7 +137,7 @@ async def test_getro_falls_back_to_embedded_initial_state():
         pages = [
             page
             async for page in GetroSourceAdapter(settings).iter_boards(
-                client, DEFAULT_GETRO_SOURCES["accel"], page_size=12
+                client, GETRO_SOURCE_CATALOG["accel"], page_size=12
             )
         ]
 
@@ -174,7 +179,7 @@ async def test_consider_generic_source_uses_source_host_and_board_id():
         pages = [
             page
             async for page in ConsiderA16zSourceAdapter(settings).iter_boards(
-                client, DEFAULT_CONSIDER_SOURCES["lsvp"], page_size=1
+                client, CONSIDER_SOURCE_CATALOG["lsvp"], page_size=1
             )
         ]
 
@@ -230,7 +235,7 @@ async def test_ycombinator_fetches_algolia_batches():
         pages = [
             page
             async for page in YCombinatorSourceAdapter(settings).iter_boards(
-                client, DEFAULT_YCOMBINATOR_SOURCE, page_size=100
+                client, YCOMBINATOR_SOURCE, page_size=100
             )
         ]
 
@@ -244,7 +249,83 @@ async def test_ycombinator_fetches_algolia_batches():
     assert meta["batch"] == "S24"
 
 
-def test_default_sources_include_requested_portfolio_boards():
+@pytest.mark.asyncio
+@respx.mock
+async def test_southparkcommons_normalizes_embedded_jobs_data():
+    settings = OpenOppsSettings(cache_enabled=False)
+    jobs = [
+        {
+            "id": "acme.com|https://job-boards.greenhouse.io/acme/jobs/1",
+            "companyDomain": "acme.com",
+            "companyName": "Acme",
+            "companySlug": "acme",
+            "companyBio": "Builds test tools.",
+            "title": "Engineer",
+            "url": "https://job-boards.greenhouse.io/acme/jobs/1",
+            "locations": ["Remote"],
+            "industry": "B2B",
+        },
+        {
+            "id": "acme.com|https://jobs.lever.co/acme/2",
+            "companyDomain": "acme.com",
+            "companyName": "Acme",
+            "companySlug": "acme",
+            "title": "Designer",
+            "url": "https://jobs.lever.co/acme/2",
+            "locations": ["New York"],
+            "industry": "B2B",
+        },
+        {
+            "id": "beta.com|https://jobs.ashbyhq.com/beta/3",
+            "companyDomain": "beta.com",
+            "companyName": "Beta",
+            "companySlug": "beta",
+            "title": "PM",
+            "url": "https://jobs.ashbyhq.com/beta/3",
+            "locations": ["San Francisco"],
+            "industry": "Consumer",
+        },
+    ]
+    respx.get("https://www.southparkcommons.com/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<script type="application/json" id="jobs-data">'
+                f"{json.dumps(jobs)}"
+                "</script>"
+            ),
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in SouthParkCommonsSourceAdapter(settings).iter_boards(
+                client, SOUTHPARKCOMMONS_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert [board.key for board in boards] == [
+        "southparkcommons:acme",
+        "southparkcommons:beta",
+    ]
+    assert boards[0].num_jobs_hint == 2
+    assert boards[0].locations == ["Remote", "New York"]
+    provider_map = {
+        (provider.board_key, provider.provider_id): provider for provider in providers
+    }
+    assert provider_map[("southparkcommons:acme", "greenhouse")].token == "acme"
+    assert provider_map[("southparkcommons:acme", "greenhouse")].count_hint == 1
+    assert provider_map[("southparkcommons:acme", "greenhouse")].board_url == (
+        "https://boards.greenhouse.io/acme"
+    )
+    assert provider_map[("southparkcommons:acme", "lever")].token == "acme"
+    assert provider_map[("southparkcommons:beta", "ashbyhq")].token == "beta"
+    assert meta == {"jobs": 3, "total": 2}
+
+
+def test_source_catalog_includes_requested_portfolio_boards():
     expected = {
         "8vc": ("getro", "https://jobs.8vc.com/companies", "collectionId", "1005"),
         "1011vc": (
@@ -1571,6 +1652,285 @@ def test_default_sources_include_requested_portfolio_boards():
             "zetta-venture-partners",
         ),
         "xyz": ("getro", "https://jobs.xyz.vc/companies", "collectionId", "13359"),
+        "01a": (
+            "consider",
+            "https://jobs.01a.com/companies",
+            "board",
+            "01-advisors",
+        ),
+        "360cap": (
+            "consider",
+            "https://jobs.360cap.vc/companies",
+            "board",
+            "360-capital",
+        ),
+        "53stations": (
+            "getro",
+            "https://jobs.53stations.com/companies",
+            "collectionId",
+            "45269",
+        ),
+        "acp": ("getro", "https://jobs.acp.vc/companies", "collectionId", "1339"),
+        "activate": (
+            "getro",
+            "https://jobs.activate.org/companies",
+            "collectionId",
+            "937",
+        ),
+        "adara": (
+            "consider",
+            "https://talent.adara.vc/companies",
+            "board",
+            "adara-ventures",
+        ),
+        "aifund": (
+            "consider",
+            "https://careers.aifund.ai/companies",
+            "board",
+            "ai-fund",
+        ),
+        "alven": ("consider", "https://jobs.alven.co/companies", "board", "alven"),
+        "amplifyla": (
+            "consider",
+            "https://jobs.amplify.la/companies",
+            "board",
+            "amplify-la",
+        ),
+        "b2venture": (
+            "getro",
+            "https://jobs.b2venture.vc/companies",
+            "collectionId",
+            "4283",
+        ),
+        "becocapital": (
+            "getro",
+            "https://careers.becocapital.com/companies",
+            "collectionId",
+            "10883",
+        ),
+        "benchstrengthvc": (
+            "getro",
+            "https://jobs.benchstrengthvc.com/companies",
+            "collectionId",
+            "12600",
+        ),
+        "brightspark": (
+            "getro",
+            "https://careers.brightspark.com/",
+            "collectionId",
+            "1436",
+        ),
+        "cmont": (
+            "getro",
+            "https://careers.cmont.com/companies",
+            "collectionId",
+            "12698",
+        ),
+        "communitech": (
+            "getro",
+            "https://www1.communitech.ca/companies",
+            "collectionId",
+            "628",
+        ),
+        "comcastventures": (
+            "getro",
+            "https://portfoliojobs.comcastventures.com/companies",
+            "collectionId",
+            "256",
+        ),
+        "congruentvc": (
+            "consider",
+            "https://jobs.congruentvc.com/companies",
+            "board",
+            "congruent-ventures",
+        ),
+        "credoventures": (
+            "getro",
+            "https://jobs.credoventures.com/companies",
+            "collectionId",
+            "1623",
+        ),
+        "dawncapital": (
+            "getro",
+            "https://jobs.dawncapital.com/companies",
+            "collectionId",
+            "3063",
+        ),
+        "deepscienceventures": (
+            "getro",
+            "https://jobs.deepscienceventures.com/companies",
+            "collectionId",
+            "1630",
+        ),
+        "diagram": (
+            "getro",
+            "https://careers.diagram.ca/companies",
+            "collectionId",
+            "1084",
+        ),
+        "eniac": ("getro", "https://jobs.eniac.vc/companies", "collectionId", "117"),
+        "etherealventures": (
+            "consider",
+            "https://consider.com/boards/vc/ethereal-ventures/companies",
+            "board",
+            "ethereal-ventures",
+        ),
+        "foothillventures": (
+            "consider",
+            "https://jobs.foothill.ventures/companies",
+            "board",
+            "foothill-ventures",
+        ),
+        "founderful": (
+            "consider",
+            "https://jobs.founderful.com/companies",
+            "board",
+            "wingman",
+        ),
+        "galvanizeclimate": (
+            "consider",
+            "https://consider.com/boards/vc/galvanize-climate-solutions/companies",
+            "board",
+            "galvanize-climate-solutions",
+        ),
+        "gradient": (
+            "consider",
+            "https://careers.gradient.com/companies",
+            "board",
+            "gradient-ventures",
+        ),
+        "gtmfund": (
+            "consider",
+            "https://jobs.gtmfund.com/companies",
+            "board",
+            "gtmfund",
+        ),
+        "istariglobal": (
+            "consider",
+            "https://careers.istari-global.com/companies",
+            "board",
+            "istari",
+        ),
+        "israelvcforum": (
+            "getro",
+            "https://israelvcforum.getro.com/companies",
+            "collectionId",
+            "10949",
+        ),
+        "investottawa": (
+            "getro",
+            "https://techjobfinder.investottawa.ca/companies",
+            "collectionId",
+            "1546",
+        ),
+        "jamjarinvestments": (
+            "getro",
+            "https://jobs.jamjarinvestments.com/companies",
+            "collectionId",
+            "12863",
+        ),
+        "lemniscap": (
+            "consider",
+            "https://careers.lemniscap.com/companies",
+            "board",
+            "lemniscap",
+        ),
+        "ngpcap": (
+            "getro",
+            "https://jobs.ngpcap.com/companies",
+            "collectionId",
+            "3426",
+        ),
+        "oregonventurefund": (
+            "consider",
+            "https://jobs.oregonventurefund.com/companies",
+            "board",
+            "oregon-venture-fund",
+        ),
+        "peakxv": (
+            "consider",
+            "https://careers.peakxv.com/companies",
+            "board",
+            "sequoia-capital-india",
+        ),
+        "planeta": (
+            "getro",
+            "https://jobs.planet-a.com/companies",
+            "collectionId",
+            "1426",
+        ),
+        "queertech": (
+            "getro",
+            "https://queertech.getro.com/companies",
+            "collectionId",
+            "883",
+        ),
+        "qumracapital": (
+            "getro",
+            "https://jobs.qumracapital.com/companies",
+            "collectionId",
+            "474",
+        ),
+        "radiancapital": (
+            "consider",
+            "https://careers.radiancapital.com/companies",
+            "board",
+            "radian-capital",
+        ),
+        "redseaventures": (
+            "getro",
+            "https://jobs.redseaventures.com/companies",
+            "collectionId",
+            "78",
+        ),
+        "serena": (
+            "consider",
+            "https://careers.serena.vc/companies",
+            "board",
+            "serena",
+        ),
+        "setventures": (
+            "consider",
+            "https://careers.setventures.com/companies",
+            "board",
+            "set-ventures",
+        ),
+        "skyvc": (
+            "consider",
+            "https://careers.sky-vc.com/companies",
+            "board",
+            "jetblue-ventures",
+        ),
+        "sterlingpartners": (
+            "consider",
+            "https://consider.com/boards/vc/sterling-partners/companies",
+            "board",
+            "sterling-partners",
+        ),
+        "stripes": (
+            "getro",
+            "https://jobs.stripes.co/companies",
+            "collectionId",
+            "167",
+        ),
+        "thomvest": (
+            "consider",
+            "https://jobs.thomvest.com/companies",
+            "board",
+            "thomvest",
+        ),
+        "tidemarkcap": (
+            "consider",
+            "https://careers.tidemarkcap.com/companies",
+            "board",
+            "tidemark-capital",
+        ),
+        "verdane": (
+            "consider",
+            "https://consider.com/boards/vc/verdane/companies",
+            "board",
+            "verdane",
+        ),
         "usv": (
             "consider",
             "https://jobs.usv.com/companies",
@@ -1580,7 +1940,11 @@ def test_default_sources_include_requested_portfolio_boards():
     }
 
     for key, (provider_id, url, metadata_key, metadata_value) in expected.items():
-        source = DEFAULT_BOARD_SOURCES[key]
+        source = BOARD_SOURCE_CATALOG[key]
         assert source.provider_id == provider_id
         assert source.url == url
         assert source.raw_metadata[metadata_key] == metadata_value
+
+    southparkcommons = BOARD_SOURCE_CATALOG["southparkcommons"]
+    assert southparkcommons.provider_id == "southparkcommons"
+    assert southparkcommons.url == "https://www.southparkcommons.com/jobs"

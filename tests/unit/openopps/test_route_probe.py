@@ -13,7 +13,8 @@ from openopps.models import (
     SourceRecord,
 )
 from openopps.route_registry import BoardRouteRegistry
-from openopps.route_probe import probe_routes, route_ready, token_candidates
+from openopps.route_probe import probe_routes, token_candidates
+from openopps.route_select import route_ready
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 

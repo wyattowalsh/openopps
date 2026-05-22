@@ -1,6 +1,4 @@
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -89,6 +87,13 @@ def test_sync_commands_expose_cache_refresh_option():
     assert "--refresh-cache" in jobs_result.output
 
 
+def test_top_level_help_examples_prefer_stable_commands():
+    epilog = app.info.epilog or ""
+
+    assert "providers coverage" in epilog
+    assert "admin providers probe-routes" not in epilog
+
+
 def test_cli_no_intro_disables_animation(monkeypatch, tmp_path: Path):
     calls = []
 
@@ -126,8 +131,17 @@ def test_status_json_reports_empty_local_state(tmp_path: Path):
         "jobs": 0,
     }
     assert payload["cache"]["total"] == 0
+    assert payload["readiness"] == {
+        "executableRoutes": 0,
+        "missingRouteMetadata": 0,
+        "duplicateRoutesSkipped": 0,
+        "detectOnlyRoutes": 0,
+        "unsupportedRoutes": 0,
+    }
     assert payload["plugins"]["loaded"] == 0
     assert payload["plugins"]["failed"] == 0
+    assert payload["coverage"]["boards"]["total"] == 0
+    assert payload["issues"] == ["no_sources", "no_boards"]
     assert "sources" in payload["nextAction"]
 
 
@@ -137,6 +151,7 @@ def test_doctor_json_is_parseable_status_output(tmp_path: Path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["database"]["counts"]["sources"] == 0
+    assert "readiness" in payload
     assert "nextAction" in payload
 
 
@@ -145,7 +160,32 @@ def test_plugins_list_json_reports_no_plugins_by_default(tmp_path: Path):
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload == {"plugins": [], "conflicts": [], "loaded": 0, "failed": 0}
+    assert payload == {
+        "plugins": [],
+        "conflicts": [],
+        "loaded": 0,
+        "failed": 0,
+        "filters": {"disabled": [], "allowed": None},
+    }
+
+
+def test_plugins_list_json_reports_settings_filters(tmp_path: Path):
+    db_url = f"sqlite:///{tmp_path / 'openopps.db'}"
+    result = runner.invoke(
+        app,
+        ["plugins", "list", "--json"],
+        env={
+            "OPENOPPS_DB_URL": db_url,
+            "OPENOPPS_PLUGIN_DISABLED": "broken",
+            "OPENOPPS_PLUGIN_ALLOWED": "trusted",
+        },
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["filters"] == {
+        "disabled": ["broken"],
+        "allowed": ["trusted"],
+    }
 
 
 def test_examples_seed_populates_database_and_cache(tmp_path: Path):
@@ -171,6 +211,7 @@ def test_examples_seed_populates_database_and_cache(tmp_path: Path):
         "routes": 2,
         "jobs": 2,
         "cacheRecords": 2,
+        "plugins": 1,
         "seed": 42,
     }
     assert status_result.exit_code == 0
@@ -182,8 +223,17 @@ def test_examples_seed_populates_database_and_cache(tmp_path: Path):
         "jobs": 2,
     }
     assert status_payload["cache"]["total"] == 2
+    assert status_payload["cache"]["fresh"] == 2
     assert cache_result.exit_code == 0
     assert json.loads(cache_result.output)["byNamespace"] == {"example-source": 2}
+
+
+def test_sources_sync_unknown_source_is_actionable_typer_error(tmp_path: Path):
+    result = invoke(tmp_path, "sources", "sync", "definitelymissing")
+
+    assert result.exit_code == 2
+    assert "Unknown source: definitelymissing" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_cache_purge_json_deletes_selected_namespace(tmp_path: Path):
@@ -338,6 +388,12 @@ def test_cli_provider_and_board_flow(tmp_path: Path):
     result = invoke(tmp_path, "admin", "providers", "list", "--json")
     assert result.exit_code == 0
     assert "greenhouse" in result.output
+    providers = json.loads(result.output)
+    greenhouse = next(
+        provider for provider in providers if provider["id"] == "greenhouse"
+    )
+    assert greenhouse["detects_routes"] is True
+    assert "route_detector" not in greenhouse
 
     result = invoke(tmp_path, "admin", "db", "init")
     assert result.exit_code == 0
@@ -396,8 +452,8 @@ def test_boards_enrich_json_dry_run_and_apply(tmp_path: Path):
         ]
     )
 
-    dry_run = invoke(tmp_path, "boards", "enrich", "--json")
-    applied = invoke(tmp_path, "boards", "enrich", "--apply", "--json")
+    dry_run = invoke(tmp_path, "admin", "boards", "enrich", "--json")
+    applied = invoke(tmp_path, "admin", "boards", "enrich", "--apply", "--json")
     board = store.get_board(board_key)
 
     assert dry_run.exit_code == 0
@@ -414,7 +470,7 @@ def test_cli_superset_lists_empty_db(tmp_path: Path):
     assert "[]" in result.output
 
 
-def test_sources_show_prefers_persisted_default_key_override(tmp_path: Path):
+def test_sources_show_prefers_persisted_source_over_catalog(tmp_path: Path):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
     store.upsert_source(
@@ -674,22 +730,18 @@ def test_cli_detects_ashby_hosted_board_url(tmp_path: Path):
     assert '"token": "acme"' in result.output
 
 
-def test_probe_script_accepts_ashby_provider(tmp_path: Path):
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(Path(__file__).parents[1] / "scripts" / "probe_provider_routes.py"),
-            "--provider",
-            "ashbyhq",
-            "--limit",
-            "1",
-        ],
-        cwd=Path(__file__).parents[1],
-        env={**os.environ, "OPENOPPS_DB_URL": f"sqlite:///{tmp_path / 'openopps.db'}"},
-        text=True,
-        capture_output=True,
-        check=False,
+def test_cli_probe_routes_accepts_ashby_provider(tmp_path: Path):
+    result = invoke(
+        tmp_path,
+        "admin",
+        "providers",
+        "probe-routes",
+        "--provider",
+        "ashbyhq",
+        "--limit",
+        "1",
+        "--json",
     )
 
-    assert result.returncode == 0
-    assert '"checked": 0' in result.stdout
+    assert result.exit_code == 0
+    assert '"checked": 0' in result.output

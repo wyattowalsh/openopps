@@ -311,6 +311,29 @@ def test_jsonl_export_streams_iterable_records(tmp_path: Path):
     ]
 
 
+def test_exports_sort_record_keys_and_nested_json(tmp_path: Path):
+    records = [
+        {
+            "zeta": {"b": 2, "a": 1},
+            "alpha": "first",
+            "items": [{"b": 2, "a": 1}],
+        }
+    ]
+    jsonl_output = tmp_path / "records.jsonl"
+    csv_output = tmp_path / "records.csv"
+    parquet_output = tmp_path / "records.parquet"
+
+    assert export_records(records, jsonl_output, ExportFormat.JSONL) == 1
+    assert export_records(records, csv_output, ExportFormat.CSV) == 1
+    assert export_records(records, parquet_output, ExportFormat.PARQUET) == 1
+
+    assert jsonl_output.read_text().splitlines() == [
+        '{"alpha": "first", "items": [{"a": 1, "b": 2}], "zeta": {"a": 1, "b": 2}}'
+    ]
+    assert csv_output.read_text().splitlines()[0] == "alpha,items,zeta"
+    assert pl.read_parquet(parquet_output).columns == ["alpha", "items", "zeta"]
+
+
 def test_empty_exports_have_deterministic_outputs(tmp_path: Path):
     jsonl_output = tmp_path / "empty.jsonl"
     csv_output = tmp_path / "empty.csv"

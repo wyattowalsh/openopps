@@ -14,7 +14,7 @@ from openopps.models import (
     ProviderSupport,
     SourceRecord,
 )
-from openopps.providers.sources.consider import DEFAULT_CONSIDER_SOURCES
+from openopps.providers.sources.consider import CONSIDER_SOURCE_CATALOG
 from openopps.route_probe import probe_routes
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
@@ -128,11 +128,8 @@ async def test_sync_jobs_skips_route_hints_without_executable_metadata(tmp_path:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_sync_jobs_uses_configured_default_sources(tmp_path: Path):
-    settings = OpenOppsSettings(
-        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
-        job_sync_sources="source-b",
-    )
+async def test_sync_jobs_unscoped_covers_all_persisted_ready_routes(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
     _seed_two_source_routes(store)
     source_a_route = _mock_greenhouse_jobs("acme", [])
@@ -149,20 +146,17 @@ async def test_sync_jobs_uses_configured_default_sources(tmp_path: Path):
 
     metrics = await sync_jobs(settings=settings, store=store, provider_id="all")
 
-    assert source_a_route.call_count == 0
+    assert source_a_route.call_count == 1
     assert source_b_route.call_count == 1
     assert metrics.jobs == 1
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_sync_jobs_source_argument_overrides_configured_default_sources(
+async def test_sync_jobs_source_argument_filters_unscoped_route_set(
     tmp_path: Path,
 ):
-    settings = OpenOppsSettings(
-        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
-        job_sync_sources="source-b",
-    )
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
     _seed_two_source_routes(store)
     source_a_route = _mock_greenhouse_jobs(
@@ -188,13 +182,10 @@ async def test_sync_jobs_source_argument_overrides_configured_default_sources(
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_sync_jobs_board_argument_overrides_configured_default_sources(
+async def test_sync_jobs_board_argument_filters_unscoped_route_set(
     tmp_path: Path,
 ):
-    settings = OpenOppsSettings(
-        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
-        job_sync_sources="source-b",
-    )
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
     _seed_two_source_routes(store)
     source_a_route = _mock_greenhouse_jobs(
@@ -232,7 +223,7 @@ async def test_sync_sources_preserves_route_metadata_across_repeated_syncs(
         cache_enabled=False,
     )
     store = OpenOppsStore(settings)
-    store.upsert_source(DEFAULT_CONSIDER_SOURCES["lsvp"])
+    store.upsert_source(CONSIDER_SOURCE_CATALOG["lsvp"])
     route = respx.post("https://jobs.lsvp.com/api-boards/search-companies").mock(
         return_value=httpx.Response(
             200, json={"companies": [], "total": 0, "meta": {"size": 1}}
@@ -358,9 +349,38 @@ async def test_sync_sources_preserves_route_metadata_across_repeated_syncs(
         ("adverb", "https://jobs.adverb.vc", "adverb-ventures"),
         ("expa", "https://jobs.expa.com", "expa"),
         ("qplusequality", "https://jobs.qplusequality.org", "q-plus-equality"),
+        ("01a", "https://jobs.01a.com", "01-advisors"),
+        ("360cap", "https://jobs.360cap.vc", "360-capital"),
+        ("adara", "https://talent.adara.vc", "adara-ventures"),
+        ("aifund", "https://careers.aifund.ai", "ai-fund"),
+        ("alven", "https://jobs.alven.co", "alven"),
+        ("amplifyla", "https://jobs.amplify.la", "amplify-la"),
+        ("congruentvc", "https://jobs.congruentvc.com", "congruent-ventures"),
+        ("etherealventures", "https://consider.com", "ethereal-ventures"),
+        ("foothillventures", "https://jobs.foothill.ventures", "foothill-ventures"),
+        ("founderful", "https://jobs.founderful.com", "wingman"),
+        ("galvanizeclimate", "https://consider.com", "galvanize-climate-solutions"),
+        ("gradient", "https://careers.gradient.com", "gradient-ventures"),
+        ("gtmfund", "https://jobs.gtmfund.com", "gtmfund"),
+        ("istariglobal", "https://careers.istari-global.com", "istari"),
+        ("lemniscap", "https://careers.lemniscap.com", "lemniscap"),
+        (
+            "oregonventurefund",
+            "https://jobs.oregonventurefund.com",
+            "oregon-venture-fund",
+        ),
+        ("peakxv", "https://careers.peakxv.com", "sequoia-capital-india"),
+        ("radiancapital", "https://careers.radiancapital.com", "radian-capital"),
+        ("serena", "https://careers.serena.vc", "serena"),
+        ("setventures", "https://careers.setventures.com", "set-ventures"),
+        ("skyvc", "https://careers.sky-vc.com", "jetblue-ventures"),
+        ("sterlingpartners", "https://consider.com", "sterling-partners"),
+        ("thomvest", "https://jobs.thomvest.com", "thomvest"),
+        ("tidemarkcap", "https://careers.tidemarkcap.com", "tidemark-capital"),
+        ("verdane", "https://consider.com", "verdane"),
     ],
 )
-async def test_default_consider_source_feeds_downstream_route_probe(
+async def test_catalog_consider_source_feeds_downstream_route_probe(
     tmp_path: Path,
     source_key: str,
     source_origin: str,

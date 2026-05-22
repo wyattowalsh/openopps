@@ -99,6 +99,43 @@ def test_load_plugins_reports_validation_errors():
     assert "PluginContribution" in data["plugins"][0]["error"]
 
 
+def test_load_plugins_reports_invalid_capability_errors():
+    registry = load_plugins(
+        entry_points=[
+            FakeEntryPoint(
+                "invalid-capability",
+                lambda _context: PluginContribution(
+                    metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                    capabilities=(PluginCapability("unknown", "thing"),),
+                ),
+            )
+        ]
+    )
+
+    data = registry.as_dict()
+
+    assert data["failed"] == 1
+    assert "unsupported plugin capability kind" in data["plugins"][0]["error"]
+
+
+def test_load_plugins_captures_plugin_output_for_json_cleanliness(capsys):
+    def noisy(_context: PluginContext) -> PluginContribution:
+        print("plugin noise")
+        return PluginContribution(
+            metadata=PluginMetadata(name="noisy", version="1.0.0"),
+            job_providers={"noisy": lambda _settings: object()},
+        )
+
+    registry = load_plugins(entry_points=[FakeEntryPoint("noisy", noisy)])
+
+    captured = capsys.readouterr()
+    data = registry.as_dict()
+
+    assert captured.out == ""
+    assert data["loaded"] == 1
+    assert data["plugins"][0]["warnings"] == ["captured_stdout"]
+
+
 def test_load_plugins_supports_disabled_and_allow_list():
     registry = load_plugins(
         entry_points=[
@@ -115,6 +152,36 @@ def test_load_plugins_supports_disabled_and_allow_list():
     assert data["failed"] == 1
     assert [item["entryPoint"] for item in data["plugins"]] == ["blocked", "allowed"]
     assert data["plugins"][0]["error"] == "disabled"
+    assert data["filters"] == {"disabled": ["blocked"], "allowed": ["allowed"]}
+
+
+def test_load_plugins_uses_settings_disabled_and_allow_list():
+    settings = OpenOppsSettings(
+        plugin_disabled="blocked",
+        plugin_allowed="allowed,blocked",
+    )
+
+    registry = load_plugins(
+        entry_points=[
+            FakeEntryPoint("blocked", lambda context: _plugin(context, name="blocked")),
+            FakeEntryPoint("allowed", lambda context: _plugin(context, name="allowed")),
+            FakeEntryPoint("other", lambda context: _plugin(context, name="other")),
+        ],
+        context=PluginContext(settings=settings),
+    )
+
+    data = registry.as_dict()
+
+    assert data["loaded"] == 1
+    assert [item["error"] for item in data["plugins"]] == [
+        "disabled",
+        None,
+        "not_allowed",
+    ]
+    assert data["filters"] == {
+        "disabled": ["blocked"],
+        "allowed": ["allowed", "blocked"],
+    }
 
 
 def test_load_plugins_reports_duplicate_capability_conflicts():

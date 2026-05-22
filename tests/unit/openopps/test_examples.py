@@ -8,13 +8,7 @@ def test_build_example_dataset_is_deterministic_for_stable_fields():
     first = build_example_dataset(seed=42, board_count=3, jobs_per_board=2)
     second = build_example_dataset(seed=42, board_count=3, jobs_per_board=2)
 
-    assert [board.key for board in first.boards] == [
-        board.key for board in second.boards
-    ]
-    assert [job.id for job in first.jobs] == [job.id for job in second.jobs]
-    assert [record.key for record in first.cache_records] == [
-        record.key for record in second.cache_records
-    ]
+    assert first.as_dict() == second.as_dict()
 
 
 def test_build_example_dataset_creates_coherent_records():
@@ -40,10 +34,18 @@ def test_example_dataset_serializes_to_docs_friendly_dict():
     dataset = build_example_dataset(seed=11, board_count=2, jobs_per_board=1)
     data = dataset.as_dict()
 
-    assert sorted(data) == ["boards", "cacheRecords", "jobs", "routes", "sources"]
+    assert sorted(data) == [
+        "boards",
+        "cacheRecords",
+        "jobs",
+        "plugins",
+        "routes",
+        "sources",
+    ]
     assert data["sources"][0]["key"] == "example"
     assert data["boards"][0]["source_key"] == "example"
     assert data["cacheRecords"][0]["namespace"] == "example-source"
+    assert data["plugins"][0]["name"] == "example-openopps-plugin"
 
 
 @settings(max_examples=15)

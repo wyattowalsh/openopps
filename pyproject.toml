@@ -5,6 +5,7 @@ description = "High-performance CLI for discovering opportunity boards and fetch
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "alembic>=1.18.4",
   "faker>=40.18.0",
   "httpx[http2]>=0.28",
   "loguru>=0.7",
@@ -29,11 +30,27 @@ packages = ["src/openopps"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "unit: isolated tests for one module or small boundary",
+  "integration: cross-module tests with local storage, CLI, or mocked HTTP seams",
+  "smoke: fast release-readiness checks for importability and critical wiring",
+  "e2e: end-to-end tests against real external boundaries or full user journeys",
+]
+
+[tool.coverage.run]
+omit = ["src/openopps/main.py"]
+source = ["openopps"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
 
 [dependency-groups]
 dev = [
   "hypothesis>=6.152.9",
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
+  "pytest-cov>=7.1.0",
   "respx>=0.22",
 ]

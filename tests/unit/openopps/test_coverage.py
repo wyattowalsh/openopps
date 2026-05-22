@@ -141,6 +141,10 @@ def test_coverage_report_counts_persisted_records_and_routes(tmp_path: Path):
     assert data["boards"]["total"] == 4
     assert data["boards"]["withProviderHints"] == 4
     assert data["boards"]["withJobCapableProviderHints"] == 4
+    assert data["boards"]["withBaselineJobCapableProviderHints"] == 4
+    assert data["boards"]["withAdoptedV01ProviderHints"] == 4
+    assert data["boards"]["withDetectOnlyProviderHints"] == 1
+    assert data["boards"]["withUnsupportedOrUnknownProviderHints"] == 0
     assert data["boards"]["withNonSupportedProviderHints"] == 1
     assert data["boards"]["withOnlyNonSupportedProviderHints"] == 0
     assert data["boards"]["nonSupportedProviderCoverage"] == {
@@ -245,6 +249,8 @@ def test_providers_coverage_json_cli_output(tmp_path: Path):
     assert data["boards"]["total"] == 3
     assert data["boards"]["withNonSupportedProviderHints"] == 1
     assert data["boards"]["withOnlyNonSupportedProviderHints"] == 0
+    assert data["boards"]["withDetectOnlyProviderHints"] == 1
+    assert data["boards"]["withUnsupportedOrUnknownProviderHints"] == 0
     assert data["boards"]["nonSupportedProviderCoverage"] == {
         "present": 1,
         "missing": 2,
@@ -316,6 +322,8 @@ def test_coverage_report_counts_only_non_supported_boards_once(tmp_path: Path):
     assert data["boards"]["total"] == 2
     assert data["boards"]["withNonSupportedProviderHints"] == 1
     assert data["boards"]["withOnlyNonSupportedProviderHints"] == 1
+    assert data["boards"]["withDetectOnlyProviderHints"] == 1
+    assert data["boards"]["withUnsupportedOrUnknownProviderHints"] == 1
     assert data["boards"]["nonSupportedProviderCoverage"] == {
         "present": 1,
         "missing": 1,
@@ -366,8 +374,12 @@ def test_provider_audit_reports_candidate_provider_deltas(tmp_path: Path):
     )
 
     assert data["snapshot"]["denominator"] == 2
-    assert data["snapshot"]["representative"] is True
+    assert data["snapshot"]["hasPersistedBoards"] is True
+    assert data["snapshot"]["representative"] is False
+    assert data["snapshot"]["snapshotKind"] == "persisted-scope"
     assert smartrecruiters["boards"] == 1
+    assert smartrecruiters["observedSupportLevels"] == ["unsupported"]
+    assert smartrecruiters["observedUnsupportedBoards"] == 1
     assert smartrecruiters["coverage"]["percentage"] == 50.0
     assert smartrecruiters["adoptedForV01"] is False
     assert "smartrecruiters" in data["doNotAdoptRationales"]

@@ -1,16 +1,20 @@
 from openopps.models import ProviderSupport
 from openopps.plugins import (
+    PluginContext,
     PluginCapability,
     PluginContribution,
     PluginMetadata,
     PluginRegistry,
 )
+from openopps.providers.boards import BOARD_JOB_PROVIDERS
 from openopps.providers.base import ProviderKind
-from openopps.providers.registry import default_registry
+from openopps.providers.sources import BOARD_SOURCE_ADAPTERS
+from openopps.providers.registry import provider_registry
+from openopps.settings import OpenOppsSettings
 
 
 def test_registry_separates_board_sources_from_board_providers():
-    registry = default_registry()
+    registry = provider_registry()
 
     assert {definition.id for definition in registry.list_sources()} >= {
         "consider",
@@ -32,8 +36,19 @@ def test_registry_separates_board_sources_from_board_providers():
     assert greenhouse.kind == ProviderKind.BOARD_PROVIDER
 
 
+def test_registry_indexes_packaged_adapters_programmatically():
+    registry = provider_registry(plugin_registry=PluginRegistry((), (), ()))
+
+    assert {definition.id for definition in registry.list_sources()} == set(
+        BOARD_SOURCE_ADAPTERS
+    )
+    assert {definition.id for definition in registry.list_board_providers()} == set(
+        BOARD_JOB_PROVIDERS
+    )
+
+
 def test_registry_detects_ashby_hosted_board_url():
-    detected = default_registry().detect_url("https://jobs.ashbyhq.com/acme")
+    detected = provider_registry().detect_url("https://jobs.ashbyhq.com/acme")
 
     assert detected is not None
     assert detected.provider_id == "ashbyhq"
@@ -41,8 +56,23 @@ def test_registry_detects_ashby_hosted_board_url():
     assert detected.board_url == "https://jobs.ashbyhq.com/acme"
 
 
+def test_registry_detects_provider_urls_from_indexed_provider_metadata():
+    registry = provider_registry(plugin_registry=PluginRegistry((), (), ()))
+
+    greenhouse = registry.detect_url("https://boards.greenhouse.io/acme")
+    lever = registry.detect_url("https://jobs.lever.co/acme")
+    workday = registry.detect_url("https://acme.wd1.myworkdayjobs.com/en-US/External")
+
+    assert greenhouse is not None
+    assert lever is not None
+    assert workday is not None
+    assert greenhouse.provider_id == "greenhouse"
+    assert lever.provider_id == "lever"
+    assert workday.provider_id == "workday"
+
+
 def test_registry_does_not_treat_arbitrary_ashby_subdomain_as_board_url():
-    detected = default_registry().detect_url("https://example.ashbyhq.com/acme")
+    detected = provider_registry().detect_url("https://example.ashbyhq.com/acme")
 
     assert detected is None
 
@@ -70,7 +100,7 @@ def test_registry_includes_plugin_provider_capabilities():
         conflicts=(),
     )
 
-    registry = default_registry(plugin_registry=plugin_registry)
+    registry = provider_registry(plugin_registry=plugin_registry)
 
     custom_source = registry.get("custom_source")
     custom_jobs = registry.get("custom_jobs")
@@ -80,3 +110,18 @@ def test_registry_includes_plugin_provider_capabilities():
     assert custom_source.support_level == ProviderSupport.DETECT
     assert custom_jobs.kind == ProviderKind.BOARD_PROVIDER
     assert custom_jobs.support_level == ProviderSupport.JOBS
+
+
+def test_registry_loads_plugins_with_settings_context(monkeypatch):
+    captured_contexts: list[PluginContext | None] = []
+
+    def fake_load_plugins(*, context: PluginContext | None = None):
+        captured_contexts.append(context)
+        return PluginRegistry(contributions=(), load_results=(), conflicts=())
+
+    settings = OpenOppsSettings(plugin_disabled="blocked")
+    monkeypatch.setattr("openopps.providers.registry.load_plugins", fake_load_plugins)
+
+    provider_registry(settings=settings)
+
+    assert captured_contexts == [PluginContext(settings=settings)]
