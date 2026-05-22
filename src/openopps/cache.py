@@ -36,6 +36,7 @@ class CacheHit:
     etag: str | None = None
     last_modified: str | None = None
     stale: bool = False
+    stale_on_error: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +48,7 @@ class CacheHit:
             "etag": self.etag,
             "lastModified": self.last_modified,
             "stale": self.stale,
+            "staleOnError": self.stale_on_error,
         }
 
 
@@ -98,6 +100,7 @@ class HttpCache:
         json_body: Any = None,
         headers: dict[str, str] | None = None,
         identity: dict[str, Any] | None = None,
+        stale_on_error_only: bool = True,
     ) -> CacheHit | None:
         key = cache_key(
             method,
@@ -111,6 +114,8 @@ class HttpCache:
         record = self._read(key)
         if record is None:
             return None
+        if stale_on_error_only and not record.stale_on_error:
+            return None
         return CacheHit(
             key=record.key,
             namespace=record.namespace,
@@ -121,6 +126,7 @@ class HttpCache:
             etag=record.etag,
             last_modified=record.last_modified,
             stale=True,
+            stale_on_error=record.stale_on_error,
         )
 
     def put_json(
@@ -144,6 +150,10 @@ class HttpCache:
         current_time = now or _utc_now()
         expires_at = current_time + timedelta(seconds=ttl_seconds)
         payload = _canonical_json(data)
+        normalized_response_headers = _normalize_headers(response_headers or {})
+        response_header_values = {
+            name.lower(): value for name, value in (response_headers or {}).items()
+        }
         key = cache_key(
             method,
             url,
@@ -186,9 +196,9 @@ class HttpCache:
                         _request_identity(json_body, request_headers, identity)
                     ),
                     status_code,
-                    _canonical_json(_normalize_headers(response_headers or {})),
-                    _header_value(response_headers, "etag"),
-                    _header_value(response_headers, "last-modified"),
+                    _canonical_json(normalized_response_headers),
+                    response_header_values.get("etag"),
+                    response_header_values.get("last-modified"),
                     _sha256(payload),
                     current_time.isoformat(),
                     expires_at.isoformat(),
@@ -229,14 +239,24 @@ class HttpCache:
             return int(cursor.rowcount or 0)
 
     def status(self) -> dict[str, Any]:
+        current_time = _utc_now().isoformat()
         with self._connect() as conn:
             total = conn.execute("select count(*) from http_cache").fetchone()[0]
+            fresh = conn.execute(
+                "select count(*) from http_cache where expires_at > ?", (current_time,)
+            ).fetchone()[0]
+            stale_on_error = conn.execute(
+                "select count(*) from http_cache where stale_on_error = 1"
+            ).fetchone()[0]
             rows = conn.execute(
                 "select namespace, count(*) from http_cache group by namespace"
             ).fetchall()
         return {
             "path": str(self.path),
             "total": int(total or 0),
+            "fresh": int(fresh or 0),
+            "expired": max(0, int(total or 0) - int(fresh or 0)),
+            "staleOnErrorEligible": int(stale_on_error or 0),
             "byNamespace": {namespace: int(count) for namespace, count in rows},
         }
 
@@ -245,7 +265,7 @@ class HttpCache:
             row = conn.execute(
                 """
                 select key, namespace, status_code, fetched_at, expires_at, payload,
-                    etag, last_modified
+                    etag, last_modified, stale_on_error
                 from http_cache
                 where key = ?
                 """,
@@ -262,6 +282,7 @@ class HttpCache:
             data=json.loads(row[5]),
             etag=row[6],
             last_modified=row[7],
+            stale_on_error=bool(row[8]),
         )
 
     def _init_db(self) -> None:
@@ -292,6 +313,14 @@ class HttpCache:
             conn.execute(
                 "create index if not exists ix_http_cache_namespace on http_cache(namespace)"
             )
+            columns = {
+                row[1]
+                for row in conn.execute("pragma table_info(http_cache)").fetchall()
+            }
+            if "stale_on_error" not in columns:
+                conn.execute(
+                    "alter table http_cache add column stale_on_error integer not null default 0"
+                )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

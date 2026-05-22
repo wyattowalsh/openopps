@@ -13,15 +13,15 @@ from openopps.models import (
     ConsiderCompaniesResponse,
     ConsiderCompany,
     SourceRecord,
+    normalize_public_website_url,
     utc_now,
 )
-from openopps.providers.registry import default_registry
 from openopps.settings import OpenOppsSettings
-from openopps.url_validation import validate_public_https_url
+from openopps.models import validate_public_https_url
 from openopps.utils import slugify, source_board_key, stable_id
 
 
-DEFAULT_A16Z_SOURCE = SourceRecord(
+A16Z_SOURCE = SourceRecord(
     key="a16z",
     url="https://jobs.a16z.com/companies",
     provider_id="consider_a16z",
@@ -29,8 +29,8 @@ DEFAULT_A16Z_SOURCE = SourceRecord(
     raw_metadata={"board": "andreessen-horowitz"},
 )
 
-DEFAULT_CONSIDER_SOURCES = {
-    "a16z": DEFAULT_A16Z_SOURCE,
+CONSIDER_SOURCE_CATALOG = {
+    "a16z": A16Z_SOURCE,
     "anthemis": SourceRecord(
         key="anthemis",
         url="https://jobs.anthemis.com/companies",
@@ -514,16 +514,197 @@ DEFAULT_CONSIDER_SOURCES = {
         enabled=True,
         raw_metadata={"board": "5am-ventures"},
     ),
+    "01a": SourceRecord(
+        key="01a",
+        url="https://jobs.01a.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "01-advisors"},
+    ),
+    "360cap": SourceRecord(
+        key="360cap",
+        url="https://jobs.360cap.vc/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "360-capital"},
+    ),
+    "adara": SourceRecord(
+        key="adara",
+        url="https://talent.adara.vc/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "adara-ventures"},
+    ),
+    "aifund": SourceRecord(
+        key="aifund",
+        url="https://careers.aifund.ai/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "ai-fund"},
+    ),
+    "alven": SourceRecord(
+        key="alven",
+        url="https://jobs.alven.co/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "alven"},
+    ),
+    "amplifyla": SourceRecord(
+        key="amplifyla",
+        url="https://jobs.amplify.la/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "amplify-la"},
+    ),
+    "congruentvc": SourceRecord(
+        key="congruentvc",
+        url="https://jobs.congruentvc.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "congruent-ventures"},
+    ),
+    "etherealventures": SourceRecord(
+        key="etherealventures",
+        url="https://consider.com/boards/vc/ethereal-ventures/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "ethereal-ventures"},
+    ),
+    "foothillventures": SourceRecord(
+        key="foothillventures",
+        url="https://jobs.foothill.ventures/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "foothill-ventures"},
+    ),
+    "founderful": SourceRecord(
+        key="founderful",
+        url="https://jobs.founderful.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "wingman"},
+    ),
+    "galvanizeclimate": SourceRecord(
+        key="galvanizeclimate",
+        url="https://consider.com/boards/vc/galvanize-climate-solutions/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "galvanize-climate-solutions"},
+    ),
+    "gradient": SourceRecord(
+        key="gradient",
+        url="https://careers.gradient.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "gradient-ventures"},
+    ),
+    "gtmfund": SourceRecord(
+        key="gtmfund",
+        url="https://jobs.gtmfund.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "gtmfund"},
+    ),
+    "istariglobal": SourceRecord(
+        key="istariglobal",
+        url="https://careers.istari-global.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "istari"},
+    ),
+    "lemniscap": SourceRecord(
+        key="lemniscap",
+        url="https://careers.lemniscap.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "lemniscap"},
+    ),
+    "oregonventurefund": SourceRecord(
+        key="oregonventurefund",
+        url="https://jobs.oregonventurefund.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "oregon-venture-fund"},
+    ),
+    "peakxv": SourceRecord(
+        key="peakxv",
+        url="https://careers.peakxv.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "sequoia-capital-india"},
+    ),
+    "radiancapital": SourceRecord(
+        key="radiancapital",
+        url="https://careers.radiancapital.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "radian-capital"},
+    ),
+    "serena": SourceRecord(
+        key="serena",
+        url="https://careers.serena.vc/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "serena"},
+    ),
+    "setventures": SourceRecord(
+        key="setventures",
+        url="https://careers.setventures.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "set-ventures"},
+    ),
+    "skyvc": SourceRecord(
+        key="skyvc",
+        url="https://careers.sky-vc.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "jetblue-ventures"},
+    ),
+    "sterlingpartners": SourceRecord(
+        key="sterlingpartners",
+        url="https://consider.com/boards/vc/sterling-partners/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "sterling-partners"},
+    ),
+    "thomvest": SourceRecord(
+        key="thomvest",
+        url="https://jobs.thomvest.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "thomvest"},
+    ),
+    "tidemarkcap": SourceRecord(
+        key="tidemarkcap",
+        url="https://careers.tidemarkcap.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "tidemark-capital"},
+    ),
+    "verdane": SourceRecord(
+        key="verdane",
+        url="https://consider.com/boards/vc/verdane/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "verdane"},
+    ),
 }
+
+SOURCE_RECORDS: tuple[SourceRecord, ...] = tuple(CONSIDER_SOURCE_CATALOG.values())
 
 
 class ConsiderSourceAdapter:
     provider_id = "consider"
+    provider_label = "Consider"
+    provider_description = "Aggregate Consider source adapter that discovers company boards and provider hints."
 
     def __init__(self, settings: OpenOppsSettings, board: str | None = None):
+        from openopps.providers.registry import provider_registry
+
         self.settings = settings
         self.board = board
-        self.registry = default_registry()
+        self.registry = provider_registry(settings=settings)
         self._request_json = retrying_json_request(settings)
 
     async def iter_boards(
@@ -591,7 +772,9 @@ class ConsiderSourceAdapter:
             remote_id = str(company.id or company.slug or company.name)
             remote_slug = company.slug or slugify(remote_id)
             board_key = source_board_key(source_key, remote_slug)
-            website_url = company.website.url if company.website else None
+            website_url = normalize_public_website_url(
+                company.website.url if company.website else None
+            )
             board = BoardRecord(
                 key=board_key,
                 source_key=source_key,
@@ -631,3 +814,7 @@ class ConsiderSourceAdapter:
 
 class ConsiderA16zSourceAdapter(ConsiderSourceAdapter):
     provider_id = "consider_a16z"
+    provider_label = "Consider/a16z"
+    provider_description = (
+        "Aggregate a16z source adapter that discovers boards and provider hints."
+    )

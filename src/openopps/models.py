@@ -3,10 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import StrEnum
 from html import unescape
+from ipaddress import ip_address
 import re
 from typing import Annotated, Any, Literal, Self, cast
 
 from pydantic import (
+    AfterValidator,
+    AnyUrl,
     AwareDatetime,
     BaseModel,
     ConfigDict,
@@ -15,6 +18,7 @@ from pydantic import (
     NonNegativeInt,
     StringConstraints,
     TypeAdapter,
+    UrlConstraints,
     field_validator,
     model_validator,
 )
@@ -27,6 +31,88 @@ JsonDict = dict[str, JsonValue]
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalNonEmptyStr = NonEmptyStr | None
 RemoteWorkLevel = Literal["Full", "Hybrid", "None"]
+_PublicHttpsUrl = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"])]
+_PublicHttpsUrlAdapter = TypeAdapter(_PublicHttpsUrl)
+
+
+def host_matches(host: str | None, domain: str) -> bool:
+    """Return whether a host equals or belongs to a domain, ignoring `www.`."""
+
+    normalized_host = (host or "").strip().lower().removeprefix("www.")
+    normalized_domain = domain.strip().lower().removeprefix("www.")
+    return normalized_host == normalized_domain or normalized_host.endswith(
+        f".{normalized_domain}"
+    )
+
+
+def validate_public_https_url(url: str, *, allow_manual: bool = False) -> str:
+    """Validate a public HTTPS URL with Pydantic's URL parser and local safety rules."""
+
+    if allow_manual and url.strip().lower().startswith("manual://"):
+        return url
+    parsed = _PublicHttpsUrlAdapter.validate_python(url)
+    host = parsed.host
+    if not host:
+        raise ValueError("URL must include a host")
+    if parsed.username or parsed.password:
+        raise ValueError("URL must not include credentials")
+    validate_public_host(host)
+    return url
+
+
+def normalize_public_website_url(value: object) -> str | None:
+    """Return a safe public HTTPS website URL or None for unusable upstream values."""
+
+    if not isinstance(value, str):
+        return None
+    url = value.strip()
+    if not url:
+        return None
+    lower_url = url.lower()
+    if lower_url.startswith(("mailto:", "tel:", "javascript:")):
+        return None
+    if lower_url.startswith("http://"):
+        url = f"https://{url[7:]}"
+    elif lower_url.startswith("//"):
+        url = f"https:{url}"
+    elif "://" not in url:
+        url = f"https://{url}"
+    try:
+        return validate_public_https_url(url)
+    except ValueError:
+        return None
+
+
+def validate_public_host(host: str) -> str:
+    """Validate a public hostname and reject localhost or IP literals."""
+
+    normalized = host.strip().lower().rstrip(".")
+    if not normalized:
+        raise ValueError("Host must not be empty")
+    if normalized == "localhost" or normalized.endswith(".localhost"):
+        raise ValueError("Host must not be localhost")
+    try:
+        ip_address(normalized.strip("[]"))
+    except ValueError:
+        return normalized
+    raise ValueError("Host must not be an IP literal")
+
+
+def validate_provider_host(host: str, domain: str) -> str:
+    """Validate that a host is public and belongs to a provider-owned domain."""
+
+    normalized = validate_public_host(host)
+    if not host_matches(normalized, domain):
+        raise ValueError(f"Host must be {domain} or a subdomain")
+    return normalized
+
+
+PublicHttpsUrlStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+    AfterValidator(validate_public_https_url),
+]
+OptionalPublicHttpsUrlStr = PublicHttpsUrlStr | None
 
 
 def utc_now() -> datetime:
@@ -247,7 +333,7 @@ class SourceRecord(OpenOppsRecord):
     )
     enabled: bool = Field(
         default=True,
-        description="Whether scheduled or default source syncs should include this source.",
+        description="Whether unscoped source syncs should include this source.",
         examples=[True],
     )
     version: JsonDict = Field(
@@ -301,7 +387,7 @@ class BoardProviderRecord(OpenOppsRecord):
         description="Provider-reported approximate job count, when available.",
         examples=[42],
     )
-    board_url: OptionalNonEmptyStr = Field(
+    board_url: OptionalPublicHttpsUrlStr = Field(
         default=None,
         description="Public hosted job board URL used to derive provider route details.",
         examples=["https://boards.greenhouse.io/acme"],
@@ -372,7 +458,7 @@ class BoardRecord(OpenOppsRecord):
         description="Normalized website domain without scheme, when known.",
         examples=["acme.com"],
     )
-    website_url: OptionalNonEmptyStr = Field(
+    website_url: OptionalPublicHttpsUrlStr = Field(
         default=None,
         description="Canonical company website URL, when available.",
         examples=["https://acme.com"],
@@ -532,12 +618,12 @@ class JobRecord(OpenOppsRecord):
         default=None,
         description="JSON Resume-compatible job-description object built from normalized fields.",
     )
-    posting_url: OptionalNonEmptyStr = Field(
+    posting_url: OptionalPublicHttpsUrlStr = Field(
         default=None,
         description="Canonical public posting URL.",
         examples=["https://boards.greenhouse.io/acme/jobs/12345"],
     )
-    apply_url: OptionalNonEmptyStr = Field(
+    apply_url: OptionalPublicHttpsUrlStr = Field(
         default=None,
         description="Direct application URL when distinct from the posting URL.",
         examples=["https://jobs.ashbyhq.com/acme/12345/application"],
@@ -1334,7 +1420,7 @@ class SourceRow(SQLModel, table=True):
     enabled: bool = SQLField(
         default=True,
         index=True,
-        description="Whether default syncs include this source.",
+        description="Whether unscoped syncs include this source.",
     )
     version: JsonDict = SQLField(
         default_factory=dict,

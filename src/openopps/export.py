@@ -29,7 +29,7 @@ def _tabular_records(
         flattened.append(
             {
                 key: _tabular_value(value, neutralize_formulas=neutralize_formulas)
-                for key, value in record.items()
+                for key, value in sorted(record.items())
             }
         )
     return flattened
@@ -37,7 +37,7 @@ def _tabular_records(
 
 def _tabular_value(value: Any, *, neutralize_formulas: bool) -> Any:
     if isinstance(value, (dict, list)):
-        value = json.dumps(value, ensure_ascii=False)
+        value = json.dumps(value, ensure_ascii=False, sort_keys=True)
     if (
         neutralize_formulas
         and isinstance(value, str)
@@ -53,7 +53,7 @@ def export_records(records: Iterable[Any], output: Path, format_: ExportFormat) 
         count = 0
         with output.open("w", encoding="utf-8") as handle:
             for row in _jsonable_records(records):
-                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
                 count += 1
         return count
     rows = list(_jsonable_records(records))

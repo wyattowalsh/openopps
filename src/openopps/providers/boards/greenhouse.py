@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import httpx
 
 from openopps.http import retrying_json_request
@@ -11,17 +13,32 @@ from openopps.models import (
     JobRecord,
     normalize_remote_level,
     strip_html,
+    host_matches,
+    validate_public_https_url,
 )
+from openopps.providers.base import ProviderRouteMatch
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
 
 class GreenhouseProvider:
     provider_id = "greenhouse"
+    provider_label = "Greenhouse"
+    provider_description = "Public Greenhouse job board API."
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
         self._request_json = retrying_json_request(settings)
+
+    @staticmethod
+    def detect_route(url: str) -> ProviderRouteMatch | None:
+        validate_public_https_url(url)
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if not host_matches(host, "greenhouse.io"):
+            return None
+        path_parts = [part for part in parsed.path.split("/") if part]
+        return ProviderRouteMatch(token=path_parts[0] if path_parts else None)
 
     async def fetch_jobs(
         self,

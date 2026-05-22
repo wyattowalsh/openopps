@@ -29,6 +29,7 @@ from openopps.models import (
     source_from_row,
     source_to_row,
 )
+from openopps.migrations import upgrade_sqlite_database
 from openopps.settings import OpenOppsSettings
 from openopps.utils import slugify, source_board_key, stable_id
 
@@ -84,8 +85,10 @@ class OpenOppsStore:
     def init_db(self) -> None:
         if self._initialized:
             return
-        SQLModel.metadata.create_all(self.engine)
         if self.settings.db_url.startswith("sqlite"):
+            upgrade_sqlite_database(
+                self.settings, prepare_legacy_schema=_prepare_legacy_sqlite_schema
+            )
             with self.engine.connect() as conn:
                 _ensure_sqlite_source_scoped_board_keys(conn)
                 _ensure_sqlite_job_columns(conn)
@@ -93,6 +96,8 @@ class OpenOppsStore:
                 conn.execute(text("PRAGMA journal_mode=WAL"))
                 conn.execute(text("PRAGMA synchronous=NORMAL"))
                 conn.commit()
+        else:
+            SQLModel.metadata.create_all(self.engine)
         self._initialized = True
 
     def vacuum(self) -> None:
@@ -315,6 +320,17 @@ def read_jsonl(path: Path) -> list[dict]:
 def _count_rows(session: Session, row_type: type[SQLModel]) -> int:
     value = session.exec(select(func.count()).select_from(row_type)).one()
     return int(value or 0)
+
+
+def _prepare_legacy_sqlite_schema(engine) -> None:
+    SQLModel.metadata.create_all(engine)
+    with engine.connect() as conn:
+        _ensure_sqlite_source_columns(conn)
+        _ensure_sqlite_board_columns(conn)
+        _ensure_sqlite_board_provider_columns(conn)
+        _ensure_sqlite_job_columns(conn)
+        _ensure_sqlite_source_scoped_board_keys(conn)
+        conn.commit()
 
 
 def _normalize_provider_alias(provider_id: str | None) -> str | None:
@@ -617,27 +633,101 @@ def _migrate_board_references(conn: Connection, *, old_key: str, new_key: str) -
     )
 
 
+def _ensure_sqlite_source_columns(conn: Connection) -> None:
+    _ensure_sqlite_columns(
+        conn,
+        "sources",
+        {
+            "enabled": "BOOLEAN DEFAULT 1",
+            "version": "JSON DEFAULT '{}'",
+            "raw_metadata": "JSON DEFAULT '{}'",
+            "extra_payload": "JSON DEFAULT '{}'",
+            "synced_at": "DATETIME",
+        },
+    )
+
+
+def _ensure_sqlite_board_columns(conn: Connection) -> None:
+    _ensure_sqlite_columns(
+        conn,
+        "boards",
+        {
+            "remote_slug": "VARCHAR",
+            "domain": "VARCHAR",
+            "website_url": "VARCHAR",
+            "description": "VARCHAR",
+            "markets": "JSON DEFAULT '[]'",
+            "locations": "JSON DEFAULT '[]'",
+            "staff_count": "INTEGER",
+            "num_jobs_hint": "INTEGER",
+            "raw_payload": "JSON DEFAULT '{}'",
+            "extra_payload": "JSON DEFAULT '{}'",
+            "synced_at": "DATETIME",
+        },
+    )
+
+
+def _ensure_sqlite_board_provider_columns(conn: Connection) -> None:
+    _ensure_sqlite_columns(
+        conn,
+        "board_providers",
+        {
+            "label": "VARCHAR",
+            "count_hint": "INTEGER",
+            "board_url": "VARCHAR",
+            "token": "VARCHAR",
+            "host": "VARCHAR",
+            "tenant": "VARCHAR",
+            "site": "VARCHAR",
+            "last_status": "VARCHAR",
+            "raw_payload": "JSON DEFAULT '{}'",
+            "extra_payload": "JSON DEFAULT '{}'",
+            "detected_at": "DATETIME",
+        },
+    )
+
+
 def _ensure_sqlite_job_columns(conn: Connection) -> None:
-    columns = {
-        row[1] for row in conn.execute(text("PRAGMA table_info(jobs)")).fetchall()
+    _ensure_sqlite_columns(
+        conn,
+        "jobs",
+        {
+            "company": "VARCHAR",
+            "employment_type": "VARCHAR",
+            "description": "VARCHAR",
+            "description_html": "VARCHAR",
+            "remote": "VARCHAR",
+            "compensation": "JSON",
+            "salary": "VARCHAR",
+            "salary_min": "REAL",
+            "salary_max": "REAL",
+            "salary_currency": "VARCHAR",
+            "experience": "VARCHAR",
+            "responsibilities": "JSON DEFAULT '[]'",
+            "qualifications": "JSON DEFAULT '[]'",
+            "skills": "JSON DEFAULT '[]'",
+            "job_description": "JSON",
+        },
+    )
+
+
+def _ensure_sqlite_columns(
+    conn: Connection, table_name: str, additions: dict[str, str]
+) -> None:
+    tables = {
+        row[0]
+        for row in conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table'")
+        ).fetchall()
     }
-    additions = {
-        "company": "VARCHAR",
-        "employment_type": "VARCHAR",
-        "description": "VARCHAR",
-        "description_html": "VARCHAR",
-        "remote": "VARCHAR",
-        "compensation": "JSON",
-        "salary": "VARCHAR",
-        "salary_min": "REAL",
-        "salary_max": "REAL",
-        "salary_currency": "VARCHAR",
-        "experience": "VARCHAR",
-        "responsibilities": "JSON DEFAULT '[]'",
-        "qualifications": "JSON DEFAULT '[]'",
-        "skills": "JSON DEFAULT '[]'",
-        "job_description": "JSON",
+    if table_name not in tables:
+        return
+    columns = {
+        row[1]
+        for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
     }
     for name, column_type in additions.items():
         if name not in columns:
-            conn.execute(text(f"ALTER TABLE jobs ADD COLUMN {name} {column_type}"))  # noqa: S608
+            conn.execute(
+                text(f"ALTER TABLE {table_name} ADD COLUMN {name} {column_type}")
+            )  # noqa: S608

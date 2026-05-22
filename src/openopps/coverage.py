@@ -10,14 +10,14 @@ from openopps.models import (
     ProviderSupport,
     utc_now,
 )
-from openopps.providers.registry import default_registry
-from openopps.route_probe import route_ready
+from openopps.providers.registry import provider_registry
 from openopps.route_registry import select_routes_from_records
-from openopps.route_select import normalize_provider_filter
+from openopps.route_select import normalize_provider_filter, route_ready
 from openopps.storage import OpenOppsStore
 
 
 EXAMPLE_LIMIT = 5
+BASELINE_JOB_PROVIDER_IDS = frozenset({"ashbyhq", "greenhouse", "lever", "workday"})
 AUDIT_PROVIDER_TARGETS = (
     "smartrecruiters",
     "workable",
@@ -141,6 +141,27 @@ def build_coverage_report(
         for board_key, board_routes in routes_by_board.items()
         if any(route.support_level == ProviderSupport.JOBS for route in board_routes)
     }
+    board_keys_with_baseline_job_capable_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(
+            route.support_level == ProviderSupport.JOBS
+            and route.provider_id in BASELINE_JOB_PROVIDER_IDS
+            for route in board_routes
+        )
+    }
+    board_keys_with_detect_only_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(route.support_level == ProviderSupport.DETECT for route in board_routes)
+    }
+    board_keys_with_unsupported_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(
+            route.support_level == ProviderSupport.UNSUPPORTED for route in board_routes
+        )
+    }
     board_keys_with_non_supported_hints = {
         board_key
         for board_key, board_routes in routes_by_board.items()
@@ -172,6 +193,14 @@ def build_coverage_report(
             "bySource": _count_by(board.source_key for board in boards),
             "withProviderHints": len(board_keys_with_provider_hints),
             "withJobCapableProviderHints": len(board_keys_with_job_capable_hints),
+            "withBaselineJobCapableProviderHints": len(
+                board_keys_with_baseline_job_capable_hints
+            ),
+            "withAdoptedV01ProviderHints": len(board_keys_with_job_capable_hints),
+            "withDetectOnlyProviderHints": len(board_keys_with_detect_only_hints),
+            "withUnsupportedOrUnknownProviderHints": len(
+                board_keys_with_unsupported_hints
+            ),
             "withNonSupportedProviderHints": len(board_keys_with_non_supported_hints),
             "withOnlyNonSupportedProviderHints": len(
                 board_keys_with_only_non_supported_hints
@@ -239,12 +268,15 @@ def build_provider_audit_report(
     for route in routes:
         routes_by_provider.setdefault(route.provider_id, []).append(route)
 
-    registry = default_registry()
+    registry = provider_registry(settings=store.settings)
     denominator = len(boards)
     candidates = []
     for provider_id in AUDIT_PROVIDER_TARGETS:
         provider_routes = routes_by_provider.get(provider_id, [])
         board_keys = {route.board_key for route in provider_routes}
+        observed_support_levels = sorted(
+            {route.support_level.value for route in provider_routes}
+        )
         metric = CoverageMetric(
             present=len(board_keys),
             missing=denominator - len(board_keys),
@@ -255,6 +287,22 @@ def build_provider_audit_report(
             {
                 "provider": provider_id,
                 "currentSupportLevel": support_level,
+                "packagedSupportLevel": support_level,
+                "observedSupportLevels": observed_support_levels,
+                "observedDetectOnlyBoards": len(
+                    {
+                        route.board_key
+                        for route in provider_routes
+                        if route.support_level == ProviderSupport.DETECT
+                    }
+                ),
+                "observedUnsupportedBoards": len(
+                    {
+                        route.board_key
+                        for route in provider_routes
+                        if route.support_level == ProviderSupport.UNSUPPORTED
+                    }
+                ),
                 "routes": len(provider_routes),
                 "boards": len(board_keys),
                 "coverage": metric,
@@ -275,7 +323,9 @@ def build_provider_audit_report(
             "sourceCount": len(sources),
             "denominator": denominator,
             "scope": {"source": source_key},
-            "representative": denominator > 0,
+            "hasPersistedBoards": denominator > 0,
+            "representative": False,
+            "snapshotKind": "persisted-scope",
             "note": (
                 "Measured from persisted boards in the selected scope; run source syncs "
                 "before release publication to refresh this snapshot."

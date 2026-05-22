@@ -19,7 +19,6 @@ class OpenOppsSettings(BaseSettings):
     board_concurrency: int = Field(default=16, ge=1)
     provider_concurrency: int = Field(default=12, ge=1)
     workday_concurrency: int = Field(default=2, ge=1)
-    job_sync_sources: str = ""
     db_batch_size: int = Field(default=500, ge=1)
     http_timeout: float = Field(default=30.0, gt=0)
     retry_attempts: int = Field(default=3, ge=1)
@@ -28,6 +27,8 @@ class OpenOppsSettings(BaseSettings):
     cache_ttl_seconds: int = Field(default=3600, ge=1)
     cache_refresh: bool = False
     cache_stale_on_error: bool = False
+    plugin_disabled: str = ""
+    plugin_allowed: str = ""
 
     @property
     def sqlite_path(self) -> Path | None:
@@ -43,9 +44,13 @@ class OpenOppsSettings(BaseSettings):
         return sqlite_path.with_suffix(".cache.db")
 
     @property
-    def job_sync_source_keys(self) -> tuple[str, ...]:
-        return tuple(
-            source_key.strip()
-            for source_key in self.job_sync_sources.split(",")
-            if source_key.strip()
-        )
+    def plugin_disabled_names(self) -> tuple[str, ...]:
+        return _comma_separated(self.plugin_disabled)
+
+    @property
+    def plugin_allowed_names(self) -> tuple[str, ...]:
+        return _comma_separated(self.plugin_allowed)
+
+
+def _comma_separated(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -17,7 +18,7 @@ from openopps.examples import build_example_dataset
 from openopps.export import export_records
 from openopps.health import check_provider_health
 from openopps.http import build_async_client
-from openopps.ingest import default_sources, sync_jobs, sync_sources
+from openopps.ingest import all_board_sources, sync_jobs, sync_sources
 from openopps.intro import play_intro
 from openopps.models import (
     BoardProviderRecord,
@@ -25,10 +26,13 @@ from openopps.models import (
     ExportFormat,
     ProviderSupport,
     SourceRecord,
+    validate_provider_host,
+    validate_public_https_url,
     utc_now,
 )
-from openopps.plugins import load_plugins
-from openopps.providers.registry import default_registry
+from openopps.plugins import PluginContext, load_plugins
+from openopps.providers.base import ProviderDefinition
+from openopps.providers.registry import provider_registry
 from openopps.providers.sources import build_source_adapter
 from openopps.route_registry import BoardRouteRegistry
 from openopps.route_probe import probe_routes
@@ -36,7 +40,6 @@ from openopps.route_select import normalize_provider_filter
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 from openopps.storage import BoardFilters, JobFilters
-from openopps.url_validation import validate_provider_host, validate_public_https_url
 from openopps.utils import slugify, stable_id
 
 
@@ -67,7 +70,7 @@ app = typer.Typer(
     epilog=(
         "[dim]Examples[/dim]\n"
         "  [bold]openopps sources sync a16z --metrics-json[/bold]\n"
-        "  [bold]openopps admin providers probe-routes --source a16z --provider any --json[/bold]\n"
+        "  [bold]openopps providers coverage --source a16z --provider any --json[/bold]\n"
         "  [bold]openopps jobs list --remote Full --skill Python --json[/bold]"
     ),
 )
@@ -156,8 +159,8 @@ def _settings_with_cache_refresh(refresh_cache: bool) -> OpenOppsSettings:
     return settings.model_copy(update={"cache_refresh": True})
 
 
-def _default_source(key: str) -> SourceRecord | None:
-    return next((source for source in default_sources() if source.key == key), None)
+def _catalog_source(key: str) -> SourceRecord | None:
+    return next((source for source in all_board_sources() if source.key == key), None)
 
 
 def _json(data: object) -> None:
@@ -188,28 +191,80 @@ def _table(title: str, columns: list[str], rows: list[list[object]]) -> None:
 def _status_payload() -> dict[str, Any]:
     store = _store()
     settings = _settings()
+    counts = store.status()
+    readiness = _readiness_payload(store)
+    coverage = build_coverage_report(store).as_dict()
+    issues = _status_issues(counts, readiness, coverage)
     return {
         "database": {
             "url": settings.db_url,
             "path": str(settings.sqlite_path) if settings.sqlite_path else None,
-            "counts": store.status(),
+            "counts": counts,
         },
         "cache": _cache().status(),
-        "plugins": load_plugins().as_dict(),
-        "nextAction": _next_action(store.status()),
+        "plugins": _plugin_registry(settings).as_dict(),
+        "readiness": readiness,
+        "coverage": {
+            "boards": coverage["boards"],
+            "gaps": coverage["gaps"],
+        },
+        "issues": issues,
+        "nextAction": _next_action(counts, readiness),
     }
 
 
-def _next_action(counts: dict[str, int]) -> str:
+def _readiness_payload(store: OpenOppsStore) -> dict[str, Any]:
+    routes = store.list_board_providers()
+    route_selection = BoardRouteRegistry(store).select(ready_only=True)
+    return {
+        "executableRoutes": len(route_selection.entries),
+        "missingRouteMetadata": len(route_selection.missing_route_metadata),
+        "duplicateRoutesSkipped": len(route_selection.duplicate_routes),
+        "detectOnlyRoutes": sum(
+            1 for route in routes if route.support_level == ProviderSupport.DETECT
+        ),
+        "unsupportedRoutes": sum(
+            1 for route in routes if route.support_level == ProviderSupport.UNSUPPORTED
+        ),
+    }
+
+
+def _plugin_registry(settings: OpenOppsSettings | None = None):
+    settings = settings or _settings()
+    return load_plugins(context=PluginContext(settings=settings))
+
+
+def _next_action(counts: dict[str, int], readiness: dict[str, Any]) -> str:
     if counts["sources"] == 0:
-        return "Run `openopps sources list` to inspect built-in sources, then sync one."
+        return (
+            "Run `openopps sources list` to inspect the source catalog, then sync one."
+        )
     if counts["boards"] == 0:
         return "Run `openopps sources sync <source>` to discover boards."
     if counts["boardProviders"] == 0:
         return "Run provider coverage or route probing to inspect provider readiness."
+    if readiness["missingRouteMetadata"] > 0 and readiness["executableRoutes"] == 0:
+        return "Run `openopps admin providers probe-routes --apply` or attach route metadata before syncing jobs."
     if counts["jobs"] == 0:
         return "Run `openopps jobs sync` after routes are ready."
     return "Run `openopps jobs list` or export filtered results."
+
+
+def _status_issues(
+    counts: dict[str, int], readiness: dict[str, Any], coverage: dict[str, Any]
+) -> list[str]:
+    issues: list[str] = []
+    if counts["sources"] == 0:
+        issues.append("no_sources")
+    if counts["boards"] == 0:
+        issues.append("no_boards")
+    if readiness["missingRouteMetadata"]:
+        issues.append("missing_route_metadata")
+    if readiness["detectOnlyRoutes"]:
+        issues.append("detect_only_routes")
+    if coverage["boards"].get("withOnlyNonSupportedProviderHints"):
+        issues.append("only_non_supported_provider_hints")
+    return issues
 
 
 def _board_filters(
@@ -292,6 +347,7 @@ def status(
     counts = data["database"]["counts"]
     cache = data["cache"]
     plugins = data["plugins"]
+    readiness = data["readiness"]
     _table(
         "OpenOpps Status",
         [
@@ -302,6 +358,8 @@ def status(
             "cache_records",
             "plugins",
             "failed_plugins",
+            "executable_routes",
+            "missing_route_metadata",
         ],
         [
             [
@@ -312,6 +370,8 @@ def status(
                 cache["total"],
                 plugins["loaded"],
                 plugins["failed"],
+                readiness["executableRoutes"],
+                readiness["missingRouteMetadata"],
             ]
         ],
     )
@@ -333,7 +393,7 @@ def plugins_list(
         bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
     ] = False,
 ) -> None:
-    data = load_plugins().as_dict()
+    data = _plugin_registry().as_dict()
     if json_output:
         _json(data)
         return
@@ -368,8 +428,17 @@ def cache_status(
         return
     _table(
         "OpenOpps Cache",
-        ["path", "records", "namespaces"],
-        [[data["path"], data["total"], len(data["byNamespace"])]],
+        ["path", "records", "fresh", "expired", "stale_on_error", "namespaces"],
+        [
+            [
+                data["path"],
+                data["total"],
+                data["fresh"],
+                data["expired"],
+                data["staleOnErrorEligible"],
+                len(data["byNamespace"]),
+            ]
+        ],
     )
 
 
@@ -426,6 +495,8 @@ def examples_seed(
             record.payload,
             namespace=record.namespace,
             status_code=record.status_code,
+            ttl_seconds=86_400,
+            now=datetime.fromisoformat(record.fetched_at),
         )
     data = {
         "sources": len(dataset.sources),
@@ -433,6 +504,7 @@ def examples_seed(
         "routes": len(dataset.routes),
         "jobs": len(dataset.jobs),
         "cacheRecords": len(dataset.cache_records),
+        "plugins": len(dataset.plugins),
         "seed": seed,
     }
     if json_output:
@@ -457,7 +529,7 @@ def sources_add(
     enabled: Annotated[
         bool,
         typer.Option(
-            "--enabled/--disabled", help="Include this source in default sync runs."
+            "--enabled/--disabled", help="Include this source in unscoped sync runs."
         ),
     ] = True,
 ) -> None:
@@ -473,7 +545,7 @@ def sources_add(
 
 
 @sources_app.command(
-    "list", help="List configured sources, falling back to built-in defaults."
+    "list", help="List configured sources, falling back to the source catalog."
 )
 def sources_list(
     json_output: Annotated[
@@ -485,7 +557,7 @@ def sources_list(
     if not settings.sqlite_path or settings.sqlite_path.exists():
         records = OpenOppsStore(settings).list_sources()
     if not records:
-        records = default_sources()
+        records = all_board_sources()
     if json_output:
         _json([record.model_dump(mode="json") for record in records])
         return
@@ -503,7 +575,7 @@ def sources_list(
 def sources_show(
     key: Annotated[str, typer.Argument(help="Source key to inspect, such as a16z.")],
 ) -> None:
-    record = _store().get_source(key) or _default_source(key)
+    record = _store().get_source(key) or _catalog_source(key)
     if not record:
         raise typer.BadParameter(f"Unknown source: {key}")
     _json(record.model_dump(mode="json"))
@@ -535,7 +607,7 @@ def sources_test(
 ) -> None:
     async def _run() -> None:
         settings = _settings_with_cache_refresh(refresh_cache)
-        source = _store().get_source(key) or _default_source(key)
+        source = _store().get_source(key) or _catalog_source(key)
         if not source:
             raise typer.BadParameter(f"Unknown source: {key}")
         adapter = build_source_adapter(source.provider_id, settings)
@@ -621,15 +693,18 @@ def sources_sync(
     if no_db and output is None:
         raise typer.BadParameter("--output is required with --no-db")
     store = None if no_db else _store()
-    metrics = asyncio.run(
-        sync_sources(
-            settings=_settings_with_cache_refresh(refresh_cache),
-            store=store,
-            source_key=source_key,
-            output=output,
-            page_size=page_size,
+    try:
+        metrics = asyncio.run(
+            sync_sources(
+                settings=_settings_with_cache_refresh(refresh_cache),
+                store=store,
+                source_key=source_key,
+                output=output,
+                page_size=page_size,
+            )
         )
-    )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     _metrics(metrics, metrics_json, profile)
 
 
@@ -741,7 +816,7 @@ def boards_add_provider(
     board = store.get_board(board_key)
     if not board:
         raise typer.BadParameter(f"Unknown board: {board_key}")
-    registry = default_registry()
+    registry = provider_registry(settings=_settings())
     detected = (
         registry.detect_url(url, board_key=board.key, source_key=board.source_key)
         if url
@@ -885,7 +960,7 @@ def boards_show(
     _json(board.model_dump(mode="json"))
 
 
-@boards_app.command(
+@admin_boards_app.command(
     "enrich", help="Promote preserved payload metadata into normalized board fields."
 )
 def boards_enrich(
@@ -935,7 +1010,7 @@ def boards_enrich(
 
 
 @admin_boards_app.command(
-    "detect-provider", help="Detect and persist provider metadata for one board URL."
+    "detect-provider", help="Detect provider metadata for one board URL."
 )
 def boards_detect_provider(
     board_key: Annotated[str, typer.Argument(help="Board key to inspect.")],
@@ -947,18 +1022,29 @@ def boards_detect_provider(
             rich_help_panel=PANEL_ROUTE,
         ),
     ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Persist detected provider metadata.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = False,
 ) -> None:
     store = _store()
     board = store.get_board(board_key)
     if not board:
         raise typer.BadParameter(f"Unknown board: {board_key}")
-    detected = default_registry().detect_url(
+    detected = provider_registry(settings=_settings()).detect_url(
         url or board.website_url or "", board_key=board.key, source_key=board.source_key
     )
     if not detected:
         raise typer.BadParameter("No provider detected")
-    store.upsert_board_providers([detected])
-    _json(detected.model_dump(mode="json"))
+    if apply:
+        store.upsert_board_providers([detected])
+    data = detected.model_dump(mode="json")
+    data["applied"] = apply
+    _json(data)
 
 
 @admin_boards_app.command(
@@ -1455,25 +1541,16 @@ def jobs_export(
 
 
 @admin_providers_app.command(
-    "list", help="List built-in source and job provider adapters."
+    "list", help="List packaged source and job provider adapters."
 )
 def providers_list(
     json_output: Annotated[
         bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
     ] = False,
 ) -> None:
-    providers = default_registry().list()
+    providers = provider_registry(settings=_settings()).list()
     if json_output:
-        _json(
-            [
-                provider.__dict__
-                | {
-                    "kind": provider.kind.value,
-                    "support_level": provider.support_level.value,
-                }
-                for provider in providers
-            ]
-        )
+        _json([_provider_definition_payload(provider) for provider in providers])
         return
     _table(
         "Providers",
@@ -1482,13 +1559,24 @@ def providers_list(
     )
 
 
+def _provider_definition_payload(provider: ProviderDefinition) -> dict[str, object]:
+    return {
+        "id": provider.id,
+        "label": provider.label,
+        "kind": provider.kind.value,
+        "support_level": provider.support_level.value,
+        "description": provider.description,
+        "detects_routes": provider.route_detector is not None,
+    }
+
+
 @admin_providers_app.command(
     "detect", help="Detect a provider adapter from a public board URL."
 )
 def providers_detect(
     url: Annotated[str, typer.Argument(help="Public board URL to inspect.")],
 ) -> None:
-    detected = default_registry().detect_url(url)
+    detected = provider_registry(settings=_settings()).detect_url(url)
     if not detected:
         raise typer.BadParameter("No provider detected")
     _json(detected.model_dump(mode="json"))
@@ -1500,7 +1588,7 @@ def providers_detect(
 def providers_explain(
     provider_id: Annotated[str, typer.Argument(help="Provider adapter id to explain.")],
 ) -> None:
-    provider = default_registry().get(provider_id)
+    provider = provider_registry(settings=_settings()).get(provider_id)
     if not provider:
         _json(
             {

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from faker import Faker
@@ -12,8 +12,10 @@ from openopps.models import (
     JobRecord,
     ProviderSupport,
     SourceRecord,
-    utc_now,
 )
+
+
+EXAMPLE_BASE_TIME = datetime(2030, 1, 1, tzinfo=timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -28,12 +30,29 @@ class ExampleCacheRecord:
 
 
 @dataclass(frozen=True)
+class ExamplePluginRecord:
+    name: str
+    version: str
+    api_version: str
+    capabilities: tuple[dict[str, str], ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "version": self.version,
+            "apiVersion": self.api_version,
+            "capabilities": list(self.capabilities),
+        }
+
+
+@dataclass(frozen=True)
 class ExampleDataset:
     sources: tuple[SourceRecord, ...]
     boards: tuple[BoardRecord, ...]
     routes: tuple[BoardProviderRecord, ...]
     jobs: tuple[JobRecord, ...]
     cache_records: tuple[ExampleCacheRecord, ...]
+    plugins: tuple[ExamplePluginRecord, ...]
 
     def as_dict(self) -> dict[str, list[dict[str, Any]]]:
         return {
@@ -42,6 +61,7 @@ class ExampleDataset:
             "routes": [route.model_dump(mode="json") for route in self.routes],
             "jobs": [job.model_dump(mode="json") for job in self.jobs],
             "cacheRecords": [record.__dict__ for record in self.cache_records],
+            "plugins": [plugin.as_dict() for plugin in self.plugins],
         }
 
 
@@ -55,7 +75,7 @@ def build_example_dataset(
 
     fake = Faker()
     fake.seed_instance(seed)
-    synced_at = utc_now()
+    synced_at = EXAMPLE_BASE_TIME + timedelta(seconds=seed)
     source = SourceRecord(
         key="example",
         url="example://openopps/synthetic",
@@ -173,6 +193,23 @@ def build_example_dataset(
         routes=tuple(routes),
         jobs=tuple(jobs),
         cache_records=tuple(cache_records),
+        plugins=(
+            ExamplePluginRecord(
+                name="example-openopps-plugin",
+                version="0.1.0",
+                api_version="0.1",
+                capabilities=(
+                    {
+                        "kind": "source_adapter",
+                        "name": "example_source",
+                    },
+                    {
+                        "kind": "job_provider",
+                        "name": "example_jobs",
+                    },
+                ),
+            ),
+        ),
     )
 
 

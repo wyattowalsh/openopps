@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator
+from collections import defaultdict
+from collections.abc import AsyncIterator, Iterable
+from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -15,11 +17,12 @@ from openopps.models import (
     YCombinatorAlgoliaResponse,
     YCombinatorAlgoliaResult,
     YCombinatorCompanyHit,
+    normalize_public_website_url,
     utc_now,
 )
 from openopps.settings import OpenOppsSettings
-from openopps.url_validation import validate_public_https_url
-from openopps.utils import slugify, source_board_key
+from openopps.models import validate_public_https_url
+from openopps.utils import slugify, source_board_key, stable_id
 
 
 APPLICATION_ID = "45BWZJ1SGC"
@@ -44,9 +47,18 @@ ALGOLIA_FACETS = [
 ]
 
 _ALGOLIA_OPTS_RE = re.compile(r"window\.AlgoliaOpts\s*=\s*({[^<]+})")
+_SPC_JOBS_DATA_RE = re.compile(
+    r'<script type="application/json" id="jobs-data">(?P<data>.*?)</script>',
+    re.DOTALL,
+)
 
-
-DEFAULT_YCOMBINATOR_SOURCE = SourceRecord(
+SOUTHPARKCOMMONS_SOURCE = SourceRecord(
+    key="southparkcommons",
+    url="https://www.southparkcommons.com/jobs",
+    provider_id="southparkcommons",
+    enabled=True,
+)
+YCOMBINATOR_SOURCE = SourceRecord(
     key="yc",
     url="https://www.ycombinator.com/companies",
     provider_id="ycombinator",
@@ -55,8 +67,181 @@ DEFAULT_YCOMBINATOR_SOURCE = SourceRecord(
 )
 
 
+class SouthParkCommonsSourceAdapter:
+    provider_id = "southparkcommons"
+    provider_label = "South Park Commons"
+    provider_description = "Aggregate South Park Commons source adapter that discovers company boards and provider hints."
+
+    def __init__(self, settings: OpenOppsSettings):
+        from openopps.providers.registry import provider_registry
+
+        self.settings = settings
+        self.registry = provider_registry(settings=settings)
+
+    async def iter_boards(
+        self,
+        client: httpx.AsyncClient,
+        source: SourceRecord,
+        *,
+        page_size: int,
+    ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
+        validate_public_https_url(source.url)
+        response = await client.get(
+            source.url, headers={"accept": "text/html", "user-agent": "Mozilla/5.0"}
+        )
+        response.raise_for_status()
+        jobs = self._jobs_from_html(response.text, source.url)
+        boards, providers = self._normalize_jobs(source.key, jobs)
+        yield boards, providers, {"jobs": len(jobs), "total": len(boards)}
+
+    def _jobs_from_html(self, html: str, url: str) -> list[dict[str, Any]]:
+        match = _SPC_JOBS_DATA_RE.search(html)
+        if not match:
+            raise ValueError(f"Could not find South Park Commons jobs data in {url}")
+        payload = json.loads(match.group("data"))
+        if not isinstance(payload, list):
+            raise ValueError("South Park Commons jobs data returned a non-list payload")
+        return [item for item in payload if isinstance(item, dict)]
+
+    def _normalize_jobs(
+        self, source_key: str, jobs: list[dict[str, Any]]
+    ) -> tuple[list[BoardRecord], list[BoardProviderRecord]]:
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for job in jobs:
+            slug = self._company_slug(job)
+            if slug:
+                grouped[slug].append(job)
+
+        boards: list[BoardRecord] = []
+        providers: list[BoardProviderRecord] = []
+        now = utc_now()
+        for remote_slug, company_jobs in sorted(grouped.items()):
+            first = company_jobs[0]
+            board_key = source_board_key(source_key, remote_slug)
+            provider_counts: dict[str, int] = defaultdict(int)
+            provider_routes: dict[str, BoardProviderRecord] = {}
+            for job in company_jobs:
+                route = self.registry.detect_url(
+                    str(job.get("url") or ""),
+                    board_key=board_key,
+                    source_key=source_key,
+                )
+                if route is None:
+                    continue
+                provider_counts[route.provider_id] += 1
+                provider_routes.setdefault(route.provider_id, route)
+
+            boards.append(
+                BoardRecord(
+                    key=board_key,
+                    source_key=source_key,
+                    remote_id=str(
+                        first.get("companyDomain")
+                        or first.get("companySlug")
+                        or first.get("companyName")
+                        or remote_slug
+                    ),
+                    remote_slug=remote_slug,
+                    name=str(first.get("companyName") or remote_slug),
+                    domain=self._string(first.get("companyDomain")),
+                    website_url=self._website_url(first.get("companyDomain")),
+                    description=self._string(first.get("companyBio")),
+                    markets=self._unique_strings(
+                        job.get("industry")
+                        for job in company_jobs
+                        if job.get("industry")
+                    ),
+                    locations=self._unique_strings(
+                        location
+                        for job in company_jobs
+                        for location in self._list_value(job.get("locations"))
+                    ),
+                    num_jobs_hint=len(company_jobs),
+                    raw_payload={
+                        "companyDomain": first.get("companyDomain"),
+                        "companyName": first.get("companyName"),
+                        "companySlug": first.get("companySlug"),
+                        "jobCount": len(company_jobs),
+                        "providerCounts": dict(provider_counts),
+                    },
+                    synced_at=now,
+                )
+            )
+            for provider_id, route in sorted(provider_routes.items()):
+                providers.append(
+                    BoardProviderRecord(
+                        id=stable_id(source_key, board_key, provider_id),
+                        source_key=source_key,
+                        board_key=board_key,
+                        provider_id=provider_id,
+                        label=route.label,
+                        support_level=route.support_level,
+                        count_hint=provider_counts[provider_id],
+                        board_url=self._canonical_board_url(route),
+                        token=route.token,
+                        host=route.host,
+                        tenant=route.tenant,
+                        site=route.site,
+                        raw_payload={
+                            "count": provider_counts[provider_id],
+                            "exampleUrl": route.board_url,
+                        },
+                        detected_at=now,
+                    )
+                )
+        return boards, providers
+
+    def _company_slug(self, job: dict[str, Any]) -> str | None:
+        value = (
+            job.get("companySlug") or job.get("companyName") or job.get("companyDomain")
+        )
+        if value is None:
+            return None
+        return slugify(str(value))
+
+    def _canonical_board_url(self, route: BoardProviderRecord) -> str | None:
+        if not route.token:
+            return route.board_url
+        if route.provider_id == "greenhouse":
+            return f"https://boards.greenhouse.io/{route.token}"
+        if route.provider_id == "lever":
+            return f"https://jobs.lever.co/{route.token}"
+        if route.provider_id == "ashbyhq":
+            return f"https://jobs.ashbyhq.com/{route.token}"
+        return route.board_url
+
+    def _website_url(self, domain: object) -> str | None:
+        return normalize_public_website_url(domain)
+
+    def _string(self, value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    def _list_value(self, value: object) -> list[Any]:
+        return value if isinstance(value, list) else []
+
+    def _unique_strings(self, values: Iterable[object]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            stripped = value.strip()
+            if not stripped or stripped in seen:
+                continue
+            seen.add(stripped)
+            result.append(stripped)
+        return result
+
+
 class YCombinatorSourceAdapter:
     provider_id = "ycombinator"
+    provider_label = "Y Combinator"
+    provider_description = (
+        "Aggregate YC source adapter that discovers company boards from Algolia."
+    )
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
@@ -248,12 +433,7 @@ class YCombinatorSourceAdapter:
         return boards
 
     def _website_url(self, website: str | None) -> str | None:
-        if not website or not website.strip():
-            return None
-        value = website.strip()
-        if value.startswith(("http://", "https://")):
-            return value
-        return f"https://{value}"
+        return normalize_public_website_url(website)
 
     def _domain_from_url(self, url: str | None) -> str | None:
         if not url:
@@ -274,3 +454,9 @@ class YCombinatorSourceAdapter:
                 if location.strip()
             ]
         return company.regions
+
+
+SOURCE_RECORDS: tuple[SourceRecord, ...] = (
+    SOUTHPARKCOMMONS_SOURCE,
+    YCOMBINATOR_SOURCE,
+)

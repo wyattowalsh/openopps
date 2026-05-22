@@ -19,7 +19,7 @@ from openopps.models import (
     utc_now,
 )
 from openopps.settings import OpenOppsSettings
-from openopps.url_validation import validate_public_https_url
+from openopps.models import validate_public_https_url
 from openopps.utils import slugify, source_board_key
 
 
@@ -29,7 +29,7 @@ _NEXT_DATA_RE = re.compile(
 )
 
 
-DEFAULT_GETRO_SOURCES = {
+GETRO_SOURCE_CATALOG = {
     "accel": SourceRecord(
         key="accel",
         url="https://jobs.accel.com/companies",
@@ -1318,11 +1318,185 @@ DEFAULT_GETRO_SOURCES = {
         enabled=True,
         raw_metadata={"collectionId": "13359"},
     ),
+    "53stations": SourceRecord(
+        key="53stations",
+        url="https://jobs.53stations.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "45269"},
+    ),
+    "acp": SourceRecord(
+        key="acp",
+        url="https://jobs.acp.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1339"},
+    ),
+    "activate": SourceRecord(
+        key="activate",
+        url="https://jobs.activate.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "937"},
+    ),
+    "b2venture": SourceRecord(
+        key="b2venture",
+        url="https://jobs.b2venture.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "4283"},
+    ),
+    "becocapital": SourceRecord(
+        key="becocapital",
+        url="https://careers.becocapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "10883"},
+    ),
+    "benchstrengthvc": SourceRecord(
+        key="benchstrengthvc",
+        url="https://jobs.benchstrengthvc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "12600"},
+    ),
+    "brightspark": SourceRecord(
+        key="brightspark",
+        url="https://careers.brightspark.com/",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1436"},
+    ),
+    "cmont": SourceRecord(
+        key="cmont",
+        url="https://careers.cmont.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "12698"},
+    ),
+    "communitech": SourceRecord(
+        key="communitech",
+        url="https://www1.communitech.ca/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "628"},
+    ),
+    "comcastventures": SourceRecord(
+        key="comcastventures",
+        url="https://portfoliojobs.comcastventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "256"},
+    ),
+    "credoventures": SourceRecord(
+        key="credoventures",
+        url="https://jobs.credoventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1623"},
+    ),
+    "dawncapital": SourceRecord(
+        key="dawncapital",
+        url="https://jobs.dawncapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "3063"},
+    ),
+    "deepscienceventures": SourceRecord(
+        key="deepscienceventures",
+        url="https://jobs.deepscienceventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1630"},
+    ),
+    "diagram": SourceRecord(
+        key="diagram",
+        url="https://careers.diagram.ca/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1084"},
+    ),
+    "eniac": SourceRecord(
+        key="eniac",
+        url="https://jobs.eniac.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "117"},
+    ),
+    "israelvcforum": SourceRecord(
+        key="israelvcforum",
+        url="https://israelvcforum.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "10949"},
+    ),
+    "investottawa": SourceRecord(
+        key="investottawa",
+        url="https://techjobfinder.investottawa.ca/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1546"},
+    ),
+    "jamjarinvestments": SourceRecord(
+        key="jamjarinvestments",
+        url="https://jobs.jamjarinvestments.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "12863"},
+    ),
+    "ngpcap": SourceRecord(
+        key="ngpcap",
+        url="https://jobs.ngpcap.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "3426"},
+    ),
+    "planeta": SourceRecord(
+        key="planeta",
+        url="https://jobs.planet-a.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1426"},
+    ),
+    "queertech": SourceRecord(
+        key="queertech",
+        url="https://queertech.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "883"},
+    ),
+    "qumracapital": SourceRecord(
+        key="qumracapital",
+        url="https://jobs.qumracapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "474"},
+    ),
+    "redseaventures": SourceRecord(
+        key="redseaventures",
+        url="https://jobs.redseaventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "78"},
+    ),
+    "stripes": SourceRecord(
+        key="stripes",
+        url="https://jobs.stripes.co/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "167"},
+    ),
 }
+
+SOURCE_RECORDS: tuple[SourceRecord, ...] = tuple(GETRO_SOURCE_CATALOG.values())
 
 
 class GetroSourceAdapter:
     provider_id = "getro"
+    provider_label = "Getro"
+    provider_description = (
+        "Aggregate Getro source adapter that discovers company boards."
+    )
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings

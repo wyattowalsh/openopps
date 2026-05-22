@@ -15,6 +15,18 @@ def normalize_provider_filter(provider_id: str | None) -> str | None:
     return provider_id
 
 
+def route_ready(route: BoardProviderRecord) -> bool:
+    """Return whether a persisted provider route has enough metadata to execute."""
+
+    if route.provider_id == "workday":
+        return bool(route.board_url or (route.host and route.tenant and route.site))
+    if route.provider_id in {"greenhouse", "lever", "ashbyhq"}:
+        return bool(route.token or route.board_url)
+    return bool(
+        route.token or route.board_url or (route.host and route.tenant and route.site)
+    )
+
+
 def dedupe_routes(
     routes: list[BoardProviderRecord],
     boards_by_key: dict[str, BoardRecord],
@@ -51,7 +63,9 @@ def route_request_key(board: BoardRecord, route: BoardProviderRecord) -> str:
     domain = _domain(board)
     if domain:
         return f"{provider}:domain:{domain}"
-    fallback = slugify(str(board.remote_slug or board.remote_id or board.name or board.key))
+    fallback = slugify(
+        str(board.remote_slug or board.remote_id or board.name or board.key)
+    )
     return f"{provider}:board:{fallback}"
 
 

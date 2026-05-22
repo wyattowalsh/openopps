@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass, field, replace
+from io import StringIO
 from importlib import metadata as importlib_metadata
 from typing import Any
 
@@ -118,6 +120,8 @@ class PluginRegistry:
     contributions: tuple[PluginContribution, ...]
     load_results: tuple[PluginLoadResult, ...]
     conflicts: tuple[PluginConflict, ...]
+    disabled: tuple[str, ...] = ()
+    allowed: tuple[str, ...] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +129,10 @@ class PluginRegistry:
             "conflicts": [conflict.as_dict() for conflict in self.conflicts],
             "loaded": sum(1 for result in self.load_results if result.loaded),
             "failed": sum(1 for result in self.load_results if not result.loaded),
+            "filters": {
+                "disabled": list(self.disabled),
+                "allowed": list(self.allowed) if self.allowed is not None else None,
+            },
         }
 
     def capabilities(self, kind: str | None = None) -> dict[str, PluginCapability]:
@@ -151,8 +159,14 @@ def load_plugins(
     allowed: Iterable[str] | None = None,
     context: PluginContext | None = None,
 ) -> PluginRegistry:
-    disabled_names = set(disabled)
+    context = context or PluginContext()
+    settings = context.settings
+    configured_disabled = _setting_names(settings, "plugin_disabled_names")
+    configured_allowed = _setting_names(settings, "plugin_allowed_names")
+    disabled_names = set(disabled) | set(configured_disabled)
     allowed_names = set(allowed) if allowed is not None else None
+    if allowed_names is None and configured_allowed:
+        allowed_names = set(configured_allowed)
     contributions: list[PluginContribution] = []
     results: list[PluginLoadResult] = []
     conflicts: list[PluginConflict] = []
@@ -182,13 +196,17 @@ def load_plugins(
             )
             continue
         try:
-            factory = entry_point.load()
-            contribution = factory(context or PluginContext())
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                factory = entry_point.load()
+                contribution = factory(context)
             contribution = _validate_contribution(contribution, entry_point)
             capability_conflicts = _collect_conflicts(
                 contribution, claimed=claimed, plugin_name=contribution.metadata.name
             )
             conflicts.extend(capability_conflicts)
+            output_warnings = _captured_output_warnings(stdout, stderr)
             contributions.append(contribution)
             results.append(
                 PluginLoadResult(
@@ -196,7 +214,8 @@ def load_plugins(
                     metadata=contribution.metadata,
                     loaded=True,
                     capabilities=contribution.all_capabilities(),
-                    warnings=tuple(
+                    warnings=output_warnings
+                    + tuple(
                         f"conflict:{conflict.capability}"
                         for conflict in capability_conflicts
                     ),
@@ -215,16 +234,14 @@ def load_plugins(
         contributions=tuple(contributions),
         load_results=tuple(results),
         conflicts=tuple(conflicts),
+        disabled=tuple(sorted(disabled_names)),
+        allowed=tuple(sorted(allowed_names)) if allowed_names is not None else None,
     )
 
 
 def _entry_points() -> tuple[Any, ...]:
     entry_points = importlib_metadata.entry_points()
-    if hasattr(entry_points, "select"):
-        return tuple(entry_points.select(group=ENTRY_POINT_GROUP))
-    if isinstance(entry_points, dict):
-        return tuple(entry_points.get(ENTRY_POINT_GROUP, ()))
-    return ()
+    return tuple(entry_points.select(group=ENTRY_POINT_GROUP))
 
 
 def _validate_contribution(
@@ -244,6 +261,15 @@ def _validate_contribution(
             f"unsupported plugin api version {metadata.api_version!r}; "
             f"expected {PLUGIN_API_VERSION!r}"
         )
+    seen_capability_keys: set[str] = set()
+    for capability in contribution.capabilities:
+        if capability.kind not in _CAPABILITY_MAPPING_KINDS:
+            raise ValueError(f"unsupported plugin capability kind {capability.kind!r}")
+        if not capability.name:
+            raise ValueError("plugin capability name is required")
+        if capability.key in seen_capability_keys:
+            raise ValueError(f"duplicate plugin capability {capability.key!r}")
+        seen_capability_keys.add(capability.key)
     for attr in _CAPABILITY_MAPPING_KINDS.values():
         mapping = getattr(contribution, attr)
         if not isinstance(mapping, Mapping):
@@ -254,24 +280,22 @@ def _validate_contribution(
             if not callable(value):
                 raise TypeError(f"{attr}.{name} must be callable")
     if package and metadata.package is None:
-        return PluginContribution(
-            metadata=PluginMetadata(
-                name=metadata.name,
-                version=metadata.version,
-                api_version=metadata.api_version,
-                description=metadata.description,
-                package=package,
-            ),
-            capabilities=contribution.capabilities,
-            source_adapters=contribution.source_adapters,
-            job_providers=contribution.job_providers,
-            route_detectors=contribution.route_detectors,
-            metadata_enrichers=contribution.metadata_enrichers,
-            cache_policies=contribution.cache_policies,
-            export_contributors=contribution.export_contributors,
-            cli_commands=contribution.cli_commands,
-        )
+        return replace(contribution, metadata=replace(metadata, package=package))
     return contribution
+
+
+def _captured_output_warnings(stdout: StringIO, stderr: StringIO) -> tuple[str, ...]:
+    warnings: list[str] = []
+    if stdout.getvalue():
+        warnings.append("captured_stdout")
+    if stderr.getvalue():
+        warnings.append("captured_stderr")
+    return tuple(warnings)
+
+
+def _setting_names(settings: object, attr: str) -> tuple[str, ...]:
+    values = getattr(settings, attr, ()) if settings is not None else ()
+    return tuple(str(value) for value in values)
 
 
 def _entry_point_package(entry_point: object) -> str | None:

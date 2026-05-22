@@ -12,11 +12,11 @@ from loguru import logger
 
 from openopps.http import build_async_client, retrying_json_request
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport, utc_now
+from openopps.models import host_matches, validate_provider_host
 from openopps.providers.boards.workday import parse_workday_board_url
-from openopps.route_select import dedupe_routes, normalize_provider_filter
+from openopps.route_select import dedupe_routes, normalize_provider_filter, route_ready
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
-from openopps.url_validation import host_matches, validate_provider_host
 from openopps.utils import slugify
 
 
@@ -99,16 +99,6 @@ class ProbeSummary:
             "matchedCount": len(self.matched),
             "unknownCount": len(self.unknown),
         }
-
-
-def route_ready(route: BoardProviderRecord) -> bool:
-    if route.provider_id == "workday":
-        return bool(route.board_url or (route.host and route.tenant and route.site))
-    if route.provider_id in {"greenhouse", "lever", "ashbyhq"}:
-        return bool(route.token or route.board_url)
-    return bool(
-        route.token or route.board_url or (route.host and route.tenant and route.site)
-    )
 
 
 def token_candidates(board: BoardRecord, *, max_candidates: int = 12) -> list[str]:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import httpx
 
 from openopps.http import retrying_json_request
@@ -10,17 +12,31 @@ from openopps.models import (
     LeverPosting,
     normalize_remote_level,
     strip_html,
+    validate_public_https_url,
 )
+from openopps.providers.base import ProviderRouteMatch
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
 
 class LeverProvider:
     provider_id = "lever"
+    provider_label = "Lever"
+    provider_description = "Public Lever postings JSON API."
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
         self._request_json = retrying_json_request(settings)
+
+    @staticmethod
+    def detect_route(url: str) -> ProviderRouteMatch | None:
+        validate_public_https_url(url)
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if host != "jobs.lever.co" and not host.endswith(".lever.co"):
+            return None
+        path_parts = [part for part in parsed.path.split("/") if part]
+        return ProviderRouteMatch(token=path_parts[0] if path_parts else None)
 
     async def fetch_jobs(
         self,

@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from openopps.models import BoardProviderRecord, BoardRecord
-from openopps.route_probe import route_ready
 from openopps.route_select import (
     dedupe_routes,
     normalize_provider_filter,
+    route_ready,
     route_request_key,
 )
 from openopps.storage import OpenOppsStore

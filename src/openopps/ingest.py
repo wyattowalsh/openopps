@@ -16,18 +16,15 @@ from openopps.models import (
     utc_now,
 )
 from openopps.providers.boards import build_job_provider
-from openopps.providers.sources import DEFAULT_BOARD_SOURCES, build_source_adapter
+from openopps.providers.sources import BOARD_SOURCE_CATALOG, build_source_adapter
 from openopps.route_registry import BoardRouteRegistry
 from openopps.route_select import normalize_provider_filter
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore, append_jsonl
 
 
-DEFAULT_SOURCES = DEFAULT_BOARD_SOURCES
-
-
-def default_sources() -> list[SourceRecord]:
-    return list(DEFAULT_SOURCES.values())
+def all_board_sources() -> list[SourceRecord]:
+    return list(BOARD_SOURCE_CATALOG.values())
 
 
 async def sync_sources(
@@ -106,15 +103,16 @@ async def sync_sources(
 def _select_sources(
     store: OpenOppsStore | None, source_key: str | None
 ) -> list[SourceRecord]:
-    sources = store.list_sources(enabled_only=True) if store else []
-    if not sources:
-        sources = default_sources()
+    source_catalog = {source.key: source for source in all_board_sources()}
+    if store:
+        source_catalog.update({source.key: source for source in store.list_sources()})
+    sources = list(source_catalog.values())
     if source_key:
         selected = [source for source in sources if source.key == source_key]
         if selected:
             return selected
-        if source_key in DEFAULT_SOURCES:
-            return [DEFAULT_SOURCES[source_key]]
+        if source_key in BOARD_SOURCE_CATALOG:
+            return [BOARD_SOURCE_CATALOG[source_key]]
         raise ValueError(f"Unknown source: {source_key}")
     return [source for source in sources if source.enabled]
 
@@ -138,12 +136,8 @@ async def sync_jobs(
 ) -> SyncMetrics:
     metrics = SyncMetrics(name="jobs.sync")
     provider_filter = normalize_provider_filter(provider_id)
-    configured_source_keys = (
-        settings.job_sync_source_keys if not source_key and not board_key else ()
-    )
     route_selection = BoardRouteRegistry(store).select(
         source_key=source_key,
-        source_keys=configured_source_keys,
         board_key=board_key,
         provider_id=provider_filter,
         ready_only=True,
@@ -155,7 +149,7 @@ async def sync_jobs(
         len(route_selection.entries),
         len(route_selection.missing_route_metadata),
         len(route_selection.duplicate_routes),
-        source_key or ",".join(configured_source_keys) or "all",
+        source_key or "all",
         board_key or "all",
         provider_filter or "all",
     )

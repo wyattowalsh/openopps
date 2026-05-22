@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import builtins
-from urllib.parse import urlparse
 
 from openopps.models import BoardProviderRecord, ProviderSupport, utc_now
-from openopps.plugins import PluginRegistry, load_plugins
+from openopps.plugins import PluginContext, PluginRegistry, load_plugins
 from openopps.providers.base import ProviderDefinition, ProviderKind
-from openopps.providers.boards.workday import parse_workday_board_url
-from openopps.url_validation import host_matches, validate_public_https_url
+from openopps.providers.boards import board_provider_definitions
+from openopps.providers.sources import source_provider_definitions
+from openopps.settings import OpenOppsSettings
+from openopps.models import validate_public_https_url
 from openopps.utils import stable_id
 
 
@@ -51,138 +52,40 @@ class ProviderRegistry:
             validate_public_https_url(url)
         except ValueError:
             return None
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower()
-        path_parts = [part for part in parsed.path.split("/") if part]
-        provider_id: str | None = None
-        token: str | None = None
-        tenant: str | None = None
-        site: str | None = None
-
-        if host_matches(host, "greenhouse.io"):
-            provider_id = "greenhouse"
-            token = path_parts[0] if path_parts else None
-        elif host == "jobs.lever.co" or host.endswith(".lever.co"):
-            provider_id = "lever"
-            token = path_parts[0] if path_parts else None
-        elif host == "jobs.ashbyhq.com":
-            provider_id = "ashbyhq"
-            token = path_parts[0] if path_parts else None
-        elif host_matches(host, "myworkdayjobs.com"):
-            try:
-                parsed_workday = parse_workday_board_url(url)
-            except ValueError:
-                return None
-            provider_id = "workday"
-            token = parsed_workday.site
-            tenant = parsed_workday.tenant
-            site = parsed_workday.site
-            host = parsed_workday.host
-
-        if not provider_id:
+        definition: ProviderDefinition | None = None
+        match = None
+        for candidate in self.list_board_providers():
+            if candidate.route_detector is None:
+                continue
+            match = candidate.route_detector(url)
+            if match is not None:
+                definition = candidate
+                break
+        if definition is None or match is None:
             return None
 
-        definition = self.get(provider_id)
-        support = (
-            definition.support_level if definition else ProviderSupport.UNSUPPORTED
-        )
         return BoardProviderRecord(
-            id=stable_id(source_key, board_key, provider_id),
+            id=stable_id(source_key, board_key, definition.id),
             source_key=source_key,
             board_key=board_key,
-            provider_id=provider_id,
-            label=definition.label if definition else provider_id,
-            support_level=support,
+            provider_id=definition.id,
+            label=definition.label,
+            support_level=definition.support_level,
             board_url=url,
-            token=token,
-            host=host,
-            tenant=tenant,
-            site=site,
+            token=match.token,
+            host=match.host,
+            tenant=match.tenant,
+            site=match.site,
             detected_at=utc_now(),
         )
 
 
-def default_registry(plugin_registry: PluginRegistry | None = None) -> ProviderRegistry:
-    definitions = [
-        ProviderDefinition(
-            "consider_a16z",
-            "Consider/a16z",
-            ProviderKind.BOARD_SOURCE,
-            ProviderSupport.DETECT,
-            "Aggregate a16z source adapter that discovers boards and provider hints.",
-        ),
-        ProviderDefinition(
-            "getro",
-            "Getro",
-            ProviderKind.BOARD_SOURCE,
-            ProviderSupport.DETECT,
-            "Aggregate Getro source adapter that discovers company boards.",
-        ),
-        ProviderDefinition(
-            "ycombinator",
-            "Y Combinator",
-            ProviderKind.BOARD_SOURCE,
-            ProviderSupport.DETECT,
-            "Aggregate YC source adapter that discovers company boards from Algolia.",
-        ),
-        ProviderDefinition(
-            "greenhouse",
-            "Greenhouse",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.JOBS,
-            "Public Greenhouse job board API.",
-        ),
-        ProviderDefinition(
-            "lever",
-            "Lever",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.JOBS,
-            "Public Lever postings JSON API.",
-        ),
-        ProviderDefinition(
-            "workday",
-            "Workday",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.JOBS,
-            "Public Workday CXS careers-site endpoints.",
-        ),
-        ProviderDefinition(
-            "ashbyhq",
-            "Ashby",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.JOBS,
-            "Public Ashby job posting API.",
-        ),
-        ProviderDefinition(
-            "teamtailor",
-            "Teamtailor",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.DETECT,
-            "Detect-only provider metadata.",
-        ),
-        ProviderDefinition(
-            "manatal",
-            "Manatal",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.DETECT,
-            "Detect-only provider metadata.",
-        ),
-        ProviderDefinition(
-            "gem",
-            "Gem",
-            ProviderKind.BOARD_PROVIDER,
-            ProviderSupport.DETECT,
-            "Detect-only provider metadata.",
-        ),
-        ProviderDefinition(
-            "consider",
-            "Consider",
-            ProviderKind.BOARD_SOURCE,
-            ProviderSupport.DETECT,
-            "Detect-only Consider board metadata.",
-        ),
-    ]
-    registry = plugin_registry or load_plugins()
+def provider_registry(
+    plugin_registry: PluginRegistry | None = None,
+    settings: OpenOppsSettings | None = None,
+) -> ProviderRegistry:
+    definitions = [*source_provider_definitions(), *board_provider_definitions()]
+    registry = plugin_registry or load_plugins(context=PluginContext(settings=settings))
     known_ids = {definition.id for definition in definitions}
     for contribution in registry.contributions:
         for capability in contribution.all_capabilities():
@@ -200,6 +103,7 @@ def default_registry(plugin_registry: PluginRegistry | None = None) -> ProviderR
                 )
                 known_ids.add(capability.name)
             elif capability.kind == "job_provider":
+                route_detector = contribution.route_detectors.get(capability.name)
                 definitions.append(
                     ProviderDefinition(
                         capability.name,
@@ -207,6 +111,7 @@ def default_registry(plugin_registry: PluginRegistry | None = None) -> ProviderR
                         ProviderKind.BOARD_PROVIDER,
                         ProviderSupport.JOBS,
                         capability.description or "Plugin job provider.",
+                        route_detector=route_detector,
                     )
                 )
                 known_ids.add(capability.name)

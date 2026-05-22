@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 import httpx
+from loguru import logger
 from tenacity import (
     retry,
     retry_if_exception,
@@ -11,7 +13,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from openopps.cache import DEFAULT_CACHE_NAMESPACE, HttpCache
+from openopps.cache import DEFAULT_CACHE_NAMESPACE, HttpCache, cache_key
 from openopps.settings import OpenOppsSettings
 
 
@@ -46,6 +48,8 @@ def retrying_json_request(
     settings: OpenOppsSettings,
 ) -> Callable[..., Awaitable[dict[str, Any] | list[Any]]]:
     cache = HttpCache(settings.cache_path) if settings.cache_enabled else None
+    inflight: dict[str, asyncio.Task[dict[str, Any] | list[Any]]] = {}
+    inflight_lock = asyncio.Lock()
 
     @retry(
         retry=retry_if_exception(_is_retryable_http_error),
@@ -89,6 +93,19 @@ def retrying_json_request(
         params = _mapping_or_none(request_kwargs.get("params"))
         json_body = request_kwargs.get("json")
         headers = _mapping_or_none(request_kwargs.get("headers"))
+        request_key = (
+            cache_key(
+                method,
+                url,
+                namespace=namespace,
+                params=params,
+                json_body=json_body,
+                headers=headers,
+                identity=identity,
+            )
+            if request_cache and not refresh
+            else None
+        )
 
         stale_hit = None
         if request_cache:
@@ -104,29 +121,8 @@ def retrying_json_request(
             )
             if hit is not None:
                 return hit.data
-            stale_hit = request_cache.get_stale_json(
-                method,
-                url,
-                namespace=namespace,
-                params=params,
-                json_body=json_body,
-                headers=headers,
-                identity=identity,
-            )
-            if stale_hit and not refresh:
-                request_kwargs["headers"] = _conditional_headers(
-                    request_kwargs.get("headers"),
-                    stale_hit.etag,
-                    stale_hit.last_modified,
-                )
-
-        try:
-            data, response = await _request_upstream(
-                client, method, url, **request_kwargs
-            )
-        except Exception as exc:
-            if request_cache and stale_on_error and _is_retryable_http_error(exc):
-                stale_hit = stale_hit or request_cache.get_stale_json(
+            if not refresh:
+                stale_hit = request_cache.get_stale_json(
                     method,
                     url,
                     namespace=namespace,
@@ -134,32 +130,85 @@ def retrying_json_request(
                     json_body=json_body,
                     headers=headers,
                     identity=identity,
+                    stale_on_error_only=False,
                 )
-                if stale_hit is not None:
-                    return stale_hit.data
-            raise
+                if stale_hit:
+                    request_kwargs["headers"] = _conditional_headers(
+                        request_kwargs.get("headers"),
+                        stale_hit.etag,
+                        stale_hit.last_modified,
+                    )
 
-        if data is None:
-            if request_cache and stale_hit is not None:
-                request_cache.refresh_json(stale_hit.key, ttl_seconds=ttl_seconds)
-                return stale_hit.data
-            raise ValueError(f"Received 304 without cached payload for {url}")
-
-        if request_cache:
-            request_cache.put_json(
-                method,
-                url,
-                data,
-                namespace=namespace,
-                params=params,
-                json_body=json_body,
-                request_headers=headers,
-                response_headers=dict(response.headers),
-                identity=identity,
-                ttl_seconds=ttl_seconds,
-                stale_on_error=stale_on_error,
+        async def fetch_and_store() -> dict[str, Any] | list[Any]:
+            nonlocal stale_hit
+            data, response = await _request_upstream(
+                client, method, url, **request_kwargs
             )
-        return data
+            if data is None:
+                if request_cache and stale_hit is not None:
+                    request_cache.refresh_json(stale_hit.key, ttl_seconds=ttl_seconds)
+                    return stale_hit.data
+                raise ValueError(f"Received 304 without cached payload for {url}")
+            if request_cache:
+                request_cache.put_json(
+                    method,
+                    url,
+                    data,
+                    namespace=namespace,
+                    params=params,
+                    json_body=json_body,
+                    request_headers=headers,
+                    response_headers=dict(response.headers),
+                    identity=identity,
+                    ttl_seconds=ttl_seconds,
+                    stale_on_error=stale_on_error,
+                )
+            return data
+
+        try:
+            if request_key is None:
+                return await fetch_and_store()
+            async with inflight_lock:
+                task = inflight.get(request_key)
+                if task is None:
+                    task = asyncio.create_task(fetch_and_store())
+                    inflight[request_key] = task
+            try:
+                return await task
+            finally:
+                if task.done():
+                    async with inflight_lock:
+                        if inflight.get(request_key) is task:
+                            inflight.pop(request_key, None)
+        except Exception as exc:
+            if (
+                request_cache
+                and not refresh
+                and stale_on_error
+                and _is_retryable_http_error(exc)
+            ):
+                eligible_stale_hit = (
+                    stale_hit
+                    if stale_hit is not None and stale_hit.stale_on_error
+                    else request_cache.get_stale_json(
+                        method,
+                        url,
+                        namespace=namespace,
+                        params=params,
+                        json_body=json_body,
+                        headers=headers,
+                        identity=identity,
+                    )
+                )
+                if eligible_stale_hit is not None:
+                    logger.warning(
+                        "Using stale cache payload namespace={} key={} url={}",
+                        namespace,
+                        eligible_stale_hit.key,
+                        url,
+                    )
+                    return eligible_stale_hit.data
+            raise
 
     return _request
 

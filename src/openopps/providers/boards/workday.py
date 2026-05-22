@@ -20,7 +20,8 @@ from openopps.models import (
     strip_html,
 )
 from openopps.settings import OpenOppsSettings
-from openopps.url_validation import validate_provider_host, validate_public_https_url
+from openopps.models import validate_provider_host, validate_public_https_url
+from openopps.providers.base import ProviderRouteMatch
 from openopps.utils import first_present, stable_id
 
 
@@ -51,10 +52,25 @@ def parse_workday_board_url(url: str) -> WorkdayRoute:
 
 class WorkdayProvider:
     provider_id = "workday"
+    provider_label = "Workday"
+    provider_description = "Public Workday CXS careers-site endpoints."
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
         self._request_json = retrying_json_request(settings)
+
+    @staticmethod
+    def detect_route(url: str) -> ProviderRouteMatch | None:
+        try:
+            parsed = parse_workday_board_url(url)
+        except ValueError:
+            return None
+        return ProviderRouteMatch(
+            token=parsed.site,
+            host=parsed.host,
+            tenant=parsed.tenant,
+            site=parsed.site,
+        )
 
     async def fetch_jobs(
         self,

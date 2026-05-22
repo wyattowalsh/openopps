@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -22,12 +22,28 @@ class ProviderKind(StrEnum):
 
 
 @dataclass(frozen=True)
+class ProviderRouteMatch:
+    """Provider route fields parsed from a public hosted job-board URL."""
+
+    token: str | None = None
+    host: str | None = None
+    tenant: str | None = None
+    site: str | None = None
+
+
+ProviderRouteDetector = Callable[[str], ProviderRouteMatch | None]
+
+
+@dataclass(frozen=True)
 class ProviderDefinition:
+    """Indexed source or job-provider capability exposed by OpenOpps or plugins."""
+
     id: str
     label: str
     kind: ProviderKind
     support_level: ProviderSupport
     description: str
+    route_detector: ProviderRouteDetector | None = None
 
     @property
     def job_capable(self) -> bool:

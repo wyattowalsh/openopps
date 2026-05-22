@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 
 from openopps.http import build_async_client
-from openopps.ingest import default_sources
+from openopps.ingest import all_board_sources
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -15,8 +15,7 @@ from openopps.models import (
     SourceRecord,
     utc_now,
 )
-from openopps.route_probe import route_ready
-from openopps.route_select import dedupe_routes, normalize_provider_filter
+from openopps.route_select import dedupe_routes, normalize_provider_filter, route_ready
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 from openopps.providers.boards import BOARD_JOB_PROVIDERS, build_job_provider
@@ -183,14 +182,14 @@ def _select_sources(
     source_key: str | None,
     provider_filter: str | None,
 ) -> list[SourceRecord]:
-    defaults = {source.key: source for source in default_sources()}
+    source_catalog = {source.key: source for source in all_board_sources()}
     sources = store.list_sources(enabled_only=True)
     if not sources:
-        sources = list(defaults.values())
+        sources = list(source_catalog.values())
     if source_key:
         sources = [source for source in sources if source.key == source_key]
-        if not sources and source_key in defaults:
-            sources = [defaults[source_key]]
+        if not sources and source_key in source_catalog:
+            sources = [source_catalog[source_key]]
     if provider_filter:
         sources = [
             source for source in sources if source.provider_id == provider_filter
