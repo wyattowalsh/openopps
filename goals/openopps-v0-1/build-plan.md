@@ -32,7 +32,7 @@ Use a lead-plus-subagents workflow.
 - CLI behavior, persisted local data behavior, documented plugin hooks, plugin metadata contracts, cache semantics, and export formats are the supported v0.1 surface.
 - Cache correctness must be observable and must not hide explicit refreshes.
 - Plugin entry points execute normal installed Python code; docs must not imply sandboxing.
-- Provider coverage percentages must be measured from representative persisted source snapshots, not estimated.
+- Provider coverage percentages must be measured from persisted source snapshots, not estimated. Deterministic v0.1 validation uses seeded persisted data; representative live percentages are a post-v0.1 follow-up.
 - Tests must stay deterministic; reserve live provider checks for explicit smoke validation.
 - JSON output must remain parseable and free of decorative output.
 
@@ -44,14 +44,14 @@ This phase is mostly sequential because it defines the interfaces all later suba
 
 Dispatch these read-only subagents in one wave.
 
-| Subagent              | Scope                                                                               | Output                                                                        |
-| --------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| CLI contract scout    | `src/openopps/cli.py`, `tests/test_cli.py`, README CLI examples                     | Stable/admin command map, mutation safety notes, JSON risk list               |
-| Cache contract scout  | `src/openopps/http.py`, `storage.py`, `ingest.py`, `route_probe.py`, `health.py`    | Cache key fields, cache table shape, refresh/stale policy, integration seams  |
-| Plugin contract scout | `providers/`, `route_select.py`, `route_registry.py`, `models.py`, `pyproject.toml` | Hook list, entry-point group, conflict rules, plugin context boundary         |
-| Provider audit scout  | `coverage.py`, `health.py`, provider registry, tests                                | Board-level coverage denominator/numerators and candidate audit method        |
-| Examples scout        | current fixtures/tests/docs                                                         | Example dataclasses, Faker/Hypothesis strategy boundaries, golden output plan |
-| Docs/spec scout       | `openspec/`, `docs/`, `README.md`                                                   | v0.1 language drift, docs page map, OpenSpec spec split                       |
+| Subagent              | Scope                                                                                | Output                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| CLI contract scout    | `src/openopps/cli.py`, `tests/integration/openopps/test_cli.py`, README CLI examples | Stable/admin command map, mutation safety notes, JSON risk list               |
+| Cache contract scout  | `src/openopps/http.py`, `storage.py`, `ingest.py`, `route_probe.py`, `health.py`     | Cache key fields, cache table shape, refresh/stale policy, integration seams  |
+| Plugin contract scout | `providers/`, `route_select.py`, `route_registry.py`, `models.py`, `pyproject.toml`  | Hook list, entry-point group, conflict rules, plugin context boundary         |
+| Provider audit scout  | `coverage.py`, `health.py`, provider registry, tests                                 | Board-level coverage denominator/numerators and candidate audit method        |
+| Examples scout        | current fixtures/tests/docs                                                          | Example dataclasses, Faker/Hypothesis strategy boundaries, golden output plan |
+| Docs/spec scout       | `openspec/`, `docs/`, `README.md`                                                    | v0.1 language drift, docs page map, OpenSpec spec split                       |
 
 Accounting gate: all six subagents must return before the lead writes OpenSpec.
 
@@ -98,7 +98,7 @@ After OpenSpec approval, dispatch implementation subagents by non-overlapping ow
 Primary files:
 
 - `src/openopps/cli.py`
-- `tests/test_cli.py`
+- `tests/integration/openopps/test_cli.py`
 - `src/openopps/AGENTS.md`
 
 Responsibilities:
@@ -116,7 +116,7 @@ Avoid editing:
 
 Validation:
 
-- `uv run pytest tests/test_cli.py`
+- `uv run pytest tests/integration/openopps/test_cli.py -q`
 - JSON parse smoke checks for all new `--json` outputs.
 
 ### Lane B: Cache Core
@@ -125,7 +125,7 @@ Primary files:
 
 - `src/openopps/cache.py`
 - `src/openopps/http.py`
-- `tests/test_http.py`
+- `tests/unit/openopps/test_http.py`
 - cache-focused tests under `tests/` as needed
 
 Responsibilities:
@@ -143,7 +143,7 @@ Avoid editing:
 
 Validation:
 
-- `uv run pytest tests/test_http.py`
+- `uv run pytest tests/unit/openopps/test_http.py -q`
 - Targeted cache tests for TTL, refresh, conditional requests, 304 reuse, stale-on-error, namespace isolation, duplicate suppression, and JSON silence.
 
 ### Lane C: Plugin Core
@@ -151,7 +151,7 @@ Validation:
 Primary files:
 
 - `src/openopps/plugins.py` or `src/openopps/plugins/`
-- `tests/test_plugins.py`
+- `tests/unit/openopps/test_plugins.py`
 - plugin-related pyproject metadata only if contract requires a dependency or entry-point example
 
 Responsibilities:
@@ -170,7 +170,7 @@ Avoid editing:
 
 Validation:
 
-- `uv run pytest tests/test_plugins.py`
+- `uv run pytest tests/unit/openopps/test_plugins.py -q`
 - Tests monkeypatch entry points; do not depend on installed local packages.
 
 ### Lane D: Provider Registry And Coverage Audit
@@ -180,7 +180,7 @@ Primary files:
 - `src/openopps/coverage.py`
 - `src/openopps/providers/registry.py`
 - `src/openopps/providers/boards/**` only for adopted generic providers
-- `tests/test_coverage.py`
+- `tests/unit/openopps/test_coverage.py`
 - provider-specific tests for any adopted provider
 
 Responsibilities:
@@ -200,8 +200,8 @@ Avoid editing:
 
 Validation:
 
-- `uv run pytest tests/test_coverage.py`
-- `uv run pytest tests/test_providers.py tests/test_route_probe.py tests/test_registry.py tests/test_health.py`
+- `uv run pytest tests/unit/openopps/test_coverage.py -q`
+- `uv run pytest tests/unit/openopps/test_providers.py tests/unit/openopps/test_route_probe.py tests/unit/openopps/test_registry.py tests/unit/openopps/test_health.py -q`
 
 ### Lane E: Metadata Enrichment
 
@@ -228,7 +228,7 @@ Avoid editing:
 
 Validation:
 
-- `uv run pytest tests/test_storage_export.py tests/test_job_enrichment.py`
+- `uv run pytest tests/integration/openopps/test_storage_export.py tests/unit/openopps/test_job_enrichment.py -q`
 - Additional tests for partial metadata enrichment and raw payload preservation.
 
 ### Lane F: Generated Examples
@@ -236,7 +236,7 @@ Validation:
 Primary files:
 
 - `src/openopps/examples.py` or `src/openopps/fixtures.py`
-- `tests/test_examples.py`
+- `tests/unit/openopps/test_examples.py`
 - `tests/fixtures/` if needed
 
 Responsibilities:
@@ -254,7 +254,7 @@ Avoid editing:
 
 Validation:
 
-- `uv run pytest tests/test_examples.py`
+- `uv run pytest tests/unit/openopps/test_examples.py -q`
 - Bounded Hypothesis runs suitable for CI.
 
 ### Lane G: Docs Outline And Drift Cleanup
@@ -276,7 +276,7 @@ Responsibilities:
 - Rewrite docs around the happy path.
 - Keep advanced/admin/debug commands documented but not primary.
 - Add cache behavior, plugin development, example data, provider coverage audit, metadata model, storage/export, and troubleshooting docs.
-- Publish measured provider coverage percentages with snapshot date, source set, denominator, numerator, examples, and candidate deltas.
+- Publish deterministic persisted-data provider coverage percentages with source set, denominator, numerator, examples, and candidate evidence. Publish representative live percentages only after the post-v0.1 live snapshot follow-up.
 
 Avoid editing:
 
@@ -318,23 +318,23 @@ Shared files that require single-owner integration:
 
 Integration gate:
 
-- `uv run pytest tests/test_cli.py tests/test_http.py tests/test_plugins.py tests/test_coverage.py tests/test_examples.py`
+- `uv run pytest tests/integration/openopps/test_cli.py tests/unit/openopps/test_http.py tests/unit/openopps/test_plugins.py tests/unit/openopps/test_coverage.py tests/unit/openopps/test_examples.py -q`
 - JSON parse smoke checks for status, plugins, cache, coverage, boards, jobs, and examples.
 
 ## Phase 3: Hardening And Review
 
 Dispatch independent verification subagents after the integration gate.
 
-| Subagent                      | Scope                                                                   | Commands                                |
-| ----------------------------- | ----------------------------------------------------------------------- | --------------------------------------- |
-| CLI verifier                  | stable/admin help, dry-run/apply, JSON outputs                          | `uv run pytest tests/test_cli.py`       |
-| Cache verifier                | keying, TTL, refresh, stale-on-error, concurrency risk                  | cache tests and targeted smoke commands |
-| Plugin verifier               | entry-point monkeypatching, conflicts, disabling, failure isolation     | `uv run pytest tests/test_plugins.py`   |
-| Provider verifier             | baseline providers, adopted candidates, route probing, health           | provider/route/health tests             |
-| Storage/export verifier       | filter parity, raw payload preservation, metadata fields                | storage/export/job enrichment tests     |
-| Examples verifier             | deterministic seeds, Hypothesis bounds, golden output drift             | examples tests                          |
-| Docs verifier                 | README commands, docs typecheck/build, v0.1 language                    | docs validation commands                |
-| Security/reliability reviewer | plugin non-sandboxing docs, cache stale risks, network failure handling | review report only                      |
+| Subagent                      | Scope                                                                   | Commands                                                  |
+| ----------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------- |
+| CLI verifier                  | stable/admin help, dry-run/apply, JSON outputs                          | `uv run pytest tests/integration/openopps/test_cli.py -q` |
+| Cache verifier                | keying, TTL, refresh, stale-on-error, concurrency risk                  | cache tests and targeted smoke commands                   |
+| Plugin verifier               | entry-point monkeypatching, conflicts, disabling, failure isolation     | `uv run pytest tests/unit/openopps/test_plugins.py -q`    |
+| Provider verifier             | baseline providers, adopted candidates, route probing, health           | provider/route/health tests                               |
+| Storage/export verifier       | filter parity, raw payload preservation, metadata fields                | storage/export/job enrichment tests                       |
+| Examples verifier             | deterministic seeds, Hypothesis bounds, golden output drift             | examples tests                                            |
+| Docs verifier                 | README commands, docs typecheck/build, v0.1 language                    | docs validation commands                                  |
+| Security/reliability reviewer | plugin non-sandboxing docs, cache stale risks, network failure handling | review report only                                        |
 
 Accounting gate: all verifier findings must be resolved, accepted as residual risk, or explicitly deferred before release validation.
 
@@ -360,29 +360,29 @@ Required smoke checks:
 - Cache status and explicit refresh behavior.
 - Plugin list and plugin failure-isolation output.
 - JSON parse checks for all machine-readable outputs.
-- Provider coverage report with measured non-supported provider board percentages.
+- Provider coverage report with deterministic non-supported provider board percentages.
 
 Required artifacts:
 
 - Acceptance matrix with pass/fail status.
-- Provider coverage snapshot with date, source set, denominator, numerator, percentages, examples, candidate deltas, and rejection rationales.
+- Provider coverage snapshot with source set, denominator, numerator, deterministic percentages, examples, candidate evidence, and rejection rationales.
 - Release summary with validation commands and outcomes.
 - Docs pages and README matching the final command surface.
 
 ## Acceptance Matrix Template
 
-| Area              | Acceptance Criterion                                                   | Owner Lane      | Evidence                     | Validation                            | Status      |
-| ----------------- | ---------------------------------------------------------------------- | --------------- | ---------------------------- | ------------------------------------- | ----------- |
-| OpenSpec          | v0.1 CLI/cache/plugin/provider/examples contracts are strict-validated | Contract        | OpenSpec change              | strict validation                     | Not started |
-| CLI               | Stable commands cover happy path and internals are admin/debug         | CLI             | help tests and CLI reference | `uv run pytest tests/test_cli.py`     | Not started |
-| JSON              | Machine-readable outputs parse cleanly                                 | CLI/integration | JSON smoke logs              | targeted parse checks                 | Not started |
-| Cache             | TTL, refresh, stale-on-error, namespace isolation, metrics pass        | Cache           | cache tests                  | `uv run pytest tests/test_http.py`    | Not started |
-| Plugins           | Discovery, validation, conflicts, disabling, failure isolation pass    | Plugin          | plugin tests/docs            | `uv run pytest tests/test_plugins.py` | Not started |
-| Provider coverage | Non-supported provider board percentages are measured and published    | Provider audit  | coverage snapshot            | coverage tests and report             | Not started |
-| Metadata          | Raw payloads preserved and normalized fields promoted                  | Metadata        | storage/export tests         | storage/export tests                  | Not started |
-| Examples          | Deterministic examples seed, list, export, and docs snippets reproduce | Examples        | examples tests/golden output | examples tests                        | Not started |
-| Docs              | README/docs match v0.1 surface and build                               | Docs            | docs pages                   | docs typecheck/build                  | Not started |
-| Release           | Fresh clone quickstart works end-to-end                                | Lead            | release smoke log            | full validation                       | Not started |
+| Area              | Acceptance Criterion                                                   | Owner Lane      | Evidence                     | Validation                                                | Status |
+| ----------------- | ---------------------------------------------------------------------- | --------------- | ---------------------------- | --------------------------------------------------------- | ------ |
+| OpenSpec          | v0.1 CLI/cache/plugin/provider/examples contracts are strict-validated | Contract        | OpenSpec change              | strict validation                                         | Pass   |
+| CLI               | Stable commands cover happy path and internals are admin/debug         | CLI             | help tests and CLI reference | `uv run pytest tests/integration/openopps/test_cli.py -q` | Pass   |
+| JSON              | Machine-readable outputs parse cleanly                                 | CLI/integration | JSON smoke logs              | targeted parse checks                                     | Pass   |
+| Cache             | TTL, refresh, stale-on-error, namespace isolation, metrics pass        | Cache           | cache tests                  | `uv run pytest tests/unit/openopps/test_http.py -q`       | Pass   |
+| Plugins           | Discovery, validation, conflicts, disabling, failure isolation pass    | Plugin          | plugin tests/docs            | `uv run pytest tests/unit/openopps/test_plugins.py -q`    | Pass   |
+| Provider coverage | Deterministic persisted-data provider percentages are measured         | Provider audit  | coverage snapshot            | coverage tests and report                                 | Pass   |
+| Metadata          | Raw payloads preserved and normalized fields promoted                  | Metadata        | storage/export tests         | storage/export tests                                      | Pass   |
+| Examples          | Deterministic examples seed, list, export, and docs snippets reproduce | Examples        | examples tests/golden output | examples tests                                            | Pass   |
+| Docs              | README/docs match v0.1 surface and build                               | Docs            | docs pages                   | docs typecheck/build                                      | Pass   |
+| Release           | Fresh-clone deterministic quickstart works end-to-end                  | Lead            | release smoke log            | full validation                                           | Pass   |
 
 ## Subagent Prompt Template
 
@@ -431,7 +431,7 @@ Return:
 - If two lanes need the same file, stop parallel work on that file and assign it to the integration lead.
 - If OpenSpec contract ambiguity appears during implementation, stop the affected lane and update the contract before continuing.
 - If cache or plugin behavior threatens JSON cleanliness, prioritize JSON tests before feature completion.
-- If provider audit cannot produce a measured percentage because snapshots are unavailable, block provider-coverage docs until a representative persisted snapshot is generated.
+- If representative live snapshots are unavailable, publish only deterministic persisted-data coverage and record live-source percentages as post-v0.1 follow-up work.
 
 ## Recommended First Build Dispatch
 

@@ -30,7 +30,7 @@ The Accel source adapter SHALL fetch boards from the Getro-backed public compani
 
 ### Requirement: Additional investor source sync discovers boards
 
-OpenOpps SHALL provide default source definitions for General Catalyst, Lightspeed, Sequoia, Bessemer, Greylock, and Kleiner Perkins.
+OpenOpps SHALL provide packaged source definitions for General Catalyst, Lightspeed, Sequoia, Bessemer, Greylock, and Kleiner Perkins.
 
 #### Scenario: User syncs a Getro-backed investor source
 

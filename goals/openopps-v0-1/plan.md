@@ -9,7 +9,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 - Prefer OpenOpps-owned dataclasses, protocols, Pydantic models, and registries around plugins so the package controls adapter contracts, error handling, caching boundaries, conflict reporting, and status output.
 - Use a SQLite-backed cache owned by OpenOpps instead of opaque HTTP client magic so cached source pages, provider requests, route probes, metadata enrichment, freshness, invalidation, and diagnostics are visible and testable.
 - Use Faker for realistic deterministic sample records and Hypothesis strategies for edge cases and invariants because examples should be coherent enough for demos while tests should probe malformed, partial, and high-volume data.
-- Treat provider coverage percentages as measured release artifacts, not estimates. The current local `openopps.db` has zero boards, so v0.1 must compute percentages from representative persisted source snapshots during the provider audit.
+- Treat provider coverage percentages as persisted-data release artifacts, not estimates. Deterministic v0.1 validation uses seeded persisted data; representative live snapshot percentages are a post-v0.1 follow-up before publishing real-world percentages.
 
 ## Parallel Execution Map
 
@@ -17,7 +17,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 - Wave 1 independent builds: split subagent teams by file ownership into CLI regrouping, cache layer, plugin manager, generated examples, provider coverage audit, metadata enrichment, README outline, and docs outline.
 - Wave 2 integration: merge through stable contracts into status/doctor, metrics, JSON cleanliness, storage/export parity, cache/plugin diagnostics, and provider coverage reporting.
 - Wave 3 hardening: parallel test teams cover CLI/help, cache behavior, plugin behavior, provider/source regressions, examples/Hypothesis invariants, docs build, and fresh-clone smoke checks.
-- Wave 4 release verification: one lead reconciles artifacts, docs, OpenSpec tasks, validation logs, provider coverage percentages, and release-readiness language.
+- Wave 4 release verification: one lead reconciles artifacts, docs, OpenSpec tasks, validation logs, deterministic provider coverage evidence, and release-readiness language.
 - Parallel safety rule: subagents should not edit the same module concurrently; shared files such as `src/openopps/cli.py`, `src/openopps/models.py`, `src/openopps/storage.py`, README, and docs navigation need a lead-owned integration pass.
 - Merge contract: every subagent returns changed files, tests run, uncovered risks, JSON-output implications, docs implications, and any OpenSpec task status changes before handoff.
 
@@ -48,7 +48,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
    - Verification: inspect `src/openopps/AGENTS.md` and confirm it no longer conflicts with the approved OpenSpec change.
 
 3. Audit the current CLI commands and classify each command as stable user-facing or advanced.
-   - Touches: `src/openopps/cli.py` and `tests/test_cli.py` during implementation.
+   - Touches: `src/openopps/cli.py` and `tests/integration/openopps/test_cli.py` during implementation.
    - Stable user-facing commands should cover source discovery, board listing/inspection/export, route readiness/coverage/health, job sync/list/show/export, plugins inspection, cache inspection, and local status.
    - Advanced commands should include manual source creation, source adapter sampling, manual board creation, manual provider-route attachment, one-off provider detection, adapter explanation, route registry inspection, route probing internals, board refresh, cache maintenance, and database maintenance.
    - Verification: add or update CLI help tests that assert stable help emphasizes the everyday journey and advanced help contains the low-level operations.
@@ -59,7 +59,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
    - Candidate stable surface: `sources list`, `sources sync`, `boards list`, `boards show`, `boards export`, `jobs sync`, `jobs list`, `jobs show`, `jobs export`, `providers coverage`, `providers health`, `plugins list`, `cache status`, `status` or `doctor`.
    - Candidate advanced surface: `admin sources add`, `admin sources test`, `admin boards add`, `admin boards add-provider`, `admin boards detect-provider`, `admin boards refresh`, `admin providers list`, `admin providers detect`, `admin providers explain`, `admin providers probe-routes`, `admin providers registry`, `admin cache purge`, `admin cache refresh`, `admin db init`, `admin db status`, and `admin db vacuum`.
    - Do not keep old low-level command aliases for v0.1 unless a later approved release-compatibility requirement introduces them.
-   - Verification: run targeted help and command tests with `uv run pytest tests/test_cli.py`.
+   - Verification: run targeted help and command tests with `uv run pytest tests/integration/openopps/test_cli.py -q`.
 
 5. Design and implement the robust v0.1 plugin architecture.
    - Touches: `pyproject.toml`, a likely new `src/openopps/plugins.py` or `src/openopps/plugins/` package, `src/openopps/providers/`, `src/openopps/cli.py`, tests, README, and docs.
@@ -100,9 +100,9 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
    - Touches: `src/openopps/providers/boards/`, `src/openopps/route_probe.py`, `src/openopps/route_registry.py`, `src/openopps/providers/registry.py`, provider tests, README, and docs if new providers are adopted.
    - Treat Ashby, Greenhouse, Lever, and Workday as the baseline v0.1 job-capable providers.
    - Audit candidate public ATS providers that may significantly improve route coverage without bespoke per-company adapters: SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
-   - Compute board-level percentages from representative persisted source snapshots: total boards, boards with provider hints, boards with baseline job-capable providers, boards with adopted v0.1 providers, boards with any non-supported provider hints, boards with only non-supported provider hints, boards with detect-only providers, boards with unsupported or unknown providers, and boards missing executable route metadata.
+   - Compute board-level percentages from persisted source snapshots: total boards, boards with provider hints, boards with baseline job-capable providers, boards with adopted v0.1 providers, boards with any non-supported provider hints, boards with only non-supported provider hints, boards with detect-only providers, boards with unsupported or unknown providers, and boards missing executable route metadata.
    - Add coverage report fields such as `boards.withNonSupportedProviderHints`, `boards.withOnlyNonSupportedProviderHints`, `boards.nonSupportedProviderCoverage.percentage`, `routes.nonSupportedTotal`, and `routes.nonSupportedByProvider`.
-   - Publish snapshot date, source set, denominator, numerator, percentage, examples, and before-and-after coverage deltas for each candidate provider in README/docs.
+   - Publish deterministic persisted-data source set, denominator, numerator, percentage, examples, and candidate-provider evidence in README/docs. Publish representative live snapshot dates and real-world percentages only after a post-v0.1 live-source snapshot exists.
    - Promote a candidate to v0.1 job-fetching support only when a generic route detector and public job-fetch implementation can be derived from hosted-board URLs, public JSON endpoints, or stable embedded payloads.
    - Keep candidates as detect-only metadata when fetching would require authenticated APIs, brittle browser scraping, custom per-company rules, or unclear public endpoint stability.
    - Record do-not-adopt rationale for every rejected candidate so future provider work starts from evidence instead of rediscovery.
@@ -147,7 +147,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 - Keep list/export filter parity for boards and jobs.
 - Keep raw provider payload preservation and normalized enrichment fields in exports.
 - Keep plugin-provided adapters and built-in adapters flowing through the same storage/export boundaries.
-- Verification: `uv run pytest tests/test_storage_export.py tests/test_job_enrichment.py tests/test_cli.py` plus new cache/plugin/example tests.
+- Verification: `uv run pytest tests/integration/openopps/test_storage_export.py tests/unit/openopps/test_job_enrichment.py tests/integration/openopps/test_cli.py -q` plus cache/plugin/example tests.
 
 14. Run provider/source regression coverage before docs are finalized.
 
@@ -155,18 +155,18 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 - Confirm Ashby, Greenhouse, Lever, and Workday remain the baseline v0.1 job-capable providers.
 - Confirm any added provider from the coverage audit has generic public fetching and meaningful coverage impact.
 - Confirm Teamtailor, Manatal, Gem, and other candidates remain detect-only metadata unless reliable public fetching has already landed or the audit justifies adoption.
-- Verification: `uv run pytest tests/test_providers.py tests/test_consider.py tests/test_workday.py tests/test_route_probe.py tests/test_registry.py tests/test_health.py tests/test_coverage.py` plus adopted provider tests.
+- Verification: `uv run pytest tests/unit/openopps/test_providers.py tests/integration/openopps/test_sources.py tests/unit/openopps/test_workday.py tests/unit/openopps/test_route_probe.py tests/unit/openopps/test_registry.py tests/unit/openopps/test_health.py tests/unit/openopps/test_coverage.py -q` plus adopted provider tests.
 
 15. Write a release acceptance matrix before final docs polish.
 
 - Touches: `README.md`, docs, OpenSpec tasks, or a release note/checklist file if the repo has one.
-- Cover CLI command surface, cache behavior, plugin behavior, generated examples, provider coverage percentages, storage/export parity, JSON output, docs, fresh-clone quickstart, full tests, OpenSpec validation, and release smoke commands.
+  - Cover CLI command surface, cache behavior, plugin behavior, generated examples, deterministic provider coverage evidence, storage/export parity, JSON output, docs, fresh-clone quickstart, full tests, OpenSpec validation, and release smoke commands.
 - Verification: every acceptance row has an owner, command or evidence artifact, and pass/fail result before the goal is marked complete.
 
 16. Rewrite the README around the v0.1 happy path.
 
 - Touches: `README.md`.
-- Lead with the value proposition, install, one clean quickstart, stable command surface, status/doctor path, cache behavior, generated examples, plugin extension story, metadata model, provider support matrix, measured provider audit results, storage/export explanation, troubleshooting, and validation commands.
+- Lead with the value proposition, install, one clean quickstart, stable command surface, status/doctor path, cache behavior, generated examples, plugin extension story, metadata model, provider support matrix, deterministic provider audit results, storage/export explanation, troubleshooting, and validation commands.
 - Move advanced command examples out of the primary path and label them as advanced/admin/debug.
 - Verification: manually run every README quickstart command that is deterministic locally; for live network examples, run a small representative sample or mark them as live-network examples.
 
@@ -202,7 +202,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 - More metadata can increase schema churn; prefer existing raw metadata/payload preservation plus small normalized fields that clearly improve filtering, display, export, or diagnostics.
 - Automatic metadata enrichment can become bespoke scraping; limit v0.1 enrichment to source payloads, provider route pages, and job payloads with generic extraction paths.
 - Adding too many providers can dilute reliability; adopt only high-coverage providers with generic public routes and keep the rest detect-only with clear coverage reporting.
-- Provider coverage percentages can become stale; publish the snapshot date, source set, denominator, and numerator with the result.
+- Real-world provider coverage percentages can become stale; publish snapshot date, source set, denominator, and numerator with any post-v0.1 live result.
 - Massive parallel implementation can create interface drift; freeze OpenSpec, model contracts, command names, hook specs, and cache key semantics before parallel subagent waves edit code.
 - Generated example data must be realistic enough to teach the product but obviously synthetic enough that users do not confuse it with real synced opportunities.
 - Live source/provider checks may be flaky because upstream public endpoints can change or rate-limit; keep tests deterministic and reserve live checks for smoke validation.

@@ -10,7 +10,7 @@
 - [x] Add deterministic generated examples and bounded Hypothesis strategies for storage/filter/export/cache/plugin invariants.
 - [x] Preserve JSON cleanliness and dry-run/apply safety across CLI, cache, plugins, provider health, and route probing.
 - [x] Update README and docs for v0.1 quickstart, stable/admin commands, cache, plugins, examples, provider coverage, metadata, storage/export, and troubleshooting.
-- [x] Keep `jobs sync` defaulted to all persisted job-capable sources unless `OPENOPPS_JOB_SYNC_SOURCES` config narrows the unscoped default or explicit `--source`/`--board` flags override it.
+- [x] Keep unscoped `jobs sync` covering all persisted job-capable routes; use explicit `--source`, `--board`, or `--provider` filters for scoped syncs.
 - [x] Write an acceptance matrix with evidence artifacts and validation status.
 - [x] Run targeted tests for CLI, cache, plugins, coverage, examples, storage/export, providers, routes, and health.
 - [x] Run full validation: `uv run pytest`, strict OpenSpec validation, `cd docs && pnpm types:check`, `cd docs && pnpm build`, JSON parse smoke checks, generated-example smoke path, cache/plugin smoke path, and provider coverage report.

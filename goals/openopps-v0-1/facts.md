@@ -4,7 +4,7 @@
 - The v0.1 release is CLI-only and excludes TUI, Textual, interactive prompt flows, browser UI, and web UI behavior.
 - The v0.1 release includes enough README and docs-site polish for a fresh user to understand the happy path without reading source code.
 - A fresh clone can run `uv sync` and `uv run pytest` successfully.
-- A fresh user can discover boards from at least one representative built-in source through documented commands.
+- A fresh user can discover boards from at least one representative packaged source through documented commands.
 - A fresh user can resolve or inspect provider routes well enough to understand why a board can or cannot fetch jobs.
 - A fresh user can sync jobs from at least one supported job provider path through documented commands.
 - Source sync preserves upstream source metadata such as collection identifiers, pagination cursors, totals, ETags, or health markers in `SourceRecord.raw_metadata` when those values are available.
@@ -40,8 +40,8 @@
 - The v0.1 release includes a plugin system so community developers can extend OpenOpps without editing the core package.
 - Plugins are discovered through documented Python package entry points.
 - The plugin system uses explicit hookspecs or equivalent validated contracts so source adapters, job-provider adapters, route detectors, metadata enrichers, cache policy contributors, export contributors, and CLI command contributors extend only documented seams.
-- Plugins can contribute source adapters and job-provider adapters that use the same normalized OpenOpps records, settings, HTTP, caching, storage, and metrics boundaries as built-in adapters.
-- Plugin loading failures do not prevent built-in OpenOpps functionality from running.
+- Plugins can contribute source adapters and job-provider adapters that use the same normalized OpenOpps records, settings, HTTP, caching, storage, and metrics boundaries as packaged adapters.
+- Plugin loading failures do not prevent packaged OpenOpps functionality from running.
 - Plugin conflicts, load failures, and capability metadata are visible in status, doctor, or plugin-inspection output.
 - The v0.1 plugin API is a documented first-version product surface managed through git history, PyPI versions, GitHub releases, tests, and release notes.
 - The v0.1 release includes a small plugin template or example plugin that demonstrates source, provider, route, metadata, cache policy, and CLI extension points where applicable.
@@ -59,11 +59,11 @@
 - The v0.1 plan should include a provider coverage audit for high-coverage public ATS providers that may materially improve board coverage without bespoke per-company logic.
 - The provider coverage audit reports the measured percentage of persisted boards with any non-supported provider hints, using distinct persisted boards in the current report scope as the denominator.
 - The provider coverage audit separately reports boards with job-capable baseline providers, adopted v0.1 providers, detect-only providers, unsupported or unknown providers, only non-supported provider hints, and missing executable route metadata.
-- The provider coverage audit publishes snapshot date, source set, denominator, numerator, percentage, examples, before-and-after deltas for candidate providers, and do-not-adopt rationales for rejected providers.
+- The provider coverage audit publishes persisted-data source set, denominator, numerator, percentage, examples, candidate-provider evidence, and do-not-adopt rationales for rejected providers. Representative live snapshot percentages are a post-v0.1 follow-up before publishing real-world percentages.
 - Candidate high-coverage provider audit targets include SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
 - Candidate providers should only become v0.1 job-fetching providers if route discovery and job fetching can be implemented through generic public endpoints or stable hosted-board payloads.
 - Teamtailor, Manatal, and Gem remain detect-only metadata in v0.1 unless reliable public fetching already exists or the provider audit proves a generic public job-fetching implementation is low risk.
-- The supported v0.1 aggregate sources are the built-in sources already documented in the README, subject to test and live-health verification.
+- The supported v0.1 aggregate sources are the packaged source catalog already documented in the README, subject to test and live-health verification.
 - Public Python API stability is not a v0.1 guarantee.
 - The supported v0.1 surface is the CLI behavior, persisted local data behavior, and documented export formats.
 - The supported v0.1 surface includes documented plugin hooks and plugin metadata contracts.

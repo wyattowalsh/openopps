@@ -6,7 +6,7 @@
 - [x] Implement source sync and job sync pipelines with bounded async concurrency.
 - [x] Implement Typer command groups for `sources`, `boards`, `jobs`, `providers`, and `db`.
 - [x] Add best-effort route probing for Ashby, Greenhouse, Lever, and Workday provider hints that lack fetch routes.
-- [x] Add default sources for Accel, General Catalyst, Lightspeed, Sequoia, Bessemer, Greylock, and Kleiner Perkins.
+- [x] Add packaged sources for Accel, General Catalyst, Lightspeed, Sequoia, Bessemer, Greylock, and Kleiner Perkins.
 - [x] Add `any`/`all` provider filter aliases and richer route-probe diagnostics.
 - [x] Dedupe overlapping source board/provider routes before external probe and job-sync requests.
 - [x] Add tests for CLI scope semantics, fixtures, providers, storage/export, and pipeline behavior.

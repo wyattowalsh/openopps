@@ -27,7 +27,7 @@ Plugin import failures, validation errors, duplicate capabilities, blocked plugi
 
 - **WHEN** a plugin raises during import or registration
 - **THEN** OpenOpps reports the plugin load failure through plugin inspection, status, or doctor output
-- **AND** built-in sources and providers remain available
+- **AND** packaged source and provider adapters remain available
 
 ### Requirement: Plugin capabilities and conflicts are observable
 
