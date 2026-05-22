@@ -170,7 +170,7 @@ uv run openopps plugins list
 uv run openopps plugins list --json
 ```
 
-Plugins are discovered through Python entry points in the `openopps.plugins` group. Installed Python plugins are not sandboxed; install only plugins you trust.
+Plugins are discovered through Python entry points in the `openopps.plugins` group. `OPENOPPS_PLUGIN_DISABLED` and `OPENOPPS_PLUGIN_ALLOWED` can disable or allow-list entry-point names for failure isolation. Installed Python plugins are not sandboxed; install only plugins you trust.
 
 The repo includes a minimal plugin package template at `examples/plugins/minimal-openopps-plugin/`.
 

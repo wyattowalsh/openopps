@@ -3,7 +3,7 @@ title: Operations
 description: Storage, export, validation, and troubleshooting workflows.
 ---
 
-Use this page for local operations and docs validation while working on OpenOpps.
+Use this page for local CLI operations and docs validation while working on OpenOpps v0.1. There is no hosted runtime to initialize; durable state lives in local SQLite files controlled by `OPENOPPS_` settings.
 
 ## Storage
 
@@ -17,6 +17,8 @@ uv run openopps jobs sync --provider any --metrics-json
 ```
 
 The default database path is controlled by `OPENOPPS_DB_URL` and resolves to `openopps.db` for `sqlite:///openopps.db`.
+
+`admin db init` runs Alembic migrations for the durable app SQLite schema. Existing unversioned OpenOpps ledgers are stamped after local schema repair hooks run. The optional HTTP response cache is separate and is not part of the Alembic migration history.
 
 Use `status` or `doctor` to inspect the full local runtime state:
 
@@ -70,13 +72,12 @@ Use `jsonl` for auditability, `csv` for spreadsheet inspection, and `parquet` fo
 
 `jobs export` accepts the same job filters as `jobs list`, including `--source`, `--board`, `--provider`, `--location`, `--department`, `--team`, `--workplace-type`, `--remote`, `--employment-type`/`--type`, `--salary-min`, `--salary-max`, `--skill`, `--query`, `--posted-after`, `--posted-before`, and `--limit`. These filters use normalized job fields; raw upstream payloads remain exported for auditability but are not part of primary filtering semantics.
 
-## Route Probe Script
+## Route Probing
 
-The CLI route-probing command and helper script share the same dry-run-first behavior:
+The CLI route-probing command is dry-run-first:
 
 ```bash
 uv run openopps admin providers probe-routes --source a16z --provider all --limit 25 --json
-uv run python scripts/probe_provider_routes.py --source a16z --provider all --limit 25
 ```
 
 Use `--apply` only after inspecting matched routes.
@@ -93,12 +94,13 @@ Run docs checks from the docs app:
 
 ```bash
 cd docs
+pnpm data:generate
 pnpm types:check
 pnpm build
-pnpm lint
+rtk lint
 ```
 
-`pnpm types:check` regenerates Fumadocs MDX artifacts, generates Next.js route types, and runs TypeScript without emitting files.
+`pnpm data:generate` refreshes package-derived provider/source metadata. `pnpm types:check` also regenerates that metadata before generating Fumadocs MDX artifacts, generating Next.js route types, and running TypeScript without emitting files.
 
 ## Troubleshooting
 

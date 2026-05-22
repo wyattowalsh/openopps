@@ -3,25 +3,21 @@ title: Providers
 description: Source catalogs, provider support levels, route probing, and health checks.
 ---
 
-OpenOpps separates aggregate source adapters from job-capable provider adapters. Source adapters discover company boards; provider adapters detect or fetch postings from public board providers.
+import {
+  AuditProviderTargets,
+  JobProviderSummary,
+  SourceCatalogSummary,
+} from "@/components/openopps-provider-data";
 
-Python plugins can contribute additional source adapters and job providers through the `openopps.plugins` entry point group. Plugin capabilities appear in `admin providers list` and registry surfaces when loaded successfully, and load failures are visible in `plugins list`.
+OpenOpps v0.1 separates aggregate source adapters from job-capable provider adapters. Source adapters discover company boards; provider adapters detect or fetch postings from public board providers through the CLI and local SQLite state.
+
+Python plugins can contribute additional source adapters and job providers through the `openopps.plugins` entry point group. Plugin capabilities appear in `admin providers list` and registry surfaces when loaded successfully, and load failures, disabled entries, allow-list filters, and conflicts are visible in `plugins list`.
 
 Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a packaged plugin with a `pyproject.toml` entry point.
 
-## Default Sources
+## Source Catalog
 
-| Source key        | Adapter         | Notes                                                          |
-| ----------------- | --------------- | -------------------------------------------------------------- |
-| `a16z`            | `consider_a16z` | Consider-backed a16z companies board.                          |
-| `lsvp`            | `consider`      | Consider-backed investor board.                                |
-| `sequoia`         | `consider`      | Consider-backed investor board.                                |
-| `bvp`             | `consider`      | Consider-backed investor board.                                |
-| `greylock`        | `consider`      | Consider-backed investor board.                                |
-| `kleinerperkins`  | `consider`      | Consider-backed investor board.                                |
-| `accel`           | `getro`         | Getro-backed investor board.                                   |
-| `generalcatalyst` | `getro`         | Getro-backed investor board.                                   |
-| `yc`              | `ycombinator`   | YC companies from the public companies page and Algolia index. |
+<SourceCatalogSummary />
 
 ## Support Levels
 
@@ -33,12 +29,7 @@ Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a p
 
 ## Job-Capable Providers
 
-| Provider     | Support | Public route behavior                                                              |
-| ------------ | ------- | ---------------------------------------------------------------------------------- |
-| `greenhouse` | `jobs`  | Uses public Greenhouse job board APIs.                                             |
-| `lever`      | `jobs`  | Uses public Lever postings JSON APIs.                                              |
-| `ashbyhq`    | `jobs`  | Uses Ashby public posting API data derived from hosted board URLs or board tokens. |
-| `workday`    | `jobs`  | Uses public Workday CXS careers-site listing and detail endpoints.                 |
+<JobProviderSummary />
 
 ## Detect-Only Providers
 
@@ -46,7 +37,7 @@ Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a p
 
 ## Provider Coverage
 
-Provider coverage reports on the persisted SQLite dataset only. It does not perform live HTTP checks, source fetches, route probes, or job syncs, so published percentages must be measured from representative persisted source snapshots:
+Provider coverage reports on the persisted SQLite dataset only. It does not perform live HTTP checks, source fetches, route probes, or job syncs. The deterministic smoke data proves the report shape; published real-world percentages must be measured from representative persisted source snapshots:
 
 ```bash
 uv run openopps providers coverage
@@ -59,7 +50,7 @@ Use coverage to answer whether the local data is complete enough for analysis. T
 
 Coverage also reports enrichment completeness percentages from deterministic provider-field mapping. These data-quality metrics cover posting URLs, apply URLs, locations, departments, descriptions, normalized compensation or salary, remote level, and employment type.
 
-`providers audit` reports persisted-board evidence for SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR. It includes candidate route and board counts, example boards, and do-not-adopt rationales for providers that do not yet have reliable generic public fetching in v0.1.
+<AuditProviderTargets />
 
 ## Route Probing
 
@@ -93,7 +84,7 @@ uv run openopps admin providers registry --provider any --passed-probe-only --js
 uv run openopps admin providers registry --provider any --include-missing --limit 50
 ```
 
-By default, `admin providers registry` skips job-capable hints that still lack executable metadata, such as an Ashby board token or complete Workday CXS route. `--passed-probe-only` narrows output to routes verified by a persisted `admin providers probe-routes --apply` result.
+Without `--include-missing`, `admin providers registry` skips job-capable hints that still lack executable metadata, such as an Ashby board token or complete Workday CXS route. `--passed-probe-only` narrows output to routes verified by a persisted `admin providers probe-routes --apply` result.
 
 ## Provider Limits
 

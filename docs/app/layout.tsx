@@ -1,11 +1,10 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import "./global.css";
-import { appName, gitConfig } from "@/lib/shared";
+import { appName, siteUrl } from "@/lib/shared";
 import type { Metadata } from "next";
 
-const siteUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
 const siteDescription =
-	"Developer documentation for the OpenOpps CLI, providers, route diagnostics, storage, and exports.";
+	"Developer documentation for the OpenOpps CLI, public hiring boards, providers, storage, and exports.";
 
 export const metadata: Metadata = {
 	metadataBase: new URL(siteUrl),
@@ -36,7 +35,7 @@ export const metadata: Metadata = {
 	openGraph: {
 		title: appName,
 		description:
-			"Discover aggregate hiring boards, detect provider routes, and sync public job postings.",
+			"Open public hiring boards, check provider support, and sync public job postings.",
 		url: siteUrl,
 		siteName: appName,
 		images: [
@@ -44,7 +43,7 @@ export const metadata: Metadata = {
 				url: "/og-image.png",
 				width: 1200,
 				height: 630,
-				alt: `${appName} logo`,
+				alt: `${appName} open-door social card`,
 			},
 		],
 	},

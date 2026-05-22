@@ -1,26 +1,46 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, Database, GitBranch, Radar } from "lucide-react";
+import { ArrowRight, Database, DoorOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { openOppsData, sourceStats } from "@/lib/openopps-data";
 
-const sourceStats = [
-	["sources", "9", "aggregate catalogs"],
-	["providers", "4", "job-capable routes"],
-	["exports", "3", "jsonl/csv/parquet"],
-] as const;
+const providerRows = openOppsData.jobProviders.map(
+	(provider) =>
+		[provider.id, provider.supportLevel, provider.description] as const,
+);
 
-const providerRows = [
-	["ashbyhq", "jobs", "listed=true"],
-	["greenhouse", "jobs", "route matched"],
-	["lever", "jobs", "token resolved"],
-	["workday", "jobs", "cxs public"],
-] as const;
+function OpenDoorVisual() {
+	return (
+		<div
+			aria-hidden="true"
+			className="mb-5 flex min-h-56 items-center gap-5 rounded-2xl border bg-background/80 p-5"
+		>
+			<Image
+				src="/brand/openopps-logo.png"
+				alt=""
+				width={180}
+				height={180}
+				className="size-32 shrink-0 sm:size-40"
+				priority
+			/>
+			<div className="min-w-0 space-y-3">
+				<p className="opps-kicker">Open door</p>
+				<p className="text-3xl font-bold leading-none tracking-[-0.04em] text-foreground">
+					Public opportunities, ready for the CLI.
+				</p>
+				<p className="text-sm leading-6 text-muted-foreground">
+					Find hiring boards, check provider support, and export jobs from a
+					local command line workflow.
+				</p>
+			</div>
+		</div>
+	);
+}
 
 export default function HomePage() {
 	return (
 		<div className="relative isolate overflow-hidden px-5 py-10 sm:px-8 lg:px-10">
-			<div className="absolute inset-x-0 top-0 -z-10 h-80 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--accent)_24%,transparent),transparent_58%)]" />
 			<div className="mx-auto grid min-h-[78vh] w-full max-w-7xl items-center gap-8 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
 				<section className="space-y-8">
 					<div className="inline-flex items-center gap-2 rounded-full border bg-card/75 px-3 py-1.5 text-xs font-semibold text-muted-foreground shadow-sm backdrop-blur">
@@ -32,19 +52,17 @@ export default function HomePage() {
 							className="size-5 rounded-md"
 							priority
 						/>
-						<span>public jobs intelligence, route-first</span>
-						<Radar className="size-3.5 text-primary" />
+						<span>open door to public opportunities</span>
 					</div>
 
 					<div className="space-y-5">
 						<p className="opps-kicker">OpenOpps developer docs</p>
 						<h1 className="max-w-5xl text-balance text-5xl font-bold leading-[0.9] tracking-[-0.075em] sm:text-6xl lg:text-7xl">
-							Map the hiring web without pretending it is tidy.
+							Open the door to public opportunities.
 						</h1>
 						<p className="max-w-2xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">
-							OpenOpps discovers portfolio-company job boards, detects their
-							public provider routes, syncs normalized postings, and exports
-							data without hiding the messy edge cases.
+							OpenOpps finds public hiring boards, checks provider support,
+							syncs normalized postings, and exports jobs to local files.
 						</p>
 					</div>
 
@@ -89,17 +107,19 @@ export default function HomePage() {
 							<Database className="size-4 text-primary" />
 						</div>
 						<div>
-							<p className="text-sm font-semibold">route probe session</p>
+							<p className="text-sm font-semibold">openopps status</p>
 							<p className="text-xs text-muted-foreground">
-								uv run openopps providers health --json
+								uv run openopps status --json
 							</p>
 						</div>
 					</div>
 
+					<OpenDoorVisual />
+
 					<div className="space-y-3 font-mono text-sm">
 						<div className="rounded-2xl border bg-background/70 p-4 shadow-inner">
 							<p className="mb-3 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-								provider coverage
+								ready checks
 							</p>
 							<div className="space-y-2">
 								{providerRows.map(([provider, status, note]) => (
@@ -119,12 +139,13 @@ export default function HomePage() {
 
 						<div className="grid gap-3 sm:grid-cols-2">
 							<div className="rounded-2xl border bg-primary p-4 text-primary-foreground">
-								<GitBranch className="mb-4 size-4" />
-								<p className="text-2xl font-bold tracking-[-0.06em]">
-									duplicateRoutesSkipped
+								<DoorOpen className="mb-4 size-4" />
+								<p className="flex flex-col text-lg font-bold leading-tight tracking-[-0.03em]">
+									<span>Clean local</span>
+									<span>exports</span>
 								</p>
 								<p className="mt-1 text-xs opacity-75">
-									source overlap preserved, provider requests deduped
+									jsonl, csv, and parquet without a hosted service
 								</p>
 							</div>
 							<div className="rounded-2xl border bg-accent p-4 text-accent-foreground">

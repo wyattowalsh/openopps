@@ -148,16 +148,6 @@ html > body[data-scroll-locked] {
       "calt" 1,
       "liga" 1;
     background-image:
-      radial-gradient(
-        circle at top left,
-        color-mix(in oklab, var(--primary) 20%, transparent) 0,
-        transparent 28rem
-      ),
-      radial-gradient(
-        circle at 80% 12%,
-        color-mix(in oklab, var(--accent) 18%, transparent) 0,
-        transparent 22rem
-      ),
       linear-gradient(
         color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
         transparent 1px
@@ -168,8 +158,6 @@ html > body[data-scroll-locked] {
         transparent 1px
       );
     background-size:
-      auto,
-      auto,
       44px 44px,
       44px 44px;
   }

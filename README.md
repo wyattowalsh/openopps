@@ -8,7 +8,7 @@ OpenOpps is a CLI-only v0.1 for discovering firm hiring boards from aggregate so
 
 The public domain nouns are:
 
-- `sources`: aggregate catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, and `yc`.
+- `sources`: aggregate catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, and `yc`.
 - `boards`: firm/company hiring boards discovered from sources.
 - `jobs`: normalized public postings fetched from boards.
 - `providers`: adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, and Workday.
@@ -35,7 +35,7 @@ uv run openopps sources sync accel --metrics-json
 uv run openopps sources sync sequoia --metrics-json
 uv run openopps boards list --source a16z --limit 10
 uv run openopps boards list --provider ashbyhq --market AI --has-jobs --json
-uv run openopps boards enrich --source a16z --json
+uv run openopps admin boards enrich --source a16z --json
 uv run openopps providers coverage --source a16z --provider any --json
 uv run openopps providers audit --source a16z --json
 uv run openopps providers health --source a16z --provider any --limit 25 --json
@@ -48,7 +48,7 @@ uv run openopps cache status --json
 uv run openopps plugins list --json
 ```
 
-Commands default to superset behavior. For example, `jobs sync` targets every known board with a job-capable provider unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for the full supported provider set.
+Unscoped commands use superset behavior. For example, `jobs sync` targets every known board with a job-capable provider unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for the full supported provider set.
 
 When multiple sources discover the same company board, OpenOpps keeps separate source-scoped board records and dedupes provider requests before syncing jobs or probing routes. Generated source board keys are durable source-scoped identifiers such as `a16z:acme`; upstream slugs remain available as `remote_slug`. Metrics report `duplicateRoutesSkipped` so overlapping source coverage does not create duplicate Ashby, Greenhouse, Lever, or Workday requests.
 
@@ -85,16 +85,18 @@ uv run openopps sources sync a16z --refresh-cache --metrics-json
 uv run openopps jobs sync --provider any --refresh-cache --metrics-json
 ```
 
-`--refresh-cache` bypasses cache reads while allowing successful fresh responses to update cache state. Conditional requests reuse stored ETag and Last-Modified values when an expired cached record has validators.
+`--refresh-cache` bypasses cache reads while allowing successful fresh responses to update cache state. Conditional requests reuse stored ETag and Last-Modified values when an expired cached record has validators. Cache status reports total, fresh, expired, and stale-on-error-eligible records so stale behavior remains visible.
 
 ## Plugins
 
-OpenOpps discovers Python plugins through the `openopps.plugins` entry point group. Plugins can contribute source adapters, job providers, route detectors, metadata enrichers, cache policies, export contributors, and CLI commands. Load failures are isolated and visible through `plugins list` instead of crashing the CLI.
+OpenOpps discovers Python plugins through the `openopps.plugins` entry point group. Plugins can contribute validated source adapters, job providers, route detectors, metadata enrichers, cache policies, export contributors, and CLI command metadata. Source adapters and job providers are runtime-wired in v0.1; the other contribution types are validated and reported so future releases can wire them without changing the entry-point shape. Load failures are isolated and visible through `plugins list` instead of crashing the CLI.
 
 ```bash
 uv run openopps plugins list
 uv run openopps plugins list --json
 ```
+
+Use `OPENOPPS_PLUGIN_DISABLED` and `OPENOPPS_PLUGIN_ALLOWED` as comma-separated entry-point name lists to isolate plugin failures or allow only trusted plugins.
 
 See `examples/plugins/minimal-openopps-plugin/` for a minimal `pyproject.toml` entry-point package and no-op source/provider/route/metadata/cache/CLI contribution template.
 
@@ -118,6 +120,7 @@ Provider definitions have a kind and a support level. Board source adapters disc
 | `consider_a16z`      | `detect` | Source adapter for the a16z companies board.           |
 | `consider`           | `detect` | Source adapter for Consider-backed investor boards.    |
 | `getro`              | `detect` | Source adapter for Getro-backed investor boards.       |
+| `southparkcommons`   | `detect` | Source adapter for South Park Commons jobs data.       |
 | `ycombinator`        | `detect` | Source adapter for YC companies via its Algolia index. |
 
 | Board provider                 | Support  | Notes                                                                |
@@ -150,7 +153,6 @@ Some aggregate sources expose provider hints, such as `greenhouse` plus a count,
 
 ```bash
 uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
-uv run python scripts/probe_provider_routes.py --source a16z --provider all --limit 25
 ```
 
 Probing is a dry run by default. Add `--apply` to persist matched route metadata. Unknown rows include the attempted candidates so the missing board token or Workday careers URL can be filled manually with `admin boards add-provider`. Probe summaries include `duplicateRoutesSkipped` when overlapping source boards collapse to one provider request.
@@ -164,7 +166,15 @@ uv run openopps admin providers registry --provider any
 uv run openopps admin providers registry --passed-probe-only --json
 ```
 
-By default, the registry shows job-capable routes that already have executable provider metadata, such as an Ashby/Greenhouse/Lever token or a complete Workday CXS route. Add `--passed-probe-only` to require `admin providers probe-routes --apply` to have verified and persisted the route with `last_status="route_ready"`. Add `--include-missing` to include raw job-capable hints that still need probe or manual route metadata.
+Without `--include-missing`, the registry shows job-capable routes that already have executable provider metadata, such as an Ashby/Greenhouse/Lever token or a complete Workday CXS route. Add `--passed-probe-only` to require `admin providers probe-routes --apply` to have verified and persisted the route with `last_status="route_ready"`. Add `--include-missing` to include raw job-capable hints that still need probe or manual route metadata.
+
+## Database Migrations
+
+OpenOpps uses Alembic for the durable app SQLite schema. `uv run openopps admin db init` upgrades the configured `OPENOPPS_DB_URL` SQLite database to the latest migration head and stamps existing unversioned OpenOpps ledgers after applying the current local repair hooks. The optional HTTP response cache is separate and is not managed by Alembic.
+
+```bash
+OPENOPPS_DB_URL=sqlite:///openopps.db uv run alembic upgrade head
+```
 
 ## Storage Modes
 
@@ -195,7 +205,6 @@ Configuration uses `OPENOPPS_` environment variables:
 - `OPENOPPS_BOARD_CONCURRENCY` bounds board-level processing.
 - `OPENOPPS_PROVIDER_CONCURRENCY` bounds provider job fetching.
 - `OPENOPPS_WORKDAY_CONCURRENCY` keeps Workday CXS requests conservative.
-- `OPENOPPS_JOB_SYNC_SOURCES` optionally narrows unscoped `jobs sync` to a comma-separated source list; empty means all sources.
 - `OPENOPPS_DB_BATCH_SIZE` controls batched SQLite writes.
 - `OPENOPPS_HTTP_TIMEOUT` controls HTTP request timeouts.
 - `OPENOPPS_RETRY_ATTEMPTS` controls retry attempts for retriable requests.
@@ -209,29 +218,30 @@ Values can also be loaded from a local `.env` file.
 
 ## Repository Layout
 
-| Path                              | Purpose                                                                  |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                     |
-| `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                   |
-| `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes.    |
-| `src/openopps/cache.py`           | SQLite-backed HTTP JSON cache.                                           |
-| `src/openopps/plugins.py`         | Entry-point plugin contracts, validation, and load isolation.            |
-| `src/openopps/examples.py`        | Deterministic synthetic dataset builder for examples and smoke tests.    |
-| `src/openopps/route_registry.py`  | Programmatic selector for executable and probe-verified board routes.    |
-| `tests/`                          | Pytest coverage for CLI, providers, storage, exports, and sync behavior. |
-| `scripts/`                        | Helper scripts, including provider route probing.                        |
-| `docs/`                           | Next.js/Fumadocs developer docs site.                                    |
-| `openspec/`                       | OpenSpec specs and change tracking.                                      |
+| Path                              | Purpose                                                               |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                  |
+| `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                |
+| `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes. |
+| `src/openopps/cache.py`           | SQLite-backed HTTP JSON cache.                                        |
+| `src/openopps/plugins.py`         | Entry-point plugin contracts, validation, and load isolation.         |
+| `src/openopps/examples.py`        | Deterministic synthetic dataset builder for examples and smoke tests. |
+| `src/openopps/route_registry.py`  | Programmatic selector for executable and probe-verified board routes. |
+| `tests/`                          | Pytest suites split by `unit`, `integration`, and `smoke` scopes.     |
+| `scripts/`                        | Helper scripts, including deterministic docs metadata generation.     |
+| `docs/`                           | Next.js/Fumadocs developer docs site.                                 |
+| `openspec/`                       | OpenSpec specs and change tracking.                                   |
 
 ## Docs Site
 
 ```bash
 cd docs
 pnpm install
+pnpm data:generate
 pnpm dev
 pnpm types:check
 pnpm build
-pnpm lint
+rtk lint
 ```
 
 Documentation content lives in `docs/content/docs/`; Fumadocs navigation is curated by `docs/content/docs/meta.json`.
@@ -240,7 +250,9 @@ Documentation content lives in `docs/content/docs/`; Fumadocs navigation is cura
 
 ```bash
 uv run pytest
+uv run pytest --cov=openopps --cov-report=term-missing
 cd docs && pnpm types:check
 cd docs && pnpm build
+cd docs && rtk lint
 rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 ```
