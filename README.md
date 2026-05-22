@@ -29,12 +29,14 @@ uv run openopps sources list
 uv run openopps examples seed --json
 uv run openopps status --json
 uv run openopps admin sources test a16z
+uv run openopps sync a16z --metrics-json --refresh-cache
 uv run openopps sources sync a16z --metrics-json --refresh-cache
 uv run openopps sources sync yc --metrics-json
 uv run openopps sources sync accel --metrics-json
 uv run openopps sources sync sequoia --metrics-json
 uv run openopps boards list --source a16z --limit 10
 uv run openopps boards list --provider ashbyhq --market AI --has-jobs --json
+uv run openopps boards sync --source a16z --provider any --limit 25 --metrics-json
 uv run openopps admin boards enrich --source a16z --json
 uv run openopps providers coverage --source a16z --provider any --json
 uv run openopps providers audit --source a16z --json
@@ -48,11 +50,11 @@ uv run openopps cache status --json
 uv run openopps plugins list --json
 ```
 
-Unscoped commands use superset behavior. For example, `jobs sync` targets every known board with a job-capable provider unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for the full supported provider set.
+Unscoped commands use superset behavior. For example, `jobs sync` targets every known board with a job-capable provider unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for removing the provider filter, which is useful in scripts that always pass a provider argument.
 
-When multiple sources discover the same company board, OpenOpps keeps separate source-scoped board records and dedupes provider requests before syncing jobs or probing routes. Generated source board keys are durable source-scoped identifiers such as `a16z:acme`; upstream slugs remain available as `remote_slug`. Metrics report `duplicateRoutesSkipped` so overlapping source coverage does not create duplicate Ashby, Greenhouse, Lever, or Workday requests.
+When multiple sources discover the same company board, OpenOpps keeps the persisted board key visible through `boards list` and dedupes provider requests before syncing jobs or probing routes. Upstream slugs remain available as `remote_slug`. Metrics report `duplicateRoutesSkipped` so overlapping source coverage does not create duplicate Ashby, Greenhouse, Lever, or Workday requests.
 
-Job sync uses the persisted board-route registry as the intermediate layer between board collection and job execution. Raw source syncs can discover provider hints, route probing can upgrade those hints into executable routes, and `jobs sync` only executes routes that have enough provider-specific route metadata to fetch jobs.
+The stable `openopps sync` workflow runs source discovery, board enrichment and route probing, then job sync in order. You can still run each stage independently with `sources sync`, `boards sync`, and `jobs sync` when you want to inspect or rerun one layer. Job sync uses the persisted board-route registry as the intermediate layer between board collection and job execution. Raw source syncs can discover provider hints, board sync can upgrade those hints into executable routes, and `jobs sync` only executes routes that have enough provider-specific route metadata to fetch jobs.
 
 Synced jobs include deterministic enrichment fields derived from provider payloads only. OpenOpps normalizes company, employment type, plain-text and HTML descriptions, remote level (`Full`, `Hybrid`, or `None` when knowable), compensation and salary range fields, experience, structured responsibilities, qualifications, skills, and a `job_description` object compatible with JSON Resume's Job Description Schema. Raw provider listing and detail payloads remain preserved as `raw_listing` and `raw_detail` for auditability and future reprocessing.
 
@@ -96,7 +98,7 @@ uv run openopps plugins list
 uv run openopps plugins list --json
 ```
 
-Use `OPENOPPS_PLUGIN_DISABLED` and `OPENOPPS_PLUGIN_ALLOWED` as comma-separated entry-point name lists to isolate plugin failures or allow only trusted plugins.
+Installed plugins are discovered but not executed by default. Use `OPENOPPS_PLUGIN_ALLOWED` as a comma-separated entry-point name list to allow trusted plugins, `OPENOPPS_PLUGIN_DISABLED` to skip specific entries, or `OPENOPPS_PLUGIN_AUTOLOAD=true` only in controlled environments where every installed plugin is trusted.
 
 See `examples/plugins/minimal-openopps-plugin/` for a minimal `pyproject.toml` entry-point package and no-op source/provider/route/metadata/cache/CLI contribution template.
 
@@ -168,9 +170,9 @@ uv run openopps admin providers registry --passed-probe-only --json
 
 Without `--include-missing`, the registry shows job-capable routes that already have executable provider metadata, such as an Ashby/Greenhouse/Lever token or a complete Workday CXS route. Add `--passed-probe-only` to require `admin providers probe-routes --apply` to have verified and persisted the route with `last_status="route_ready"`. Add `--include-missing` to include raw job-capable hints that still need probe or manual route metadata.
 
-## Database Migrations
+## Database Initialization
 
-OpenOpps uses Alembic for the durable app SQLite schema. `uv run openopps admin db init` upgrades the configured `OPENOPPS_DB_URL` SQLite database to the latest migration head and stamps existing unversioned OpenOpps ledgers after applying the current local repair hooks. The optional HTTP response cache is separate and is not managed by Alembic.
+OpenOpps uses a single Alembic initial schema for the v0.1 durable app SQLite database. `uv run openopps admin db init` creates or upgrades the configured `OPENOPPS_DB_URL` SQLite database to that current schema head. The optional HTTP response cache is separate and is not managed by Alembic. If a pre-release local database was stamped before the v0.1 schema was finalized, OpenOpps fails fast with a reset message instead of silently repairing it; reset that local `openopps.db` or point `OPENOPPS_DB_URL` at a new SQLite file.
 
 ```bash
 OPENOPPS_DB_URL=sqlite:///openopps.db uv run alembic upgrade head
@@ -190,6 +192,8 @@ No-DB source sync is available with explicit JSONL output:
 ```bash
 uv run openopps sources sync a16z --no-db --output /tmp/a16z-boards.jsonl
 ```
+
+Human sync runs show a brief dynamic progress display by default, including per-stage percentages for source, board, and job stages when totals are known. Add `--verbose` to `sync`, `sources sync`, `boards sync`, or `jobs sync` when you need detailed provider warnings on stderr; JSON modes such as `--metrics-json` remain clean for automation.
 
 List and export filters push scalar source, board, provider, salary, and text filters into SQLite before materializing normalized records. JSONL exports stream records as they are encoded; empty JSONL and CSV exports produce empty files, and empty Parquet exports produce a readable empty Parquet table.
 

@@ -33,9 +33,9 @@ uv run openopps cache status --json
 uv run openopps plugins list --json
 ```
 
-Unscoped list, export, and sync commands use the full known superset unless narrowed by `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for the full supported provider set.
+Unscoped list, export, and sync commands use the full known superset unless narrowed by `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for removing the provider filter, which keeps reusable scripts explicit without narrowing to one provider.
 
-Overlapping source coverage is preserved with source-scoped board keys such as `a16z:acme`, but provider requests are deduped before route probing or job sync. The relevant metrics include `duplicateRoutesSkipped`.
+Overlapping source coverage uses the persisted board keys shown by `boards list`, and provider requests are deduped before route probing or job sync. The relevant metrics include `duplicateRoutesSkipped`.
 
 ## Provider Levels
 

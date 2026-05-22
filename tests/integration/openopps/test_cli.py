@@ -1,6 +1,6 @@
 import json
-import sys
 from pathlib import Path
+import sqlite3
 
 import openopps.cli as cli_module
 from typer.testing import CliRunner
@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from openopps.cli import app
 from openopps.models import BoardProviderRecord, BoardRecord, JobRecord, ProviderSupport
 from openopps.models import SourceRecord
+from openopps.metrics import ProgressUpdate, SyncMetrics
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 from openopps.utils import source_board_key, stable_id
@@ -21,12 +22,23 @@ def invoke(tmp_path: Path, *args: str):
     return runner.invoke(app, list(args), env={"OPENOPPS_DB_URL": db_url})
 
 
-def test_cli_help_exposes_intro_option():
+def test_cli_root_help_shows_intro_art_at_top():
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
+    assert "opening opportunity portal" in result.output
+    assert result.output.index("opening opportunity portal") < result.output.index(
+        "Usage:"
+    )
     assert "--intro" in result.output
     assert "--no-intro" in result.output
+
+
+def test_cli_root_help_respects_no_intro_option():
+    result = runner.invoke(app, ["--no-intro", "--help"])
+
+    assert result.exit_code == 0
+    assert "Usage:" in result.output
     assert "opening opportunity portal" not in result.output
 
 
@@ -39,52 +51,47 @@ def test_cli_no_command_behavior_stays_clean():
     assert "opening opportunity portal" not in result.output
 
 
-def test_cli_subcommand_help_skips_intro(monkeypatch):
-    calls = []
-
-    def fake_play_intro(
-        *, enabled: bool = True, duration: float = 0.9, fps: float = 12.0
-    ):
-        calls.append(enabled)
-
-    monkeypatch.setattr(cli_module, "play_intro", fake_play_intro)
-    monkeypatch.setattr(sys, "argv", ["openopps", "providers", "--help"])
-
+def test_cli_subcommand_help_skips_intro_art():
     result = runner.invoke(app, ["providers", "--help"])
 
     assert result.exit_code == 0
-    assert calls == []
     assert "Inspect provider readiness" in result.output
+    assert "opening opportunity portal" not in result.output
 
 
-def test_cli_nested_command_help_skips_intro(monkeypatch):
-    calls = []
-
-    def fake_play_intro(
-        *, enabled: bool = True, duration: float = 0.9, fps: float = 12.0
-    ):
-        calls.append(enabled)
-
-    monkeypatch.setattr(cli_module, "play_intro", fake_play_intro)
-    monkeypatch.setattr(
-        sys, "argv", ["openopps", "admin", "providers", "list", "--help"]
-    )
-
+def test_cli_nested_command_help_skips_intro_art():
     result = runner.invoke(app, ["admin", "providers", "list", "--help"])
 
     assert result.exit_code == 0
-    assert calls == []
     assert "--json" in result.output
+    assert "opening opportunity portal" not in result.output
 
 
 def test_sync_commands_expose_cache_refresh_option():
+    top_level_result = runner.invoke(app, ["sync", "--help"])
     sources_result = runner.invoke(app, ["sources", "sync", "--help"])
+    boards_result = runner.invoke(app, ["boards", "sync", "--help"])
     jobs_result = runner.invoke(app, ["jobs", "sync", "--help"])
 
+    assert top_level_result.exit_code == 0
     assert sources_result.exit_code == 0
+    assert boards_result.exit_code == 0
     assert jobs_result.exit_code == 0
-    assert "--refresh-cache" in sources_result.output
-    assert "--refresh-cache" in jobs_result.output
+    for flag in [
+        "--metrics-json",
+        "--refresh-cache",
+        "--verbose",
+        "-M",
+        "-R",
+        "-V",
+        "-m",
+        "-r",
+        "-v",
+    ]:
+        assert flag in top_level_result.output
+        assert flag in sources_result.output
+        assert flag in boards_result.output
+        assert flag in jobs_result.output
 
 
 def test_top_level_help_examples_prefer_stable_commands():
@@ -94,21 +101,29 @@ def test_top_level_help_examples_prefer_stable_commands():
     assert "admin providers probe-routes" not in epilog
 
 
-def test_cli_no_intro_disables_animation(monkeypatch, tmp_path: Path):
-    calls = []
-
-    def fake_play_intro(
-        *, enabled: bool = True, duration: float = 0.9, fps: float = 12.0
-    ):
-        calls.append(enabled)
-
-    monkeypatch.setattr(cli_module, "play_intro", fake_play_intro)
-
-    result = invoke(tmp_path, "--no-intro", "admin", "providers", "list", "--json")
+def test_root_help_groups_commands_by_user_journey():
+    result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    assert calls == [False]
-    assert json.loads(result.output)
+    assert "Everyday workflow" in result.output
+    assert "Operational surfaces" in result.output
+    assert "Advanced admin" in result.output
+
+
+def test_filter_help_describes_actual_scope_semantics():
+    boards_result = runner.invoke(app, ["boards", "list", "--help"])
+    jobs_result = runner.invoke(app, ["jobs", "list", "--help"])
+
+    assert boards_result.exit_code == 0
+    assert jobs_result.exit_code == 0
+    assert "remove" in boards_result.output
+    assert "provider filter" in boards_result.output
+    assert "source job hint" in boards_result.output
+    assert "provider job" in boards_result.output
+    assert "synced job" in boards_result.output
+    assert "salary range" in jobs_result.output
+    assert "overlaps this lower" in jobs_result.output
+    assert "Inclusive YYYY-MM-DD" in jobs_result.output
 
 
 def test_cli_default_intro_skips_non_interactive_runner(tmp_path: Path):
@@ -165,7 +180,7 @@ def test_plugins_list_json_reports_no_plugins_by_default(tmp_path: Path):
         "conflicts": [],
         "loaded": 0,
         "failed": 0,
-        "filters": {"disabled": [], "allowed": None},
+        "filters": {"disabled": [], "allowed": []},
     }
 
 
@@ -233,6 +248,243 @@ def test_sources_sync_unknown_source_is_actionable_typer_error(tmp_path: Path):
 
     assert result.exit_code == 2
     assert "Unknown source: definitelymissing" in result.output
+
+
+def test_sources_sync_reports_compact_warning_for_skips(tmp_path: Path):
+    add_result = invoke(
+        tmp_path,
+        "admin",
+        "sources",
+        "add",
+        "broken",
+        "--url",
+        "https://example.com/boards",
+        "--provider",
+        "missing-provider",
+    )
+    sync_result = invoke(tmp_path, "sources", "sync", "broken")
+
+    assert add_result.exit_code == 0
+    assert sync_result.exit_code == 0
+    assert sync_result.stdout == ""
+    assert "Warning: sources.sync completed with skipped=1" in sync_result.stderr
+    assert "--verbose" in sync_result.stderr
+
+
+def test_sources_sync_uses_progress_for_human_output(monkeypatch, tmp_path: Path):
+    calls = []
+
+    async def fake_sync_sources(**_kwargs):
+        return SyncMetrics(name="sources.sync").finish()
+
+    def fake_run_sync_with_progress(label, run, *, enabled, verbose=False):
+        calls.append((label, enabled, verbose))
+        return run(lambda _message: None)
+
+    monkeypatch.setattr(cli_module, "sync_sources", fake_sync_sources)
+    monkeypatch.setattr(
+        cli_module, "_run_sync_with_progress", fake_run_sync_with_progress
+    )
+
+    result = invoke(tmp_path, "sources", "sync")
+
+    assert result.exit_code == 0
+    assert calls == [("Syncing sources", True, False)]
+
+
+def test_sources_sync_skips_progress_for_json_metrics(monkeypatch, tmp_path: Path):
+    calls = []
+
+    async def fake_sync_sources(**_kwargs):
+        return SyncMetrics(name="sources.sync", boards=1).finish()
+
+    def fake_run_sync_with_progress(label, run, *, enabled, verbose=False):
+        calls.append((label, enabled, verbose))
+        return run(lambda _message: None)
+
+    monkeypatch.setattr(cli_module, "sync_sources", fake_sync_sources)
+    monkeypatch.setattr(
+        cli_module, "_run_sync_with_progress", fake_run_sync_with_progress
+    )
+
+    result = invoke(tmp_path, "sources", "sync", "--metrics-json")
+
+    assert result.exit_code == 0
+    assert calls == [("Syncing sources", False, False)]
+    assert json.loads(result.output)["boards"] == 1
+    assert "Traceback" not in result.output
+
+
+def test_boards_sync_uses_progress_for_human_output(monkeypatch, tmp_path: Path):
+    calls = []
+
+    async def fake_sync_boards(**_kwargs):
+        return SyncMetrics(name="boards.sync").finish()
+
+    def fake_run_sync_with_progress(label, run, *, enabled, verbose=False):
+        calls.append((label, enabled, verbose))
+        return run(lambda _message: None)
+
+    monkeypatch.setattr(cli_module, "sync_boards", fake_sync_boards)
+    monkeypatch.setattr(
+        cli_module, "_run_sync_with_progress", fake_run_sync_with_progress
+    )
+
+    result = invoke(tmp_path, "boards", "sync")
+
+    assert result.exit_code == 0
+    assert calls == [("Syncing boards", True, False)]
+
+
+def test_top_level_sync_runs_sources_boards_and_jobs_in_order(
+    monkeypatch, tmp_path: Path
+):
+    calls = []
+
+    async def fake_sync_sources(**_kwargs):
+        calls.append("sources")
+        return SyncMetrics(name="sources.sync", boards=2).finish()
+
+    async def fake_sync_boards(**_kwargs):
+        calls.append("boards")
+        return SyncMetrics(name="boards.sync", board_providers=1).finish()
+
+    async def fake_sync_jobs(**_kwargs):
+        calls.append("jobs")
+        return SyncMetrics(name="jobs.sync", jobs=3).finish()
+
+    def fake_run_sync_with_progress(label, run, *, enabled, verbose=False):
+        calls.append((label, enabled, verbose))
+        return run(lambda _message: None)
+
+    monkeypatch.setattr(cli_module, "sync_sources", fake_sync_sources)
+    monkeypatch.setattr(cli_module, "sync_boards", fake_sync_boards)
+    monkeypatch.setattr(cli_module, "sync_jobs", fake_sync_jobs)
+    monkeypatch.setattr(
+        cli_module, "_run_sync_with_progress", fake_run_sync_with_progress
+    )
+
+    result = invoke(tmp_path, "sync", "a16z", "--metrics-json")
+
+    assert result.exit_code == 0
+    assert calls == [("Syncing OpenOpps", False, False), "sources", "boards", "jobs"]
+    payload = json.loads(result.output)
+    assert payload["name"] == "sync"
+    assert payload["boards"] == 2
+    assert payload["boardProviders"] == 1
+    assert payload["jobs"] == 3
+
+
+def test_combined_sync_metrics_span_stage_timings():
+    sources = SyncMetrics(name="sources.sync", boards=2)
+    boards = SyncMetrics(name="boards.sync", board_providers=1)
+    jobs = SyncMetrics(name="jobs.sync", jobs=3)
+    sources.started_at = 10.0
+    sources.finished_at = 12.0
+    boards.started_at = 12.0
+    boards.finished_at = 13.0
+    jobs.started_at = 13.0
+    jobs.finished_at = 15.0
+
+    combined = cli_module._combine_sync_metrics("sync", sources, boards, jobs)
+
+    assert combined.as_dict()["elapsedSeconds"] == 5.0
+    assert combined.as_dict()["boards"] == 2
+    assert combined.as_dict()["boardProviders"] == 1
+    assert combined.as_dict()["jobs"] == 3
+
+
+def test_run_sync_with_progress_renders_update_message(monkeypatch):
+    calls = []
+
+    class FakeConsole:
+        is_interactive = True
+
+        def __init__(self, *_args, **_kwargs):
+            return
+
+    class FakeProgress:
+        def __init__(self, *_columns, **_kwargs):
+            return
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc_info):
+            return False
+
+        def add_task(self, description, total=None, **_kwargs):
+            calls.append(("add", description, total))
+            return 1
+
+        def update(self, task_id, **kwargs):
+            calls.append(("update", task_id, kwargs))
+
+    monkeypatch.setattr(cli_module, "Console", FakeConsole)
+    monkeypatch.setattr(cli_module, "Progress", FakeProgress)
+
+    def run(report):
+        report(
+            ProgressUpdate(
+                stage="sources",
+                message="sources: 1/2 complete",
+                completed=1,
+                total=2,
+            )
+        )
+        return "done"
+
+    result = cli_module._run_sync_with_progress(
+        "Syncing sources",
+        run,
+        enabled=True,
+    )
+
+    assert result == "done"
+    assert calls == [
+        ("add", "Syncing sources", 1),
+        (
+            "update",
+            1,
+            {"description": "sources: 1/2 complete", "completed": 1, "total": 2},
+        ),
+    ]
+
+
+def test_profile_metrics_include_provider_errors_and_warning(capsys):
+    metrics = SyncMetrics(name="jobs.sync")
+    metrics.error("ashbyhq")
+    metrics.finish()
+
+    cli_module._metrics(metrics, metrics_json=False, profile=True)
+    captured = capsys.readouterr()
+
+    assert "provider_errors={'ashbyhq': 1}" in captured.out
+    assert "Warning: jobs.sync completed with skipped=0" in captured.err
+    assert "--verbose" in captured.err
+
+
+def test_cli_reports_stale_stamped_database_without_traceback(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        conn.execute("INSERT INTO alembic_version VALUES ('0001_initial_app_sqlite')")
+        conn.execute(
+            """
+            CREATE TABLE boards (
+                key VARCHAR NOT NULL PRIMARY KEY,
+                source_key VARCHAR NOT NULL,
+                remote_id VARCHAR NOT NULL,
+                name VARCHAR NOT NULL
+            )
+            """
+        )
+
+    result = invoke(tmp_path, "status", "--json")
+
+    assert result.exit_code != 0
+    assert "does not match the OpenOpps v0.1.0 schema" in result.output
+    assert "Reset that local DB" in result.output
     assert "Traceback" not in result.output
 
 
@@ -257,21 +509,6 @@ def test_cache_purge_json_deletes_selected_namespace(tmp_path: Path):
     }
     assert status_result.exit_code == 0
     assert json.loads(status_result.output)["total"] == 0
-
-
-def test_stdout_remains_clean_when_intro_callable_runs(monkeypatch, tmp_path: Path):
-    def fake_play_intro(
-        *, enabled: bool = True, duration: float = 0.9, fps: float = 12.0
-    ):
-        sys.stderr.write("INTRO_SENTINEL")
-
-    monkeypatch.setattr(cli_module, "play_intro", fake_play_intro)
-
-    result = invoke(tmp_path, "admin", "providers", "list", "--json")
-
-    assert result.exit_code == 0
-    assert "INTRO_SENTINEL" not in result.stdout
-    assert json.loads(result.stdout)
 
 
 def seed_filter_cli_db(tmp_path: Path) -> None:
@@ -443,7 +680,7 @@ def test_boards_enrich_json_dry_run_and_apply(tmp_path: Path):
     store.upsert_boards(
         [
             BoardRecord(
-                key="acme",
+                key=board_key,
                 source_key="a16z",
                 remote_id="acme",
                 name="Acme",
@@ -657,6 +894,62 @@ def test_cli_job_export_uses_list_filters(tmp_path: Path):
     assert [row["id"] for row in rows] == [
         stable_id(source_board_key("a16z", "acme"), "ashbyhq", "1")
     ]
+
+
+def test_cli_common_short_options_accept_lowercase_and_uppercase(tmp_path: Path):
+    seed_filter_cli_db(tmp_path)
+    board_key = source_board_key("a16z", "acme")
+    output = tmp_path / "short-jobs.jsonl"
+
+    boards_result = invoke(
+        tmp_path,
+        "boards",
+        "list",
+        "-p",
+        "ashbyhq",
+        "-n",
+        "1",
+        "-j",
+    )
+    jobs_result = invoke(
+        tmp_path,
+        "jobs",
+        "list",
+        "-S",
+        "a16z",
+        "-B",
+        board_key,
+        "-P",
+        "ashbyhq",
+        "-N",
+        "1",
+        "-J",
+    )
+    export_result = invoke(
+        tmp_path,
+        "jobs",
+        "export",
+        "-O",
+        str(output),
+        "-F",
+        "jsonl",
+        "-S",
+        "a16z",
+        "-P",
+        "ashbyhq",
+        "-N",
+        "1",
+    )
+
+    assert boards_result.exit_code == 0
+    assert jobs_result.exit_code == 0
+    assert export_result.exit_code == 0
+    assert [row["key"] for row in json.loads(boards_result.output)] == [board_key]
+    assert [row["id"] for row in json.loads(jobs_result.output)] == [
+        stable_id(board_key, "ashbyhq", "1")
+    ]
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert [row["id"] for row in rows] == [stable_id(board_key, "ashbyhq", "1")]
 
 
 def test_cli_provider_any_all_aliases_return_all_jobs(tmp_path: Path):

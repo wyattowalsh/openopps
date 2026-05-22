@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 import json
-import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+from click import ClickException, Context
+from loguru import logger
 import typer
 from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
+from typer.core import TyperGroup
 
 from openopps.cache import HttpCache
 from openopps.coverage import build_coverage_report, build_provider_audit_report
@@ -18,8 +30,10 @@ from openopps.examples import build_example_dataset
 from openopps.export import export_records
 from openopps.health import check_provider_health
 from openopps.http import build_async_client
-from openopps.ingest import all_board_sources, sync_jobs, sync_sources
-from openopps.intro import play_intro
+from openopps.ingest import all_board_sources, sync_boards, sync_jobs, sync_sources
+from openopps.metrics import ProgressReporter, ProgressUpdate, SyncMetrics
+from openopps.intro import play_intro, render_intro_frame
+from openopps.migrations import DatabaseSchemaError
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -50,28 +64,91 @@ PANEL_ROUTE = "Route metadata"
 PANEL_SYNC = "Sync controls"
 PANEL_DIAGNOSTICS = "Diagnostics"
 PANEL_STORAGE = "Storage"
+PANEL_WORKFLOW = "Everyday workflow"
+PANEL_OPERATIONS = "Operational surfaces"
+PANEL_ADMIN = "Advanced admin"
 
-JSON_HELP = "Emit machine-readable JSON instead of a table."
+JSON_HELP = "Emit machine-readable JSON for scripting and automation."
 PROVIDER_FILTER_HELP = (
-    "Provider id to match, or 'any'/'all' for every job-capable provider."
+    "Provider id to filter to. Use 'any' or 'all' to remove the provider filter."
 )
 SOURCE_FILTER_HELP = "Limit results to one aggregate source key, such as a16z or yc."
 BOARD_FILTER_HELP = "Limit results to one board key."
-LIMIT_HELP = "Maximum number of records to return."
-EXPORT_FORMAT_HELP = "Export file format."
-OUTPUT_FILE_HELP = "Destination file path."
+LIMIT_HELP = "Maximum records to return after filters are applied."
+EXPORT_FORMAT_HELP = "Export file format: jsonl, csv, or parquet."
+EXPORT_OUTPUT_FILE_HELP = "Destination file path to create or replace."
+SYNC_OUTPUT_FILE_HELP = "Append synced JSONL records to this file path."
+BOARD_HAS_JOBS_HELP = (
+    "Only include boards with a source job hint, provider job hint, or synced job."
+)
+MARKET_FILTER_HELP = "Case-insensitive substring match against board market tags."
+LOCATION_FILTER_HELP = "Case-insensitive substring match against normalized locations."
+DOMAIN_FILTER_HELP = "Case-insensitive substring match against company domains."
+DEPARTMENT_FILTER_HELP = "Case-insensitive substring match against departments."
+TEAM_FILTER_HELP = "Case-insensitive substring match against teams."
+WORKPLACE_FILTER_HELP = "Case-insensitive substring match, such as Remote or Onsite."
+REMOTE_FILTER_HELP = "Case-insensitive exact remote level: Full, Hybrid, or None."
+EMPLOYMENT_TYPE_FILTER_HELP = (
+    "Case-insensitive substring match, such as full-time or contract."
+)
+SALARY_MIN_FILTER_HELP = "Keep jobs whose salary range overlaps this lower bound."
+SALARY_MAX_FILTER_HELP = "Keep jobs whose salary range overlaps this upper bound."
+SKILL_FILTER_HELP = "Match normalized skill names, levels, or keywords."
+QUERY_FILTER_HELP = "Search normalized title, company, and plain-text description."
+POSTED_AFTER_FILTER_HELP = "Inclusive YYYY-MM-DD lower bound for normalized posted_at."
+POSTED_BEFORE_FILTER_HELP = "Inclusive YYYY-MM-DD upper bound for normalized posted_at."
+
+BOARD_OPTION_FLAGS = ("--board", "-b", "-B")
+FORMAT_OPTION_FLAGS = ("--format", "-f", "-F")
+JSON_OPTION_FLAGS = ("--json", "-j", "-J")
+LIMIT_OPTION_FLAGS = ("--limit", "-n", "-N")
+METRICS_JSON_OPTION_FLAGS = ("--metrics-json", "-m", "-M")
+OUTPUT_OPTION_FLAGS = ("--output", "-o", "-O")
+PROVIDER_OPTION_FLAGS = ("--provider", "-p", "-P")
+REFRESH_CACHE_OPTION_FLAGS = ("--refresh-cache", "-r", "-R")
+SOURCE_OPTION_FLAGS = ("--source", "-s", "-S")
+VERBOSE_OPTION_FLAGS = ("--verbose", "-v", "-V")
+
+
+class OpenOppsRootGroup(TyperGroup):
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
+        show_intro = True
+        for arg in args:
+            if arg == "--no-intro":
+                show_intro = False
+            elif arg == "--intro":
+                show_intro = True
+        ctx.meta["openopps_show_help_intro"] = show_intro
+        return super().parse_args(ctx, args)
+
+    def get_help(self, ctx: Context) -> str:
+        if ctx.parent is None and ctx.meta.get("openopps_show_help_intro", True):
+            Console(
+                color_system=None,
+                force_terminal=False,
+                width=ctx.terminal_width or console.width,
+            ).print(render_intro_frame(0, "opening opportunity portal"))
+        return super().get_help(ctx)
+
+    def invoke(self, ctx: Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except DatabaseSchemaError as exc:
+            raise ClickException(str(exc)) from exc
+
 
 app = typer.Typer(
+    cls=OpenOppsRootGroup,
     help=(
         "[bold]OpenOpps[/bold] maps public hiring boards into a local, "
         "queryable opportunity ledger: discover sources, resolve provider routes, "
         "sync normalized jobs, and export clean data."
     ),
     epilog=(
-        "[dim]Examples[/dim]\n"
-        "  [bold]openopps sources sync a16z --metrics-json[/bold]\n"
-        "  [bold]openopps providers coverage --source a16z --provider any --json[/bold]\n"
-        "  [bold]openopps jobs list --remote Full --skill Python --json[/bold]"
+        "[dim]Suggested path:[/dim] "
+        "[bold]openopps sync a16z --metrics-json[/bold], then "
+        "[bold]openopps providers coverage --source a16z --provider any --json[/bold], then "
+        "[bold]openopps jobs list --remote Full --skill Python --json[/bold]."
     ),
 )
 sources_app = typer.Typer(
@@ -104,14 +181,14 @@ admin_db_app = typer.Typer(
     help="Initialize, inspect, and maintain the local SQLite ledger."
 )
 
-app.add_typer(sources_app, name="sources")
-app.add_typer(boards_app, name="boards")
-app.add_typer(jobs_app, name="jobs")
-app.add_typer(providers_app, name="providers")
-app.add_typer(plugins_app, name="plugins")
-app.add_typer(cache_app, name="cache")
-app.add_typer(examples_app, name="examples")
-app.add_typer(admin_app, name="admin")
+app.add_typer(sources_app, name="sources", rich_help_panel=PANEL_WORKFLOW)
+app.add_typer(boards_app, name="boards", rich_help_panel=PANEL_WORKFLOW)
+app.add_typer(jobs_app, name="jobs", rich_help_panel=PANEL_WORKFLOW)
+app.add_typer(providers_app, name="providers", rich_help_panel=PANEL_WORKFLOW)
+app.add_typer(cache_app, name="cache", rich_help_panel=PANEL_OPERATIONS)
+app.add_typer(plugins_app, name="plugins", rich_help_panel=PANEL_OPERATIONS)
+app.add_typer(examples_app, name="examples", rich_help_panel=PANEL_OPERATIONS)
+app.add_typer(admin_app, name="admin", rich_help_panel=PANEL_ADMIN)
 admin_app.add_typer(admin_sources_app, name="sources")
 admin_app.add_typer(admin_boards_app, name="boards")
 admin_app.add_typer(admin_providers_app, name="providers")
@@ -130,14 +207,7 @@ def main(
         ),
     ] = True,
 ) -> None:
-    if _help_requested():
-        return
     play_intro(enabled=intro)
-
-
-def _help_requested(argv: list[str] | None = None) -> bool:
-    args = sys.argv[1:] if argv is None else argv
-    return any(arg in {"--help", "-h"} for arg in args)
 
 
 def _settings() -> OpenOppsSettings:
@@ -170,13 +240,96 @@ def _json(data: object) -> None:
 def _metrics(metrics, metrics_json: bool, profile: bool) -> None:
     if metrics_json:
         _json(metrics.as_dict())
-    elif profile:
+        return
+
+    has_issues = bool(metrics.skipped or metrics.provider_errors)
+    if profile:
         data = metrics.as_dict()
         console.print(
             f"{data['name']} completed in {data['elapsedSeconds']:.2f}s "
             f"boards={data['boards']} jobs={data['jobs']} pages={data['pages']} "
-            f"skipped={data['skipped']} duplicate_routes_skipped={data['duplicateRoutesSkipped']}"
+            f"skipped={data['skipped']} duplicate_routes_skipped={data['duplicateRoutesSkipped']} "
+            f"provider_errors={data['providerErrors']}"
         )
+    if has_issues:
+        Console(stderr=True).print(
+            f"Warning: {metrics.name} completed with skipped={metrics.skipped} "
+            f"provider_errors={metrics.provider_errors}. Re-run with --verbose for details."
+        )
+
+
+def _run_sync_with_progress[T](
+    label: str,
+    run: Callable[[ProgressReporter], T],
+    *,
+    enabled: bool,
+    verbose: bool = False,
+) -> T:
+    progress_console = Console(stderr=True)
+    if not enabled or verbose or not progress_console.is_interactive:
+        with _sync_logging(verbose):
+            return run(_ignore_progress)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(bar_width=None),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=progress_console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task(label, completed=0, total=1)
+
+        def report(update: ProgressUpdate) -> None:
+            progress_kwargs: dict[str, Any] = {"description": update.message}
+            if update.completed is not None:
+                progress_kwargs["completed"] = update.completed
+            if update.total is not None:
+                progress_kwargs["total"] = update.total
+            progress.update(task_id, **progress_kwargs)
+
+        with _sync_logging(verbose):
+            return run(report)
+
+
+def _ignore_progress(_update: ProgressUpdate) -> None:
+    return
+
+
+def _combine_sync_metrics(name: str, *metrics: SyncMetrics) -> SyncMetrics:
+    combined = SyncMetrics(name=name)
+    for item in metrics:
+        combined.pages += item.pages
+        combined.boards += item.boards
+        combined.board_providers += item.board_providers
+        combined.jobs += item.jobs
+        combined.skipped += item.skipped
+        combined.duplicate_routes_skipped += item.duplicate_routes_skipped
+        combined.retries += item.retries
+        for provider_id, count in item.provider_errors.items():
+            combined.provider_errors[provider_id] = (
+                combined.provider_errors.get(provider_id, 0) + count
+            )
+    if metrics:
+        combined.started_at = min(item.started_at for item in metrics)
+        combined.finished_at = max(
+            item.finished_at or item.started_at for item in metrics
+        )
+        return combined
+    return combined.finish()
+
+
+@contextmanager
+def _sync_logging(verbose: bool):
+    if verbose:
+        yield
+        return
+    logger.disable("openopps")
+    try:
+        yield
+    finally:
+        logger.enable("openopps")
 
 
 def _table(title: str, columns: list[str], rows: list[list[object]]) -> None:
@@ -244,7 +397,9 @@ def _next_action(counts: dict[str, int], readiness: dict[str, Any]) -> str:
     if counts["boardProviders"] == 0:
         return "Run provider coverage or route probing to inspect provider readiness."
     if readiness["missingRouteMetadata"] > 0 and readiness["executableRoutes"] == 0:
-        return "Run `openopps admin providers probe-routes --apply` or attach route metadata before syncing jobs."
+        return (
+            "Run `openopps boards sync` or attach route metadata before syncing jobs."
+        )
     if counts["jobs"] == 0:
         return "Run `openopps jobs sync` after routes are ready."
     return "Run `openopps jobs list` or export filtered results."
@@ -265,6 +420,153 @@ def _status_issues(
     if coverage["boards"].get("withOnlyNonSupportedProviderHints"):
         issues.append("only_non_supported_provider_hints")
     return issues
+
+
+@app.command(
+    "sync",
+    help="Run the everyday sources, boards, and jobs sync workflow in order.",
+    rich_help_panel=PANEL_WORKFLOW,
+)
+def sync_all(
+    source_key: Annotated[
+        str | None,
+        typer.Argument(help="Optional source key; omit to sync all enabled sources."),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            *OUTPUT_OPTION_FLAGS,
+            help="Optional JSONL path for jobs synced during the jobs stage.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = None,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=1,
+            max=500,
+            help="Maximum upstream page size for source adapters that support paging.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = 100,
+    max_candidates: Annotated[
+        int,
+        typer.Option(
+            "--max-candidates",
+            min=1,
+            max=50,
+            help="Maximum route candidate slugs or sites to try per board.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = 12,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            *LIMIT_OPTION_FLAGS,
+            min=1,
+            help="Maximum boards/routes to enrich and probe during the boards stage.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    metrics_json: Annotated[
+        bool,
+        typer.Option(
+            *METRICS_JSON_OPTION_FLAGS,
+            help="Print combined sync metrics as JSON.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    profile: Annotated[
+        bool,
+        typer.Option(
+            "--profile",
+            help="Print a compact human-readable sync summary.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            *REFRESH_CACHE_OPTION_FLAGS,
+            help="Bypass cache reads and update cache records from fresh responses.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            *VERBOSE_OPTION_FLAGS,
+            help="Show detailed sync warnings instead of brief progress messages only.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
+) -> None:
+    settings = _settings_with_cache_refresh(refresh_cache)
+    store = OpenOppsStore(settings)
+    provider_filter = normalize_provider_filter(provider)
+
+    def run(report: ProgressReporter) -> SyncMetrics:
+        async def _run() -> SyncMetrics:
+            source_metrics = await sync_sources(
+                settings=settings,
+                store=store,
+                source_key=source_key,
+                page_size=page_size,
+                verbose=verbose,
+                report=report,
+            )
+            board_metrics = await sync_boards(
+                settings=settings,
+                store=store,
+                source_key=source_key,
+                board_key=board,
+                provider_id=provider_filter,
+                max_candidates=max_candidates,
+                limit=limit,
+                verbose=verbose,
+                report=report,
+            )
+            job_metrics = await sync_jobs(
+                settings=settings,
+                store=store,
+                source_key=source_key,
+                board_key=board,
+                provider_id=provider_filter,
+                output=output,
+                verbose=verbose,
+                report=report,
+            )
+            return _combine_sync_metrics(
+                "sync", source_metrics, board_metrics, job_metrics
+            )
+
+        return asyncio.run(_run())
+
+    try:
+        metrics = _run_sync_with_progress(
+            "Syncing OpenOpps",
+            run,
+            enabled=not metrics_json,
+            verbose=verbose,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _metrics(metrics, metrics_json, profile)
 
 
 def _board_filters(
@@ -334,10 +636,12 @@ def _job_filters(
 @app.command(
     "status",
     help="Show local OpenOpps database, cache, plugin, and next-action status.",
+    rich_help_panel=PANEL_OPERATIONS,
 )
 def status(
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     data = _status_payload()
@@ -378,10 +682,15 @@ def status(
     console.print(f"Next action: {data['nextAction']}")
 
 
-@app.command("doctor", help="Alias for status with setup-oriented next-step guidance.")
+@app.command(
+    "doctor",
+    help="Alias for status with setup-oriented next-step guidance.",
+    rich_help_panel=PANEL_OPERATIONS,
+)
 def doctor(
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     status(json_output=json_output)
@@ -390,7 +699,8 @@ def doctor(
 @plugins_app.command("list", help="List installed OpenOpps plugins and load status.")
 def plugins_list(
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     data = _plugin_registry().as_dict()
@@ -419,7 +729,8 @@ def plugins_list(
 )
 def cache_status(
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     data = _cache().status()
@@ -449,7 +760,8 @@ def cache_purge(
         typer.Option("--namespace", help="Limit purge to one cache namespace."),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     deleted = _cache().purge(namespace=namespace)
@@ -475,7 +787,8 @@ def examples_seed(
         typer.Option("--jobs-per-board", min=0, help="Jobs per job-capable board."),
     ] = 2,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     dataset = build_example_dataset(
@@ -524,7 +837,10 @@ def sources_add(
     url: Annotated[str, typer.Option("--url", help="Public source catalog URL.")],
     provider: Annotated[
         str,
-        typer.Option("--provider", help="Source adapter id used to parse the catalog."),
+        typer.Option(
+            *PROVIDER_OPTION_FLAGS,
+            help="Source adapter id used to parse the catalog.",
+        ),
     ] = "consider_a16z",
     enabled: Annotated[
         bool,
@@ -549,7 +865,8 @@ def sources_add(
 )
 def sources_list(
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     settings = _settings()
@@ -599,9 +916,17 @@ def sources_test(
     refresh_cache: Annotated[
         bool,
         typer.Option(
-            "--refresh-cache",
+            *REFRESH_CACHE_OPTION_FLAGS,
             help="Bypass cache reads and update cache records from fresh responses.",
             rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            *VERBOSE_OPTION_FLAGS,
+            help="Show detailed source adapter warnings instead of compact progress only.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
         ),
     ] = False,
 ) -> None:
@@ -628,7 +953,8 @@ def sources_test(
                 )
                 return
 
-    asyncio.run(_run())
+    with _sync_logging(verbose):
+        asyncio.run(_run())
 
 
 @sources_app.command(
@@ -650,8 +976,8 @@ def sources_sync(
     output: Annotated[
         Path | None,
         typer.Option(
-            "--output",
-            help="Write discovered board records to a JSONL file.",
+            *OUTPUT_OPTION_FLAGS,
+            help=SYNC_OUTPUT_FILE_HELP,
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = None,
@@ -668,7 +994,7 @@ def sources_sync(
     metrics_json: Annotated[
         bool,
         typer.Option(
-            "--metrics-json",
+            *METRICS_JSON_OPTION_FLAGS,
             help="Print sync metrics as JSON.",
             rich_help_panel=PANEL_OUTPUT,
         ),
@@ -684,9 +1010,17 @@ def sources_sync(
     refresh_cache: Annotated[
         bool,
         typer.Option(
-            "--refresh-cache",
+            *REFRESH_CACHE_OPTION_FLAGS,
             help="Bypass cache reads and update cache records from fresh responses.",
             rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            *VERBOSE_OPTION_FLAGS,
+            help="Show detailed sync warnings instead of brief progress messages only.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
         ),
     ] = False,
 ) -> None:
@@ -694,14 +1028,21 @@ def sources_sync(
         raise typer.BadParameter("--output is required with --no-db")
     store = None if no_db else _store()
     try:
-        metrics = asyncio.run(
-            sync_sources(
-                settings=_settings_with_cache_refresh(refresh_cache),
-                store=store,
-                source_key=source_key,
-                output=output,
-                page_size=page_size,
-            )
+        metrics = _run_sync_with_progress(
+            "Syncing sources",
+            lambda report: asyncio.run(
+                sync_sources(
+                    settings=_settings_with_cache_refresh(refresh_cache),
+                    store=store,
+                    source_key=source_key,
+                    output=output,
+                    page_size=page_size,
+                    verbose=verbose,
+                    report=report,
+                )
+            ),
+            enabled=not metrics_json,
+            verbose=verbose,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -716,7 +1057,9 @@ def boards_add(
     name: Annotated[str, typer.Option("--name", help="Firm or company name.")],
     source: Annotated[
         str,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = "manual",
     website_url: Annotated[
         str | None,
@@ -852,19 +1195,23 @@ def boards_add_provider(
 def boards_list(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     market: Annotated[
         str | None,
         typer.Option(
             "--market",
-            help="Case-insensitive market text filter.",
+            help=MARKET_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -872,7 +1219,7 @@ def boards_list(
         str | None,
         typer.Option(
             "--location",
-            help="Case-insensitive location text filter.",
+            help=LOCATION_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -880,7 +1227,7 @@ def boards_list(
         str | None,
         typer.Option(
             "--domain",
-            help="Case-insensitive company domain filter.",
+            help=DOMAIN_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -888,7 +1235,7 @@ def boards_list(
         bool,
         typer.Option(
             "--has-jobs",
-            help="Only include boards with a positive jobs hint.",
+            help=BOARD_HAS_JOBS_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = False,
@@ -912,10 +1259,13 @@ def boards_list(
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     boards = _store().list_boards(
@@ -960,21 +1310,123 @@ def boards_show(
     _json(board.model_dump(mode="json"))
 
 
+@boards_app.command(
+    "sync",
+    help="Enrich discovered boards and resolve missing executable provider routes.",
+)
+def boards_sync(
+    source: Annotated[
+        str | None,
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    board: Annotated[
+        str | None,
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    max_candidates: Annotated[
+        int,
+        typer.Option(
+            "--max-candidates",
+            min=1,
+            max=50,
+            help="Maximum route candidate slugs or sites to try per board.",
+            rich_help_panel=PANEL_ROUTE,
+        ),
+    ] = 12,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    metrics_json: Annotated[
+        bool,
+        typer.Option(
+            *METRICS_JSON_OPTION_FLAGS,
+            help="Print sync metrics as JSON.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    profile: Annotated[
+        bool,
+        typer.Option(
+            "--profile",
+            help="Print a compact human-readable sync summary.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            *REFRESH_CACHE_OPTION_FLAGS,
+            help="Bypass cache reads and update cache records from fresh responses.",
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            *VERBOSE_OPTION_FLAGS,
+            help="Show detailed sync warnings instead of brief progress messages only.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
+) -> None:
+    settings = _settings_with_cache_refresh(refresh_cache)
+    metrics = _run_sync_with_progress(
+        "Syncing boards",
+        lambda report: asyncio.run(
+            sync_boards(
+                settings=settings,
+                store=OpenOppsStore(settings),
+                source_key=source,
+                board_key=board,
+                provider_id=normalize_provider_filter(provider),
+                max_candidates=max_candidates,
+                limit=limit,
+                verbose=verbose,
+                report=report,
+            )
+        ),
+        enabled=not metrics_json,
+        verbose=verbose,
+    )
+    _metrics(metrics, metrics_json, profile)
+
+
 @admin_boards_app.command(
     "enrich", help="Promote preserved payload metadata into normalized board fields."
 )
 def boards_enrich(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     apply: Annotated[
         bool,
@@ -985,7 +1437,8 @@ def boards_enrich(
         ),
     ] = False,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     summary = enrich_metadata(
@@ -1053,11 +1506,15 @@ def boards_detect_provider(
 def boards_refresh(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
 ) -> None:
     boards = _store().list_boards(source_key=source, limit=limit)
@@ -1070,27 +1527,37 @@ def boards_refresh(
 def boards_export(
     output: Annotated[
         Path,
-        typer.Option("--output", help=OUTPUT_FILE_HELP, rich_help_panel=PANEL_OUTPUT),
+        typer.Option(
+            *OUTPUT_OPTION_FLAGS,
+            help=EXPORT_OUTPUT_FILE_HELP,
+            rich_help_panel=PANEL_OUTPUT,
+        ),
     ],
     format_: Annotated[
         ExportFormat,
-        typer.Option("--format", help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT),
+        typer.Option(
+            *FORMAT_OPTION_FLAGS, help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT
+        ),
     ] = ExportFormat.JSONL,
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     market: Annotated[
         str | None,
         typer.Option(
             "--market",
-            help="Case-insensitive market text filter.",
+            help=MARKET_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1098,7 +1565,7 @@ def boards_export(
         str | None,
         typer.Option(
             "--location",
-            help="Case-insensitive location text filter.",
+            help=LOCATION_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1106,7 +1573,7 @@ def boards_export(
         str | None,
         typer.Option(
             "--domain",
-            help="Case-insensitive company domain filter.",
+            help=DOMAIN_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1114,7 +1581,7 @@ def boards_export(
         bool,
         typer.Option(
             "--has-jobs",
-            help="Only include boards with a positive jobs hint.",
+            help=BOARD_HAS_JOBS_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = False,
@@ -1138,7 +1605,9 @@ def boards_export(
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
 ) -> None:
     count = export_records(
@@ -1165,30 +1634,36 @@ def boards_export(
 def jobs_sync(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     output: Annotated[
         Path | None,
         typer.Option(
-            "--output",
-            help="Also stream synced jobs to this JSONL file.",
+            *OUTPUT_OPTION_FLAGS,
+            help=SYNC_OUTPUT_FILE_HELP,
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = None,
     metrics_json: Annotated[
         bool,
         typer.Option(
-            "--metrics-json",
+            *METRICS_JSON_OPTION_FLAGS,
             help="Print sync metrics as JSON.",
             rich_help_panel=PANEL_OUTPUT,
         ),
@@ -1204,21 +1679,36 @@ def jobs_sync(
     refresh_cache: Annotated[
         bool,
         typer.Option(
-            "--refresh-cache",
+            *REFRESH_CACHE_OPTION_FLAGS,
             help="Bypass cache reads and update cache records from fresh responses.",
             rich_help_panel=PANEL_SYNC,
         ),
     ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            *VERBOSE_OPTION_FLAGS,
+            help="Show detailed sync warnings instead of brief progress messages only.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
 ) -> None:
-    metrics = asyncio.run(
-        sync_jobs(
-            settings=_settings_with_cache_refresh(refresh_cache),
-            store=_store(),
-            source_key=source,
-            board_key=board,
-            provider_id=normalize_provider_filter(provider),
-            output=output,
-        )
+    metrics = _run_sync_with_progress(
+        "Syncing jobs",
+        lambda report: asyncio.run(
+            sync_jobs(
+                settings=_settings_with_cache_refresh(refresh_cache),
+                store=_store(),
+                source_key=source,
+                board_key=board,
+                provider_id=normalize_provider_filter(provider),
+                output=output,
+                verbose=verbose,
+                report=report,
+            )
+        ),
+        enabled=not metrics_json,
+        verbose=verbose,
     )
     _metrics(metrics, metrics_json, profile)
 
@@ -1227,23 +1717,29 @@ def jobs_sync(
 def jobs_list(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     location: Annotated[
         str | None,
         typer.Option(
             "--location",
-            help="Case-insensitive location text filter.",
+            help=LOCATION_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1251,7 +1747,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--department",
-            help="Case-insensitive department text filter.",
+            help=DEPARTMENT_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1259,7 +1755,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--team",
-            help="Case-insensitive team text filter.",
+            help=TEAM_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1267,7 +1763,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--workplace-type",
-            help="Workplace type filter, such as Remote or Onsite.",
+            help=WORKPLACE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1275,7 +1771,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--remote",
-            help="Remote policy filter, such as Full, Hybrid, or None.",
+            help=REMOTE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1284,7 +1780,7 @@ def jobs_list(
         typer.Option(
             "--employment-type",
             "--type",
-            help="Employment type filter, such as full-time or contract.",
+            help=EMPLOYMENT_TYPE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1292,7 +1788,7 @@ def jobs_list(
         float | None,
         typer.Option(
             "--salary-min",
-            help="Only include jobs whose salary range reaches this minimum.",
+            help=SALARY_MIN_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1300,7 +1796,7 @@ def jobs_list(
         float | None,
         typer.Option(
             "--salary-max",
-            help="Only include jobs whose salary range stays under this maximum.",
+            help=SALARY_MAX_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1308,7 +1804,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--skill",
-            help="Match normalized skill names or keywords.",
+            help=SKILL_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1316,7 +1812,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--query",
-            help="Search title, company, description, and metadata text.",
+            help=QUERY_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1324,7 +1820,7 @@ def jobs_list(
         str | None,
         typer.Option(
             "--posted-after",
-            help="Only include jobs posted on or after this date.",
+            help=POSTED_AFTER_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1332,16 +1828,19 @@ def jobs_list(
         str | None,
         typer.Option(
             "--posted-before",
-            help="Only include jobs posted on or before this date.",
+            help=POSTED_BEFORE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     jobs = _store().list_jobs(
@@ -1391,31 +1890,43 @@ def jobs_show(
 def jobs_export(
     output: Annotated[
         Path,
-        typer.Option("--output", help=OUTPUT_FILE_HELP, rich_help_panel=PANEL_OUTPUT),
+        typer.Option(
+            *OUTPUT_OPTION_FLAGS,
+            help=EXPORT_OUTPUT_FILE_HELP,
+            rich_help_panel=PANEL_OUTPUT,
+        ),
     ],
     format_: Annotated[
         ExportFormat,
-        typer.Option("--format", help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT),
+        typer.Option(
+            *FORMAT_OPTION_FLAGS, help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT
+        ),
     ] = ExportFormat.JSONL,
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     location: Annotated[
         str | None,
         typer.Option(
             "--location",
-            help="Case-insensitive location text filter.",
+            help=LOCATION_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1423,7 +1934,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--department",
-            help="Case-insensitive department text filter.",
+            help=DEPARTMENT_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1431,7 +1942,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--team",
-            help="Case-insensitive team text filter.",
+            help=TEAM_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1439,7 +1950,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--workplace-type",
-            help="Workplace type filter, such as Remote or Onsite.",
+            help=WORKPLACE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1447,7 +1958,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--remote",
-            help="Remote policy filter, such as Full, Hybrid, or None.",
+            help=REMOTE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1456,7 +1967,7 @@ def jobs_export(
         typer.Option(
             "--employment-type",
             "--type",
-            help="Employment type filter, such as full-time or contract.",
+            help=EMPLOYMENT_TYPE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1464,7 +1975,7 @@ def jobs_export(
         float | None,
         typer.Option(
             "--salary-min",
-            help="Only include jobs whose salary range reaches this minimum.",
+            help=SALARY_MIN_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1472,7 +1983,7 @@ def jobs_export(
         float | None,
         typer.Option(
             "--salary-max",
-            help="Only include jobs whose salary range stays under this maximum.",
+            help=SALARY_MAX_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1480,7 +1991,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--skill",
-            help="Match normalized skill names or keywords.",
+            help=SKILL_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1488,7 +1999,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--query",
-            help="Search title, company, description, and metadata text.",
+            help=QUERY_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1496,7 +2007,7 @@ def jobs_export(
         str | None,
         typer.Option(
             "--posted-after",
-            help="Only include jobs posted on or after this date.",
+            help=POSTED_AFTER_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
@@ -1504,13 +2015,15 @@ def jobs_export(
         str | None,
         typer.Option(
             "--posted-before",
-            help="Only include jobs posted on or before this date.",
+            help=POSTED_BEFORE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
 ) -> None:
     count = export_records(
@@ -1545,7 +2058,8 @@ def jobs_export(
 )
 def providers_list(
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     providers = provider_registry(settings=_settings()).list()
@@ -1615,16 +2129,22 @@ def providers_explain(
 def providers_probe_routes(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     apply: Annotated[
@@ -1655,10 +2175,13 @@ def providers_probe_routes(
     ] = 12,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     summary = asyncio.run(
@@ -1726,16 +2249,22 @@ def providers_probe_routes(
 def providers_registry(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     passed_probe_only: Annotated[
@@ -1756,10 +2285,13 @@ def providers_registry(
     ] = False,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     selection = BoardRouteRegistry(_store()).select(
@@ -1809,16 +2341,22 @@ def providers_registry(
 def providers_health(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     board: Annotated[
         str | None,
-        typer.Option("--board", help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *BOARD_OPTION_FLAGS, help=BOARD_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     page_size: Annotated[
@@ -1833,7 +2371,9 @@ def providers_health(
     ] = 5,
     limit: Annotated[
         int | None,
-        typer.Option("--limit", min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     apply: Annotated[
         bool,
@@ -1844,7 +2384,8 @@ def providers_health(
         ),
     ] = False,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     summary = asyncio.run(
@@ -1900,16 +2441,21 @@ def providers_health(
 def providers_coverage(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     provider: Annotated[
         str | None,
         typer.Option(
-            "--provider", help=PROVIDER_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+            *PROVIDER_OPTION_FLAGS,
+            help=PROVIDER_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     report = build_coverage_report(
@@ -1962,10 +2508,13 @@ def providers_coverage(
 def providers_audit(
     source: Annotated[
         str | None,
-        typer.Option("--source", help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE),
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
     ] = None,
     json_output: Annotated[
-        bool, typer.Option("--json", help=JSON_HELP, rich_help_panel=PANEL_OUTPUT)
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
     report = build_provider_audit_report(_store(), source_key=source)

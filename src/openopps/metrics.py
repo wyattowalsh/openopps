@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from time import perf_counter
+from collections.abc import Callable
 from typing import Any
+
+
+@dataclass(frozen=True)
+class ProgressUpdate:
+    stage: str
+    message: str
+    completed: int | None = None
+    total: int | None = None
+
+
+ProgressReporter = Callable[[ProgressUpdate], None]
 
 
 @dataclass
