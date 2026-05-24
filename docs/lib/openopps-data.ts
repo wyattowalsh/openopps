@@ -14,6 +14,17 @@ export type SourceCatalogEntry = {
 	providerId: string;
 	url: string;
 	enabled: boolean;
+	taxonomy: {
+		providerType?: string;
+		coverageMode?: string;
+		accessType?: string;
+		licenseStatus?: string;
+		refreshCadence?: string;
+		sourceYear?: number;
+		sourceCategory?: string;
+		sourceAttribution?: string;
+		defaultEnabledReason?: string;
+	};
 };
 
 export type OpenOppsDocsData = {

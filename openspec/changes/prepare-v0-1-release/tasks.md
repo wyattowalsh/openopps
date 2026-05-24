@@ -7,10 +7,14 @@
 - [x] Add a plugin template or example with a minimal `pyproject.toml` entry point.
 - [x] Add metadata enrichment from source payloads, provider route pages, and job sync payloads while preserving raw payloads.
 - [x] Add board-level provider coverage metrics and a provider coverage audit for SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
-- [x] Add deterministic generated examples and bounded Hypothesis strategies for storage/filter/export/cache/plugin invariants.
+- [x] Add deterministic generated examples and bounded Hypothesis coverage for generated example invariants.
 - [x] Preserve JSON cleanliness and dry-run/apply safety across CLI, cache, plugins, provider health, and route probing.
 - [x] Update README and docs for v0.1 quickstart, stable/admin commands, cache, plugins, examples, provider coverage, metadata, storage/export, and troubleshooting.
 - [x] Keep unscoped `jobs sync` covering all persisted job-capable routes; use explicit `--source`, `--board`, or `--provider` filters for scoped syncs.
+- [x] Add stable `openopps sync` orchestration and `boards sync` route-resolution progress for the everyday workflow.
 - [x] Write an acceptance matrix with evidence artifacts and validation status.
 - [x] Run targeted tests for CLI, cache, plugins, coverage, examples, storage/export, providers, routes, and health.
 - [x] Run full validation: `uv run pytest`, strict OpenSpec validation, `cd docs && pnpm types:check`, `cd docs && pnpm build`, JSON parse smoke checks, generated-example smoke path, cache/plugin smoke path, and provider coverage report.
+- [ ] Add no-auth board-provider support for Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager, with route detection, route probing, defensive parsing, and mocked provider tests.
+- [ ] Keep WorkAtAStartup out of scope in favor of the existing YC source provider, and document/test any Wellfound/Angel outcome as static no-auth source support or explicit unsupported/disabled metadata.
+- [ ] Audit Editorial/Editiorial source labels before adding any provider identity, and only add detection if a real public provider route is proven.

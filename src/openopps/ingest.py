@@ -48,7 +48,12 @@ async def sync_sources(
     _report(
         report,
         "sources",
-        f"sources: 0/{source_total} complete, 0 unique boards",
+        _source_progress_message(
+            0,
+            source_total,
+            0,
+            _phase_detail("queue", "waiting for adapters"),
+        ),
         completed=0,
         total=source_total,
     )
@@ -74,13 +79,18 @@ async def sync_sources(
                             completed_sources,
                             source_total,
                             _unique_board_count(store, source_key, unique_board_keys),
-                            f"{source.key}: skipped, no adapter",
+                            _source_detail(source.key, "skipped: no adapter"),
                         )
                     return
                 _report(
                     report,
                     "sources",
-                    f"{source.key}: discovering boards",
+                    _source_progress_message(
+                        completed_sources,
+                        source_total,
+                        _unique_board_count(store, source_key, unique_board_keys),
+                        _source_detail(source.key, "discovering boards"),
+                    ),
                     completed=completed_sources,
                     total=source_total,
                 )
@@ -131,7 +141,13 @@ async def sync_sources(
                                     completed_sources,
                                     source_total,
                                     unique_count,
-                                    f"{source.key}: {unique_count} unique boards discovered",
+                                    _source_detail(
+                                        source.key,
+                                        (
+                                            f"+{_format_count(len(boards))} boards "
+                                            f"+{_format_count(len(providers))} routes"
+                                        ),
+                                    ),
                                 )
                     async with progress_lock:
                         completed_sources += 1
@@ -140,7 +156,7 @@ async def sync_sources(
                             completed_sources,
                             source_total,
                             _unique_board_count(store, source_key, unique_board_keys),
-                            f"{source.key}: complete",
+                            _source_detail(source.key, "complete"),
                         )
                 except Exception as exc:
                     metrics.error(source.provider_id)
@@ -152,7 +168,7 @@ async def sync_sources(
                             completed_sources,
                             source_total,
                             _unique_board_count(store, source_key, unique_board_keys),
-                            f"{source.key}: skipped after error",
+                            _source_detail(source.key, "skipped: error"),
                         )
                     if verbose:
                         logger.warning(
@@ -185,7 +201,11 @@ async def sync_boards(
     _report(
         report,
         "boards",
-        f"boards: enriching 0/{board_total} unique boards",
+        _board_progress_message(
+            0,
+            max(board_total, 1),
+            _board_detail("enrich", _chunk("event", "scanning metadata", "white")),
+        ),
         completed=0,
         total=max(board_total, 1),
     )
@@ -200,10 +220,18 @@ async def sync_boards(
     _report(
         report,
         "boards",
-        (
-            f"boards: enriched {enrichment.checked_boards} unique boards "
-            f"({len(enrichment.board_changes)} board updates, "
-            f"{len(enrichment.route_changes)} route updates)"
+        _board_progress_message(
+            enrichment.checked_boards,
+            max(board_total, 1),
+            _board_detail(
+                "enrich",
+                _chunk(
+                    "board-upd", _format_count(len(enrichment.board_changes)), "green"
+                ),
+                _chunk(
+                    "route-upd", _format_count(len(enrichment.route_changes)), "green"
+                ),
+            ),
         ),
         completed=enrichment.checked_boards,
         total=max(board_total, 1),
@@ -230,9 +258,22 @@ async def sync_boards(
     _report(
         report,
         "boards",
-        (
-            f"boards: {summary.checked} routes checked, "
-            f"{len(summary.matched)} ready, {len(summary.unknown)} unresolved"
+        _board_progress_message(
+            max(board_total, 1),
+            max(board_total, 1),
+            _board_detail(
+                "routes",
+                _chunk("checked", _format_count(summary.checked), "cyan"),
+                _chunk("ready", _format_count(len(summary.matched)), "green"),
+                _chunk("unresolved", _format_count(len(summary.unknown)), "yellow"),
+                _chunk(
+                    "skipped",
+                    _format_count(
+                        summary.route_ready_skipped + summary.duplicate_routes_skipped
+                    ),
+                    "yellow",
+                ),
+            ),
         ),
         completed=max(board_total, 1),
         total=max(board_total, 1),
@@ -292,7 +333,19 @@ async def sync_jobs(
     _report(
         report,
         "jobs",
-        f"jobs: 0/{route_total} ready routes checked, 0 jobs synced",
+        _job_progress_message(
+            0,
+            route_total,
+            0,
+            _phase_detail(
+                "queue",
+                (
+                    f"{_format_count(route_total)} routes, "
+                    f"{_format_count(len(route_selection.duplicate_routes))} dupes, "
+                    f"{_format_count(len(route_selection.missing_route_metadata))} no-meta"
+                ),
+            ),
+        ),
         completed=0,
         total=max(route_total, 1),
     )
@@ -322,7 +375,7 @@ async def sync_jobs(
                             completed_routes,
                             route_total,
                             metrics.jobs,
-                            f"{route.board_key}: skipped, missing provider",
+                            _job_detail(route.board_key, "skipped: missing provider"),
                         )
                     if verbose:
                         logger.warning(
@@ -340,7 +393,7 @@ async def sync_jobs(
                             completed_routes,
                             route_total,
                             metrics.jobs,
-                            f"{route.board_key}: skipped, non-job route",
+                            _job_detail(route.board_key, "skipped: non-job route"),
                         )
                     if verbose:
                         logger.warning(
@@ -352,7 +405,12 @@ async def sync_jobs(
                 _report(
                     report,
                     "jobs",
-                    f"{board.key}: fetching {route.provider_id} jobs",
+                    _job_progress_message(
+                        completed_routes,
+                        route_total,
+                        metrics.jobs,
+                        _job_detail(board.key, f"fetching {route.provider_id}"),
+                    ),
                     completed=completed_routes,
                     total=max(route_total, 1),
                 )
@@ -367,7 +425,7 @@ async def sync_jobs(
                             completed_routes,
                             route_total,
                             metrics.jobs,
-                            f"{board.key}: skipped after error",
+                            _job_detail(board.key, "skipped: error"),
                         )
                     if verbose:
                         logger.warning(
@@ -379,10 +437,23 @@ async def sync_jobs(
                     return
                 if jobs:
                     async with write_lock:
-                        store.upsert_jobs(jobs)
+                        store.sync_jobs_for_route(
+                            board.key,
+                            route.provider_id,
+                            jobs,
+                            close_missing=True,
+                        )
                         if output:
                             append_jsonl(output, jobs)
                     metrics.jobs += len(jobs)
+                else:
+                    async with write_lock:
+                        store.sync_jobs_for_route(
+                            board.key,
+                            route.provider_id,
+                            jobs,
+                            close_missing=True,
+                        )
                 async with progress_lock:
                     completed_routes += 1
                     _report_job_progress(
@@ -390,7 +461,13 @@ async def sync_jobs(
                         completed_routes,
                         route_total,
                         metrics.jobs,
-                        f"{board.key}: {len(jobs)} jobs synced",
+                        _job_detail(
+                            board.key,
+                            (
+                                f"{_format_count(len(jobs))} jobs synced "
+                                f"via {route.provider_id}"
+                            ),
+                        ),
                     )
                 logger.trace(
                     "Jobs route synced board={} provider={} jobs={}",
@@ -434,9 +511,8 @@ def _report_source_progress(
     _report(
         report,
         "sources",
-        (
-            f"sources: {completed_sources}/{source_total} complete, "
-            f"{unique_boards} unique boards - {detail}"
+        _source_progress_message(
+            completed_sources, source_total, unique_boards, detail
         ),
         completed=completed_sources,
         total=max(source_total, 1),
@@ -453,13 +529,106 @@ def _report_job_progress(
     _report(
         report,
         "jobs",
-        (
-            f"jobs: {completed_routes}/{route_total} routes checked, "
-            f"{synced_jobs} jobs synced - {detail}"
-        ),
+        _job_progress_message(completed_routes, route_total, synced_jobs, detail),
         completed=completed_routes,
         total=max(route_total, 1),
     )
+
+
+def _source_progress_message(
+    completed_sources: int,
+    source_total: int,
+    unique_boards: int,
+    detail: str,
+) -> str:
+    return _progress_message(
+        _stage_label("SRC", "cyan"),
+        _chunk(
+            "done",
+            f"{_format_count(completed_sources)}/{_format_count(source_total)} sources",
+        ),
+        _chunk("boards", _format_count(unique_boards), "green"),
+        detail,
+    )
+
+
+def _board_progress_message(
+    completed_boards: int, board_total: int, detail: str
+) -> str:
+    return _progress_message(
+        _stage_label("BRD", "magenta"),
+        _chunk(
+            "done",
+            f"{_format_count(completed_boards)}/{_format_count(board_total)} boards",
+        ),
+        detail,
+    )
+
+
+def _job_progress_message(
+    completed_routes: int,
+    route_total: int,
+    synced_jobs: int,
+    detail: str,
+) -> str:
+    return _progress_message(
+        _stage_label("JOB", "green"),
+        _chunk(
+            "done",
+            f"{_format_count(completed_routes)}/{_format_count(route_total)} routes",
+        ),
+        _chunk("jobs", _format_count(synced_jobs), "green"),
+        detail,
+    )
+
+
+def _phase_detail(phase: str, event: str) -> str:
+    return " ".join(
+        [
+            _chunk("phase", phase, "cyan"),
+            _chunk("event", event, "white"),
+        ]
+    )
+
+
+def _board_detail(phase: str, *segments: str) -> str:
+    return " ".join([_chunk("phase", phase, "magenta"), *segments])
+
+
+def _source_detail(source_key: str, detail: str) -> str:
+    return " ".join(
+        [
+            _chunk("source", source_key, "yellow"),
+            _chunk("event", detail, "white"),
+        ]
+    )
+
+
+def _job_detail(board_key: str, detail: str) -> str:
+    return " ".join(
+        [
+            _chunk("board", board_key, "yellow"),
+            _chunk("event", detail, "white"),
+        ]
+    )
+
+
+def _progress_message(prefix: str, *segments: str) -> str:
+    return f"{prefix} [dim]|[/] " + " [dim]|[/] ".join(
+        segment for segment in segments if segment
+    )
+
+
+def _stage_label(label: str, color: str) -> str:
+    return f"[bold {color} on grey11] {label} [/]"
+
+
+def _chunk(label: str, value: str, value_style: str = "bold") -> str:
+    return f"[dim]{label}[/] [{value_style}]{value}[/]"
+
+
+def _format_count(value: int) -> str:
+    return f"{value:,}"
 
 
 def _track_unique_boards(

@@ -2,7 +2,7 @@
 
 ### Requirement: CLI exposes stable v0.1 workflow surface
 
-OpenOpps SHALL expose stable v0.1 commands for source discovery, board inspection/export, route readiness, job sync/list/show/export, plugin inspection, cache inspection, generated examples, and local status or doctor output.
+OpenOpps SHALL expose stable v0.1 commands for full sync orchestration, source discovery, board inspection/export, route readiness, job sync/list/show/export, plugin inspection, cache inspection, generated examples, and local status or doctor output.
 
 #### Scenario: User inspects default help
 
@@ -13,7 +13,13 @@ OpenOpps SHALL expose stable v0.1 commands for source discovery, board inspectio
 #### Scenario: User follows stable workflow
 
 - **WHEN** the user uses stable v0.1 commands
-- **THEN** the available path supports discovering boards, checking route readiness, syncing jobs, filtering/listing data, exporting data, and checking local status
+- **THEN** the available path supports running the full sync workflow, discovering boards, checking route readiness, syncing jobs, filtering/listing data, exporting data, and checking local status
+
+#### Scenario: User runs the full sync workflow
+
+- **WHEN** the user runs `openopps sync` with optional source, board, or provider filters
+- **THEN** OpenOpps runs source discovery, board route resolution, and job sync in order
+- **AND** machine-readable metrics remain parseable when JSON metrics are requested
 
 ### Requirement: Advanced commands are explicit
 

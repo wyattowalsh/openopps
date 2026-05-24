@@ -32,6 +32,7 @@ def build_docs_data() -> dict[str, Any]:
                 "providerId": source.provider_id,
                 "url": source.url,
                 "enabled": source.enabled,
+                "taxonomy": _source_taxonomy_data(source.raw_metadata),
             }
             for source in source_records
         ],
@@ -49,3 +50,18 @@ def _provider_definition_data(definition: ProviderDefinition) -> dict[str, Any]:
         "description": definition.description,
         "detectsRoutes": definition.route_detector is not None,
     }
+
+
+def _source_taxonomy_data(raw_metadata: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "providerType",
+        "coverageMode",
+        "accessType",
+        "licenseStatus",
+        "refreshCadence",
+        "sourceYear",
+        "sourceCategory",
+        "sourceAttribution",
+        "defaultEnabledReason",
+    )
+    return {key: raw_metadata[key] for key in keys if key in raw_metadata}

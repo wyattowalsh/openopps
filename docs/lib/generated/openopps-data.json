@@ -5,6 +5,8 @@
     "recruitee",
     "teamtailor",
     "bamboohr",
+    "rippling",
+    "wpjobmanager",
     "icims",
     "jobvite",
     "jazzhr"
@@ -24,6 +26,14 @@
       "supportLevel": "jobs"
     },
     {
+      "description": "Public BambooHR careers board JSON endpoints.",
+      "detectsRoutes": true,
+      "id": "bamboohr",
+      "kind": "board_provider",
+      "label": "BambooHR",
+      "supportLevel": "jobs"
+    },
+    {
       "description": "Public Greenhouse job board API.",
       "detectsRoutes": true,
       "id": "greenhouse",
@@ -40,15 +50,55 @@
       "supportLevel": "jobs"
     },
     {
+      "description": "Public Rippling ATS board JSON endpoints.",
+      "detectsRoutes": true,
+      "id": "rippling",
+      "kind": "board_provider",
+      "label": "Rippling",
+      "supportLevel": "jobs"
+    },
+    {
+      "description": "Public Teamtailor jobs RSS feed.",
+      "detectsRoutes": true,
+      "id": "teamtailor",
+      "kind": "board_provider",
+      "label": "Teamtailor",
+      "supportLevel": "jobs"
+    },
+    {
+      "description": "Public Workable hosted-board JSON endpoint.",
+      "detectsRoutes": true,
+      "id": "workable",
+      "kind": "board_provider",
+      "label": "Workable",
+      "supportLevel": "jobs"
+    },
+    {
       "description": "Public Workday CXS careers-site endpoints.",
       "detectsRoutes": true,
       "id": "workday",
       "kind": "board_provider",
       "label": "Workday",
       "supportLevel": "jobs"
+    },
+    {
+      "description": "Public WordPress WP Job Manager REST or AJAX endpoint.",
+      "detectsRoutes": true,
+      "id": "wpjobmanager",
+      "kind": "board_provider",
+      "label": "WP Job Manager",
+      "supportLevel": "jobs"
     }
   ],
   "sourceAdapters": [
+    {
+      "description": "CNCF landscape source adapter that discovers cloud-native projects and vendors from public GitHub data.",
+      "detectsRoutes": false,
+      "id": "cncf_landscape",
+      "kind": "board_source",
+      "label": "CNCF Landscape",
+      "supportLevel": "detect"
+    },
     {
       "description": "Aggregate Consider source adapter that discovers company boards and provider hints.",
       "detectsRoutes": false,
@@ -74,6 +124,30 @@
       "supportLevel": "detect"
     },
     {
+      "description": "Opt-in CSV source adapter for public-company index membership seeds.",
+      "detectsRoutes": false,
+      "id": "public_index_csv",
+      "kind": "board_source",
+      "label": "Public Index CSV",
+      "supportLevel": "detect"
+    },
+    {
+      "description": "Opt-in CSV ranking source adapter for employer and company lists.",
+      "detectsRoutes": false,
+      "id": "ranking_csv",
+      "kind": "board_source",
+      "label": "Ranking CSV",
+      "supportLevel": "detect"
+    },
+    {
+      "description": "Official SEC public-company ticker source that discovers listed companies as detect-only boards.",
+      "detectsRoutes": false,
+      "id": "sec_company_tickers",
+      "kind": "board_source",
+      "label": "SEC Company Tickers",
+      "supportLevel": "detect"
+    },
+    {
       "description": "Aggregate South Park Commons source adapter that discovers company boards and provider hints.",
       "detectsRoutes": false,
       "id": "southparkcommons",
@@ -95,1837 +169,2240 @@
       "enabled": true,
       "key": "01a",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.01a.com/companies"
     },
     {
       "enabled": true,
       "key": "1011vc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.1011vc.com/companies"
     },
     {
       "enabled": true,
       "key": "2150",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.2150.vc/companies"
     },
     {
       "enabled": true,
       "key": "25madison",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.25madison.com/companies"
     },
     {
       "enabled": true,
       "key": "360cap",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.360cap.vc/companies"
     },
     {
       "enabled": true,
       "key": "53stations",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.53stations.com/companies"
     },
     {
       "enabled": true,
       "key": "5amventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.5amventures.com/companies"
     },
     {
       "enabled": true,
       "key": "645ventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.645ventures.com/companies"
     },
     {
       "enabled": true,
       "key": "8vc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.8vc.com/companies"
     },
     {
       "enabled": true,
       "key": "a16z",
       "providerId": "consider_a16z",
+      "taxonomy": {},
       "url": "https://jobs.a16z.com/companies"
     },
     {
       "enabled": true,
       "key": "abstractvc",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.abstractvc.com/companies"
     },
     {
       "enabled": true,
       "key": "accel",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.accel.com/companies"
     },
     {
       "enabled": true,
       "key": "acme",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.acme.vc/companies"
     },
     {
       "enabled": true,
       "key": "acp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.acp.vc/companies"
     },
     {
       "enabled": true,
       "key": "activate",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.activate.org/companies"
     },
     {
       "enabled": true,
       "key": "acurio",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://acurio.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "adara",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://talent.adara.vc/companies"
     },
     {
       "enabled": true,
       "key": "adverb",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.adverb.vc/companies"
     },
     {
       "enabled": true,
       "key": "age1",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.age1.com/companies"
     },
     {
       "enabled": true,
       "key": "aifund",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.aifund.ai/companies"
     },
     {
       "enabled": true,
       "key": "airtree",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.airtree.vc/companies"
     },
     {
       "enabled": true,
       "key": "aixventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.aixventures.com/companies"
     },
     {
       "enabled": true,
       "key": "alleycorp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.alleycorp.com/companies"
     },
     {
       "enabled": true,
       "key": "alter",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.alter.vc/companies"
     },
     {
       "enabled": true,
       "key": "alven",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.alven.co/companies"
     },
     {
       "enabled": true,
       "key": "amplifyla",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.amplify.la/companies"
     },
     {
       "enabled": true,
       "key": "amplifypartners",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://talent.amplifypartners.com/companies"
     },
     {
       "enabled": true,
       "key": "angelesinvestors",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.angelesinvestors.com/companies"
     },
     {
       "enabled": true,
       "key": "anthemis",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.anthemis.com/companies"
     },
     {
       "enabled": true,
       "key": "antler",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.antler.co/companies"
     },
     {
       "enabled": true,
       "key": "archetype",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.archetype.fund/companies"
     },
     {
       "enabled": true,
       "key": "atlasventure",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.atlasventure.com/companies"
     },
     {
       "enabled": true,
       "key": "atomico",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.atomico.com/companies"
     },
     {
       "enabled": true,
       "key": "atoneventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.atoneventures.com/companies"
     },
     {
       "enabled": true,
       "key": "avp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.avp.vc/companies"
     },
     {
       "enabled": true,
       "key": "b2venture",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.b2venture.vc/companies"
     },
     {
       "enabled": true,
       "key": "backed",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://talent.backed.vc/companies"
     },
     {
       "enabled": true,
       "key": "baincapitalventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.baincapitalventures.com/companies"
     },
     {
       "enabled": true,
       "key": "bakarlabs",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.bakarlabs.org/companies"
     },
     {
       "enabled": true,
       "key": "balderton",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.balderton.com/companies"
     },
     {
       "enabled": true,
       "key": "banktechventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.banktechventures.com/companies"
     },
     {
       "enabled": true,
       "key": "base10",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.base10.vc/companies"
     },
     {
       "enabled": true,
       "key": "battery",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.battery.com/companies"
     },
     {
       "enabled": true,
       "key": "bbgventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.bbgventures.com/companies"
     },
     {
       "enabled": true,
       "key": "bcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.b.capital/companies"
     },
     {
       "enabled": true,
       "key": "becocapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.becocapital.com/companies"
     },
     {
       "enabled": true,
       "key": "benchstrengthvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.benchstrengthvc.com/companies"
     },
     {
       "enabled": true,
       "key": "blackbird",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.blackbird.vc/companies"
     },
     {
       "enabled": true,
       "key": "blockchaincapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.blockchaincapital.com/companies"
     },
     {
       "enabled": true,
       "key": "blumbergcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.blumbergcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "bonfirevc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.bonfirevc.com/companies"
     },
     {
       "enabled": true,
       "key": "breakout",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.breakout.vc/companies"
     },
     {
       "enabled": true,
       "key": "breakthroughenergy",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://bevjobs.breakthroughenergy.org/companies"
     },
     {
       "enabled": true,
       "key": "brightspark",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.brightspark.com/"
     },
     {
       "enabled": true,
       "key": "btv",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.btv.vc/companies"
     },
     {
       "enabled": true,
       "key": "buildingventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.buildingventures.com/companies"
     },
     {
       "enabled": true,
       "key": "bvp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.bvp.com/companies"
     },
     {
       "enabled": true,
       "key": "canaan",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.canaan.com/companies"
     },
     {
       "enabled": true,
       "key": "canapi",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.canapi.com/companies"
     },
     {
       "enabled": true,
       "key": "capitalfactory",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.capitalfactory.com/companies"
     },
     {
       "enabled": true,
       "key": "cervinventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.cervinventures.com/companies"
     },
     {
       "enabled": true,
       "key": "cherry",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://talent.cherry.vc/companies"
     },
     {
       "enabled": true,
       "key": "citylight",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.citylight.vc/companies"
     },
     {
       "enabled": true,
       "key": "climatedraft",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.climatedraft.org/companies"
     },
     {
       "enabled": true,
       "key": "cmont",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.cmont.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "cncf-landscape",
+      "providerId": "cncf_landscape",
+      "taxonomy": {
+        "accessType": "public_github_data",
+        "coverageMode": "projects",
+        "defaultEnabledReason": "Public GitHub landscape data is a high-yield non-VC ecosystem backbone.",
+        "licenseStatus": "oss_attribution_required",
+        "providerType": "ecosystem_landscape",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "Cloud Native Computing Foundation landscape.yml data; logos and Crunchbase-derived fields are intentionally not ingested.",
+        "sourceCategory": "cloud_native_ecosystem"
+      },
+      "url": "https://raw.githubusercontent.com/cncf/landscape/master/landscape.yml"
     },
     {
       "enabled": true,
       "key": "collidecap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.collidecap.com/companies"
     },
     {
       "enabled": true,
       "key": "comcastventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfoliojobs.comcastventures.com/companies"
     },
     {
       "enabled": true,
       "key": "communitech",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://www1.communitech.ca/companies"
     },
     {
       "enabled": true,
       "key": "congruentvc",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.congruentvc.com/companies"
     },
     {
       "enabled": true,
       "key": "contrary",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.contrary.com/companies"
     },
     {
       "enabled": true,
       "key": "convectivecapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.convectivecapital.com/companies"
     },
     {
       "enabled": true,
       "key": "conversioncapital",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.conversioncapital.com/companies"
     },
     {
       "enabled": true,
       "key": "cornerstonevc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.cornerstonevc.co/companies"
     },
     {
       "enabled": true,
       "key": "correlationvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.correlationvc.com/companies"
     },
     {
       "enabled": true,
       "key": "costanoavc",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.costanoavc.com/companies"
     },
     {
       "enabled": true,
       "key": "craftventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.craftventures.com/companies"
     },
     {
       "enabled": true,
       "key": "creandum",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.creandum.com/companies"
     },
     {
       "enabled": true,
       "key": "credoventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.credoventures.com/companies"
     },
     {
       "enabled": true,
       "key": "crv",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.crv.com/companies"
     },
     {
       "enabled": true,
       "key": "cventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.cventures.vc/companies"
     },
     {
       "enabled": true,
       "key": "dawncapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.dawncapital.com/companies"
     },
     {
       "enabled": true,
       "key": "dcg",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.dcg.co/companies"
     },
     {
       "enabled": true,
       "key": "dcvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.dcvc.com/companies"
     },
     {
       "enabled": true,
       "key": "deepscienceventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.deepscienceventures.com/companies"
     },
     {
       "enabled": true,
       "key": "definevc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.definevc.com/companies"
     },
     {
       "enabled": true,
       "key": "designerfund",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.designerfund.com/companies"
     },
     {
       "enabled": true,
       "key": "detroitvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.detroit.vc/companies"
     },
     {
       "enabled": true,
       "key": "diagram",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.diagram.ca/companies"
     },
     {
       "enabled": true,
       "key": "digitalfuelcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.digitalfuelcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "drivecapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.drivecapital.com/companies"
     },
     {
       "enabled": true,
       "key": "e14",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.e14.vc/companies"
     },
     {
       "enabled": true,
       "key": "earlybird",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.earlybird.com/companies"
     },
     {
       "enabled": true,
       "key": "eclipse",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.eclipse.capital/companies"
     },
     {
       "enabled": true,
       "key": "edisonpartners",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.edisonpartners.com/companies"
     },
     {
       "enabled": true,
       "key": "elevateventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.elevateventures.com/companies"
     },
     {
       "enabled": true,
       "key": "energizecap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.energizecap.com/companies"
     },
     {
       "enabled": true,
       "key": "eniac",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.eniac.vc/companies"
     },
     {
       "enabled": true,
       "key": "etherealventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://consider.com/boards/vc/ethereal-ventures/companies"
     },
     {
       "enabled": true,
       "key": "everywhere",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.everywhere.vc/companies"
     },
     {
       "enabled": true,
       "key": "expa",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.expa.com/companies"
     },
     {
       "enabled": true,
       "key": "extantia",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.extantia.com/companies"
     },
     {
       "enabled": true,
       "key": "f2vc",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.f2vc.com/companies"
     },
     {
       "enabled": true,
       "key": "felicis",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.felicis.com/companies"
     },
     {
       "enabled": true,
       "key": "femalefoundersfund",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.femalefoundersfund.com/companies"
     },
     {
       "enabled": true,
       "key": "fenbushicapital",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.fenbushicapital.vc/companies"
     },
     {
       "enabled": true,
       "key": "fiftyyears",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.fiftyyears.com/companies"
     },
     {
       "enabled": true,
       "key": "fincapital",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.fin.capital/companies"
     },
     {
       "enabled": true,
       "key": "fintech",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.fintech.io/companies"
     },
     {
       "enabled": true,
       "key": "firstmark",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.firstmark.com/companies"
     },
     {
       "enabled": true,
       "key": "firstminute",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.firstminute.capital/companies"
     },
     {
       "enabled": true,
       "key": "flarecapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.flarecapital.com/companies"
     },
     {
       "enabled": true,
       "key": "flourishventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.flourishventures.com/companies"
     },
     {
       "enabled": true,
       "key": "foothillventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.foothill.ventures/companies"
     },
     {
       "enabled": true,
       "key": "forerunnerventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.forerunnerventures.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "fortune500",
+      "providerId": "ranking_csv",
+      "taxonomy": {
+        "accessType": "oss_seed",
+        "coverageMode": "ranked_companies",
+        "defaultEnabledReason": "Disabled by default because Fortune ranking data requires explicit provenance review.",
+        "licenseStatus": "needs_review",
+        "providerType": "employer_ranking",
+        "refreshCadence": "annual",
+        "sourceAttribution": "Scrappy community Fortune 500 CSV seed; use a reviewed source URL or embedded user-supplied CSV for refreshes.",
+        "sourceCategory": "employer_ranking"
+      },
+      "url": "https://raw.githubusercontent.com/cmusam/fortune500/master/fortune500.csv"
     },
     {
       "enabled": true,
       "key": "foundationcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.foundationcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "founderful",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.founderful.com/companies"
     },
     {
       "enabled": true,
       "key": "foundry",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.foundry.vc/companies"
     },
     {
       "enabled": true,
       "key": "fprimecapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.fprimecapital.com/companies"
     },
     {
       "enabled": true,
       "key": "frameworkventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.framework.ventures/companies"
     },
     {
       "enabled": true,
       "key": "freestyle",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.freestyle.vc/companies"
     },
     {
       "enabled": true,
       "key": "fyrfly",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.fyrfly.vc/companies"
     },
     {
       "enabled": true,
       "key": "g2vp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.g2vp.com/companies"
     },
     {
       "enabled": true,
       "key": "gaingels",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.gaingels.com/companies"
     },
     {
       "enabled": true,
       "key": "galaxy",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://venturecareers.galaxy.com/companies"
     },
     {
       "enabled": true,
       "key": "galvanizeclimate",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://consider.com/boards/vc/galvanize-climate-solutions/companies"
     },
     {
       "enabled": true,
       "key": "garuda",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.garuda.vc/companies"
     },
     {
       "enabled": true,
       "key": "generalcatalyst",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.generalcatalyst.com/companies"
     },
     {
       "enabled": true,
       "key": "georgian",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.georgian.io/companies"
     },
     {
       "enabled": true,
       "key": "globalvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.global.vc/companies"
     },
     {
       "enabled": true,
       "key": "goldenventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.golden.ventures/companies"
     },
     {
       "enabled": true,
       "key": "gradient",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.gradient.com/companies"
     },
     {
       "enabled": true,
       "key": "greycroft",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.greycroft.com/companies"
     },
     {
       "enabled": true,
       "key": "greylock",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.greylock.com/companies"
     },
     {
       "enabled": true,
       "key": "gsv",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://gsv.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "gtmfund",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.gtmfund.com/companies"
     },
     {
       "enabled": true,
       "key": "gv",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.gv.com/companies"
     },
     {
       "enabled": true,
       "key": "hardyaka",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.hardyaka.com/companies"
     },
     {
       "enabled": true,
       "key": "headline",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://talent.headline.com/companies"
     },
     {
       "enabled": true,
       "key": "hellokoru",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.hellokoru.com/companies"
     },
     {
       "enabled": true,
       "key": "hgventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portcojobs.hgventures.com/companies"
     },
     {
       "enabled": true,
       "key": "hitachiventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.hitachi-ventures.com/companies"
     },
     {
       "enabled": true,
       "key": "hivemind",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.hivemind.capital/companies"
     },
     {
       "enabled": true,
       "key": "hoxtonventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.hoxtonventures.com/companies"
     },
     {
       "enabled": true,
       "key": "humbaventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.humbaventures.com/companies"
     },
     {
       "enabled": true,
       "key": "hvcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://hv.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "hyperplane",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.hyperplane.vc/companies"
     },
     {
       "enabled": true,
       "key": "iconventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.iconventures.com/companies"
     },
     {
       "enabled": true,
       "key": "illuminatefinancial",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.illuminatefinancial.com/companies"
     },
     {
       "enabled": true,
       "key": "imaginary",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://imaginary.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "indexventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://indexventures.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "initialized",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.initialized.com/companies"
     },
     {
       "enabled": true,
       "key": "inovia",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.inovia.vc/companies"
     },
     {
       "enabled": true,
       "key": "insightpartners",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.insightpartners.com/companies"
     },
     {
       "enabled": true,
       "key": "inspiredcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.inspiredcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "investottawa",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://techjobfinder.investottawa.ca/companies"
     },
     {
       "enabled": true,
       "key": "israelvcforum",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://israelvcforum.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "istariglobal",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.istari-global.com/companies"
     },
     {
       "enabled": true,
       "key": "ivp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.ivp.com/companies"
     },
     {
       "enabled": true,
       "key": "jamjarinvestments",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.jamjarinvestments.com/companies"
     },
     {
       "enabled": true,
       "key": "joinef",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfolio.joinef.com/companies"
     },
     {
       "enabled": true,
       "key": "jumpcap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.jumpcap.com/companies"
     },
     {
       "enabled": true,
       "key": "kaporcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.kaporcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "khoslaventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.khoslaventures.com/companies"
     },
     {
       "enabled": true,
       "key": "kindredcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.kindredcapital.vc/companies"
     },
     {
       "enabled": true,
       "key": "kingriver",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.kingriver.co/companies"
     },
     {
       "enabled": true,
       "key": "kleinerperkins",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.kleinerperkins.com/companies"
     },
     {
       "enabled": true,
       "key": "leftlanecap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.leftlanecap.com/companies"
     },
     {
       "enabled": true,
       "key": "lemniscap",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.lemniscap.com/companies"
     },
     {
       "enabled": true,
       "key": "lererhippeau",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.lererhippeau.com/companies"
     },
     {
       "enabled": true,
       "key": "lightbank",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.lightbank.com/companies"
     },
     {
       "enabled": true,
       "key": "linkventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.linkventures.com/companies"
     },
     {
       "enabled": true,
       "key": "loeb",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.loeb.nyc/companies"
     },
     {
       "enabled": true,
       "key": "longjourney",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.longjourney.vc/companies"
     },
     {
       "enabled": true,
       "key": "lool",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://opportunities.lool.vc/companies"
     },
     {
       "enabled": true,
       "key": "lowercarbon",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://lowercarbon.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "lsvp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.lsvp.com/companies"
     },
     {
       "enabled": true,
       "key": "luxcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.luxcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "m13",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.m13.co/companies"
     },
     {
       "enabled": true,
       "key": "macventurecapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.macventurecapital.com/companies"
     },
     {
       "enabled": true,
       "key": "madrona",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.madrona.com/companies"
     },
     {
       "enabled": true,
       "key": "mannatreepartners",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.mannatreepartners.com/companies"
     },
     {
       "enabled": true,
       "key": "mantisvc",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.mantisvc.com/companies"
     },
     {
       "enabled": true,
       "key": "marvinvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.marvinvc.com/companies"
     },
     {
       "enabled": true,
       "key": "mavenventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.mavenventures.com/companies"
     },
     {
       "enabled": true,
       "key": "mayfield",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://mayfield.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "mcj",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.mcj.vc/companies"
     },
     {
       "enabled": true,
       "key": "menlovc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.menlovc.com/companies"
     },
     {
       "enabled": true,
       "key": "meridianstreetcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.meridianstreetcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "metaprop",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.metaprop.com/companies"
     },
     {
       "enabled": true,
       "key": "moderneventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfoliocareers.moderneventures.com/companies"
     },
     {
       "enabled": true,
       "key": "motion",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.motion.vc/companies"
     },
     {
       "enabled": true,
       "key": "moxxie",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.moxxie.vc/companies"
     },
     {
       "enabled": true,
       "key": "multicoin",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.multicoin.capital/companies"
     },
     {
       "enabled": true,
       "key": "munichreventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfoliojobs.munichreventures.com/companies"
     },
     {
       "enabled": true,
       "key": "mvp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://talent.mvp-vc.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "nasdaq100",
+      "providerId": "public_index_csv",
+      "taxonomy": {
+        "accessType": "oss_seed",
+        "coverageMode": "listed_companies",
+        "defaultEnabledReason": "Disabled by default because Nasdaq-100 membership should be treated as scrappy opt-in seed data.",
+        "licenseStatus": "needs_review",
+        "providerType": "public_company_index",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "Community-maintained Nasdaq-100 constituents seed; replace with a reviewed source URL before production refreshes.",
+        "sourceCategory": "public_company_index"
+      },
+      "url": "manual://nasdaq100"
     },
     {
       "enabled": true,
       "key": "nea",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.nea.com/companies"
     },
     {
       "enabled": true,
       "key": "necessary",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.necessary.vc/companies"
     },
     {
       "enabled": true,
       "key": "newmarketsvp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.newmarketsvp.com/companies"
     },
     {
       "enabled": true,
       "key": "nextview",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.nextview.vc/companies"
     },
     {
       "enabled": true,
       "key": "nexusvp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.nexusvp.com/companies"
     },
     {
       "enabled": true,
       "key": "nfx",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.nfx.com/companies"
     },
     {
       "enabled": true,
       "key": "ngpcap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.ngpcap.com/companies"
     },
     {
       "enabled": true,
       "key": "norrsken",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.norrsken.org/companies"
     },
     {
       "enabled": true,
       "key": "northzone",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfolio.northzone.com/companies"
     },
     {
       "enabled": true,
       "key": "notablecap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.notablecap.com/companies"
     },
     {
       "enabled": true,
       "key": "notation",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://consider.com/boards/vc/notation-capital/companies"
     },
     {
       "enabled": true,
       "key": "notion",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.notion.vc/companies"
     },
     {
       "enabled": true,
       "key": "nvp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.nvp.com/companies"
     },
     {
       "enabled": true,
       "key": "nyca",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.nyca.com/companies"
     },
     {
       "enabled": true,
       "key": "oakhcft",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.oakhcft.com/companies"
     },
     {
       "enabled": true,
       "key": "octopusventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://talent.octopusventures.com/companies"
     },
     {
       "enabled": true,
       "key": "offline",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.offline.vc/companies"
     },
     {
       "enabled": true,
       "key": "omegavp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.omegavp.com/companies"
     },
     {
       "enabled": true,
       "key": "oneragtime",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.oneragtime.com/companies"
     },
     {
       "enabled": true,
       "key": "openocean",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.openocean.vc/companies"
     },
     {
       "enabled": true,
       "key": "oregonventurefund",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.oregonventurefund.com/companies"
     },
     {
       "enabled": true,
       "key": "originventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.originventures.com/companies"
     },
     {
       "enabled": true,
       "key": "panteracapital",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.panteracapital.com/companies"
     },
     {
       "enabled": true,
       "key": "partechpartners",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfoliojobs.partechpartners.com/companies"
     },
     {
       "enabled": true,
       "key": "peakxv",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.peakxv.com/companies"
     },
     {
       "enabled": true,
       "key": "pelionvp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.pelionvp.com/companies"
     },
     {
       "enabled": true,
       "key": "planeta",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.planet-a.com/companies"
     },
     {
       "enabled": true,
       "key": "playground",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.playground.global/companies"
     },
     {
       "enabled": true,
       "key": "playvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.play.vc/companies"
     },
     {
       "enabled": true,
       "key": "pnptc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.pnptc.com/companies"
     },
     {
       "enabled": true,
       "key": "pointnine",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.pointnine.com/companies"
     },
     {
       "enabled": true,
       "key": "polychain",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.polychain.capital/companies"
     },
     {
       "enabled": true,
       "key": "powerhouseventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.powerhouse-ventures.co/companies"
     },
     {
       "enabled": true,
       "key": "preludeventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.preludeventures.com/companies"
     },
     {
       "enabled": true,
       "key": "primary",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.primary.vc/companies"
     },
     {
       "enabled": true,
       "key": "qedinvestors",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.qedinvestors.com/companies"
     },
     {
       "enabled": true,
       "key": "qplusequality",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.qplusequality.org/companies"
     },
     {
       "enabled": true,
       "key": "queertech",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://queertech.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "qumracapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.qumracapital.com/companies"
     },
     {
       "enabled": true,
       "key": "racap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://open-positions.racap.com/companies"
     },
     {
       "enabled": true,
       "key": "radiancapital",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.radiancapital.com/companies"
     },
     {
       "enabled": true,
       "key": "radical",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://radical.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "rallyventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.rallyventures.com/companies"
     },
     {
       "enabled": true,
       "key": "reachcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.reachcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "realventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.realventures.com/companies"
     },
     {
       "enabled": true,
       "key": "redpoint",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.redpoint.com/companies"
     },
     {
       "enabled": true,
       "key": "redseaventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.redseaventures.com/companies"
     },
     {
       "enabled": true,
       "key": "ret",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.ret.vc/companies"
     },
     {
       "enabled": true,
       "key": "rev1ventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.rev1ventures.com/companies"
     },
     {
       "enabled": true,
       "key": "rho",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.rho.com/companies"
     },
     {
       "enabled": true,
       "key": "rre",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.rre.com/companies"
     },
     {
       "enabled": true,
       "key": "saasventurecapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.saasventurecapital.com/companies"
     },
     {
       "enabled": true,
       "key": "sapphireventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.sapphireventures.com/companies"
     },
     {
       "enabled": true,
       "key": "sarahsmith",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.sarahsmith.fund/companies"
     },
     {
       "enabled": true,
       "key": "scalevp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.scalevp.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "sec-company-tickers",
+      "providerId": "sec_company_tickers",
+      "taxonomy": {
+        "accessType": "official_file",
+        "coverageMode": "listed_companies",
+        "defaultEnabledReason": "Official public company ticker backbone with stable CIK metadata.",
+        "licenseStatus": "official_public",
+        "providerType": "public_company_index",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "U.S. Securities and Exchange Commission company tickers file",
+        "sourceCategory": "public_companies"
+      },
+      "url": "https://www.sec.gov/files/company_tickers_exchange.json"
     },
     {
       "enabled": true,
       "key": "seedcamp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://talent.seedcamp.com/companies"
     },
     {
       "enabled": true,
       "key": "sequoia",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.sequoiacap.com/companies"
     },
     {
       "enabled": true,
       "key": "serena",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.serena.vc/companies"
     },
     {
       "enabled": true,
       "key": "setventures",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.setventures.com/companies"
     },
     {
       "enabled": true,
       "key": "seventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://seventures.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "signalfire",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.signalfire.com/companies"
     },
     {
       "enabled": true,
       "key": "skyvc",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.sky-vc.com/companies"
     },
     {
       "enabled": true,
       "key": "somacap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.somacap.com/companies"
     },
     {
       "enabled": true,
       "key": "sosv",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://techjobs.sosv.com/companies"
     },
     {
       "enabled": true,
       "key": "southparkcommons",
       "providerId": "southparkcommons",
+      "taxonomy": {
+        "accessType": "public_page_embedded_json",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Public accelerator jobs page with direct provider route hints.",
+        "licenseStatus": "public_attribution_required",
+        "providerType": "accelerator",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "South Park Commons public jobs page embedded JSON payload.",
+        "sourceCategory": "startup_ecosystem"
+      },
       "url": "https://www.southparkcommons.com/jobs"
+    },
+    {
+      "enabled": false,
+      "key": "sp500",
+      "providerId": "public_index_csv",
+      "taxonomy": {
+        "accessType": "oss_seed",
+        "coverageMode": "listed_companies",
+        "defaultEnabledReason": "Disabled by default because branded index membership provenance is community-maintained, not an official S&P feed.",
+        "licenseStatus": "public_attribution_required",
+        "providerType": "public_company_index",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "Community-maintained S&P 500 constituents CSV derived from public index tables.",
+        "sourceCategory": "public_company_index"
+      },
+      "url": "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
     },
     {
       "enabled": true,
       "key": "speedinvest",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.speedinvest.com/companies"
     },
     {
       "enabled": true,
       "key": "springtimeventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.springtimeventures.com/companies"
     },
     {
       "enabled": true,
       "key": "squadra",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://talent.squadra.vc/companies"
     },
     {
       "enabled": true,
       "key": "squarepeg",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://squarepeg.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "stage2capital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.stage2.capital/companies"
     },
     {
       "enabled": true,
       "key": "startx",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.startx.com/companies"
     },
     {
       "enabled": true,
       "key": "sterlingpartners",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://consider.com/boards/vc/sterling-partners/companies"
     },
     {
       "enabled": true,
       "key": "stripes",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.stripes.co/companies"
     },
     {
       "enabled": true,
       "key": "summitpartners",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.summitpartners.com/companies"
     },
     {
       "enabled": true,
       "key": "susaventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.susaventures.com/companies"
     },
     {
       "enabled": true,
       "key": "tcv",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://portfoliojobs.tcv.com/companies"
     },
     {
       "enabled": true,
       "key": "teamworthy",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://teamworthy.getro.com/companies"
     },
     {
       "enabled": true,
       "key": "technyc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.technyc.org/companies"
     },
     {
       "enabled": true,
       "key": "techstars",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.techstars.com/companies"
     },
     {
       "enabled": true,
       "key": "theoryvc",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.theoryvc.com/companies"
     },
     {
       "enabled": true,
       "key": "thirdpointventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.thirdpointventures.com/companies"
     },
     {
       "enabled": true,
       "key": "thomvest",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.thomvest.com/companies"
     },
     {
       "enabled": true,
       "key": "threshold",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.threshold.vc/companies"
     },
     {
       "enabled": true,
       "key": "thrivecap",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.thrivecap.com/companies"
     },
     {
       "enabled": true,
       "key": "tidemarkcap",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.tidemarkcap.com/companies"
     },
     {
       "enabled": true,
       "key": "toyotaventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.toyota.ventures/companies"
     },
     {
       "enabled": true,
       "key": "transition",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.transition.vc/companies"
     },
     {
       "enabled": true,
       "key": "tribecavp",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.tribecavp.com/companies"
     },
     {
       "enabled": true,
       "key": "trinityventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.trinityventures.com/companies"
     },
     {
       "enabled": true,
       "key": "trueventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.trueventures.com/companies"
     },
     {
       "enabled": true,
       "key": "tusk",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.tusk.vc/companies"
     },
     {
       "enabled": true,
       "key": "uluventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.uluventures.com/companies"
     },
     {
       "enabled": true,
       "key": "uncorkcapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.uncorkcapital.com/companies"
     },
     {
       "enabled": true,
       "key": "underscore",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.underscore.vc/companies"
     },
     {
       "enabled": true,
       "key": "upwest",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.upwest.vc/companies"
     },
     {
       "enabled": true,
       "key": "urbaninnovationfund",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.urbaninnovationfund.com/companies"
     },
     {
       "enabled": true,
       "key": "usv",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.usv.com/companies"
     },
     {
       "enabled": true,
       "key": "variant",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.variant.fund/companies"
     },
     {
       "enabled": true,
       "key": "venrock",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.venrock.com/companies"
     },
     {
       "enabled": true,
       "key": "venturestudios",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobsatventurestudios.com/discover/companies"
     },
     {
       "enabled": true,
       "key": "verdane",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://consider.com/boards/vc/verdane/companies"
     },
     {
       "enabled": true,
       "key": "vestigoventures",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.vestigoventures.com/companies"
     },
     {
       "enabled": true,
       "key": "volitioncapital",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.volitioncapital.com/companies"
     },
     {
       "enabled": true,
       "key": "vuventurepartners",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.vuventurepartners.com/companies"
     },
     {
       "enabled": true,
       "key": "wing",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://careers.wing.vc/companies"
     },
     {
       "enabled": true,
       "key": "woven",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://portfoliojobs.woven.vc/companies"
     },
     {
       "enabled": true,
       "key": "xange",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://jobs.xange.vc/companies"
     },
     {
       "enabled": true,
       "key": "xyz",
       "providerId": "getro",
+      "taxonomy": {},
       "url": "https://jobs.xyz.vc/companies"
     },
     {
       "enabled": true,
       "key": "yc",
       "providerId": "ycombinator",
+      "taxonomy": {
+        "accessType": "public_page_embedded_json",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "High-yield public startup directory already supported by OpenOpps.",
+        "licenseStatus": "public_attribution_required",
+        "providerType": "accelerator",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "Y Combinator public companies page and discovered public Algolia index metadata.",
+        "sourceCategory": "startup_directory"
+      },
       "url": "https://www.ycombinator.com/companies"
     },
     {
       "enabled": true,
       "key": "zettavp",
       "providerId": "consider",
+      "taxonomy": {},
       "url": "https://careers.zettavp.com/companies"
     }
   ],
   "stats": {
     "exportFormatCount": 3,
-    "jobProviderCount": 4,
-    "sourceAdapterCount": 5,
-    "sourceRecordCount": 305
+    "jobProviderCount": 9,
+    "sourceAdapterCount": 9,
+    "sourceRecordCount": 310
   }
 }

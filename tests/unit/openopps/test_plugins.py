@@ -55,7 +55,8 @@ def test_load_plugins_discovers_valid_contribution():
                 factory=lambda context: _plugin(context),
                 dist=FakeDistribution("openopps-example"),
             )
-        ]
+        ],
+        allowed={"example"},
     )
 
     data = registry.as_dict()
@@ -79,7 +80,9 @@ def test_load_plugins_isolates_import_failure():
     def broken(_context: PluginContext) -> PluginContribution:
         raise RuntimeError("boom")
 
-    registry = load_plugins(entry_points=[FakeEntryPoint("broken", broken)])
+    registry = load_plugins(
+        entry_points=[FakeEntryPoint("broken", broken)], allowed={"broken"}
+    )
 
     data = registry.as_dict()
 
@@ -90,7 +93,8 @@ def test_load_plugins_isolates_import_failure():
 
 def test_load_plugins_reports_validation_errors():
     registry = load_plugins(
-        entry_points=[FakeEntryPoint("invalid", lambda _context: {"not": "valid"})]
+        entry_points=[FakeEntryPoint("invalid", lambda _context: {"not": "valid"})],
+        allowed={"invalid"},
     )
 
     data = registry.as_dict()
@@ -109,7 +113,8 @@ def test_load_plugins_reports_invalid_capability_errors():
                     capabilities=(PluginCapability("unknown", "thing"),),
                 ),
             )
-        ]
+        ],
+        allowed={"invalid-capability"},
     )
 
     data = registry.as_dict()
@@ -126,7 +131,9 @@ def test_load_plugins_captures_plugin_output_for_json_cleanliness(capsys):
             job_providers={"noisy": lambda _settings: object()},
         )
 
-    registry = load_plugins(entry_points=[FakeEntryPoint("noisy", noisy)])
+    registry = load_plugins(
+        entry_points=[FakeEntryPoint("noisy", noisy)], allowed={"noisy"}
+    )
 
     captured = capsys.readouterr()
     data = registry.as_dict()
@@ -184,6 +191,43 @@ def test_load_plugins_uses_settings_disabled_and_allow_list():
     }
 
 
+def test_load_plugins_requires_settings_opt_in_by_default():
+    registry = load_plugins(
+        entry_points=[FakeEntryPoint("installed", lambda context: _plugin(context))],
+        context=PluginContext(settings=OpenOppsSettings()),
+    )
+
+    data = registry.as_dict()
+
+    assert data["loaded"] == 0
+    assert data["plugins"][0]["error"] == "not_allowed"
+    assert data["filters"] == {"disabled": [], "allowed": []}
+
+
+def test_load_plugins_requires_explicit_opt_in_without_settings():
+    registry = load_plugins(
+        entry_points=[FakeEntryPoint("installed", lambda context: _plugin(context))]
+    )
+
+    data = registry.as_dict()
+
+    assert data["loaded"] == 0
+    assert data["plugins"][0]["error"] == "not_allowed"
+    assert data["filters"] == {"disabled": [], "allowed": []}
+
+
+def test_load_plugins_supports_settings_autoload_escape_hatch():
+    registry = load_plugins(
+        entry_points=[FakeEntryPoint("installed", lambda context: _plugin(context))],
+        context=PluginContext(settings=OpenOppsSettings(plugin_autoload=True)),
+    )
+
+    data = registry.as_dict()
+
+    assert data["loaded"] == 1
+    assert data["filters"] == {"disabled": [], "allowed": None}
+
+
 def test_load_plugins_reports_duplicate_capability_conflicts():
     registry = load_plugins(
         entry_points=[
@@ -201,7 +245,8 @@ def test_load_plugins_reports_duplicate_capability_conflicts():
                     capabilities=(PluginCapability("source_adapter", "same"),),
                 ),
             ),
-        ]
+        ],
+        allowed={"one", "two"},
     )
 
     data = registry.as_dict()

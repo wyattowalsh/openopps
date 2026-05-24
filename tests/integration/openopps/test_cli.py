@@ -55,7 +55,7 @@ def test_cli_subcommand_help_skips_intro_art():
     result = runner.invoke(app, ["providers", "--help"])
 
     assert result.exit_code == 0
-    assert "Inspect provider readiness" in result.output
+    assert "Inspect persisted route readiness" in result.output
     assert "opening opportunity portal" not in result.output
 
 
@@ -97,7 +97,9 @@ def test_sync_commands_expose_cache_refresh_option():
 def test_top_level_help_examples_prefer_stable_commands():
     epilog = app.info.epilog or ""
 
+    assert "openopps status" in epilog
     assert "providers coverage" in epilog
+    assert "--metrics-json" in epilog
     assert "admin providers probe-routes" not in epilog
 
 
@@ -108,6 +110,8 @@ def test_root_help_groups_commands_by_user_journey():
     assert "Everyday workflow" in result.output
     assert "Operational surfaces" in result.output
     assert "Advanced admin" in result.output
+    assert "local-first route ledger" in result.output
+    assert "Automation" in result.output
 
 
 def test_filter_help_describes_actual_scope_semantics():
@@ -396,6 +400,7 @@ def test_combined_sync_metrics_span_stage_timings():
 
 def test_run_sync_with_progress_renders_update_message(monkeypatch):
     calls = []
+    columns = []
 
     class FakeConsole:
         is_interactive = True
@@ -404,7 +409,8 @@ def test_run_sync_with_progress_renders_update_message(monkeypatch):
             return
 
     class FakeProgress:
-        def __init__(self, *_columns, **_kwargs):
+        def __init__(self, *progress_columns, **_kwargs):
+            columns.extend(progress_columns)
             return
 
         def __enter__(self):
@@ -427,7 +433,7 @@ def test_run_sync_with_progress_renders_update_message(monkeypatch):
         report(
             ProgressUpdate(
                 stage="sources",
-                message="sources: 1/2 complete",
+                message="[bold cyan on grey11] SRC [/] [dim]|[/] [dim]done[/] [bold]1/2 sources[/]",
                 completed=1,
                 total=2,
             )
@@ -441,12 +447,20 @@ def test_run_sync_with_progress_renders_update_message(monkeypatch):
     )
 
     assert result == "done"
+    bar_column = next(
+        column for column in columns if column.__class__.__name__ == "BarColumn"
+    )
+    assert bar_column.bar_width == 18
     assert calls == [
         ("add", "Syncing sources", 1),
         (
             "update",
             1,
-            {"description": "sources: 1/2 complete", "completed": 1, "total": 2},
+            {
+                "description": "[bold cyan on grey11] SRC [/] [dim]|[/] [dim]done[/] [bold]1/2 sources[/]",
+                "completed": 1,
+                "total": 2,
+            },
         ),
     ]
 
@@ -894,6 +908,33 @@ def test_cli_job_export_uses_list_filters(tmp_path: Path):
     assert [row["id"] for row in rows] == [
         stable_id(source_board_key("a16z", "acme"), "ashbyhq", "1")
     ]
+
+
+def test_cli_jobs_status_filter_and_history(tmp_path: Path):
+    seed_filter_cli_db(tmp_path)
+    acme_job_id = stable_id(source_board_key("a16z", "acme"), "ashbyhq", "1")
+    bravo_job_id = stable_id(source_board_key("yc", "bravo"), "lever", "1")
+    store = OpenOppsStore(
+        OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    )
+
+    store.sync_jobs_for_route(source_board_key("a16z", "acme"), "ashbyhq", [])
+
+    default_result = invoke(tmp_path, "jobs", "list", "--json")
+    all_result = invoke(tmp_path, "jobs", "list", "--status", "all", "--json")
+    history_result = invoke(tmp_path, "jobs", "history", acme_job_id, "--json")
+
+    assert default_result.exit_code == 0
+    assert all_result.exit_code == 0
+    assert history_result.exit_code == 0
+    assert [row["id"] for row in json.loads(default_result.output)] == [bravo_job_id]
+    assert {row["id"] for row in json.loads(all_result.output)} == {
+        acme_job_id,
+        bravo_job_id,
+    }
+    history = json.loads(history_result.output)
+    assert [row["version"] for row in history] == [1]
+    assert history[0]["content_hash"]
 
 
 def test_cli_common_short_options_accept_lowercase_and_uppercase(tmp_path: Path):

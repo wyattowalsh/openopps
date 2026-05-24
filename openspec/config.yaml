@@ -8,11 +8,15 @@ rules:
   proposal:
     - Use sources, boards, jobs, and providers as the public domain nouns.
     - Capture DB-backed and no-DB behavior when public CLI behavior changes.
+    - For workflow/tooling changes, identify the matching Justfile recipe, GitHub Actions job, docs page, and validation command.
   specs:
     - Requirements must cover default superset behavior and filtered behavior.
     - Provider requirements must explicitly state support levels to avoid overclaiming.
+    - CLI help, CI/CD, docs-generation, and agent-instruction changes are public workflow surfaces and need explicit requirements.
   design:
     - Prefer bounded async I/O, streaming data flow, and batched persistence.
     - Preserve raw upstream payloads for auditability.
+    - Include a parallel task graph when work spans OpenSpec, docs, CI, just recipes, CLI help, and validation surfaces.
   tasks:
     - Include OpenSpec validation, tests, docs, and nested AGENTS updates.
+    - Include local/CI parity checks for just recipes and GitHub Actions workflows when validation surfaces change.

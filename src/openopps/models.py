@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
+import hashlib
 from html import unescape
 from ipaddress import ip_address
+import json
 import re
 from typing import Annotated, Any, Literal, Self, cast
 
@@ -119,6 +121,67 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def canonical_json_hash(value: object) -> str:
+    """Return a stable SHA-256 hash for canonical JSON-compatible data."""
+
+    payload = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def job_content_hash(record: JobRecord) -> str:
+    """Hash normalized job content that should create a visible version on change."""
+
+    return canonical_json_hash(
+        {
+            "title": record.title,
+            "company": record.company,
+            "locations": record.locations,
+            "department": record.department,
+            "team": record.team,
+            "workplace_type": record.workplace_type,
+            "employment_type": record.employment_type,
+            "description": record.description,
+            "description_html": record.description_html,
+            "remote": record.remote,
+            "compensation": record.compensation,
+            "salary": record.salary,
+            "salary_min": record.salary_min,
+            "salary_max": record.salary_max,
+            "salary_currency": record.salary_currency,
+            "experience": record.experience,
+            "responsibilities": record.responsibilities,
+            "qualifications": record.qualifications,
+            "skills": [
+                skill.model_dump(mode="python", exclude_none=True)
+                for skill in record.skills
+            ],
+            "job_description": (
+                record.job_description.model_dump(mode="python", exclude_none=True)
+                if record.job_description
+                else None
+            ),
+            "posting_url": record.posting_url,
+            "apply_url": record.apply_url,
+            "posted_at": record.posted_at,
+            "updated_at": record.updated_at,
+        }
+    )
+
+
+def job_payload_hash(record: JobRecord) -> str:
+    """Hash raw upstream payloads independently from lifecycle metadata."""
+
+    return canonical_json_hash(
+        {"raw_detail": record.raw_detail, "raw_listing": record.raw_listing}
+    )
+
+
 class ProviderSupport(StrEnum):
     """Normalized capability level for a detected job-board provider route."""
 
@@ -179,19 +242,53 @@ class JobDescriptionLocation(OpenOppsRecord):
 
     model_config = ConfigDict(serialize_by_alias=True)
 
-    address: str | None = None
-    postal_code: str | None = Field(default=None, alias="postalCode")
-    city: str | None = None
-    country_code: str | None = Field(default=None, alias="countryCode")
-    region: str | None = None
+    address: str | None = Field(
+        default=None,
+        description="Free-form address or joined provider location labels.",
+        examples=["San Francisco, CA\nRemote"],
+    )
+    postal_code: str | None = Field(
+        default=None,
+        alias="postalCode",
+        description="Postal or ZIP code when a provider exposes structured location data.",
+        examples=["94105"],
+    )
+    city: str | None = Field(
+        default=None,
+        description="City name when a provider exposes structured location data.",
+        examples=["San Francisco"],
+    )
+    country_code: str | None = Field(
+        default=None,
+        alias="countryCode",
+        description="ISO-like country code when a provider exposes structured location data.",
+        examples=["US"],
+    )
+    region: str | None = Field(
+        default=None,
+        description="State, province, or region label when available.",
+        examples=["CA"],
+    )
 
 
 class JobDescriptionSkill(OpenOppsRecord):
     """JSON Resume-compatible job skill shape."""
 
-    name: OptionalNonEmptyStr = None
-    level: OptionalNonEmptyStr = None
-    keywords: list[NonEmptyStr] = Field(default_factory=list)
+    name: OptionalNonEmptyStr = Field(
+        default=None,
+        description="Skill category or display name.",
+        examples=["Python"],
+    )
+    level: OptionalNonEmptyStr = Field(
+        default=None,
+        description="Provider-reported or normalized skill proficiency level.",
+        examples=["Senior"],
+    )
+    keywords: list[NonEmptyStr] = Field(
+        default_factory=list,
+        description="Specific skill keywords grouped under this skill object.",
+        examples=[["FastAPI", "SQL"]],
+    )
 
 
 class JobDescriptionRecord(OpenOppsRecord):
@@ -203,19 +300,67 @@ class JobDescriptionRecord(OpenOppsRecord):
 
     model_config = ConfigDict(serialize_by_alias=True)
 
-    title: OptionalNonEmptyStr = None
-    company: OptionalNonEmptyStr = None
-    type: OptionalNonEmptyStr = None
-    date: OptionalNonEmptyStr = None
-    description: str | None = None
-    location: JobDescriptionLocation | None = None
-    remote: RemoteWorkLevel | None = None
-    salary: str | None = None
-    experience: str | None = None
-    responsibilities: list[NonEmptyStr] = Field(default_factory=list)
-    qualifications: list[NonEmptyStr] = Field(default_factory=list)
-    skills: list[JobDescriptionSkill] = Field(default_factory=list)
-    meta: JsonDict = Field(default_factory=dict)
+    title: OptionalNonEmptyStr = Field(
+        default=None,
+        description="JSON Resume title derived from the normalized job title.",
+        examples=["Senior Software Engineer"],
+    )
+    company: OptionalNonEmptyStr = Field(
+        default=None,
+        description="JSON Resume company name derived from the normalized board or posting.",
+        examples=["Acme"],
+    )
+    type: OptionalNonEmptyStr = Field(
+        default=None,
+        description="JSON Resume job type derived from normalized employment type.",
+        examples=["Full-time"],
+    )
+    date: OptionalNonEmptyStr = Field(
+        default=None,
+        description="JSON Resume-compatible posted date prefix, usually YYYY-MM-DD.",
+        examples=["2026-05-16"],
+    )
+    description: str | None = Field(
+        default=None,
+        description="Plain-text job description copied from normalized provider content.",
+        examples=["Build reliable systems for customers."],
+    )
+    location: JobDescriptionLocation | None = Field(
+        default=None,
+        description="JSON Resume-compatible location object built from normalized locations.",
+    )
+    remote: RemoteWorkLevel | None = Field(
+        default=None,
+        description="JSON Resume-compatible remote work level.",
+        examples=["Full", "Hybrid", "None"],
+    )
+    salary: str | None = Field(
+        default=None,
+        description="JSON Resume-compatible salary display string.",
+        examples=["USD 100000 - 160000"],
+    )
+    experience: str | None = Field(
+        default=None,
+        description="Experience label when provider data can determine one.",
+        examples=["Senior"],
+    )
+    responsibilities: list[NonEmptyStr] = Field(
+        default_factory=list,
+        description="Responsibility bullets extracted from structured provider sections.",
+    )
+    qualifications: list[NonEmptyStr] = Field(
+        default_factory=list,
+        description="Qualification bullets extracted from structured provider sections.",
+    )
+    skills: list[JobDescriptionSkill] = Field(
+        default_factory=list,
+        description="JSON Resume-compatible skill objects derived from deterministic enrichment.",
+    )
+    meta: JsonDict = Field(
+        default_factory=dict,
+        description="OpenOpps audit metadata such as provider, board, remote id, canonical URL, and last modified timestamp.",
+        examples=[{"provider": "greenhouse", "board": "acme", "remoteId": "12345"}],
+    )
 
 
 def strip_html(value: str | None) -> str | None:
@@ -440,6 +585,18 @@ class BoardRecord(OpenOppsRecord):
         description="Source key that emitted this board.",
         examples=["a16z"],
     )
+    source_keys: list[NonEmptyStr] = Field(
+        default_factory=list,
+        description=(
+            "All source keys that currently contain this company domain in the local ledger."
+        ),
+        examples=[["a16z", "yc"]],
+    )
+    source_board_keys: dict[NonEmptyStr, NonEmptyStr] = Field(
+        default_factory=dict,
+        description="Source-specific board keys merged into this canonical board record.",
+        examples=[{"a16z": "a16z:acme", "yc": "yc:acme-ai"}],
+    )
     remote_id: NonEmptyStr = Field(
         description="Provider-native board or company identifier preserved as text.",
         examples=["12345", "acme"],
@@ -642,6 +799,31 @@ class JobRecord(OpenOppsRecord):
         default="open",
         description="Normalized posting lifecycle status.",
         examples=["open", "closed"],
+    )
+    version: NonNegativeInt | None = Field(
+        default=None,
+        description="Current or historical normalized content version number.",
+        examples=[2],
+    )
+    content_hash: str | None = Field(
+        default=None,
+        description="SHA-256 hash of normalized user-visible job content.",
+    )
+    payload_hash: str | None = Field(
+        default=None,
+        description="SHA-256 hash of the canonical raw listing/detail payload pair.",
+    )
+    first_seen_at: AwareDatetime | None = Field(
+        default=None,
+        description="UTC timestamp when this job identity or version was first observed.",
+    )
+    last_seen_at: AwareDatetime | None = Field(
+        default=None,
+        description="UTC timestamp when this job identity or version was last observed.",
+    )
+    closed_at: AwareDatetime | None = Field(
+        default=None,
+        description="UTC timestamp when the job disappeared from a successful route sync.",
     )
     raw_listing: JsonDict = Field(
         default_factory=dict,
@@ -1375,6 +1557,20 @@ class YCombinatorCompanyHit(ProviderPayload):
         examples=[["United States", "Remote"]],
     )
 
+    @field_validator(
+        "website",
+        "batch",
+        "industry",
+        "subindustry",
+        "all_locations",
+        mode="before",
+    )
+    @classmethod
+    def _empty_strings_are_missing(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
 
 class YCombinatorAlgoliaResult(ProviderPayload):
     """Single Algolia result object returned inside YC `results`."""
@@ -1456,6 +1652,16 @@ class BoardRow(SQLModel, table=True):
     )
     source_key: str = SQLField(
         index=True, min_length=1, description="Source key that emitted this board."
+    )
+    source_keys: list[str] = SQLField(
+        default_factory=list,
+        sa_column=Column(JSON),
+        description="All sources that currently contain this board domain.",
+    )
+    source_board_keys: dict[str, str] = SQLField(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Source-specific emitted board keys merged into this board.",
     )
     remote_id: str = SQLField(
         index=True, min_length=1, description="Provider-native board identifier."
@@ -1573,7 +1779,7 @@ class JobRow(SQLModel, table=True):
     )
 
     id: str = SQLField(
-        primary_key=True, min_length=1, description="Stable normalized job primary key."
+        primary_key=True, min_length=1, description="Stable normalized job identity."
     )
     board_key: str = SQLField(
         index=True, min_length=1, description="Board key this job belongs to."
@@ -1583,6 +1789,66 @@ class JobRow(SQLModel, table=True):
     )
     remote_id: str = SQLField(
         index=True, min_length=1, description="Provider-native job identifier."
+    )
+    status: str = SQLField(
+        default="open",
+        index=True,
+        min_length=1,
+        description="Current lifecycle status for the stable job identity.",
+    )
+    current_version_id: str | None = SQLField(
+        default=None, index=True, description="Current normalized job version id."
+    )
+    current_content_hash: str | None = SQLField(
+        default=None, index=True, description="Current normalized content hash."
+    )
+    current_payload_hash: str | None = SQLField(
+        default=None, index=True, description="Current raw payload-pair hash."
+    )
+    first_seen_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="First successful route sync that observed this job identity.",
+    )
+    last_seen_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="Most recent successful route sync that observed this job identity.",
+    )
+    closed_at: datetime | None = SQLField(
+        default=None,
+        index=True,
+        description="Route sync timestamp when this job disappeared while open.",
+    )
+    synced_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="Last successful lifecycle update timestamp.",
+    )
+    extra_payload: JsonDict = SQLField(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Unknown top-level identity fields preserved across storage round trips.",
+    )
+
+
+class JobVersionRow(SQLModel, table=True):
+    __tablename__ = "job_versions"
+    __table_args__ = (
+        UniqueConstraint("job_id", "content_hash", name="uq_job_version_content"),
+        UniqueConstraint("job_id", "version", name="uq_job_version_number"),
+    )
+
+    id: str = SQLField(primary_key=True, min_length=1, description="Job version id.")
+    job_id: str = SQLField(index=True, min_length=1, description="Stable job id.")
+    version: int = SQLField(index=True, ge=1, description="Monotonic version number.")
+    content_hash: str = SQLField(
+        index=True, min_length=1, description="Normalized user-visible content hash."
+    )
+    payload_hash: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Raw payload-pair hash observed for version.",
     )
     title: str = SQLField(index=True, min_length=1, description="Public job title.")
     locations: list[str] = SQLField(
@@ -1670,31 +1936,249 @@ class JobRow(SQLModel, table=True):
     updated_at: str | None = SQLField(
         default=None, index=True, description="Provider-native updated timestamp."
     )
-    status: str = SQLField(
-        default="open",
-        index=True,
-        min_length=1,
-        description="Normalized posting status.",
-    )
-    raw_listing: JsonDict = SQLField(
-        default_factory=dict,
-        sa_column=Column(JSON),
-        description="Unmodified upstream listing payload.",
-    )
-    raw_detail: JsonDict = SQLField(
-        default_factory=dict,
-        sa_column=Column(JSON),
-        description="Unmodified upstream detail payload.",
-    )
     extra_payload: JsonDict = SQLField(
         default_factory=dict,
         sa_column=Column(JSON),
-        description="Unknown top-level record fields preserved across storage round trips.",
+        description="Unknown top-level version fields preserved across storage round trips.",
+    )
+    first_seen_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="First sync timestamp that observed this normalized content.",
+    )
+    last_seen_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="Most recent sync timestamp that observed this normalized content.",
+    )
+
+    created_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC timestamp when this version row was created.",
+    )
+
+
+class JobVersionLocationRow(SQLModel, table=True):
+    __tablename__ = "job_version_locations"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_version_id", "ordinal", "label", name="uq_job_version_location"
+        ),
+    )
+
+    id: str = SQLField(
+        primary_key=True,
+        min_length=1,
+        description="Stable job-version location row id.",
+    )
+    job_version_id: str = SQLField(
+        index=True, min_length=1, description="Job version this location belongs to."
+    )
+    ordinal: int = SQLField(
+        index=True,
+        ge=0,
+        description="Zero-based location order within the job version.",
+    )
+    label: str = SQLField(index=True, min_length=1, description="Location label text.")
+
+
+class JobVersionSkillRow(SQLModel, table=True):
+    __tablename__ = "job_version_skills"
+
+    id: str = SQLField(
+        primary_key=True, min_length=1, description="Stable job-version skill row id."
+    )
+    job_version_id: str = SQLField(
+        index=True, min_length=1, description="Job version this skill group belongs to."
+    )
+    ordinal: int = SQLField(
+        index=True, ge=0, description="Zero-based skill order within the job version."
+    )
+    name: str | None = SQLField(
+        default=None, index=True, description="Skill group display name."
+    )
+    level: str | None = SQLField(
+        default=None, index=True, description="Skill group proficiency or level label."
+    )
+
+
+class JobVersionSkillKeywordRow(SQLModel, table=True):
+    __tablename__ = "job_version_skill_keywords"
+    __table_args__ = (
+        UniqueConstraint("skill_id", "ordinal", "keyword", name="uq_job_skill_keyword"),
+    )
+
+    id: str = SQLField(
+        primary_key=True,
+        min_length=1,
+        description="Stable job-version skill keyword row id.",
+    )
+    skill_id: str = SQLField(
+        index=True, min_length=1, description="Skill group this keyword belongs to."
+    )
+    ordinal: int = SQLField(
+        index=True, ge=0, description="Zero-based keyword order within the skill group."
+    )
+    keyword: str = SQLField(index=True, min_length=1, description="Skill keyword text.")
+
+
+class JobVersionBulletRow(SQLModel, table=True):
+    __tablename__ = "job_version_bullets"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_version_id", "kind", "ordinal", "text", name="uq_job_version_bullet"
+        ),
+    )
+
+    id: str = SQLField(
+        primary_key=True, min_length=1, description="Stable job-version bullet row id."
+    )
+    job_version_id: str = SQLField(
+        index=True, min_length=1, description="Job version this bullet belongs to."
+    )
+    kind: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Bullet category, such as responsibility or qualification.",
+    )
+    ordinal: int = SQLField(
+        index=True, ge=0, description="Zero-based bullet order within its category."
+    )
+    text: str = SQLField(min_length=1, description="Bullet text.")
+
+
+class JobPayloadSnapshotRow(SQLModel, table=True):
+    __tablename__ = "job_payload_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id", "payload_kind", "payload_hash", name="uq_job_payload_snapshot"
+        ),
+    )
+
+    id: str = SQLField(
+        primary_key=True,
+        min_length=1,
+        description="Stable raw payload snapshot row id.",
+    )
+    job_id: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Stable job identity this raw payload belongs to.",
+    )
+    payload_kind: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Raw payload source kind, such as listing or detail.",
+    )
+    payload_hash: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Canonical hash of the unmodified raw payload.",
+    )
+    payload: JsonDict = SQLField(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Unmodified upstream payload for audit and replay.",
+    )
+    observed_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC sync timestamp when this raw payload was observed.",
+    )
+
+
+class JobSyncRunRow(SQLModel, table=True):
+    __tablename__ = "job_sync_runs"
+
+    id: str = SQLField(
+        primary_key=True,
+        min_length=1,
+        description="Stable provider route sync run id.",
+    )
+    board_key: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Board key synced during this provider route run.",
+    )
+    provider_id: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Provider route synced during this run.",
     )
     synced_at: datetime = SQLField(
         default_factory=utc_now,
         index=True,
-        description="Last successful job sync timestamp.",
+        description="UTC timestamp for this provider route sync attempt.",
+    )
+    success: bool = SQLField(
+        default=True, index=True, description="Whether the route sync completed."
+    )
+    error: str | None = SQLField(
+        default=None, description="Error message captured for failed route syncs."
+    )
+    job_count: int = SQLField(
+        default=0, ge=0, description="Total jobs observed in the route sync."
+    )
+    new_count: int = SQLField(
+        default=0, ge=0, description="Jobs newly created by the route sync."
+    )
+    unchanged_count: int = SQLField(
+        default=0, ge=0, description="Jobs observed without content changes."
+    )
+    changed_count: int = SQLField(
+        default=0, ge=0, description="Jobs with a new normalized content version."
+    )
+    reopened_count: int = SQLField(
+        default=0,
+        ge=0,
+        description="Previously closed jobs reopened by the route sync.",
+    )
+    closed_count: int = SQLField(
+        default=0, ge=0, description="Previously open jobs closed by the route sync."
+    )
+
+
+class JobSyncObservationRow(SQLModel, table=True):
+    __tablename__ = "job_sync_observations"
+
+    id: str = SQLField(
+        primary_key=True, min_length=1, description="Stable sync observation row id."
+    )
+    sync_run_id: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Route sync run that recorded this observation.",
+    )
+    job_id: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Stable job identity observed during sync.",
+    )
+    job_version_id: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Normalized job version associated with this observation.",
+    )
+    observation_kind: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Observation category, such as new, unchanged, changed, reopened, or closed.",
+    )
+    content_hash: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Normalized content hash observed during sync.",
+    )
+    payload_hash: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Raw payload-pair hash observed during sync.",
+    )
+    observed_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC timestamp when the observation was recorded.",
     )
 
 

@@ -22,6 +22,7 @@ from openopps.models import (
 )
 from openopps.settings import OpenOppsSettings
 from openopps.models import validate_public_https_url
+from openopps.providers.sources.source_utils import source_taxonomy_metadata
 from openopps.utils import slugify, source_board_key, stable_id
 
 
@@ -57,13 +58,36 @@ SOUTHPARKCOMMONS_SOURCE = SourceRecord(
     url="https://www.southparkcommons.com/jobs",
     provider_id="southparkcommons",
     enabled=True,
+    raw_metadata=source_taxonomy_metadata(
+        provider_type="accelerator",
+        coverage_mode="portfolio",
+        access_type="public_page_embedded_json",
+        license_status="public_attribution_required",
+        refresh_cadence="periodic",
+        source_category="startup_ecosystem",
+        source_attribution="South Park Commons public jobs page embedded JSON payload.",
+        default_enabled_reason="Public accelerator jobs page with direct provider route hints.",
+    ),
 )
 YCOMBINATOR_SOURCE = SourceRecord(
     key="yc",
     url="https://www.ycombinator.com/companies",
     provider_id="ycombinator",
     enabled=True,
-    raw_metadata={"applicationId": APPLICATION_ID, "indexName": INDEX_NAME},
+    raw_metadata={
+        **source_taxonomy_metadata(
+            provider_type="accelerator",
+            coverage_mode="portfolio",
+            access_type="public_page_embedded_json",
+            license_status="public_attribution_required",
+            refresh_cadence="periodic",
+            source_category="startup_directory",
+            source_attribution="Y Combinator public companies page and discovered public Algolia index metadata.",
+            default_enabled_reason="High-yield public startup directory already supported by OpenOpps.",
+        ),
+        "applicationId": APPLICATION_ID,
+        "indexName": INDEX_NAME,
+    },
 )
 
 

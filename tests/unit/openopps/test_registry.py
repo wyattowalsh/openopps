@@ -23,9 +23,14 @@ def test_registry_separates_board_sources_from_board_providers():
     }
     assert {definition.id for definition in registry.list_board_providers()} >= {
         "ashbyhq",
+        "bamboohr",
         "greenhouse",
         "lever",
+        "rippling",
+        "teamtailor",
+        "workable",
         "workday",
+        "wpjobmanager",
     }
     ycombinator = registry.get("ycombinator")
     greenhouse = registry.get("greenhouse")
@@ -62,13 +67,39 @@ def test_registry_detects_provider_urls_from_indexed_provider_metadata():
     greenhouse = registry.detect_url("https://boards.greenhouse.io/acme")
     lever = registry.detect_url("https://jobs.lever.co/acme")
     workday = registry.detect_url("https://acme.wd1.myworkdayjobs.com/en-US/External")
+    workable = registry.detect_url("https://apply.workable.com/acme")
+    teamtailor = registry.detect_url("https://acme.teamtailor.com/jobs")
+    bamboohr = registry.detect_url("https://acme.bamboohr.com/careers")
+    rippling = registry.detect_url("https://ats.rippling.com/acme/jobs")
+    wpjobmanager = registry.detect_url(
+        "https://acme.example.com/wp-json/wp/v2/job-listings"
+    )
+    wpjobmanager_ajax = registry.detect_url(
+        "https://acme.example.com/jm-ajax/get_listings/"
+    )
 
     assert greenhouse is not None
     assert lever is not None
     assert workday is not None
+    assert workable is not None
+    assert teamtailor is not None
+    assert bamboohr is not None
+    assert rippling is not None
+    assert wpjobmanager is not None
+    assert wpjobmanager_ajax is not None
     assert greenhouse.provider_id == "greenhouse"
     assert lever.provider_id == "lever"
     assert workday.provider_id == "workday"
+    assert workable.provider_id == "workable"
+    assert teamtailor.provider_id == "teamtailor"
+    assert bamboohr.provider_id == "bamboohr"
+    assert rippling.provider_id == "rippling"
+    assert wpjobmanager.provider_id == "wpjobmanager"
+    assert wpjobmanager_ajax.provider_id == "wpjobmanager"
+    assert bamboohr.tenant == "acme"
+    assert rippling.tenant == "acme"
+    assert wpjobmanager.token == "https://acme.example.com"
+    assert wpjobmanager_ajax.token == "https://acme.example.com"
 
 
 def test_registry_does_not_treat_arbitrary_ashby_subdomain_as_board_url():

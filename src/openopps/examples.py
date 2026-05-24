@@ -88,7 +88,7 @@ def build_example_dataset(
     routes: list[BoardProviderRecord] = []
     jobs: list[JobRecord] = []
     cache_records: list[ExampleCacheRecord] = []
-    providers = ("greenhouse", "lever", "ashbyhq", "teamtailor")
+    providers = ("greenhouse", "lever", "ashbyhq", "gem")
 
     for index in range(board_count):
         company = fake.unique.company().replace(",", "")
@@ -96,9 +96,7 @@ def build_example_dataset(
         domain = f"{slug}.example.com"
         provider_id = providers[index % len(providers)]
         support_level = (
-            ProviderSupport.DETECT
-            if provider_id == "teamtailor"
-            else ProviderSupport.JOBS
+            ProviderSupport.DETECT if provider_id == "gem" else ProviderSupport.JOBS
         )
         board_key = f"example-{slug}"
         route = BoardProviderRecord(

@@ -19,14 +19,14 @@ Example data SHALL be built from typed dataclasses or equivalent factories and m
 - **WHEN** tests or docs need representative records
 - **THEN** they use the example factories rather than hand-written inconsistent records
 
-### Requirement: Hypothesis strategies validate invariants
+### Requirement: Hypothesis strategies validate example invariants
 
-OpenOpps SHALL use bounded Hypothesis strategies for storage, filtering, export, cache, plugin, and payload-preservation invariants where property-based tests provide better coverage than examples alone.
+OpenOpps SHALL use bounded Hypothesis strategies for generated example invariants where property-based tests provide better coverage than examples alone.
 
 #### Scenario: Invariant test generates edge cases
 
-- **WHEN** a Hypothesis-backed test generates partial or unusual records
-- **THEN** OpenOpps preserves invariants such as filter/export parity, cache key isolation, plugin conflict reporting, and raw payload preservation
+- **WHEN** a Hypothesis-backed test generates example data across a range of deterministic seeds
+- **THEN** OpenOpps preserves invariants such as unique board, route, and job identifiers
 
 ### Requirement: Docs examples do not drift
 

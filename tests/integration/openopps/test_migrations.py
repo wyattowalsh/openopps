@@ -3,11 +3,14 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
+from openopps.migrations import DatabaseSchemaError
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
 
-def test_init_db_runs_alembic_for_fresh_sqlite(tmp_path: Path):
+def test_init_db_runs_initial_sqlite_schema(tmp_path: Path):
     db_path = tmp_path / "openopps.db"
     store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
 
@@ -22,96 +25,92 @@ def test_init_db_runs_alembic_for_fresh_sqlite(tmp_path: Path):
         }
         version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
 
-    assert {"sources", "boards", "board_providers", "jobs"}.issubset(tables)
+    assert {
+        "sources",
+        "boards",
+        "board_providers",
+        "jobs",
+        "job_versions",
+        "job_payload_snapshots",
+        "job_sync_runs",
+        "job_sync_observations",
+    }.issubset(tables)
     assert version == ("0001_initial_app_sqlite",)
 
 
-def test_init_db_stamps_existing_unversioned_sqlite(tmp_path: Path):
+def test_initial_sqlite_schema_has_app_constraints_and_indexes(tmp_path: Path):
     db_path = tmp_path / "openopps.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(
-            """
-            CREATE TABLE sources (
-                key TEXT PRIMARY KEY,
-                url TEXT NOT NULL,
-                provider_id TEXT NOT NULL,
-                enabled BOOLEAN NOT NULL,
-                version JSON,
-                raw_metadata JSON,
-                extra_payload JSON,
-                synced_at DATETIME
-            );
-            CREATE TABLE boards (
-                key TEXT PRIMARY KEY,
-                source_key TEXT NOT NULL,
-                remote_id TEXT NOT NULL,
-                remote_slug TEXT,
-                name TEXT NOT NULL
-            );
-            CREATE TABLE board_providers (
-                id TEXT PRIMARY KEY,
-                source_key TEXT NOT NULL,
-                board_key TEXT NOT NULL,
-                provider_id TEXT NOT NULL,
-                support_level TEXT NOT NULL
-            );
-            CREATE TABLE jobs (
-                id TEXT PRIMARY KEY,
-                board_key TEXT NOT NULL,
-                provider_id TEXT NOT NULL,
-                remote_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                locations JSON,
-                department TEXT,
-                team TEXT,
-                workplace_type TEXT,
-                posting_url TEXT,
-                apply_url TEXT,
-                posted_at TEXT,
-                updated_at TEXT,
-                status TEXT NOT NULL,
-                raw_listing JSON,
-                raw_detail JSON,
-                extra_payload JSON,
-                synced_at DATETIME NOT NULL
-            );
-            INSERT INTO sources (key, url, provider_id, enabled)
-            VALUES ('a16z', 'https://a16z.com/jobs', 'consider', 1);
-            INSERT INTO boards (key, source_key, remote_id, name)
-            VALUES ('acme', 'a16z', 'acme', 'Acme');
-            INSERT INTO board_providers (id, source_key, board_key, provider_id, support_level)
-            VALUES ('a16z:acme:ashbyhq', 'a16z', 'acme', 'ashbyhq', 'jobs');
-            INSERT INTO jobs (
-                id, board_key, provider_id, remote_id, title, locations, status, synced_at
-            ) VALUES (
-                'acme:ashbyhq:1', 'acme', 'ashbyhq', '1', 'Engineer', '[]', 'open', '2026-01-01T00:00:00'
-            );
-            """
-        )
-
     store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+
     store.init_db()
 
     with sqlite3.connect(db_path) as conn:
-        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-        board_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(boards)").fetchall()
-        }
-        route_columns = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(board_providers)").fetchall()
-        }
-        job_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
-        }
+        assert _has_sqlite_index(
+            conn, "boards", ("source_key", "remote_id"), unique=True
+        )
+        assert _has_sqlite_index(
+            conn,
+            "board_providers",
+            ("source_key", "board_key", "provider_id"),
+            unique=True,
+        )
+        assert _has_sqlite_index(
+            conn, "jobs", ("board_key", "provider_id", "remote_id"), unique=True
+        )
+        assert _has_sqlite_index(
+            conn, "job_versions", ("job_id", "content_hash"), unique=True
+        )
+        assert _has_sqlite_index(conn, "boards", ("source_key",))
+        assert _has_sqlite_index(conn, "jobs", ("provider_id",))
+        assert _has_sqlite_index(conn, "job_versions", ("job_id",))
 
-    assert version == ("0001_initial_app_sqlite",)
-    assert {"domain", "raw_payload", "extra_payload", "synced_at"}.issubset(
-        board_columns
-    )
-    assert {"token", "raw_payload", "extra_payload", "detected_at"}.issubset(
-        route_columns
-    )
-    assert "company" in job_columns
-    assert "job_description" in job_columns
-    assert store.list_boards()[0].providers[0].provider_id == "ashbyhq"
+
+def test_stamped_sqlite_db_missing_v01_columns_fails_with_reset_guidance(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "openopps.db"
+    _create_stale_stamped_database(db_path)
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+
+    with pytest.raises(DatabaseSchemaError, match="Reset that local DB") as exc_info:
+        store.init_db()
+
+    message = str(exc_info.value)
+    assert "boards.source_keys" in message
+    assert "boards.source_board_keys" in message
+    assert str(db_path) in message
+
+
+def _has_sqlite_index(
+    conn: sqlite3.Connection,
+    table_name: str,
+    columns: tuple[str, ...],
+    *,
+    unique: bool = False,
+) -> bool:
+    indexes = conn.execute(f"PRAGMA index_list({table_name})").fetchall()
+    for index in indexes:
+        if unique and not index[2]:
+            continue
+        indexed_columns = tuple(
+            row[2] for row in conn.execute(f"PRAGMA index_info({index[1]})").fetchall()
+        )
+        if indexed_columns == columns:
+            return True
+    return False
+
+
+def _create_stale_stamped_database(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        conn.execute("INSERT INTO alembic_version VALUES ('0001_initial_app_sqlite')")
+        conn.execute(
+            """
+            CREATE TABLE boards (
+                key VARCHAR NOT NULL PRIMARY KEY,
+                source_key VARCHAR NOT NULL,
+                remote_id VARCHAR NOT NULL,
+                name VARCHAR NOT NULL
+            )
+            """
+        )

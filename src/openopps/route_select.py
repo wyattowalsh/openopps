@@ -20,7 +20,11 @@ def route_ready(route: BoardProviderRecord) -> bool:
 
     if route.provider_id == "workday":
         return bool(route.board_url or (route.host and route.tenant and route.site))
-    if route.provider_id in {"greenhouse", "lever", "ashbyhq"}:
+    if route.provider_id == "bamboohr":
+        return bool(route.token or route.board_url or (route.host and route.tenant))
+    if route.provider_id in {"teamtailor", "wpjobmanager"}:
+        return bool(route.token or route.board_url or route.host)
+    if route.provider_id in {"greenhouse", "lever", "ashbyhq", "workable", "rippling"}:
         return bool(route.token or route.board_url)
     return bool(
         route.token or route.board_url or (route.host and route.tenant and route.site)
@@ -51,7 +55,20 @@ def dedupe_routes(
 def route_request_key(board: BoardRecord, route: BoardProviderRecord) -> str:
     provider = route.provider_id.lower()
     token = _route_token(route)
-    if provider in {"greenhouse", "lever", "ashbyhq"} and token:
+    if (
+        provider
+        in {
+            "greenhouse",
+            "lever",
+            "ashbyhq",
+            "workable",
+            "teamtailor",
+            "bamboohr",
+            "rippling",
+            "wpjobmanager",
+        }
+        and token
+    ):
         return f"{provider}:token:{token}"
     if provider == "workday":
         if route.host and route.tenant and route.site:

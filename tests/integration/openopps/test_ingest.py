@@ -7,6 +7,7 @@ import httpx
 import pytest
 import respx
 
+import openopps.ingest as ingest_module
 from openopps.ingest import sync_jobs, sync_sources
 from openopps.models import (
     BoardProviderRecord,
@@ -251,6 +252,53 @@ async def test_sync_sources_preserves_route_metadata_across_repeated_syncs(
     last_page = cast(dict[str, Any], stored.raw_metadata["lastPage"])
     assert last_page["total"] == 0
     assert "rawResponse" not in last_page
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_progress_reports_unique_canonical_board_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    class FakeSourceAdapter:
+        async def iter_boards(self, _client, source, *, page_size: int):
+            yield (
+                [
+                    BoardRecord(
+                        key=f"{source.key}:acme",
+                        source_key=source.key,
+                        remote_id="acme",
+                        name="Acme",
+                        domain="acme.com",
+                    )
+                ],
+                [],
+                {"version": {"pageSize": page_size}},
+            )
+
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(SourceRecord(key="one", url="one://source", provider_id="fake"))
+    store.upsert_source(SourceRecord(key="two", url="two://source", provider_id="fake"))
+    reports: list[str] = []
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: FakeSourceAdapter(),
+    )
+
+    await sync_sources(
+        settings=settings,
+        store=store,
+        page_size=10,
+        report=lambda update: reports.append(update.message),
+    )
+
+    assert len(store.list_boards()) == 1
+    assert any("[dim]boards[/] [green]1[/]" in message for message in reports)
+    assert not any("[dim]boards[/] [green]2[/]" in message for message in reports)
 
 
 @pytest.mark.asyncio

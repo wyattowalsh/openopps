@@ -27,6 +27,7 @@ class OpenOppsSettings(BaseSettings):
     cache_ttl_seconds: int = Field(default=3600, ge=1)
     cache_refresh: bool = False
     cache_stale_on_error: bool = False
+    plugin_autoload: bool = False
     plugin_disabled: str = ""
     plugin_allowed: str = ""
 

@@ -204,7 +204,7 @@ async def test_ycombinator_fetches_algolia_batches():
     respx.post("https://45bwzj1sgc-dsn.algolia.net/1/indexes/*/queries").mock(
         side_effect=[
             httpx.Response(
-                200, json={"results": [{"hits": [], "facets": {"batch": {"S24": 1}}}]}
+                200, json={"results": [{"hits": [], "facets": {"batch": {"S24": 2}}}]}
             ),
             httpx.Response(
                 200,
@@ -222,7 +222,19 @@ async def test_ycombinator_fetches_algolia_batches():
                                     "batch": "S24",
                                     "industries": ["B2B", "Artificial Intelligence"],
                                     "all_locations": "San Francisco; Remote",
-                                }
+                                },
+                                {
+                                    "id": 2,
+                                    "name": "Blank Fields AI",
+                                    "slug": "blank-fields-ai",
+                                    "website": "",
+                                    "one_liner": "Has sparse YC data.",
+                                    "team_size": 3,
+                                    "batch": "S24",
+                                    "industries": ["B2B"],
+                                    "all_locations": "",
+                                    "regions": ["Remote"],
+                                },
                             ]
                         }
                     ]
@@ -245,6 +257,8 @@ async def test_ycombinator_fetches_algolia_batches():
     assert boards[0].markets == ["B2B", "Artificial Intelligence"]
     assert boards[0].locations == ["San Francisco", "Remote"]
     assert boards[0].staff_count == 12
+    assert boards[1].website_url is None
+    assert boards[1].locations == ["Remote"]
     assert providers == []
     assert meta["batch"] == "S24"
 

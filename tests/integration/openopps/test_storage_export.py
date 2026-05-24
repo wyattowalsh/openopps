@@ -1,6 +1,6 @@
 import json
-import sqlite3
 from pathlib import Path
+import sqlite3
 
 import polars as pl
 
@@ -13,6 +13,7 @@ from openopps.models import (
     JobRecord,
     ProviderSupport,
     SourceRecord,
+    job_payload_hash,
 )
 from openopps.settings import OpenOppsSettings
 from openopps.storage import BoardFilters, JobFilters
@@ -134,64 +135,6 @@ def seeded_filter_store(tmp_path: Path) -> OpenOppsStore:
     return store
 
 
-def test_storage_adds_enrichment_columns_to_existing_sqlite_db(tmp_path: Path):
-    db_path = tmp_path / "openopps.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
-            CREATE TABLE jobs (
-                id VARCHAR PRIMARY KEY,
-                board_key VARCHAR NOT NULL,
-                provider_id VARCHAR NOT NULL,
-                remote_id VARCHAR NOT NULL,
-                title VARCHAR NOT NULL,
-                locations JSON NOT NULL,
-                department VARCHAR,
-                team VARCHAR,
-                workplace_type VARCHAR,
-                posting_url VARCHAR,
-                apply_url VARCHAR,
-                posted_at VARCHAR,
-                updated_at VARCHAR,
-                status VARCHAR NOT NULL,
-                raw_listing JSON NOT NULL,
-                raw_detail JSON NOT NULL,
-                extra_payload JSON NOT NULL,
-                synced_at DATETIME NOT NULL
-            )
-            """
-        )
-
-    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
-    store = OpenOppsStore(settings)
-    store.init_db()
-
-    with sqlite3.connect(db_path) as conn:
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
-
-    assert "company" in columns
-    assert "job_description" in columns
-
-    store.upsert_jobs(
-        [
-            JobRecord(
-                id="acme:greenhouse:1",
-                board_key="acme",
-                provider_id="greenhouse",
-                remote_id="1",
-                title="Engineer",
-                company="Acme",
-                employment_type="Full-time",
-            )
-        ]
-    )
-    stored_job = store.get_job("acme:greenhouse:1")
-    assert stored_job is not None
-    assert stored_job.company == "Acme"
-    assert stored_job.job_description is not None
-    assert stored_job.job_description.company == "Acme"
-
-
 def test_storage_roundtrip_and_export(tmp_path: Path):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
@@ -273,6 +216,181 @@ def test_storage_roundtrip_and_export(tmp_path: Path):
     parquet_rows = pl.read_parquet(parquet_output).to_dicts()
     assert parquet_rows[0]["salary_currency"] == "USD"
     assert json.loads(parquet_rows[0]["job_description"])["company"] == "Acme"
+
+
+def test_job_sync_tracks_versions_raw_drift_and_lifecycle(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+    store.init_db()
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:lever",
+                source_key="manual",
+                board_key="acme",
+                provider_id="lever",
+                support_level=ProviderSupport.JOBS,
+            )
+        ]
+    )
+    original = JobRecord.model_validate(
+        {
+            "id": "acme:lever:1",
+            "board_key": "acme",
+            "provider_id": "lever",
+            "remote_id": "1",
+            "title": "Engineer",
+            "company": "Acme",
+            "description": "Build reliable data systems.",
+            "raw_listing": {"id": "1", "title": "Engineer", "token": "a"},
+        }
+    )
+    raw_drift = original.model_copy(
+        update={"raw_listing": {"token": "b", "title": "Engineer", "id": "1"}}
+    )
+    changed = raw_drift.model_copy(
+        update={
+            "description": "Build reliable data systems and tools.",
+            "raw_listing": {"id": "1", "title": "Engineer", "token": "c"},
+        }
+    )
+
+    first_run = store.sync_jobs_for_route("acme", "lever", [original])
+    repeat_run = store.sync_jobs_for_route("acme", "lever", [raw_drift])
+    changed_run = store.sync_jobs_for_route("acme", "lever", [changed])
+    closed_run = store.sync_jobs_for_route("acme", "lever", [])
+
+    assert first_run.new_count == 1
+    assert repeat_run.unchanged_count == 1
+    assert changed_run.changed_count == 1
+    assert closed_run.closed_count == 1
+    assert [job.version for job in store.list_job_versions("acme:lever:1")] == [1, 2]
+    assert store.list_jobs() == []
+    closed_jobs = store.list_jobs(filters=JobFilters(status="all"))
+    assert [job.status for job in closed_jobs] == ["closed"]
+    assert closed_jobs[0].payload_hash == job_payload_hash(changed)
+
+    with sqlite3.connect(db_path) as conn:
+        payload_snapshots = conn.execute(
+            "SELECT COUNT(*) FROM job_payload_snapshots WHERE job_id = ?",
+            ("acme:lever:1",),
+        ).fetchone()[0]
+        observations = conn.execute(
+            "SELECT observation_kind FROM job_sync_observations ORDER BY rowid"
+        ).fetchall()
+
+    assert payload_snapshots == 3
+    assert [row[0] for row in observations] == [
+        "new",
+        "unchanged",
+        "changed",
+        "closed",
+    ]
+
+
+def test_job_sync_dedupes_duplicate_jobs_in_one_route_run(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    store = OpenOppsStore(settings)
+    store.init_db()
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="acme",
+                source_key="manual",
+                remote_id="acme",
+                name="Acme",
+            )
+        ]
+    )
+
+    job = JobRecord.model_validate(
+        {
+            "id": "acme:lever:1",
+            "board_key": "acme",
+            "provider_id": "lever",
+            "remote_id": "1",
+            "title": "Engineer",
+            "company": "Acme",
+        }
+    )
+
+    run = store.sync_jobs_for_route("acme", "lever", [job, job])
+
+    assert run.job_count == 1
+    assert run.new_count == 1
+    with sqlite3.connect(db_path) as conn:
+        observations = conn.execute(
+            "SELECT COUNT(*) FROM job_sync_observations"
+        ).fetchone()[0]
+    assert observations == 1
+
+
+def test_boards_merge_cross_source_duplicates_by_domain(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.init_db()
+    store.upsert_source(
+        SourceRecord(key="a16z", url="https://a16z.com/jobs", provider_id="consider")
+    )
+    store.upsert_source(
+        SourceRecord(
+            key="yc",
+            url="https://www.ycombinator.com/companies",
+            provider_id="ycombinator",
+        )
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="a16z:acme",
+                source_key="a16z",
+                remote_id="acme",
+                name="Acme AI",
+                domain="acme.ai",
+            ),
+            BoardRecord(
+                key="yc:acme-ai",
+                source_key="yc",
+                remote_id="31503",
+                name="Acme AI",
+                domain="acme.ai",
+            ),
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="yc:yc-acme-ai:lever",
+                source_key="yc",
+                board_key="yc:acme-ai",
+                provider_id="lever",
+                support_level=ProviderSupport.JOBS,
+            )
+        ]
+    )
+
+    boards = store.list_boards(domain="acme.ai")
+    yc_boards = store.list_boards(source_key="yc")
+    providers = store.list_board_providers(source_key="yc")
+
+    assert store.status()["boards"] == 1
+    assert [board.key for board in boards] == ["a16z:acme"]
+    assert boards[0].source_keys == ["a16z", "yc"]
+    assert boards[0].source_board_keys == {
+        "a16z": "a16z:acme",
+        "yc": "yc:acme-ai",
+    }
+    assert [board.key for board in yc_boards] == ["a16z:acme"]
+    assert [(provider.source_key, provider.board_key) for provider in providers] == [
+        ("yc", "a16z:acme")
+    ]
 
 
 def test_csv_export_neutralizes_spreadsheet_formulas_only(tmp_path: Path):
@@ -416,15 +534,17 @@ def test_storage_pushes_sql_limit_before_job_materialization(
             )
         ]
     )
-    original = storage_module.job_from_row
+    original = storage_module._job_from_identity_and_version
     converted = 0
 
-    def counting_job_from_row(row):
+    def counting_job_from_row(session, row, version):
         nonlocal converted
         converted += 1
-        return original(row)
+        return original(session, row, version)
 
-    monkeypatch.setattr(storage_module, "job_from_row", counting_job_from_row)
+    monkeypatch.setattr(
+        storage_module, "_job_from_identity_and_version", counting_job_from_row
+    )
 
     jobs = store.list_jobs(filters=JobFilters(remote="Full", limit=1))
 

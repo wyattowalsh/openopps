@@ -167,6 +167,8 @@ def load_plugins(
     allowed_names = set(allowed) if allowed is not None else None
     if allowed_names is None and configured_allowed:
         allowed_names = set(configured_allowed)
+    if allowed_names is None and not getattr(settings, "plugin_autoload", False):
+        allowed_names = set()
     contributions: list[PluginContribution] = []
     results: list[PluginLoadResult] = []
     conflicts: list[PluginConflict] = []

@@ -3,21 +3,32 @@ title: Providers
 description: Source catalogs, provider support levels, route probing, and health checks.
 ---
 
-import {
-  AuditProviderTargets,
-  JobProviderSummary,
-  SourceCatalogSummary,
-} from "@/components/openopps-provider-data";
-
 OpenOpps v0.1 separates aggregate source adapters from job-capable provider adapters. Source adapters discover company boards; provider adapters detect or fetch postings from public board providers through the CLI and local SQLite state.
 
-Python plugins can contribute additional source adapters and job providers through the `openopps.plugins` entry point group. Plugin capabilities appear in `admin providers list` and registry surfaces when loaded successfully, and load failures, disabled entries, allow-list filters, and conflicts are visible in `plugins list`.
+Python plugins can contribute additional source adapters and job providers through the `openopps.plugins` entry point group. Plugin capabilities appear in `admin providers list` and registry surfaces when loaded successfully, and load failures, disabled entries, allow-list filters, and conflicts are visible in `plugins list`. Installed plugins are discovered by default but only executed when their entry-point names are listed in `OPENOPPS_PLUGIN_ALLOWED`, unless `OPENOPPS_PLUGIN_AUTOLOAD=true` is set.
 
 Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a packaged plugin with a `pyproject.toml` entry point.
 
-## Source Catalog
+## Source Adapter Inventory
+
+<SourceAdapterSummary />
+
+## Source Catalog Sample
 
 <SourceCatalogSummary />
+
+## Non-VC Source Families
+
+OpenOpps packages a small set of low-friction non-VC source families as source adapters, not job providers. These sources add company candidates and provenance metadata; they only become job-yielding after route detection, route probing, and provider job syncs find public job-capable routes.
+
+| Source family                 | Packaged keys         | Default  | Notes                                                                                                    |
+| ----------------------------- | --------------------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| Official public-company index | `sec-company-tickers` | Enabled  | Uses the official SEC company tickers file as a listed-company backbone.                                 |
+| Public index CSV              | `sp500`, `nasdaq100`  | Disabled | Opt-in seed data for index membership; `nasdaq100` is manual until a reviewed CSV is configured.         |
+| Employer ranking CSV          | `fortune500`          | Disabled | Opt-in ranking seed data; supports embedded user-supplied CSV rows for reviewed local refreshes.         |
+| Ecosystem landscape           | `cncf-landscape`      | Enabled  | Reads CNCF `landscape.yml` public fields and intentionally excludes logos and Crunchbase-derived fields. |
+
+Each packaged source includes taxonomy metadata such as `providerType`, `coverageMode`, `accessType`, `licenseStatus`, `refreshCadence`, and `sourceAttribution` in the source `raw_metadata` payload.
 
 ## Support Levels
 
@@ -33,7 +44,11 @@ Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a p
 
 ## Detect-Only Providers
 
-`teamtailor`, `manatal`, and `gem` are preserved as board metadata until stable public fetching is added. Health reports group these under `notCovered` so they are visible without being treated as failed job syncs.
+`manatal` and `gem` are preserved as board metadata until stable public fetching is added. Health reports group these under `notCovered` so they are visible without being treated as failed job syncs.
+
+## Public No-Auth Board Providers
+
+Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager are job-capable in v0.1 only through public unauthenticated board routes. BambooHR uses public careers endpoints such as `/careers/list` and `/careers/{job_id}/detail`; OpenOpps does not call authenticated BambooHR ATS APIs. WP Job Manager requires an explicit `/wp-json/wp/v2/job-listings` or `/jm-ajax/get_listings/` endpoint and is not inferred from arbitrary WordPress sites.
 
 ## Provider Coverage
 
@@ -44,9 +59,12 @@ uv run openopps providers coverage
 uv run openopps providers coverage --source a16z --provider any --json
 uv run openopps providers coverage --source a16z --provider greenhouse
 uv run openopps providers audit --source a16z --json
+uv run openopps admin sources yield --json
 ```
 
 Use coverage to answer whether the local data is complete enough for analysis. The JSON report includes source, board, route, and job counts; route counts by provider, support level, and last status; executable route counts; missing route metadata counts; duplicate route skips derived from the durable route registry; job counts by provider, source, and board; non-supported provider coverage; detect-only provider examples; boards with job-capable hints but no executable route; and boards with executable routes but zero persisted jobs.
+
+`admin sources yield` reports source-family conversion from persisted records only: company candidates, canonical boards, provider hints, job-capable routes, route-ready routes, active job routes, duplicate board rate, active boards added, yield score, and taxonomy totals by provider type and access type.
 
 Coverage also reports enrichment completeness percentages from deterministic provider-field mapping. These data-quality metrics cover posting URLs, apply URLs, locations, departments, descriptions, normalized compensation or salary, remote level, and employment type.
 
@@ -54,7 +72,28 @@ Coverage also reports enrichment completeness percentages from deterministic pro
 
 ## Route Probing
 
-Some sources report provider hints without the public route token required for job fetching. Route probing tries candidate tokens derived from upstream slugs, remote ids, names, domains, and websites. Source-scoped board keys such as `a16z:acme` are durable record identifiers, not provider route-token candidates.
+Some sources report provider hints without the public route token required for job fetching. Route probing tries candidate tokens derived from upstream slugs, remote ids, names, domains, and websites. Board keys such as `a16z:acme` are durable record identifiers, not provider route-token candidates.
+
+<div className="openopps-ref-grid">
+  <div className="openopps-ref-card">
+    <strong>Candidate tokens</strong>
+    <span>
+      Derived from source slugs, remote ids, names, domains, and websites.
+    </span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Dry-run first</strong>
+    <span>
+      Route probing reports matches and unknowns without persistence by default.
+    </span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Apply deliberately</strong>
+    <span>
+      Add <code>--apply</code> only after inspecting matched route metadata.
+    </span>
+  </div>
+</div>
 
 ```bash
 uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
@@ -90,5 +129,7 @@ Without `--include-missing`, `admin providers registry` skips job-capable hints 
 
 - Workday support is limited to public postings visible through careers sites; it is not official tenant API access.
 - Ashby sync excludes `isListed: false` direct-link-only postings from normal output.
-- Overlapping board records from multiple sources are preserved with source-scoped keys, but provider requests are deduped before route probes and job syncs.
+- Overlapping board records from multiple sources are merged by company domain. Board JSON includes `source_keys` and `source_board_keys` for every source currently represented by the canonical board, and provider requests are deduped before route probes and job syncs.
 - Installed Python plugins are not sandboxed and run in the same process as OpenOpps.
+- Use `OPENOPPS_PLUGIN_ALLOWED` to opt in trusted entry-point names before plugin code executes.
+- Use `OPENOPPS_PLUGIN_AUTOLOAD=true` only in controlled environments where every installed `openopps.plugins` entry point is trusted.

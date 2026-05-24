@@ -5,14 +5,40 @@ import respx
 from openopps.http import build_async_client
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport
 from openopps.providers.boards.ashby import AshbyProvider, ashby_token
+from openopps.providers.boards.bamboohr import (
+    BambooHRProvider,
+    bamboohr_route,
+    parse_bamboohr_board_url,
+)
 from openopps.providers.boards.greenhouse import GreenhouseProvider
 from openopps.providers.boards.lever import LeverProvider
+from openopps.providers.boards.rippling import RipplingProvider, rippling_slug
+from openopps.providers.boards.teamtailor import TeamtailorProvider, teamtailor_host
+from openopps.providers.boards.workable import WorkableProvider, workable_token
 from openopps.providers.boards.workday import WorkdayProvider
+from openopps.providers.boards.wpjobmanager import (
+    WPJobManagerProvider,
+    wpjobmanager_endpoint,
+    wpjobmanager_is_ajax_endpoint,
+    wpjobmanager_is_rest_endpoint,
+)
 from openopps.settings import OpenOppsSettings
 
 
 def board() -> BoardRecord:
     return BoardRecord(key="acme", source_key="manual", remote_id="acme", name="Acme")
+
+
+def route(provider_id: str, **updates: object) -> BoardProviderRecord:
+    data: dict[str, object] = {
+        "id": f"manual:acme:{provider_id}",
+        "source_key": "manual",
+        "board_key": "acme",
+        "provider_id": provider_id,
+        "support_level": ProviderSupport.JOBS,
+    }
+    data.update(updates)
+    return BoardProviderRecord.model_validate(data)
 
 
 @pytest.mark.asyncio
@@ -335,3 +361,548 @@ async def test_workday_fetches_listing_and_detail():
         "jobDescription": "<p>Build trusted AI systems.</p>",
         "customDetail": {"travel": "low"},
     }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_workable_fetch_jobs():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://www.workable.com/api/accounts/acme").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "shortcode": "abc123",
+                        "title": "Support Engineer",
+                        "department": "Support",
+                        "employment_type": "Full-time",
+                        "telecommuting": True,
+                        "locations": [{"city": "Austin", "country": "US"}],
+                        "description": "<p>Help customers.</p>",
+                        "url": "https://apply.workable.com/acme/j/abc123",
+                        "application_url": "https://apply.workable.com/acme/j/abc123/apply",
+                        "salary": {
+                            "minValue": 90000,
+                            "maxValue": 110000,
+                            "currency": "USD",
+                        },
+                    }
+                ]
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await WorkableProvider(settings).fetch_jobs(
+            client, board(), route("workable", token="acme")
+        )
+
+    assert jobs[0].title == "Support Engineer"
+    assert jobs[0].locations == ["Austin, US"]
+    assert jobs[0].department == "Support"
+    assert jobs[0].remote == "Full"
+    assert jobs[0].description == "Help customers."
+    assert jobs[0].salary == "USD 90000 - 110000"
+    assert jobs[0].raw_listing["shortcode"] == "abc123"
+
+
+def test_workable_route_detection_and_token_derivation():
+    hosted = WorkableProvider.detect_route("https://apply.workable.com/acme/")
+    api = WorkableProvider.detect_route("https://www.workable.com/api/accounts/acme")
+
+    assert hosted is not None
+    assert hosted.token == "acme"
+    assert api is not None
+    assert api.token == "acme"
+    assert WorkableProvider.detect_route("https://apply.workable.com/j/abc123") is None
+    assert workable_token(route("workable", token=" acme ")) == "acme"
+    assert (
+        workable_token(
+            route("workable", board_url="https://www.workable.com/api/accounts/bravo")
+        )
+        == "bravo"
+    )
+    assert (
+        workable_token(route("workable", board_url="https://apply.workable.com/charlie/"))
+        == "charlie"
+    )
+    assert workable_token(route("workable")) is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_workable_check_jobs_and_invalid_payload():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(
+        "https://www.workable.com/api/accounts/acme", params={"details": "false"}
+    ).mock(return_value=httpx.Response(200, json={"jobs": [{}, {}]}))
+    respx.get(
+        "https://www.workable.com/api/accounts/broken", params={"details": "false"}
+    ).mock(return_value=httpx.Response(200, json={"jobs": "bad"}))
+
+    async with build_async_client(settings) as client:
+        assert await WorkableProvider(settings).check_jobs(
+            client, board(), route("workable", token="acme")
+        ) == 2
+        assert await WorkableProvider(settings).check_jobs(
+            client, board(), route("workable")
+        ) == 0
+        with pytest.raises(ValueError, match="invalid JSON"):
+            await WorkableProvider(settings).check_jobs(
+                client, board(), route("workable", token="broken")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_teamtailor_fetch_jobs():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://acme.teamtailor.com/jobs.rss").mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+            <rss xmlns:teamtailor="https://teamtailor.com/locations">
+              <channel>
+                <item>
+                  <title>Designer</title>
+                  <link>https://acme.teamtailor.com/jobs/1</link>
+                  <guid>job-1</guid>
+                  <description><![CDATA[<p>Design workflows.</p>]]></description>
+                  <remoteStatus>Hybrid</remoteStatus>
+                  <teamtailor:department>Product</teamtailor:department>
+                  <teamtailor:role>Design</teamtailor:role>
+                  <teamtailor:locations>
+                    <teamtailor:location><teamtailor:name>Stockholm</teamtailor:name></teamtailor:location>
+                  </teamtailor:locations>
+                </item>
+              </channel>
+            </rss>
+            """,
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await TeamtailorProvider(settings).fetch_jobs(
+            client, board(), route("teamtailor", host="acme.teamtailor.com")
+        )
+
+    assert jobs[0].title == "Designer"
+    assert jobs[0].locations == ["Stockholm"]
+    assert jobs[0].department == "Product"
+    assert jobs[0].team == "Design"
+    assert jobs[0].remote == "Hybrid"
+    assert jobs[0].description == "Design workflows."
+    assert jobs[0].raw_listing["locations"] == ["Stockholm"]
+
+
+def test_teamtailor_route_detection_and_host_derivation():
+    match = TeamtailorProvider.detect_route("https://acme.teamtailor.com/jobs")
+
+    assert match is not None
+    assert match.token == "acme"
+    assert match.host == "acme.teamtailor.com"
+    assert TeamtailorProvider.detect_route("https://example.com/jobs") is None
+    assert teamtailor_host(route("teamtailor", host=" Acme.Teamtailor.com ")) == (
+        "acme.teamtailor.com"
+    )
+    assert (
+        teamtailor_host(
+            route("teamtailor", board_url="https://bravo.teamtailor.com/jobs")
+        )
+        == "bravo.teamtailor.com"
+    )
+    assert teamtailor_host(route("teamtailor", token="charlie")) == (
+        "charlie.teamtailor.com"
+    )
+    assert teamtailor_host(route("teamtailor")) is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_teamtailor_check_jobs_and_missing_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://acme.teamtailor.com/jobs.rss").mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+            <rss>
+              <channel>
+                <item><title>One</title></item>
+                <item><title>Two</title></item>
+              </channel>
+            </rss>
+            """,
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        assert await TeamtailorProvider(settings).check_jobs(
+            client, board(), route("teamtailor", token="acme")
+        ) == 2
+        with pytest.raises(ValueError, match="missing a public board host"):
+            await TeamtailorProvider(settings).fetch_jobs(
+                client, board(), route("teamtailor")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bamboohr_fetch_jobs_preserves_listing_and_detail():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://acme.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "result": [
+                    {
+                        "id": 42,
+                        "jobOpeningName": "Analyst",
+                        "departmentLabel": "Operations",
+                    }
+                ]
+            },
+        )
+    )
+    respx.get("https://acme.bamboohr.com/careers/42/detail").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "result": {
+                    "jobOpening": {
+                        "id": 42,
+                        "description": "<p>Analyze operations.</p>",
+                        "employmentStatusLabel": "Full-time",
+                        "isRemote": False,
+                        "atsLocation": {
+                            "city": "Denver",
+                            "state": "CO",
+                            "country": "US",
+                        },
+                        "jobOpeningShareUrl": "https://acme.bamboohr.com/careers/42",
+                    }
+                }
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await BambooHRProvider(settings).fetch_jobs(
+            client, board(), route("bamboohr", tenant="acme")
+        )
+
+    assert jobs[0].remote_id == "42"
+    assert jobs[0].title == "Analyst"
+    assert jobs[0].locations == ["Denver, CO, US"]
+    assert jobs[0].employment_type == "Full-time"
+    assert jobs[0].description == "Analyze operations."
+    assert jobs[0].raw_listing["departmentLabel"] == "Operations"
+    assert jobs[0].raw_detail["employmentStatusLabel"] == "Full-time"
+
+
+def test_bamboohr_route_detection_and_route_derivation():
+    parsed = parse_bamboohr_board_url("https://acme.bamboohr.com/careers")
+    match = BambooHRProvider.detect_route("https://acme.bamboohr.com/careers")
+
+    assert parsed.host == "acme.bamboohr.com"
+    assert parsed.tenant == "acme"
+    assert match is not None
+    assert match.token == "acme"
+    assert BambooHRProvider.detect_route("https://example.com/careers") is None
+    with pytest.raises(ValueError, match="not a careers board"):
+        parse_bamboohr_board_url("https://acme.bamboohr.com/jobs")
+    assert bamboohr_route(route("bamboohr", host="acme.bamboohr.com")).tenant == "acme"
+    assert (
+        bamboohr_route(route("bamboohr", board_url="https://bravo.bamboohr.com/careers"))
+        .tenant
+        == "bravo"
+    )
+    assert bamboohr_route(route("bamboohr", token="charlie")).host == (
+        "charlie.bamboohr.com"
+    )
+    assert bamboohr_route(route("bamboohr")) is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bamboohr_check_jobs_count_paths_and_invalid_payload():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://meta.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(200, json={"meta": {"totalCount": 3}, "result": []})
+    )
+    respx.get("https://items.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(200, json={"result": [{}, {}]})
+    )
+    respx.get("https://broken.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(200, json={"result": "bad"})
+    )
+
+    async with build_async_client(settings) as client:
+        assert await BambooHRProvider(settings).check_jobs(
+            client, board(), route("bamboohr", token="meta")
+        ) == 3
+        assert await BambooHRProvider(settings).check_jobs(
+            client, board(), route("bamboohr", token="items")
+        ) == 2
+        assert await BambooHRProvider(settings).check_jobs(
+            client, board(), route("bamboohr")
+        ) == 0
+        with pytest.raises(ValueError, match="invalid JSON"):
+            await BambooHRProvider(settings).check_jobs(
+                client, board(), route("bamboohr", token="broken")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rippling_fetch_jobs_preserves_listing_and_detail():
+    settings = OpenOppsSettings(cache_enabled=False, board_concurrency=1)
+    respx.get("https://ats.rippling.com/api/v2/board/acme/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "totalPages": 1,
+                "items": [
+                    {
+                        "id": "job-1",
+                        "name": "Platform Engineer",
+                        "locations": [{"city": "Toronto", "countryCode": "CA"}],
+                    }
+                ],
+            },
+        )
+    )
+    respx.get("https://ats.rippling.com/api/v2/board/acme/jobs/job-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "uuid": "job-1",
+                "description": "<p>Build platform tools.</p>",
+                "employmentType": {"label": "Full-time"},
+                "department": {"name": "Engineering"},
+                "payRangeDetails": [{"min": 100000, "max": 140000, "currency": "CAD"}],
+                "url": "https://ats.rippling.com/acme/jobs/job-1",
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await RipplingProvider(settings).fetch_jobs(
+            client, board(), route("rippling", token="acme")
+        )
+
+    assert jobs[0].title == "Platform Engineer"
+    assert jobs[0].locations == ["Toronto, CA"]
+    assert jobs[0].department == "Engineering"
+    assert jobs[0].employment_type == "Full-time"
+    assert jobs[0].description == "Build platform tools."
+    assert jobs[0].salary == "CAD 100000 - 140000"
+    assert jobs[0].raw_listing["id"] == "job-1"
+    assert jobs[0].raw_detail["uuid"] == "job-1"
+
+
+def test_rippling_route_detection_and_slug_derivation():
+    api = RipplingProvider.detect_route("https://ats.rippling.com/api/v2/board/acme/jobs")
+    hosted = RipplingProvider.detect_route("https://ats.rippling.com/bravo/jobs")
+
+    assert api is not None
+    assert api.token == "acme"
+    assert hosted is not None
+    assert hosted.token == "bravo"
+    assert RipplingProvider.detect_route("https://app.rippling.com/acme/jobs") is None
+    assert rippling_slug(route("rippling", tenant=" tenant ")) == "tenant"
+    assert rippling_slug(route("rippling", token=" token ")) == "token"
+    assert (
+        rippling_slug(
+            route("rippling", board_url="https://ats.rippling.com/api/v2/board/api/jobs")
+        )
+        == "api"
+    )
+    assert (
+        rippling_slug(route("rippling", board_url="https://ats.rippling.com/hosted/jobs"))
+        == "hosted"
+    )
+    assert rippling_slug(route("rippling")) is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rippling_check_jobs_count_paths_and_invalid_payload():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(
+        "https://ats.rippling.com/api/v2/board/total/jobs",
+        params={"page": 0, "pageSize": 1},
+    ).mock(return_value=httpx.Response(200, json={"totalItems": 4, "items": []}))
+    respx.get(
+        "https://ats.rippling.com/api/v2/board/items/jobs",
+        params={"page": 0, "pageSize": 1},
+    ).mock(return_value=httpx.Response(200, json={"items": [{}, {}]}))
+    respx.get(
+        "https://ats.rippling.com/api/v2/board/broken/jobs",
+        params={"page": 0, "pageSize": 1},
+    ).mock(return_value=httpx.Response(200, json={"items": "bad"}))
+
+    async with build_async_client(settings) as client:
+        assert await RipplingProvider(settings).check_jobs(
+            client, board(), route("rippling", token="total")
+        ) == 4
+        assert await RipplingProvider(settings).check_jobs(
+            client, board(), route("rippling", token="items")
+        ) == 2
+        assert await RipplingProvider(settings).check_jobs(
+            client, board(), route("rippling")
+        ) == 0
+        with pytest.raises(ValueError, match="invalid JSON"):
+            await RipplingProvider(settings).check_jobs(
+                client, board(), route("rippling", token="broken")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_fetch_jobs():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://jobs.example.com/wp-json/wp/v2/job-listings").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 7,
+                    "title": {"rendered": "WordPress Developer"},
+                    "content": {"rendered": "<p>Maintain plugins.</p>"},
+                    "link": "https://jobs.example.com/jobs/wordpress-developer",
+                    "date": "2026-01-01T00:00:00",
+                    "meta": {
+                        "_job_location": "Remote",
+                        "_company_name": "Acme Labs",
+                        "_job_type": "Contract",
+                        "_application": "https://jobs.example.com/apply/7",
+                    },
+                }
+            ],
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await WPJobManagerProvider(settings).fetch_jobs(
+            client,
+            board(),
+            route(
+                "wpjobmanager",
+                board_url="https://jobs.example.com/wp-json/wp/v2/job-listings",
+            ),
+        )
+
+    assert jobs[0].title == "WordPress Developer"
+    assert jobs[0].locations == ["Remote"]
+    assert jobs[0].company == "Acme Labs"
+    assert jobs[0].employment_type == "Contract"
+    assert jobs[0].description == "Maintain plugins."
+    assert jobs[0].apply_url == "https://jobs.example.com/apply/7"
+    assert jobs[0].raw_listing["id"] == 7
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_fetch_jobs_from_ajax_endpoint():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://jobs.example.com/jm-ajax/get_listings/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "found_jobs": True,
+                "max_num_pages": 1,
+                "html": """
+                <ul class="job_listings">
+                  <li class="job_listing">
+                    <a href="https://jobs.example.com/job/support-engineer/">
+                      <div class="position"><h3>Support Engineer</h3></div>
+                      <div class="company"><strong>Acme Labs</strong></div>
+                      <div class="location">Remote</div>
+                    </a>
+                  </li>
+                </ul>
+                """,
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await WPJobManagerProvider(settings).fetch_jobs(
+            client,
+            board(),
+            route(
+                "wpjobmanager",
+                board_url="https://jobs.example.com/jm-ajax/get_listings/",
+            ),
+        )
+
+    assert jobs[0].title == "Support Engineer"
+    assert jobs[0].locations == ["Remote"]
+    assert jobs[0].company == "Acme Labs"
+    assert jobs[0].posting_url == "https://jobs.example.com/job/support-engineer/"
+    assert jobs[0].raw_listing["source"] == "jm-ajax/get_listings"
+
+
+def test_wpjobmanager_route_detection_and_endpoint_derivation():
+    rest_url = "https://jobs.example.com/wp-json/wp/v2/job-listings"
+    ajax_url = "https://jobs.example.com/jm-ajax/get_listings/"
+    rest = WPJobManagerProvider.detect_route(rest_url)
+    ajax = WPJobManagerProvider.detect_route(ajax_url)
+
+    assert rest is not None
+    assert rest.token == "https://jobs.example.com"
+    assert ajax is not None
+    assert ajax.host == "jobs.example.com"
+    assert WPJobManagerProvider.detect_route("https://jobs.example.com/careers") is None
+    assert wpjobmanager_is_rest_endpoint(rest_url)
+    assert wpjobmanager_is_ajax_endpoint(ajax_url)
+    assert wpjobmanager_endpoint(route("wpjobmanager", board_url=rest_url)) == rest_url
+    assert wpjobmanager_endpoint(route("wpjobmanager", board_url=ajax_url)) == ajax_url
+    assert (
+        wpjobmanager_endpoint(route("wpjobmanager", board_url="https://jobs.example.com"))
+        == rest_url
+    )
+    assert (
+        wpjobmanager_endpoint(route("wpjobmanager", token="https://careers.example.com"))
+        == "https://careers.example.com/wp-json/wp/v2/job-listings"
+    )
+    assert (
+        wpjobmanager_endpoint(route("wpjobmanager", host="Jobs.Example.com"))
+        == rest_url
+    )
+    assert wpjobmanager_endpoint(route("wpjobmanager")) is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_check_jobs_count_paths_and_invalid_payload():
+    settings = OpenOppsSettings(cache_enabled=False)
+    rest_url = "https://jobs.example.com/wp-json/wp/v2/job-listings"
+    ajax_url = "https://jobs.example.com/jm-ajax/get_listings/"
+    respx.get(rest_url, params={"per_page": 1}).mock(
+        return_value=httpx.Response(200, json=[{}])
+    )
+    respx.get(ajax_url, params={"page": 1, "per_page": 1}).mock(
+        return_value=httpx.Response(200, json={"total": "7", "html": ""})
+    )
+    respx.get("https://broken.example.com/wp-json/wp/v2/job-listings").mock(
+        return_value=httpx.Response(200, json={"not": "a list"})
+    )
+
+    async with build_async_client(settings) as client:
+        assert await WPJobManagerProvider(settings).check_jobs(
+            client, board(), route("wpjobmanager", board_url=rest_url)
+        ) == 1
+        assert await WPJobManagerProvider(settings).check_jobs(
+            client, board(), route("wpjobmanager", board_url=ajax_url)
+        ) == 7
+        assert await WPJobManagerProvider(settings).check_jobs(
+            client, board(), route("wpjobmanager")
+        ) == 0
+        with pytest.raises(ValueError, match="invalid JSON"):
+            await WPJobManagerProvider(settings).check_jobs(
+                client,
+                board(),
+                route("wpjobmanager", host="broken.example.com"),
+            )

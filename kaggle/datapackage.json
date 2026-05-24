@@ -1,0 +1,3750 @@
+{
+  "description": "Package-derived Kaggle data dictionary for the full OpenOpps SQLite ledger and full table exports. Do not edit by hand; regenerate with scripts/generate_kaggle_metadata.py.",
+  "name": "openoppsdb",
+  "profile": "data-package",
+  "resources": [
+    {
+      "description": "Full SQLite ledger with source, board, provider route, job lifecycle, version history, raw payload snapshot, and sync observation tables.",
+      "format": "sqlite",
+      "mediatype": "application/vnd.sqlite3",
+      "name": "openopps_database",
+      "path": "openopps.sqlite",
+      "tables": [
+        {
+          "description": "Durable source catalogs that discover company boards.",
+          "name": "sources",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable local source key.",
+                "jsonSchemaType": "string",
+                "name": "key",
+                "required": true,
+                "title": "Key",
+                "type": "str"
+              },
+              {
+                "description": "Canonical source URL or synthetic manual source URI.",
+                "jsonSchemaType": "string",
+                "name": "url",
+                "required": true,
+                "title": "Url",
+                "type": "str"
+              },
+              {
+                "description": "Source adapter identifier.",
+                "jsonSchemaType": "string",
+                "name": "provider_id",
+                "required": true,
+                "title": "Provider Id",
+                "type": "str"
+              },
+              {
+                "default": true,
+                "description": "Whether unscoped syncs include this source.",
+                "jsonSchemaType": "boolean",
+                "name": "enabled",
+                "required": false,
+                "title": "Enabled",
+                "type": "bool"
+              },
+              {
+                "description": "Provider version metadata.",
+                "jsonSchemaType": "object",
+                "name": "version",
+                "required": false,
+                "title": "Version",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "description": "Source configuration and sync metadata.",
+                "jsonSchemaType": "object",
+                "name": "raw_metadata",
+                "required": false,
+                "title": "Raw Metadata",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "description": "Unknown top-level record fields preserved across storage round trips.",
+                "jsonSchemaType": "object",
+                "name": "extra_payload",
+                "required": false,
+                "title": "Extra Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "default": null,
+                "description": "Last successful source sync timestamp.",
+                "jsonSchemaType": "string | null",
+                "name": "synced_at",
+                "required": false,
+                "title": "Synced At",
+                "type": "datetime | null"
+              }
+            ]
+          },
+          "title": "Sources"
+        },
+        {
+          "description": "Durable normalized company or organization hiring boards.",
+          "name": "boards",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable normalized board key.",
+                "jsonSchemaType": "string",
+                "name": "key",
+                "required": true,
+                "title": "Key",
+                "type": "str"
+              },
+              {
+                "description": "Source key that emitted this board.",
+                "jsonSchemaType": "string",
+                "name": "source_key",
+                "required": true,
+                "title": "Source Key",
+                "type": "str"
+              },
+              {
+                "description": "All sources that currently contain this board domain.",
+                "jsonSchemaType": "array",
+                "name": "source_keys",
+                "required": false,
+                "title": "Source Keys",
+                "type": "array<str>"
+              },
+              {
+                "description": "Source-specific emitted board keys merged into this board.",
+                "jsonSchemaType": "object",
+                "name": "source_board_keys",
+                "required": false,
+                "title": "Source Board Keys",
+                "type": "object<str, str>"
+              },
+              {
+                "description": "Provider-native board identifier.",
+                "jsonSchemaType": "string",
+                "name": "remote_id",
+                "required": true,
+                "title": "Remote Id",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Provider-native slug.",
+                "jsonSchemaType": "string | null",
+                "name": "remote_slug",
+                "required": false,
+                "title": "Remote Slug",
+                "type": "str | null"
+              },
+              {
+                "description": "Company or board display name.",
+                "jsonSchemaType": "string",
+                "name": "name",
+                "required": true,
+                "title": "Name",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Normalized website domain.",
+                "jsonSchemaType": "string | null",
+                "name": "domain",
+                "required": false,
+                "title": "Domain",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Canonical company website URL.",
+                "jsonSchemaType": "string | null",
+                "name": "website_url",
+                "required": false,
+                "title": "Website Url",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Provider-supplied board description.",
+                "jsonSchemaType": "string | null",
+                "name": "description",
+                "required": false,
+                "title": "Description",
+                "type": "str | null"
+              },
+              {
+                "description": "Industry or market tags.",
+                "jsonSchemaType": "array",
+                "name": "markets",
+                "required": false,
+                "title": "Markets",
+                "type": "array<str>"
+              },
+              {
+                "description": "Office or hiring locations.",
+                "jsonSchemaType": "array",
+                "name": "locations",
+                "required": false,
+                "title": "Locations",
+                "type": "array<str>"
+              },
+              {
+                "default": null,
+                "description": "Employee or team-size estimate.",
+                "jsonSchemaType": "integer | null",
+                "name": "staff_count",
+                "required": false,
+                "title": "Staff Count",
+                "type": "int | null"
+              },
+              {
+                "default": null,
+                "description": "Approximate number of open jobs.",
+                "jsonSchemaType": "integer | null",
+                "name": "num_jobs_hint",
+                "required": false,
+                "title": "Num Jobs Hint",
+                "type": "int | null"
+              },
+              {
+                "description": "Unmodified upstream board payload.",
+                "jsonSchemaType": "object",
+                "name": "raw_payload",
+                "required": false,
+                "title": "Raw Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "description": "Unknown top-level record fields preserved across storage round trips.",
+                "jsonSchemaType": "object",
+                "name": "extra_payload",
+                "required": false,
+                "title": "Extra Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "default": null,
+                "description": "Last successful board sync timestamp.",
+                "jsonSchemaType": "string | null",
+                "name": "synced_at",
+                "required": false,
+                "title": "Synced At",
+                "type": "datetime | null"
+              }
+            ]
+          },
+          "title": "Boards"
+        },
+        {
+          "description": "Durable provider routes that connect boards to upstream systems.",
+          "name": "board_providers",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable route primary key.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Source key that reported this route.",
+                "jsonSchemaType": "string",
+                "name": "source_key",
+                "required": true,
+                "title": "Source Key",
+                "type": "str"
+              },
+              {
+                "description": "Board key this route belongs to.",
+                "jsonSchemaType": "string",
+                "name": "board_key",
+                "required": true,
+                "title": "Board Key",
+                "type": "str"
+              },
+              {
+                "description": "Provider adapter identifier.",
+                "jsonSchemaType": "string",
+                "name": "provider_id",
+                "required": true,
+                "title": "Provider Id",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Human-readable upstream route label.",
+                "jsonSchemaType": "string | null",
+                "name": "label",
+                "required": false,
+                "title": "Label",
+                "type": "str | null"
+              },
+              {
+                "description": "Normalized provider support level.",
+                "jsonSchemaType": "string",
+                "name": "support_level",
+                "required": true,
+                "title": "Support Level",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Approximate provider-reported job count.",
+                "jsonSchemaType": "integer | null",
+                "name": "count_hint",
+                "required": false,
+                "title": "Count Hint",
+                "type": "int | null"
+              },
+              {
+                "default": null,
+                "description": "Hosted job board URL.",
+                "jsonSchemaType": "string | null",
+                "name": "board_url",
+                "required": false,
+                "title": "Board Url",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Provider-specific board token or slug.",
+                "jsonSchemaType": "string | null",
+                "name": "token",
+                "required": false,
+                "title": "Token",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Multi-tenant provider host.",
+                "jsonSchemaType": "string | null",
+                "name": "host",
+                "required": false,
+                "title": "Host",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Multi-tenant provider tenant.",
+                "jsonSchemaType": "string | null",
+                "name": "tenant",
+                "required": false,
+                "title": "Tenant",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Multi-tenant provider site path.",
+                "jsonSchemaType": "string | null",
+                "name": "site",
+                "required": false,
+                "title": "Site",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Last probe or sync status.",
+                "jsonSchemaType": "string | null",
+                "name": "last_status",
+                "required": false,
+                "title": "Last Status",
+                "type": "str | null"
+              },
+              {
+                "description": "Unmodified upstream route payload.",
+                "jsonSchemaType": "object",
+                "name": "raw_payload",
+                "required": false,
+                "title": "Raw Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "description": "Unknown top-level record fields preserved across storage round trips.",
+                "jsonSchemaType": "object",
+                "name": "extra_payload",
+                "required": false,
+                "title": "Extra Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "default": null,
+                "description": "Route discovery timestamp.",
+                "jsonSchemaType": "string | null",
+                "name": "detected_at",
+                "required": false,
+                "title": "Detected At",
+                "type": "datetime | null"
+              }
+            ]
+          },
+          "title": "Board Providers"
+        },
+        {
+          "description": "Stable job identities and lifecycle state.",
+          "name": "jobs",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable normalized job identity.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Board key this job belongs to.",
+                "jsonSchemaType": "string",
+                "name": "board_key",
+                "required": true,
+                "title": "Board Key",
+                "type": "str"
+              },
+              {
+                "description": "Provider adapter identifier.",
+                "jsonSchemaType": "string",
+                "name": "provider_id",
+                "required": true,
+                "title": "Provider Id",
+                "type": "str"
+              },
+              {
+                "description": "Provider-native job identifier.",
+                "jsonSchemaType": "string",
+                "name": "remote_id",
+                "required": true,
+                "title": "Remote Id",
+                "type": "str"
+              },
+              {
+                "default": "open",
+                "description": "Current lifecycle status for the stable job identity.",
+                "jsonSchemaType": "string",
+                "name": "status",
+                "required": false,
+                "title": "Status",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Current normalized job version id.",
+                "jsonSchemaType": "string | null",
+                "name": "current_version_id",
+                "required": false,
+                "title": "Current Version Id",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Current normalized content hash.",
+                "jsonSchemaType": "string | null",
+                "name": "current_content_hash",
+                "required": false,
+                "title": "Current Content Hash",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Current raw payload-pair hash.",
+                "jsonSchemaType": "string | null",
+                "name": "current_payload_hash",
+                "required": false,
+                "title": "Current Payload Hash",
+                "type": "str | null"
+              },
+              {
+                "description": "First successful route sync that observed this job identity.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "first_seen_at",
+                "required": false,
+                "title": "First Seen At",
+                "type": "datetime"
+              },
+              {
+                "description": "Most recent successful route sync that observed this job identity.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "last_seen_at",
+                "required": false,
+                "title": "Last Seen At",
+                "type": "datetime"
+              },
+              {
+                "default": null,
+                "description": "Route sync timestamp when this job disappeared while open.",
+                "jsonSchemaType": "string | null",
+                "name": "closed_at",
+                "required": false,
+                "title": "Closed At",
+                "type": "datetime | null"
+              },
+              {
+                "description": "Last successful lifecycle update timestamp.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "synced_at",
+                "required": false,
+                "title": "Synced At",
+                "type": "datetime"
+              },
+              {
+                "description": "Unknown top-level identity fields preserved across storage round trips.",
+                "jsonSchemaType": "object",
+                "name": "extra_payload",
+                "required": false,
+                "title": "Extra Payload",
+                "type": "object<str, JsonValue>"
+              }
+            ]
+          },
+          "title": "Jobs"
+        },
+        {
+          "description": "Versioned normalized job content snapshots.",
+          "name": "job_versions",
+          "schema": {
+            "fields": [
+              {
+                "description": "Job version id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Stable job id.",
+                "jsonSchemaType": "string",
+                "name": "job_id",
+                "required": true,
+                "title": "Job Id",
+                "type": "str"
+              },
+              {
+                "description": "Monotonic version number.",
+                "jsonSchemaType": "integer",
+                "name": "version",
+                "required": true,
+                "title": "Version",
+                "type": "int"
+              },
+              {
+                "description": "Normalized user-visible content hash.",
+                "jsonSchemaType": "string",
+                "name": "content_hash",
+                "required": true,
+                "title": "Content Hash",
+                "type": "str"
+              },
+              {
+                "description": "Raw payload-pair hash observed for version.",
+                "jsonSchemaType": "string",
+                "name": "payload_hash",
+                "required": true,
+                "title": "Payload Hash",
+                "type": "str"
+              },
+              {
+                "description": "Public job title.",
+                "jsonSchemaType": "string",
+                "name": "title",
+                "required": true,
+                "title": "Title",
+                "type": "str"
+              },
+              {
+                "description": "Provider-reported job locations.",
+                "jsonSchemaType": "array",
+                "name": "locations",
+                "required": false,
+                "title": "Locations",
+                "type": "array<str>"
+              },
+              {
+                "default": null,
+                "description": "Provider-reported department.",
+                "jsonSchemaType": "string | null",
+                "name": "department",
+                "required": false,
+                "title": "Department",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Provider-reported team or group.",
+                "jsonSchemaType": "string | null",
+                "name": "team",
+                "required": false,
+                "title": "Team",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Workplace, commitment, or time-type label.",
+                "jsonSchemaType": "string | null",
+                "name": "workplace_type",
+                "required": false,
+                "title": "Workplace Type",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Board or company display name.",
+                "jsonSchemaType": "string | null",
+                "name": "company",
+                "required": false,
+                "title": "Company",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Employment or commitment type.",
+                "jsonSchemaType": "string | null",
+                "name": "employment_type",
+                "required": false,
+                "title": "Employment Type",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Plain-text provider job description.",
+                "jsonSchemaType": "string | null",
+                "name": "description",
+                "required": false,
+                "title": "Description",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "HTML provider job description.",
+                "jsonSchemaType": "string | null",
+                "name": "description_html",
+                "required": false,
+                "title": "Description Html",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "JSON Resume-compatible remote work level.",
+                "jsonSchemaType": "string | null",
+                "name": "remote",
+                "required": false,
+                "title": "Remote",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Provider compensation payload or normalized compensation details.",
+                "jsonSchemaType": "object | null",
+                "name": "compensation",
+                "required": false,
+                "title": "Compensation",
+                "type": "object<str, JsonValue> | null"
+              },
+              {
+                "default": null,
+                "description": "JSON Resume-compatible salary display string.",
+                "jsonSchemaType": "string | null",
+                "name": "salary",
+                "required": false,
+                "title": "Salary",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Minimum deterministic salary or compensation value.",
+                "jsonSchemaType": "number | null",
+                "name": "salary_min",
+                "required": false,
+                "title": "Salary Min",
+                "type": "float | null"
+              },
+              {
+                "default": null,
+                "description": "Maximum deterministic salary or compensation value.",
+                "jsonSchemaType": "number | null",
+                "name": "salary_max",
+                "required": false,
+                "title": "Salary Max",
+                "type": "float | null"
+              },
+              {
+                "default": null,
+                "description": "Salary or compensation currency code.",
+                "jsonSchemaType": "string | null",
+                "name": "salary_currency",
+                "required": false,
+                "title": "Salary Currency",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Experience label when deterministically available.",
+                "jsonSchemaType": "string | null",
+                "name": "experience",
+                "required": false,
+                "title": "Experience",
+                "type": "str | null"
+              },
+              {
+                "description": "Deterministic responsibility bullets.",
+                "jsonSchemaType": "array",
+                "name": "responsibilities",
+                "required": false,
+                "title": "Responsibilities",
+                "type": "array<str>"
+              },
+              {
+                "description": "Deterministic qualification bullets.",
+                "jsonSchemaType": "array",
+                "name": "qualifications",
+                "required": false,
+                "title": "Qualifications",
+                "type": "array<str>"
+              },
+              {
+                "description": "JSON Resume-compatible skill objects.",
+                "jsonSchemaType": "array",
+                "name": "skills",
+                "required": false,
+                "title": "Skills",
+                "type": "array<object<str, JsonValue>>"
+              },
+              {
+                "default": null,
+                "description": "JSON Resume-compatible job-description object.",
+                "jsonSchemaType": "object | null",
+                "name": "job_description",
+                "required": false,
+                "title": "Job Description",
+                "type": "object<str, JsonValue> | null"
+              },
+              {
+                "default": null,
+                "description": "Canonical public posting URL.",
+                "jsonSchemaType": "string | null",
+                "name": "posting_url",
+                "required": false,
+                "title": "Posting Url",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Direct application URL.",
+                "jsonSchemaType": "string | null",
+                "name": "apply_url",
+                "required": false,
+                "title": "Apply Url",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Provider-native posted timestamp.",
+                "jsonSchemaType": "string | null",
+                "name": "posted_at",
+                "required": false,
+                "title": "Posted At",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Provider-native updated timestamp.",
+                "jsonSchemaType": "string | null",
+                "name": "updated_at",
+                "required": false,
+                "title": "Updated At",
+                "type": "str | null"
+              },
+              {
+                "description": "Unknown top-level version fields preserved across storage round trips.",
+                "jsonSchemaType": "object",
+                "name": "extra_payload",
+                "required": false,
+                "title": "Extra Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "description": "First sync timestamp that observed this normalized content.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "first_seen_at",
+                "required": false,
+                "title": "First Seen At",
+                "type": "datetime"
+              },
+              {
+                "description": "Most recent sync timestamp that observed this normalized content.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "last_seen_at",
+                "required": false,
+                "title": "Last Seen At",
+                "type": "datetime"
+              },
+              {
+                "description": "UTC timestamp when this version row was created.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "created_at",
+                "required": false,
+                "title": "Created At",
+                "type": "datetime"
+              }
+            ]
+          },
+          "title": "Job Versions"
+        },
+        {
+          "description": "Indexed location labels for each normalized job version.",
+          "name": "job_version_locations",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable job-version location row id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Job version this location belongs to.",
+                "jsonSchemaType": "string",
+                "name": "job_version_id",
+                "required": true,
+                "title": "Job Version Id",
+                "type": "str"
+              },
+              {
+                "description": "Zero-based location order within the job version.",
+                "jsonSchemaType": "integer",
+                "name": "ordinal",
+                "required": true,
+                "title": "Ordinal",
+                "type": "int"
+              },
+              {
+                "description": "Location label text.",
+                "jsonSchemaType": "string",
+                "name": "label",
+                "required": true,
+                "title": "Label",
+                "type": "str"
+              }
+            ]
+          },
+          "title": "Job Version Locations"
+        },
+        {
+          "description": "Indexed skill groups for each normalized job version.",
+          "name": "job_version_skills",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable job-version skill row id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Job version this skill group belongs to.",
+                "jsonSchemaType": "string",
+                "name": "job_version_id",
+                "required": true,
+                "title": "Job Version Id",
+                "type": "str"
+              },
+              {
+                "description": "Zero-based skill order within the job version.",
+                "jsonSchemaType": "integer",
+                "name": "ordinal",
+                "required": true,
+                "title": "Ordinal",
+                "type": "int"
+              },
+              {
+                "default": null,
+                "description": "Skill group display name.",
+                "jsonSchemaType": "string | null",
+                "name": "name",
+                "required": false,
+                "title": "Name",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Skill group proficiency or level label.",
+                "jsonSchemaType": "string | null",
+                "name": "level",
+                "required": false,
+                "title": "Level",
+                "type": "str | null"
+              }
+            ]
+          },
+          "title": "Job Version Skills"
+        },
+        {
+          "description": "Indexed skill keywords for each normalized job version skill.",
+          "name": "job_version_skill_keywords",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable job-version skill keyword row id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Skill group this keyword belongs to.",
+                "jsonSchemaType": "string",
+                "name": "skill_id",
+                "required": true,
+                "title": "Skill Id",
+                "type": "str"
+              },
+              {
+                "description": "Zero-based keyword order within the skill group.",
+                "jsonSchemaType": "integer",
+                "name": "ordinal",
+                "required": true,
+                "title": "Ordinal",
+                "type": "int"
+              },
+              {
+                "description": "Skill keyword text.",
+                "jsonSchemaType": "string",
+                "name": "keyword",
+                "required": true,
+                "title": "Keyword",
+                "type": "str"
+              }
+            ]
+          },
+          "title": "Job Version Skill Keywords"
+        },
+        {
+          "description": "Indexed responsibility and qualification bullets for each job version.",
+          "name": "job_version_bullets",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable job-version bullet row id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Job version this bullet belongs to.",
+                "jsonSchemaType": "string",
+                "name": "job_version_id",
+                "required": true,
+                "title": "Job Version Id",
+                "type": "str"
+              },
+              {
+                "description": "Bullet category, such as responsibility or qualification.",
+                "jsonSchemaType": "string",
+                "name": "kind",
+                "required": true,
+                "title": "Kind",
+                "type": "str"
+              },
+              {
+                "description": "Zero-based bullet order within its category.",
+                "jsonSchemaType": "integer",
+                "name": "ordinal",
+                "required": true,
+                "title": "Ordinal",
+                "type": "int"
+              },
+              {
+                "description": "Bullet text.",
+                "jsonSchemaType": "string",
+                "name": "text",
+                "required": true,
+                "title": "Text",
+                "type": "str"
+              }
+            ]
+          },
+          "title": "Job Version Bullets"
+        },
+        {
+          "description": "Raw upstream payload snapshots for audit and replay.",
+          "name": "job_payload_snapshots",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable raw payload snapshot row id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Stable job identity this raw payload belongs to.",
+                "jsonSchemaType": "string",
+                "name": "job_id",
+                "required": true,
+                "title": "Job Id",
+                "type": "str"
+              },
+              {
+                "description": "Raw payload source kind, such as listing or detail.",
+                "jsonSchemaType": "string",
+                "name": "payload_kind",
+                "required": true,
+                "title": "Payload Kind",
+                "type": "str"
+              },
+              {
+                "description": "Canonical hash of the unmodified raw payload.",
+                "jsonSchemaType": "string",
+                "name": "payload_hash",
+                "required": true,
+                "title": "Payload Hash",
+                "type": "str"
+              },
+              {
+                "description": "Unmodified upstream payload for audit and replay.",
+                "jsonSchemaType": "object",
+                "name": "payload",
+                "required": false,
+                "title": "Payload",
+                "type": "object<str, JsonValue>"
+              },
+              {
+                "description": "UTC sync timestamp when this raw payload was observed.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "observed_at",
+                "required": false,
+                "title": "Observed At",
+                "type": "datetime"
+              }
+            ]
+          },
+          "title": "Job Payload Snapshots"
+        },
+        {
+          "description": "Provider route sync attempts and aggregate change counts.",
+          "name": "job_sync_runs",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable provider route sync run id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Board key synced during this provider route run.",
+                "jsonSchemaType": "string",
+                "name": "board_key",
+                "required": true,
+                "title": "Board Key",
+                "type": "str"
+              },
+              {
+                "description": "Provider route synced during this run.",
+                "jsonSchemaType": "string",
+                "name": "provider_id",
+                "required": true,
+                "title": "Provider Id",
+                "type": "str"
+              },
+              {
+                "description": "UTC timestamp for this provider route sync attempt.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "synced_at",
+                "required": false,
+                "title": "Synced At",
+                "type": "datetime"
+              },
+              {
+                "default": true,
+                "description": "Whether the route sync completed.",
+                "jsonSchemaType": "boolean",
+                "name": "success",
+                "required": false,
+                "title": "Success",
+                "type": "bool"
+              },
+              {
+                "default": null,
+                "description": "Error message captured for failed route syncs.",
+                "jsonSchemaType": "string | null",
+                "name": "error",
+                "required": false,
+                "title": "Error",
+                "type": "str | null"
+              },
+              {
+                "default": 0,
+                "description": "Total jobs observed in the route sync.",
+                "jsonSchemaType": "integer",
+                "name": "job_count",
+                "required": false,
+                "title": "Job Count",
+                "type": "int"
+              },
+              {
+                "default": 0,
+                "description": "Jobs newly created by the route sync.",
+                "jsonSchemaType": "integer",
+                "name": "new_count",
+                "required": false,
+                "title": "New Count",
+                "type": "int"
+              },
+              {
+                "default": 0,
+                "description": "Jobs observed without content changes.",
+                "jsonSchemaType": "integer",
+                "name": "unchanged_count",
+                "required": false,
+                "title": "Unchanged Count",
+                "type": "int"
+              },
+              {
+                "default": 0,
+                "description": "Jobs with a new normalized content version.",
+                "jsonSchemaType": "integer",
+                "name": "changed_count",
+                "required": false,
+                "title": "Changed Count",
+                "type": "int"
+              },
+              {
+                "default": 0,
+                "description": "Previously closed jobs reopened by the route sync.",
+                "jsonSchemaType": "integer",
+                "name": "reopened_count",
+                "required": false,
+                "title": "Reopened Count",
+                "type": "int"
+              },
+              {
+                "default": 0,
+                "description": "Previously open jobs closed by the route sync.",
+                "jsonSchemaType": "integer",
+                "name": "closed_count",
+                "required": false,
+                "title": "Closed Count",
+                "type": "int"
+              }
+            ]
+          },
+          "title": "Job Sync Runs"
+        },
+        {
+          "description": "Per-job observations recorded during provider route syncs.",
+          "name": "job_sync_observations",
+          "schema": {
+            "fields": [
+              {
+                "description": "Stable sync observation row id.",
+                "jsonSchemaType": "string",
+                "name": "id",
+                "required": true,
+                "title": "Id",
+                "type": "str"
+              },
+              {
+                "description": "Route sync run that recorded this observation.",
+                "jsonSchemaType": "string",
+                "name": "sync_run_id",
+                "required": true,
+                "title": "Sync Run Id",
+                "type": "str"
+              },
+              {
+                "description": "Stable job identity observed during sync.",
+                "jsonSchemaType": "string",
+                "name": "job_id",
+                "required": true,
+                "title": "Job Id",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Normalized job version associated with this observation.",
+                "jsonSchemaType": "string | null",
+                "name": "job_version_id",
+                "required": false,
+                "title": "Job Version Id",
+                "type": "str | null"
+              },
+              {
+                "description": "Observation category, such as new, unchanged, changed, reopened, or closed.",
+                "jsonSchemaType": "string",
+                "name": "observation_kind",
+                "required": true,
+                "title": "Observation Kind",
+                "type": "str"
+              },
+              {
+                "default": null,
+                "description": "Normalized content hash observed during sync.",
+                "jsonSchemaType": "string | null",
+                "name": "content_hash",
+                "required": false,
+                "title": "Content Hash",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "Raw payload-pair hash observed during sync.",
+                "jsonSchemaType": "string | null",
+                "name": "payload_hash",
+                "required": false,
+                "title": "Payload Hash",
+                "type": "str | null"
+              },
+              {
+                "description": "UTC timestamp when the observation was recorded.",
+                "format": "date-time",
+                "jsonSchemaType": "string",
+                "name": "observed_at",
+                "required": false,
+                "title": "Observed At",
+                "type": "datetime"
+              }
+            ]
+          },
+          "title": "Job Sync Observations"
+        }
+      ],
+      "title": "Openopps Database"
+    },
+    {
+      "description": "Full CSV table export for Durable source catalogs that discover company boards.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "sources_csv",
+      "path": "exports/csv/sources.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable local source key.",
+            "jsonSchemaType": "string",
+            "name": "key",
+            "required": true,
+            "title": "Key",
+            "type": "str"
+          },
+          {
+            "description": "Canonical source URL or synthetic manual source URI.",
+            "jsonSchemaType": "string",
+            "name": "url",
+            "required": true,
+            "title": "Url",
+            "type": "str"
+          },
+          {
+            "description": "Source adapter identifier.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "default": true,
+            "description": "Whether unscoped syncs include this source.",
+            "jsonSchemaType": "boolean",
+            "name": "enabled",
+            "required": false,
+            "title": "Enabled",
+            "type": "bool"
+          },
+          {
+            "description": "Provider version metadata.",
+            "jsonSchemaType": "object",
+            "name": "version",
+            "required": false,
+            "title": "Version",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Source configuration and sync metadata.",
+            "jsonSchemaType": "object",
+            "name": "raw_metadata",
+            "required": false,
+            "title": "Raw Metadata",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Unknown top-level record fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "default": null,
+            "description": "Last successful source sync timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime | null"
+          }
+        ]
+      },
+      "title": "SourceRow"
+    },
+    {
+      "description": "Full CSV table export for Durable normalized company or organization hiring boards.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "boards_csv",
+      "path": "exports/csv/boards.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable normalized board key.",
+            "jsonSchemaType": "string",
+            "name": "key",
+            "required": true,
+            "title": "Key",
+            "type": "str"
+          },
+          {
+            "description": "Source key that emitted this board.",
+            "jsonSchemaType": "string",
+            "name": "source_key",
+            "required": true,
+            "title": "Source Key",
+            "type": "str"
+          },
+          {
+            "description": "All sources that currently contain this board domain.",
+            "jsonSchemaType": "array",
+            "name": "source_keys",
+            "required": false,
+            "title": "Source Keys",
+            "type": "array<str>"
+          },
+          {
+            "description": "Source-specific emitted board keys merged into this board.",
+            "jsonSchemaType": "object",
+            "name": "source_board_keys",
+            "required": false,
+            "title": "Source Board Keys",
+            "type": "object<str, str>"
+          },
+          {
+            "description": "Provider-native board identifier.",
+            "jsonSchemaType": "string",
+            "name": "remote_id",
+            "required": true,
+            "title": "Remote Id",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Provider-native slug.",
+            "jsonSchemaType": "string | null",
+            "name": "remote_slug",
+            "required": false,
+            "title": "Remote Slug",
+            "type": "str | null"
+          },
+          {
+            "description": "Company or board display name.",
+            "jsonSchemaType": "string",
+            "name": "name",
+            "required": true,
+            "title": "Name",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Normalized website domain.",
+            "jsonSchemaType": "string | null",
+            "name": "domain",
+            "required": false,
+            "title": "Domain",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Canonical company website URL.",
+            "jsonSchemaType": "string | null",
+            "name": "website_url",
+            "required": false,
+            "title": "Website Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-supplied board description.",
+            "jsonSchemaType": "string | null",
+            "name": "description",
+            "required": false,
+            "title": "Description",
+            "type": "str | null"
+          },
+          {
+            "description": "Industry or market tags.",
+            "jsonSchemaType": "array",
+            "name": "markets",
+            "required": false,
+            "title": "Markets",
+            "type": "array<str>"
+          },
+          {
+            "description": "Office or hiring locations.",
+            "jsonSchemaType": "array",
+            "name": "locations",
+            "required": false,
+            "title": "Locations",
+            "type": "array<str>"
+          },
+          {
+            "default": null,
+            "description": "Employee or team-size estimate.",
+            "jsonSchemaType": "integer | null",
+            "name": "staff_count",
+            "required": false,
+            "title": "Staff Count",
+            "type": "int | null"
+          },
+          {
+            "default": null,
+            "description": "Approximate number of open jobs.",
+            "jsonSchemaType": "integer | null",
+            "name": "num_jobs_hint",
+            "required": false,
+            "title": "Num Jobs Hint",
+            "type": "int | null"
+          },
+          {
+            "description": "Unmodified upstream board payload.",
+            "jsonSchemaType": "object",
+            "name": "raw_payload",
+            "required": false,
+            "title": "Raw Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Unknown top-level record fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "default": null,
+            "description": "Last successful board sync timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime | null"
+          }
+        ]
+      },
+      "title": "BoardRow"
+    },
+    {
+      "description": "Full CSV table export for Durable provider routes that connect boards to upstream systems.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "board_providers_csv",
+      "path": "exports/csv/board_providers.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable route primary key.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Source key that reported this route.",
+            "jsonSchemaType": "string",
+            "name": "source_key",
+            "required": true,
+            "title": "Source Key",
+            "type": "str"
+          },
+          {
+            "description": "Board key this route belongs to.",
+            "jsonSchemaType": "string",
+            "name": "board_key",
+            "required": true,
+            "title": "Board Key",
+            "type": "str"
+          },
+          {
+            "description": "Provider adapter identifier.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Human-readable upstream route label.",
+            "jsonSchemaType": "string | null",
+            "name": "label",
+            "required": false,
+            "title": "Label",
+            "type": "str | null"
+          },
+          {
+            "description": "Normalized provider support level.",
+            "jsonSchemaType": "string",
+            "name": "support_level",
+            "required": true,
+            "title": "Support Level",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Approximate provider-reported job count.",
+            "jsonSchemaType": "integer | null",
+            "name": "count_hint",
+            "required": false,
+            "title": "Count Hint",
+            "type": "int | null"
+          },
+          {
+            "default": null,
+            "description": "Hosted job board URL.",
+            "jsonSchemaType": "string | null",
+            "name": "board_url",
+            "required": false,
+            "title": "Board Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-specific board token or slug.",
+            "jsonSchemaType": "string | null",
+            "name": "token",
+            "required": false,
+            "title": "Token",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Multi-tenant provider host.",
+            "jsonSchemaType": "string | null",
+            "name": "host",
+            "required": false,
+            "title": "Host",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Multi-tenant provider tenant.",
+            "jsonSchemaType": "string | null",
+            "name": "tenant",
+            "required": false,
+            "title": "Tenant",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Multi-tenant provider site path.",
+            "jsonSchemaType": "string | null",
+            "name": "site",
+            "required": false,
+            "title": "Site",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Last probe or sync status.",
+            "jsonSchemaType": "string | null",
+            "name": "last_status",
+            "required": false,
+            "title": "Last Status",
+            "type": "str | null"
+          },
+          {
+            "description": "Unmodified upstream route payload.",
+            "jsonSchemaType": "object",
+            "name": "raw_payload",
+            "required": false,
+            "title": "Raw Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Unknown top-level record fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "default": null,
+            "description": "Route discovery timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "detected_at",
+            "required": false,
+            "title": "Detected At",
+            "type": "datetime | null"
+          }
+        ]
+      },
+      "title": "BoardProviderRow"
+    },
+    {
+      "description": "Full CSV table export for Stable job identities and lifecycle state.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "jobs_csv",
+      "path": "exports/csv/jobs.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable normalized job identity.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Board key this job belongs to.",
+            "jsonSchemaType": "string",
+            "name": "board_key",
+            "required": true,
+            "title": "Board Key",
+            "type": "str"
+          },
+          {
+            "description": "Provider adapter identifier.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "description": "Provider-native job identifier.",
+            "jsonSchemaType": "string",
+            "name": "remote_id",
+            "required": true,
+            "title": "Remote Id",
+            "type": "str"
+          },
+          {
+            "default": "open",
+            "description": "Current lifecycle status for the stable job identity.",
+            "jsonSchemaType": "string",
+            "name": "status",
+            "required": false,
+            "title": "Status",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Current normalized job version id.",
+            "jsonSchemaType": "string | null",
+            "name": "current_version_id",
+            "required": false,
+            "title": "Current Version Id",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Current normalized content hash.",
+            "jsonSchemaType": "string | null",
+            "name": "current_content_hash",
+            "required": false,
+            "title": "Current Content Hash",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Current raw payload-pair hash.",
+            "jsonSchemaType": "string | null",
+            "name": "current_payload_hash",
+            "required": false,
+            "title": "Current Payload Hash",
+            "type": "str | null"
+          },
+          {
+            "description": "First successful route sync that observed this job identity.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "first_seen_at",
+            "required": false,
+            "title": "First Seen At",
+            "type": "datetime"
+          },
+          {
+            "description": "Most recent successful route sync that observed this job identity.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "last_seen_at",
+            "required": false,
+            "title": "Last Seen At",
+            "type": "datetime"
+          },
+          {
+            "default": null,
+            "description": "Route sync timestamp when this job disappeared while open.",
+            "jsonSchemaType": "string | null",
+            "name": "closed_at",
+            "required": false,
+            "title": "Closed At",
+            "type": "datetime | null"
+          },
+          {
+            "description": "Last successful lifecycle update timestamp.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime"
+          },
+          {
+            "description": "Unknown top-level identity fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          }
+        ]
+      },
+      "title": "JobRow"
+    },
+    {
+      "description": "Full CSV table export for Versioned normalized job content snapshots.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_versions_csv",
+      "path": "exports/csv/job_versions.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Job version id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Stable job id.",
+            "jsonSchemaType": "string",
+            "name": "job_id",
+            "required": true,
+            "title": "Job Id",
+            "type": "str"
+          },
+          {
+            "description": "Monotonic version number.",
+            "jsonSchemaType": "integer",
+            "name": "version",
+            "required": true,
+            "title": "Version",
+            "type": "int"
+          },
+          {
+            "description": "Normalized user-visible content hash.",
+            "jsonSchemaType": "string",
+            "name": "content_hash",
+            "required": true,
+            "title": "Content Hash",
+            "type": "str"
+          },
+          {
+            "description": "Raw payload-pair hash observed for version.",
+            "jsonSchemaType": "string",
+            "name": "payload_hash",
+            "required": true,
+            "title": "Payload Hash",
+            "type": "str"
+          },
+          {
+            "description": "Public job title.",
+            "jsonSchemaType": "string",
+            "name": "title",
+            "required": true,
+            "title": "Title",
+            "type": "str"
+          },
+          {
+            "description": "Provider-reported job locations.",
+            "jsonSchemaType": "array",
+            "name": "locations",
+            "required": false,
+            "title": "Locations",
+            "type": "array<str>"
+          },
+          {
+            "default": null,
+            "description": "Provider-reported department.",
+            "jsonSchemaType": "string | null",
+            "name": "department",
+            "required": false,
+            "title": "Department",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-reported team or group.",
+            "jsonSchemaType": "string | null",
+            "name": "team",
+            "required": false,
+            "title": "Team",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Workplace, commitment, or time-type label.",
+            "jsonSchemaType": "string | null",
+            "name": "workplace_type",
+            "required": false,
+            "title": "Workplace Type",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Board or company display name.",
+            "jsonSchemaType": "string | null",
+            "name": "company",
+            "required": false,
+            "title": "Company",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Employment or commitment type.",
+            "jsonSchemaType": "string | null",
+            "name": "employment_type",
+            "required": false,
+            "title": "Employment Type",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Plain-text provider job description.",
+            "jsonSchemaType": "string | null",
+            "name": "description",
+            "required": false,
+            "title": "Description",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "HTML provider job description.",
+            "jsonSchemaType": "string | null",
+            "name": "description_html",
+            "required": false,
+            "title": "Description Html",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON Resume-compatible remote work level.",
+            "jsonSchemaType": "string | null",
+            "name": "remote",
+            "required": false,
+            "title": "Remote",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider compensation payload or normalized compensation details.",
+            "jsonSchemaType": "object | null",
+            "name": "compensation",
+            "required": false,
+            "title": "Compensation",
+            "type": "object<str, JsonValue> | null"
+          },
+          {
+            "default": null,
+            "description": "JSON Resume-compatible salary display string.",
+            "jsonSchemaType": "string | null",
+            "name": "salary",
+            "required": false,
+            "title": "Salary",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Minimum deterministic salary or compensation value.",
+            "jsonSchemaType": "number | null",
+            "name": "salary_min",
+            "required": false,
+            "title": "Salary Min",
+            "type": "float | null"
+          },
+          {
+            "default": null,
+            "description": "Maximum deterministic salary or compensation value.",
+            "jsonSchemaType": "number | null",
+            "name": "salary_max",
+            "required": false,
+            "title": "Salary Max",
+            "type": "float | null"
+          },
+          {
+            "default": null,
+            "description": "Salary or compensation currency code.",
+            "jsonSchemaType": "string | null",
+            "name": "salary_currency",
+            "required": false,
+            "title": "Salary Currency",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Experience label when deterministically available.",
+            "jsonSchemaType": "string | null",
+            "name": "experience",
+            "required": false,
+            "title": "Experience",
+            "type": "str | null"
+          },
+          {
+            "description": "Deterministic responsibility bullets.",
+            "jsonSchemaType": "array",
+            "name": "responsibilities",
+            "required": false,
+            "title": "Responsibilities",
+            "type": "array<str>"
+          },
+          {
+            "description": "Deterministic qualification bullets.",
+            "jsonSchemaType": "array",
+            "name": "qualifications",
+            "required": false,
+            "title": "Qualifications",
+            "type": "array<str>"
+          },
+          {
+            "description": "JSON Resume-compatible skill objects.",
+            "jsonSchemaType": "array",
+            "name": "skills",
+            "required": false,
+            "title": "Skills",
+            "type": "array<object<str, JsonValue>>"
+          },
+          {
+            "default": null,
+            "description": "JSON Resume-compatible job-description object.",
+            "jsonSchemaType": "object | null",
+            "name": "job_description",
+            "required": false,
+            "title": "Job Description",
+            "type": "object<str, JsonValue> | null"
+          },
+          {
+            "default": null,
+            "description": "Canonical public posting URL.",
+            "jsonSchemaType": "string | null",
+            "name": "posting_url",
+            "required": false,
+            "title": "Posting Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Direct application URL.",
+            "jsonSchemaType": "string | null",
+            "name": "apply_url",
+            "required": false,
+            "title": "Apply Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-native posted timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "posted_at",
+            "required": false,
+            "title": "Posted At",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-native updated timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "updated_at",
+            "required": false,
+            "title": "Updated At",
+            "type": "str | null"
+          },
+          {
+            "description": "Unknown top-level version fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "First sync timestamp that observed this normalized content.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "first_seen_at",
+            "required": false,
+            "title": "First Seen At",
+            "type": "datetime"
+          },
+          {
+            "description": "Most recent sync timestamp that observed this normalized content.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "last_seen_at",
+            "required": false,
+            "title": "Last Seen At",
+            "type": "datetime"
+          },
+          {
+            "description": "UTC timestamp when this version row was created.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "created_at",
+            "required": false,
+            "title": "Created At",
+            "type": "datetime"
+          }
+        ]
+      },
+      "title": "JobVersionRow"
+    },
+    {
+      "description": "Full CSV table export for Indexed location labels for each normalized job version.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_version_locations_csv",
+      "path": "exports/csv/job_version_locations.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version location row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Job version this location belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_version_id",
+            "required": true,
+            "title": "Job Version Id",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based location order within the job version.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "description": "Location label text.",
+            "jsonSchemaType": "string",
+            "name": "label",
+            "required": true,
+            "title": "Label",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "JobVersionLocationRow"
+    },
+    {
+      "description": "Full CSV table export for Indexed skill groups for each normalized job version.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_version_skills_csv",
+      "path": "exports/csv/job_version_skills.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version skill row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Job version this skill group belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_version_id",
+            "required": true,
+            "title": "Job Version Id",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based skill order within the job version.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "default": null,
+            "description": "Skill group display name.",
+            "jsonSchemaType": "string | null",
+            "name": "name",
+            "required": false,
+            "title": "Name",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Skill group proficiency or level label.",
+            "jsonSchemaType": "string | null",
+            "name": "level",
+            "required": false,
+            "title": "Level",
+            "type": "str | null"
+          }
+        ]
+      },
+      "title": "JobVersionSkillRow"
+    },
+    {
+      "description": "Full CSV table export for Indexed skill keywords for each normalized job version skill.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_version_skill_keywords_csv",
+      "path": "exports/csv/job_version_skill_keywords.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version skill keyword row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Skill group this keyword belongs to.",
+            "jsonSchemaType": "string",
+            "name": "skill_id",
+            "required": true,
+            "title": "Skill Id",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based keyword order within the skill group.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "description": "Skill keyword text.",
+            "jsonSchemaType": "string",
+            "name": "keyword",
+            "required": true,
+            "title": "Keyword",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "JobVersionSkillKeywordRow"
+    },
+    {
+      "description": "Full CSV table export for Indexed responsibility and qualification bullets for each job version.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_version_bullets_csv",
+      "path": "exports/csv/job_version_bullets.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version bullet row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Job version this bullet belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_version_id",
+            "required": true,
+            "title": "Job Version Id",
+            "type": "str"
+          },
+          {
+            "description": "Bullet category, such as responsibility or qualification.",
+            "jsonSchemaType": "string",
+            "name": "kind",
+            "required": true,
+            "title": "Kind",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based bullet order within its category.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "description": "Bullet text.",
+            "jsonSchemaType": "string",
+            "name": "text",
+            "required": true,
+            "title": "Text",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "JobVersionBulletRow"
+    },
+    {
+      "description": "Full CSV table export for Raw upstream payload snapshots for audit and replay.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_payload_snapshots_csv",
+      "path": "exports/csv/job_payload_snapshots.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable raw payload snapshot row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Stable job identity this raw payload belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_id",
+            "required": true,
+            "title": "Job Id",
+            "type": "str"
+          },
+          {
+            "description": "Raw payload source kind, such as listing or detail.",
+            "jsonSchemaType": "string",
+            "name": "payload_kind",
+            "required": true,
+            "title": "Payload Kind",
+            "type": "str"
+          },
+          {
+            "description": "Canonical hash of the unmodified raw payload.",
+            "jsonSchemaType": "string",
+            "name": "payload_hash",
+            "required": true,
+            "title": "Payload Hash",
+            "type": "str"
+          },
+          {
+            "description": "Unmodified upstream payload for audit and replay.",
+            "jsonSchemaType": "object",
+            "name": "payload",
+            "required": false,
+            "title": "Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "UTC sync timestamp when this raw payload was observed.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "observed_at",
+            "required": false,
+            "title": "Observed At",
+            "type": "datetime"
+          }
+        ]
+      },
+      "title": "JobPayloadSnapshotRow"
+    },
+    {
+      "description": "Full CSV table export for Provider route sync attempts and aggregate change counts.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_sync_runs_csv",
+      "path": "exports/csv/job_sync_runs.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable provider route sync run id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Board key synced during this provider route run.",
+            "jsonSchemaType": "string",
+            "name": "board_key",
+            "required": true,
+            "title": "Board Key",
+            "type": "str"
+          },
+          {
+            "description": "Provider route synced during this run.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "description": "UTC timestamp for this provider route sync attempt.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime"
+          },
+          {
+            "default": true,
+            "description": "Whether the route sync completed.",
+            "jsonSchemaType": "boolean",
+            "name": "success",
+            "required": false,
+            "title": "Success",
+            "type": "bool"
+          },
+          {
+            "default": null,
+            "description": "Error message captured for failed route syncs.",
+            "jsonSchemaType": "string | null",
+            "name": "error",
+            "required": false,
+            "title": "Error",
+            "type": "str | null"
+          },
+          {
+            "default": 0,
+            "description": "Total jobs observed in the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "job_count",
+            "required": false,
+            "title": "Job Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Jobs newly created by the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "new_count",
+            "required": false,
+            "title": "New Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Jobs observed without content changes.",
+            "jsonSchemaType": "integer",
+            "name": "unchanged_count",
+            "required": false,
+            "title": "Unchanged Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Jobs with a new normalized content version.",
+            "jsonSchemaType": "integer",
+            "name": "changed_count",
+            "required": false,
+            "title": "Changed Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Previously closed jobs reopened by the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "reopened_count",
+            "required": false,
+            "title": "Reopened Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Previously open jobs closed by the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "closed_count",
+            "required": false,
+            "title": "Closed Count",
+            "type": "int"
+          }
+        ]
+      },
+      "title": "JobSyncRunRow"
+    },
+    {
+      "description": "Full CSV table export for Per-job observations recorded during provider route syncs.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "job_sync_observations_csv",
+      "path": "exports/csv/job_sync_observations.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable sync observation row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Route sync run that recorded this observation.",
+            "jsonSchemaType": "string",
+            "name": "sync_run_id",
+            "required": true,
+            "title": "Sync Run Id",
+            "type": "str"
+          },
+          {
+            "description": "Stable job identity observed during sync.",
+            "jsonSchemaType": "string",
+            "name": "job_id",
+            "required": true,
+            "title": "Job Id",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Normalized job version associated with this observation.",
+            "jsonSchemaType": "string | null",
+            "name": "job_version_id",
+            "required": false,
+            "title": "Job Version Id",
+            "type": "str | null"
+          },
+          {
+            "description": "Observation category, such as new, unchanged, changed, reopened, or closed.",
+            "jsonSchemaType": "string",
+            "name": "observation_kind",
+            "required": true,
+            "title": "Observation Kind",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Normalized content hash observed during sync.",
+            "jsonSchemaType": "string | null",
+            "name": "content_hash",
+            "required": false,
+            "title": "Content Hash",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Raw payload-pair hash observed during sync.",
+            "jsonSchemaType": "string | null",
+            "name": "payload_hash",
+            "required": false,
+            "title": "Payload Hash",
+            "type": "str | null"
+          },
+          {
+            "description": "UTC timestamp when the observation was recorded.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "observed_at",
+            "required": false,
+            "title": "Observed At",
+            "type": "datetime"
+          }
+        ]
+      },
+      "title": "JobSyncObservationRow"
+    },
+    {
+      "description": "Full Parquet table export for Durable source catalogs that discover company boards.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "sources_parquet",
+      "path": "exports/parquet/sources.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable local source key.",
+            "jsonSchemaType": "string",
+            "name": "key",
+            "required": true,
+            "title": "Key",
+            "type": "str"
+          },
+          {
+            "description": "Canonical source URL or synthetic manual source URI.",
+            "jsonSchemaType": "string",
+            "name": "url",
+            "required": true,
+            "title": "Url",
+            "type": "str"
+          },
+          {
+            "description": "Source adapter identifier.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "default": true,
+            "description": "Whether unscoped syncs include this source.",
+            "jsonSchemaType": "boolean",
+            "name": "enabled",
+            "required": false,
+            "title": "Enabled",
+            "type": "bool"
+          },
+          {
+            "description": "Provider version metadata.",
+            "jsonSchemaType": "object",
+            "name": "version",
+            "required": false,
+            "title": "Version",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Source configuration and sync metadata.",
+            "jsonSchemaType": "object",
+            "name": "raw_metadata",
+            "required": false,
+            "title": "Raw Metadata",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Unknown top-level record fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "default": null,
+            "description": "Last successful source sync timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime | null"
+          }
+        ]
+      },
+      "title": "SourceRow"
+    },
+    {
+      "description": "Full Parquet table export for Durable normalized company or organization hiring boards.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "boards_parquet",
+      "path": "exports/parquet/boards.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable normalized board key.",
+            "jsonSchemaType": "string",
+            "name": "key",
+            "required": true,
+            "title": "Key",
+            "type": "str"
+          },
+          {
+            "description": "Source key that emitted this board.",
+            "jsonSchemaType": "string",
+            "name": "source_key",
+            "required": true,
+            "title": "Source Key",
+            "type": "str"
+          },
+          {
+            "description": "All sources that currently contain this board domain.",
+            "jsonSchemaType": "array",
+            "name": "source_keys",
+            "required": false,
+            "title": "Source Keys",
+            "type": "array<str>"
+          },
+          {
+            "description": "Source-specific emitted board keys merged into this board.",
+            "jsonSchemaType": "object",
+            "name": "source_board_keys",
+            "required": false,
+            "title": "Source Board Keys",
+            "type": "object<str, str>"
+          },
+          {
+            "description": "Provider-native board identifier.",
+            "jsonSchemaType": "string",
+            "name": "remote_id",
+            "required": true,
+            "title": "Remote Id",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Provider-native slug.",
+            "jsonSchemaType": "string | null",
+            "name": "remote_slug",
+            "required": false,
+            "title": "Remote Slug",
+            "type": "str | null"
+          },
+          {
+            "description": "Company or board display name.",
+            "jsonSchemaType": "string",
+            "name": "name",
+            "required": true,
+            "title": "Name",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Normalized website domain.",
+            "jsonSchemaType": "string | null",
+            "name": "domain",
+            "required": false,
+            "title": "Domain",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Canonical company website URL.",
+            "jsonSchemaType": "string | null",
+            "name": "website_url",
+            "required": false,
+            "title": "Website Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-supplied board description.",
+            "jsonSchemaType": "string | null",
+            "name": "description",
+            "required": false,
+            "title": "Description",
+            "type": "str | null"
+          },
+          {
+            "description": "Industry or market tags.",
+            "jsonSchemaType": "array",
+            "name": "markets",
+            "required": false,
+            "title": "Markets",
+            "type": "array<str>"
+          },
+          {
+            "description": "Office or hiring locations.",
+            "jsonSchemaType": "array",
+            "name": "locations",
+            "required": false,
+            "title": "Locations",
+            "type": "array<str>"
+          },
+          {
+            "default": null,
+            "description": "Employee or team-size estimate.",
+            "jsonSchemaType": "integer | null",
+            "name": "staff_count",
+            "required": false,
+            "title": "Staff Count",
+            "type": "int | null"
+          },
+          {
+            "default": null,
+            "description": "Approximate number of open jobs.",
+            "jsonSchemaType": "integer | null",
+            "name": "num_jobs_hint",
+            "required": false,
+            "title": "Num Jobs Hint",
+            "type": "int | null"
+          },
+          {
+            "description": "Unmodified upstream board payload.",
+            "jsonSchemaType": "object",
+            "name": "raw_payload",
+            "required": false,
+            "title": "Raw Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Unknown top-level record fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "default": null,
+            "description": "Last successful board sync timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime | null"
+          }
+        ]
+      },
+      "title": "BoardRow"
+    },
+    {
+      "description": "Full Parquet table export for Durable provider routes that connect boards to upstream systems.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "board_providers_parquet",
+      "path": "exports/parquet/board_providers.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable route primary key.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Source key that reported this route.",
+            "jsonSchemaType": "string",
+            "name": "source_key",
+            "required": true,
+            "title": "Source Key",
+            "type": "str"
+          },
+          {
+            "description": "Board key this route belongs to.",
+            "jsonSchemaType": "string",
+            "name": "board_key",
+            "required": true,
+            "title": "Board Key",
+            "type": "str"
+          },
+          {
+            "description": "Provider adapter identifier.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Human-readable upstream route label.",
+            "jsonSchemaType": "string | null",
+            "name": "label",
+            "required": false,
+            "title": "Label",
+            "type": "str | null"
+          },
+          {
+            "description": "Normalized provider support level.",
+            "jsonSchemaType": "string",
+            "name": "support_level",
+            "required": true,
+            "title": "Support Level",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Approximate provider-reported job count.",
+            "jsonSchemaType": "integer | null",
+            "name": "count_hint",
+            "required": false,
+            "title": "Count Hint",
+            "type": "int | null"
+          },
+          {
+            "default": null,
+            "description": "Hosted job board URL.",
+            "jsonSchemaType": "string | null",
+            "name": "board_url",
+            "required": false,
+            "title": "Board Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-specific board token or slug.",
+            "jsonSchemaType": "string | null",
+            "name": "token",
+            "required": false,
+            "title": "Token",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Multi-tenant provider host.",
+            "jsonSchemaType": "string | null",
+            "name": "host",
+            "required": false,
+            "title": "Host",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Multi-tenant provider tenant.",
+            "jsonSchemaType": "string | null",
+            "name": "tenant",
+            "required": false,
+            "title": "Tenant",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Multi-tenant provider site path.",
+            "jsonSchemaType": "string | null",
+            "name": "site",
+            "required": false,
+            "title": "Site",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Last probe or sync status.",
+            "jsonSchemaType": "string | null",
+            "name": "last_status",
+            "required": false,
+            "title": "Last Status",
+            "type": "str | null"
+          },
+          {
+            "description": "Unmodified upstream route payload.",
+            "jsonSchemaType": "object",
+            "name": "raw_payload",
+            "required": false,
+            "title": "Raw Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "Unknown top-level record fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "default": null,
+            "description": "Route discovery timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "detected_at",
+            "required": false,
+            "title": "Detected At",
+            "type": "datetime | null"
+          }
+        ]
+      },
+      "title": "BoardProviderRow"
+    },
+    {
+      "description": "Full Parquet table export for Stable job identities and lifecycle state.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "jobs_parquet",
+      "path": "exports/parquet/jobs.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable normalized job identity.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Board key this job belongs to.",
+            "jsonSchemaType": "string",
+            "name": "board_key",
+            "required": true,
+            "title": "Board Key",
+            "type": "str"
+          },
+          {
+            "description": "Provider adapter identifier.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "description": "Provider-native job identifier.",
+            "jsonSchemaType": "string",
+            "name": "remote_id",
+            "required": true,
+            "title": "Remote Id",
+            "type": "str"
+          },
+          {
+            "default": "open",
+            "description": "Current lifecycle status for the stable job identity.",
+            "jsonSchemaType": "string",
+            "name": "status",
+            "required": false,
+            "title": "Status",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Current normalized job version id.",
+            "jsonSchemaType": "string | null",
+            "name": "current_version_id",
+            "required": false,
+            "title": "Current Version Id",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Current normalized content hash.",
+            "jsonSchemaType": "string | null",
+            "name": "current_content_hash",
+            "required": false,
+            "title": "Current Content Hash",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Current raw payload-pair hash.",
+            "jsonSchemaType": "string | null",
+            "name": "current_payload_hash",
+            "required": false,
+            "title": "Current Payload Hash",
+            "type": "str | null"
+          },
+          {
+            "description": "First successful route sync that observed this job identity.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "first_seen_at",
+            "required": false,
+            "title": "First Seen At",
+            "type": "datetime"
+          },
+          {
+            "description": "Most recent successful route sync that observed this job identity.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "last_seen_at",
+            "required": false,
+            "title": "Last Seen At",
+            "type": "datetime"
+          },
+          {
+            "default": null,
+            "description": "Route sync timestamp when this job disappeared while open.",
+            "jsonSchemaType": "string | null",
+            "name": "closed_at",
+            "required": false,
+            "title": "Closed At",
+            "type": "datetime | null"
+          },
+          {
+            "description": "Last successful lifecycle update timestamp.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime"
+          },
+          {
+            "description": "Unknown top-level identity fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          }
+        ]
+      },
+      "title": "JobRow"
+    },
+    {
+      "description": "Full Parquet table export for Versioned normalized job content snapshots.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_versions_parquet",
+      "path": "exports/parquet/job_versions.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Job version id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Stable job id.",
+            "jsonSchemaType": "string",
+            "name": "job_id",
+            "required": true,
+            "title": "Job Id",
+            "type": "str"
+          },
+          {
+            "description": "Monotonic version number.",
+            "jsonSchemaType": "integer",
+            "name": "version",
+            "required": true,
+            "title": "Version",
+            "type": "int"
+          },
+          {
+            "description": "Normalized user-visible content hash.",
+            "jsonSchemaType": "string",
+            "name": "content_hash",
+            "required": true,
+            "title": "Content Hash",
+            "type": "str"
+          },
+          {
+            "description": "Raw payload-pair hash observed for version.",
+            "jsonSchemaType": "string",
+            "name": "payload_hash",
+            "required": true,
+            "title": "Payload Hash",
+            "type": "str"
+          },
+          {
+            "description": "Public job title.",
+            "jsonSchemaType": "string",
+            "name": "title",
+            "required": true,
+            "title": "Title",
+            "type": "str"
+          },
+          {
+            "description": "Provider-reported job locations.",
+            "jsonSchemaType": "array",
+            "name": "locations",
+            "required": false,
+            "title": "Locations",
+            "type": "array<str>"
+          },
+          {
+            "default": null,
+            "description": "Provider-reported department.",
+            "jsonSchemaType": "string | null",
+            "name": "department",
+            "required": false,
+            "title": "Department",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-reported team or group.",
+            "jsonSchemaType": "string | null",
+            "name": "team",
+            "required": false,
+            "title": "Team",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Workplace, commitment, or time-type label.",
+            "jsonSchemaType": "string | null",
+            "name": "workplace_type",
+            "required": false,
+            "title": "Workplace Type",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Board or company display name.",
+            "jsonSchemaType": "string | null",
+            "name": "company",
+            "required": false,
+            "title": "Company",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Employment or commitment type.",
+            "jsonSchemaType": "string | null",
+            "name": "employment_type",
+            "required": false,
+            "title": "Employment Type",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Plain-text provider job description.",
+            "jsonSchemaType": "string | null",
+            "name": "description",
+            "required": false,
+            "title": "Description",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "HTML provider job description.",
+            "jsonSchemaType": "string | null",
+            "name": "description_html",
+            "required": false,
+            "title": "Description Html",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON Resume-compatible remote work level.",
+            "jsonSchemaType": "string | null",
+            "name": "remote",
+            "required": false,
+            "title": "Remote",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider compensation payload or normalized compensation details.",
+            "jsonSchemaType": "object | null",
+            "name": "compensation",
+            "required": false,
+            "title": "Compensation",
+            "type": "object<str, JsonValue> | null"
+          },
+          {
+            "default": null,
+            "description": "JSON Resume-compatible salary display string.",
+            "jsonSchemaType": "string | null",
+            "name": "salary",
+            "required": false,
+            "title": "Salary",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Minimum deterministic salary or compensation value.",
+            "jsonSchemaType": "number | null",
+            "name": "salary_min",
+            "required": false,
+            "title": "Salary Min",
+            "type": "float | null"
+          },
+          {
+            "default": null,
+            "description": "Maximum deterministic salary or compensation value.",
+            "jsonSchemaType": "number | null",
+            "name": "salary_max",
+            "required": false,
+            "title": "Salary Max",
+            "type": "float | null"
+          },
+          {
+            "default": null,
+            "description": "Salary or compensation currency code.",
+            "jsonSchemaType": "string | null",
+            "name": "salary_currency",
+            "required": false,
+            "title": "Salary Currency",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Experience label when deterministically available.",
+            "jsonSchemaType": "string | null",
+            "name": "experience",
+            "required": false,
+            "title": "Experience",
+            "type": "str | null"
+          },
+          {
+            "description": "Deterministic responsibility bullets.",
+            "jsonSchemaType": "array",
+            "name": "responsibilities",
+            "required": false,
+            "title": "Responsibilities",
+            "type": "array<str>"
+          },
+          {
+            "description": "Deterministic qualification bullets.",
+            "jsonSchemaType": "array",
+            "name": "qualifications",
+            "required": false,
+            "title": "Qualifications",
+            "type": "array<str>"
+          },
+          {
+            "description": "JSON Resume-compatible skill objects.",
+            "jsonSchemaType": "array",
+            "name": "skills",
+            "required": false,
+            "title": "Skills",
+            "type": "array<object<str, JsonValue>>"
+          },
+          {
+            "default": null,
+            "description": "JSON Resume-compatible job-description object.",
+            "jsonSchemaType": "object | null",
+            "name": "job_description",
+            "required": false,
+            "title": "Job Description",
+            "type": "object<str, JsonValue> | null"
+          },
+          {
+            "default": null,
+            "description": "Canonical public posting URL.",
+            "jsonSchemaType": "string | null",
+            "name": "posting_url",
+            "required": false,
+            "title": "Posting Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Direct application URL.",
+            "jsonSchemaType": "string | null",
+            "name": "apply_url",
+            "required": false,
+            "title": "Apply Url",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-native posted timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "posted_at",
+            "required": false,
+            "title": "Posted At",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Provider-native updated timestamp.",
+            "jsonSchemaType": "string | null",
+            "name": "updated_at",
+            "required": false,
+            "title": "Updated At",
+            "type": "str | null"
+          },
+          {
+            "description": "Unknown top-level version fields preserved across storage round trips.",
+            "jsonSchemaType": "object",
+            "name": "extra_payload",
+            "required": false,
+            "title": "Extra Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "First sync timestamp that observed this normalized content.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "first_seen_at",
+            "required": false,
+            "title": "First Seen At",
+            "type": "datetime"
+          },
+          {
+            "description": "Most recent sync timestamp that observed this normalized content.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "last_seen_at",
+            "required": false,
+            "title": "Last Seen At",
+            "type": "datetime"
+          },
+          {
+            "description": "UTC timestamp when this version row was created.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "created_at",
+            "required": false,
+            "title": "Created At",
+            "type": "datetime"
+          }
+        ]
+      },
+      "title": "JobVersionRow"
+    },
+    {
+      "description": "Full Parquet table export for Indexed location labels for each normalized job version.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_version_locations_parquet",
+      "path": "exports/parquet/job_version_locations.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version location row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Job version this location belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_version_id",
+            "required": true,
+            "title": "Job Version Id",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based location order within the job version.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "description": "Location label text.",
+            "jsonSchemaType": "string",
+            "name": "label",
+            "required": true,
+            "title": "Label",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "JobVersionLocationRow"
+    },
+    {
+      "description": "Full Parquet table export for Indexed skill groups for each normalized job version.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_version_skills_parquet",
+      "path": "exports/parquet/job_version_skills.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version skill row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Job version this skill group belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_version_id",
+            "required": true,
+            "title": "Job Version Id",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based skill order within the job version.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "default": null,
+            "description": "Skill group display name.",
+            "jsonSchemaType": "string | null",
+            "name": "name",
+            "required": false,
+            "title": "Name",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Skill group proficiency or level label.",
+            "jsonSchemaType": "string | null",
+            "name": "level",
+            "required": false,
+            "title": "Level",
+            "type": "str | null"
+          }
+        ]
+      },
+      "title": "JobVersionSkillRow"
+    },
+    {
+      "description": "Full Parquet table export for Indexed skill keywords for each normalized job version skill.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_version_skill_keywords_parquet",
+      "path": "exports/parquet/job_version_skill_keywords.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version skill keyword row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Skill group this keyword belongs to.",
+            "jsonSchemaType": "string",
+            "name": "skill_id",
+            "required": true,
+            "title": "Skill Id",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based keyword order within the skill group.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "description": "Skill keyword text.",
+            "jsonSchemaType": "string",
+            "name": "keyword",
+            "required": true,
+            "title": "Keyword",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "JobVersionSkillKeywordRow"
+    },
+    {
+      "description": "Full Parquet table export for Indexed responsibility and qualification bullets for each job version.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_version_bullets_parquet",
+      "path": "exports/parquet/job_version_bullets.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable job-version bullet row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Job version this bullet belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_version_id",
+            "required": true,
+            "title": "Job Version Id",
+            "type": "str"
+          },
+          {
+            "description": "Bullet category, such as responsibility or qualification.",
+            "jsonSchemaType": "string",
+            "name": "kind",
+            "required": true,
+            "title": "Kind",
+            "type": "str"
+          },
+          {
+            "description": "Zero-based bullet order within its category.",
+            "jsonSchemaType": "integer",
+            "name": "ordinal",
+            "required": true,
+            "title": "Ordinal",
+            "type": "int"
+          },
+          {
+            "description": "Bullet text.",
+            "jsonSchemaType": "string",
+            "name": "text",
+            "required": true,
+            "title": "Text",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "JobVersionBulletRow"
+    },
+    {
+      "description": "Full Parquet table export for Raw upstream payload snapshots for audit and replay.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_payload_snapshots_parquet",
+      "path": "exports/parquet/job_payload_snapshots.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable raw payload snapshot row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Stable job identity this raw payload belongs to.",
+            "jsonSchemaType": "string",
+            "name": "job_id",
+            "required": true,
+            "title": "Job Id",
+            "type": "str"
+          },
+          {
+            "description": "Raw payload source kind, such as listing or detail.",
+            "jsonSchemaType": "string",
+            "name": "payload_kind",
+            "required": true,
+            "title": "Payload Kind",
+            "type": "str"
+          },
+          {
+            "description": "Canonical hash of the unmodified raw payload.",
+            "jsonSchemaType": "string",
+            "name": "payload_hash",
+            "required": true,
+            "title": "Payload Hash",
+            "type": "str"
+          },
+          {
+            "description": "Unmodified upstream payload for audit and replay.",
+            "jsonSchemaType": "object",
+            "name": "payload",
+            "required": false,
+            "title": "Payload",
+            "type": "object<str, JsonValue>"
+          },
+          {
+            "description": "UTC sync timestamp when this raw payload was observed.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "observed_at",
+            "required": false,
+            "title": "Observed At",
+            "type": "datetime"
+          }
+        ]
+      },
+      "title": "JobPayloadSnapshotRow"
+    },
+    {
+      "description": "Full Parquet table export for Provider route sync attempts and aggregate change counts.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_sync_runs_parquet",
+      "path": "exports/parquet/job_sync_runs.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable provider route sync run id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Board key synced during this provider route run.",
+            "jsonSchemaType": "string",
+            "name": "board_key",
+            "required": true,
+            "title": "Board Key",
+            "type": "str"
+          },
+          {
+            "description": "Provider route synced during this run.",
+            "jsonSchemaType": "string",
+            "name": "provider_id",
+            "required": true,
+            "title": "Provider Id",
+            "type": "str"
+          },
+          {
+            "description": "UTC timestamp for this provider route sync attempt.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "synced_at",
+            "required": false,
+            "title": "Synced At",
+            "type": "datetime"
+          },
+          {
+            "default": true,
+            "description": "Whether the route sync completed.",
+            "jsonSchemaType": "boolean",
+            "name": "success",
+            "required": false,
+            "title": "Success",
+            "type": "bool"
+          },
+          {
+            "default": null,
+            "description": "Error message captured for failed route syncs.",
+            "jsonSchemaType": "string | null",
+            "name": "error",
+            "required": false,
+            "title": "Error",
+            "type": "str | null"
+          },
+          {
+            "default": 0,
+            "description": "Total jobs observed in the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "job_count",
+            "required": false,
+            "title": "Job Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Jobs newly created by the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "new_count",
+            "required": false,
+            "title": "New Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Jobs observed without content changes.",
+            "jsonSchemaType": "integer",
+            "name": "unchanged_count",
+            "required": false,
+            "title": "Unchanged Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Jobs with a new normalized content version.",
+            "jsonSchemaType": "integer",
+            "name": "changed_count",
+            "required": false,
+            "title": "Changed Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Previously closed jobs reopened by the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "reopened_count",
+            "required": false,
+            "title": "Reopened Count",
+            "type": "int"
+          },
+          {
+            "default": 0,
+            "description": "Previously open jobs closed by the route sync.",
+            "jsonSchemaType": "integer",
+            "name": "closed_count",
+            "required": false,
+            "title": "Closed Count",
+            "type": "int"
+          }
+        ]
+      },
+      "title": "JobSyncRunRow"
+    },
+    {
+      "description": "Full Parquet table export for Per-job observations recorded during provider route syncs.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "job_sync_observations_parquet",
+      "path": "exports/parquet/job_sync_observations.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "Stable sync observation row id.",
+            "jsonSchemaType": "string",
+            "name": "id",
+            "required": true,
+            "title": "Id",
+            "type": "str"
+          },
+          {
+            "description": "Route sync run that recorded this observation.",
+            "jsonSchemaType": "string",
+            "name": "sync_run_id",
+            "required": true,
+            "title": "Sync Run Id",
+            "type": "str"
+          },
+          {
+            "description": "Stable job identity observed during sync.",
+            "jsonSchemaType": "string",
+            "name": "job_id",
+            "required": true,
+            "title": "Job Id",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Normalized job version associated with this observation.",
+            "jsonSchemaType": "string | null",
+            "name": "job_version_id",
+            "required": false,
+            "title": "Job Version Id",
+            "type": "str | null"
+          },
+          {
+            "description": "Observation category, such as new, unchanged, changed, reopened, or closed.",
+            "jsonSchemaType": "string",
+            "name": "observation_kind",
+            "required": true,
+            "title": "Observation Kind",
+            "type": "str"
+          },
+          {
+            "default": null,
+            "description": "Normalized content hash observed during sync.",
+            "jsonSchemaType": "string | null",
+            "name": "content_hash",
+            "required": false,
+            "title": "Content Hash",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "Raw payload-pair hash observed during sync.",
+            "jsonSchemaType": "string | null",
+            "name": "payload_hash",
+            "required": false,
+            "title": "Payload Hash",
+            "type": "str | null"
+          },
+          {
+            "description": "UTC timestamp when the observation was recorded.",
+            "format": "date-time",
+            "jsonSchemaType": "string",
+            "name": "observed_at",
+            "required": false,
+            "title": "Observed At",
+            "type": "datetime"
+          }
+        ]
+      },
+      "title": "JobSyncObservationRow"
+    }
+  ],
+  "title": "OpenOpps DB"
+}

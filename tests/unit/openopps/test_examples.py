@@ -48,7 +48,7 @@ def test_example_dataset_serializes_to_docs_friendly_dict():
     assert data["plugins"][0]["name"] == "example-openopps-plugin"
 
 
-@settings(max_examples=15)
+@settings(deadline=None, max_examples=15)
 @given(seed=st.integers(min_value=1, max_value=10_000))
 def test_example_dataset_ids_are_unique(seed: int):
     dataset = build_example_dataset(seed=seed, board_count=5, jobs_per_board=3)

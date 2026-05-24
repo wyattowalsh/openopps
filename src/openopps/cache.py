@@ -18,14 +18,6 @@ RESPONSE_AFFECTING_HEADERS = {"accept", "content-type", "origin", "referer"}
 
 
 @dataclass(frozen=True)
-class CachePolicy:
-    ttl_seconds: int = 3600
-    enabled: bool = True
-    refresh: bool = False
-    stale_on_error: bool = False
-
-
-@dataclass(frozen=True)
 class CacheHit:
     key: str
     namespace: str
@@ -313,14 +305,6 @@ class HttpCache:
             conn.execute(
                 "create index if not exists ix_http_cache_namespace on http_cache(namespace)"
             )
-            columns = {
-                row[1]
-                for row in conn.execute("pragma table_info(http_cache)").fetchall()
-            }
-            if "stale_on_error" not in columns:
-                conn.execute(
-                    "alter table http_cache add column stale_on_error integer not null default 0"
-                )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -385,13 +369,6 @@ def _normalize_headers(headers: dict[str, str]) -> dict[str, str]:
         for key, value in sorted(headers.items())
         if key.lower() in RESPONSE_AFFECTING_HEADERS
     }
-
-
-def _header_value(headers: dict[str, str] | None, key: str) -> str | None:
-    if not headers:
-        return None
-    lowered = {name.lower(): value for name, value in headers.items()}
-    return lowered.get(key)
 
 
 def _canonical_json(value: Any) -> str:

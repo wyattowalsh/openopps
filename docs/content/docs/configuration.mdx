@@ -3,28 +3,42 @@ title: Configuration
 description: Runtime settings, environment variables, and concurrency controls.
 ---
 
-OpenOpps loads settings from `OPENOPPS_` environment variables and an optional local `.env` file. Unknown `.env` keys are ignored.
+OpenOpps loads settings from `OPENOPPS_` environment variables and an optional local `.env` file. Unknown `.env` keys are ignored. Treat configuration as local runtime wiring: the CLI writes to the SQLite URL you point it at and reads plugins from the Python environment that launched the command.
+
+## Invocation Scope
+
+Both invocation styles use the same settings model:
+
+```bash
+uv run openopps status
+uv tool install -e .
+openopps status
+```
+
+The editable `uv tool install -e .` path makes the `openopps` command available directly from the current checkout. Relative SQLite URLs such as `sqlite:///openopps.db` are resolved by the running process, so keep your working directory and `OPENOPPS_DB_URL` explicit when switching between projects or smoke-test databases.
 
 ## Environment Variables
 
-| Variable                        | Default                                                   | Purpose                                                           |
-| ------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
-| `OPENOPPS_DB_URL`               | `sqlite:///openopps.db`                                   | Database URL used by storage commands and sync jobs.              |
-| `OPENOPPS_MAX_CONNECTIONS`      | `40`                                                      | Maximum HTTP connection pool size.                                |
-| `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.         |
-| `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Board-level concurrency during sync workflows.                    |
-| `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Provider job-fetch concurrency across job-capable routes.         |
-| `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests.  |
-| `OPENOPPS_DB_BATCH_SIZE`        | `500`                                                     | Batch size for SQLite writes.                                     |
-| `OPENOPPS_HTTP_TIMEOUT`         | `30.0`                                                    | HTTP timeout in seconds.                                          |
-| `OPENOPPS_RETRY_ATTEMPTS`       | `3`                                                       | Number of retry attempts for retriable upstream requests.         |
-| `OPENOPPS_USER_AGENT`           | `openopps/0.1 (+https://github.com/wyattowalsh/openopps)` | User agent sent to public source and provider endpoints.          |
-| `OPENOPPS_CACHE_ENABLED`        | `true`                                                    | Enables the shared SQLite JSON request cache.                     |
-| `OPENOPPS_CACHE_TTL_SECONDS`    | `3600`                                                    | Default cache freshness window in seconds.                        |
-| `OPENOPPS_CACHE_REFRESH`        | `false`                                                   | Bypasses cache reads while still updating successful responses.   |
-| `OPENOPPS_CACHE_STALE_ON_ERROR` | `false`                                                   | Allows eligible stale cache data after retryable upstream errors. |
-| `OPENOPPS_PLUGIN_DISABLED`      | empty                                                     | Comma-separated plugin entry-point names to skip.                 |
-| `OPENOPPS_PLUGIN_ALLOWED`       | empty                                                     | Optional comma-separated plugin entry-point allow-list.           |
+| Variable                        | Default                                                   | Purpose                                                            |
+| ------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
+| `OPENOPPS_DB_URL`               | `sqlite:///openopps.db`                                   | Database URL used by storage commands and sync jobs.               |
+| `OPENOPPS_MAX_CONNECTIONS`      | `40`                                                      | Maximum HTTP connection pool size.                                 |
+| `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.          |
+| `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Board-level concurrency during sync workflows.                     |
+| `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Provider job-fetch concurrency across job-capable routes.          |
+| `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests.   |
+| `OPENOPPS_DB_BATCH_SIZE`        | `500`                                                     | Batch size for SQLite writes.                                      |
+| `OPENOPPS_HTTP_TIMEOUT`         | `30.0`                                                    | HTTP timeout in seconds.                                           |
+| `OPENOPPS_RETRY_ATTEMPTS`       | `3`                                                       | Number of retry attempts for retriable upstream requests.          |
+| `OPENOPPS_USER_AGENT`           | `openopps/0.1 (+https://github.com/wyattowalsh/openopps)` | User agent sent to public source and provider endpoints.           |
+| `OPENOPPS_CACHE_ENABLED`        | `true`                                                    | Enables the shared SQLite JSON request cache.                      |
+| `OPENOPPS_CACHE_TTL_SECONDS`    | `3600`                                                    | Default cache freshness window in seconds.                         |
+| `OPENOPPS_CACHE_REFRESH`        | `false`                                                   | Bypasses cache reads while still updating successful responses.    |
+| `OPENOPPS_CACHE_STALE_ON_ERROR` | `false`                                                   | Allows eligible stale cache data after retryable upstream errors.  |
+| `OPENOPPS_PLUGIN_AUTOLOAD`      | `false`                                                   | Execute every discovered plugin entry point without allow-listing. |
+| `OPENOPPS_PLUGIN_DISABLED`      | empty                                                     | Comma-separated plugin entry-point names to skip.                  |
+| `OPENOPPS_PLUGIN_ALLOWED`       | empty                                                     | Comma-separated plugin entry-point names allowed to execute.       |
+| `OPENOPPS_NO_INTRO`             | unset                                                     | Suppress the interactive startup portal animation.                 |
 
 ## Examples
 
@@ -34,19 +48,33 @@ OPENOPPS_PROVIDER_CONCURRENCY=4 uv run openopps jobs sync --provider workday --p
 OPENOPPS_USER_AGENT='openopps/0.1 (contact: jobs@example.com)' uv run openopps admin sources test yc
 ```
 
-For repeated local use, place values in `.env` at the repository root:
+For repeated local use from the repository checkout, place values in `.env` at the repository root:
 
 ```dotenv
 OPENOPPS_DB_URL=sqlite:///openopps.db
 OPENOPPS_SOURCE_CONCURRENCY=4
 OPENOPPS_PROVIDER_CONCURRENCY=12
 OPENOPPS_CACHE_TTL_SECONDS=3600
+OPENOPPS_PLUGIN_ALLOWED=trusted-plugin
 OPENOPPS_PLUGIN_DISABLED=broken-plugin
 ```
 
 Unscoped `jobs sync` targets all persisted ready routes. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs.
 
-When `OPENOPPS_PLUGIN_ALLOWED` is empty, every discovered plugin is eligible unless its entry-point name appears in `OPENOPPS_PLUGIN_DISABLED`. When the allow-list is set, only listed entry points are eligible; disabled entries are still skipped even if also allow-listed.
+## Flags vs Persistent Settings
+
+Prefer flags for one run and environment variables for durable local policy:
+
+| Need                                         | Prefer                                  |
+| -------------------------------------------- | --------------------------------------- |
+| Refresh one upstream read                    | `--refresh-cache`                       |
+| Always bypass cache reads in a shell/session | `OPENOPPS_CACHE_REFRESH=true`           |
+| Narrow one job sync                          | `--source`, `--board`, or `--provider`  |
+| Lower Workday pressure across all runs       | `OPENOPPS_WORKDAY_CONCURRENCY=1` or `2` |
+| Hide the animation once                      | `--no-intro`                            |
+| Hide the animation everywhere                | `OPENOPPS_NO_INTRO=1`                   |
+
+By default, discovered plugins are visible but not executed. Set `OPENOPPS_PLUGIN_ALLOWED` to run specific trusted entry points. If `OPENOPPS_PLUGIN_AUTOLOAD=true`, every discovered plugin is eligible unless its entry-point name appears in `OPENOPPS_PLUGIN_DISABLED`. Disabled entries are still skipped even if also allow-listed.
 
 For CLI one-offs, prefer command flags such as `--source` and `--refresh-cache` over persistent environment changes.
 

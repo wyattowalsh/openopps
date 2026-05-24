@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import xml.etree.ElementTree as ET
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -14,6 +15,10 @@ from openopps.http import build_async_client, retrying_json_request
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport, utc_now
 from openopps.models import host_matches, validate_provider_host
 from openopps.providers.boards.workday import parse_workday_board_url
+from openopps.providers.boards.wpjobmanager import (
+    wpjobmanager_is_ajax_endpoint,
+    wpjobmanager_is_rest_endpoint,
+)
 from openopps.route_select import dedupe_routes, normalize_provider_filter, route_ready
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
@@ -292,35 +297,27 @@ async def _probe_route(
     *,
     max_candidates: int,
 ) -> tuple[ProbeMatch | None, ProbeUnknown | None]:
-    if route.provider_id == "greenhouse":
+    if route.provider_id in {
+        "greenhouse",
+        "lever",
+        "ashbyhq",
+        "workable",
+        "teamtailor",
+        "bamboohr",
+        "rippling",
+    }:
         return await _probe_token_provider(
             client,
             request_json,
             board,
             route,
             max_candidates=max_candidates,
-            provider_id="greenhouse",
-        )
-    if route.provider_id == "lever":
-        return await _probe_token_provider(
-            client,
-            request_json,
-            board,
-            route,
-            max_candidates=max_candidates,
-            provider_id="lever",
-        )
-    if route.provider_id == "ashbyhq":
-        return await _probe_token_provider(
-            client,
-            request_json,
-            board,
-            route,
-            max_candidates=max_candidates,
-            provider_id="ashbyhq",
+            provider_id=route.provider_id,
         )
     if route.provider_id == "workday":
         return await _probe_workday(client, request_json, board, route)
+    if route.provider_id == "wpjobmanager":
+        return await _probe_wpjobmanager(client, request_json, board, route)
     return None, ProbeUnknown(
         board_key=board.key,
         provider_id=route.provider_id,
@@ -344,21 +341,29 @@ async def _probe_token_provider(
             result = await _try_greenhouse(client, request_json, token)
         elif provider_id == "lever":
             result = await _try_lever(client, request_json, token)
-        else:
+        elif provider_id == "ashbyhq":
             result = await _try_ashby(client, request_json, token)
+        elif provider_id == "workable":
+            result = await _try_workable(client, request_json, token)
+        elif provider_id == "teamtailor":
+            result = await _try_teamtailor(client, token)
+        elif provider_id == "bamboohr":
+            result = await _try_bamboohr(client, request_json, token)
+        elif provider_id == "rippling":
+            result = await _try_rippling(client, request_json, token)
+        else:
+            result = None
         if result is not None:
-            if provider_id == "greenhouse":
-                board_url = f"https://boards.greenhouse.io/{token}"
-            elif provider_id == "lever":
-                board_url = f"https://jobs.lever.co/{token}"
-            else:
-                board_url = f"https://jobs.ashbyhq.com/{token}"
+            board_url = _candidate_board_url(provider_id, token)
+            host = _candidate_host(provider_id, token)
             return (
                 ProbeMatch(
                     board_key=board.key,
                     provider_id=provider_id,
                     token=token,
                     board_url=board_url,
+                    host=host,
+                    tenant=token if provider_id in {"bamboohr", "rippling"} else None,
                     observed_jobs=result,
                 ),
                 None,
@@ -370,6 +375,34 @@ async def _probe_token_provider(
         reason="no_candidate_token_matched",
         candidates=candidates,
     )
+
+
+def _candidate_board_url(provider_id: str, token: str) -> str:
+    if provider_id == "greenhouse":
+        return f"https://boards.greenhouse.io/{token}"
+    if provider_id == "lever":
+        return f"https://jobs.lever.co/{token}"
+    if provider_id == "ashbyhq":
+        return f"https://jobs.ashbyhq.com/{token}"
+    if provider_id == "workable":
+        return f"https://apply.workable.com/{token}"
+    if provider_id == "teamtailor":
+        return f"https://{token}.teamtailor.com/"
+    if provider_id == "bamboohr":
+        return f"https://{token}.bamboohr.com/careers"
+    if provider_id == "rippling":
+        return f"https://ats.rippling.com/{token}/jobs"
+    return token
+
+
+def _candidate_host(provider_id: str, token: str) -> str | None:
+    if provider_id == "teamtailor":
+        return f"{token}.teamtailor.com"
+    if provider_id == "bamboohr":
+        return f"{token}.bamboohr.com"
+    if provider_id == "rippling":
+        return "ats.rippling.com"
+    return None
 
 
 async def _try_greenhouse(
@@ -427,6 +460,82 @@ async def _try_ashby(
             ]
         )
     return None
+
+
+async def _try_workable(
+    client: httpx.AsyncClient, request_json: JsonRequester, token: str
+) -> int | None:
+    data = await _route_probe_json_or_none(
+        client,
+        request_json,
+        "GET",
+        f"https://www.workable.com/api/accounts/{token}",
+        params={"details": "false"},
+        provider_id="workable",
+        route_key=token,
+    )
+    if isinstance(data, dict) and isinstance(data.get("jobs"), list):
+        return len(data["jobs"])
+    return None
+
+
+async def _try_teamtailor(client: httpx.AsyncClient, token: str) -> int | None:
+    try:
+        response = await client.get(
+            f"https://{token}.teamtailor.com/jobs.rss",
+            headers={"accept": "application/rss+xml, application/xml, text/xml"},
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in _MISS_STATUS_CODES:
+            return None
+        raise
+    root = ET.fromstring(response.text)
+    channel = root.find("channel")
+    return len(channel.findall("item")) if channel is not None else 0
+
+
+async def _try_bamboohr(
+    client: httpx.AsyncClient, request_json: JsonRequester, token: str
+) -> int | None:
+    data = await _route_probe_json_or_none(
+        client,
+        request_json,
+        "GET",
+        f"https://{token}.bamboohr.com/careers/list",
+        provider_id="bamboohr",
+        route_key=token,
+    )
+    if not isinstance(data, dict):
+        return None
+    meta = data.get("meta")
+    if isinstance(meta, dict) and isinstance(meta.get("totalCount"), int):
+        return int(meta["totalCount"])
+    result = data.get("result")
+    if isinstance(result, list):
+        return len(result)
+    return None
+
+
+async def _try_rippling(
+    client: httpx.AsyncClient, request_json: JsonRequester, token: str
+) -> int | None:
+    data = await _route_probe_json_or_none(
+        client,
+        request_json,
+        "GET",
+        f"https://ats.rippling.com/api/v2/board/{token}/jobs",
+        params={"page": 0, "pageSize": 1},
+        provider_id="rippling",
+        route_key=token,
+    )
+    if not isinstance(data, dict):
+        return None
+    total = data.get("totalItems")
+    if isinstance(total, int):
+        return total
+    items = data.get("items")
+    return len(items) if isinstance(items, list) else None
 
 
 async def _probe_workday(
@@ -518,6 +627,89 @@ async def _try_workday(
     if isinstance(data, dict) and isinstance(data.get("jobPostings"), list):
         return int(data.get("total") or len(data["jobPostings"]))
     return None
+
+
+async def _probe_wpjobmanager(
+    client: httpx.AsyncClient,
+    request_json: JsonRequester,
+    board: BoardRecord,
+    route: BoardProviderRecord,
+) -> tuple[ProbeMatch | None, ProbeUnknown | None]:
+    endpoints = _wpjobmanager_endpoint_candidates(route, board)
+    for endpoint in endpoints:
+        count = await _try_wpjobmanager(client, request_json, endpoint)
+        if count is None:
+            continue
+        parsed = urlparse(endpoint)
+        origin = f"https://{parsed.netloc.lower()}"
+        return (
+            ProbeMatch(
+                board_key=board.key,
+                provider_id="wpjobmanager",
+                token=origin,
+                board_url=endpoint,
+                host=parsed.netloc.lower(),
+                observed_jobs=count,
+            ),
+            None,
+        )
+    return None, ProbeUnknown(
+        board_key=board.key,
+        provider_id="wpjobmanager",
+        name=board.name,
+        reason="needs_explicit_wpjobmanager_endpoint",
+        candidates=endpoints,
+    )
+
+
+def _wpjobmanager_endpoint_candidates(
+    route: BoardProviderRecord, board: BoardRecord
+) -> list[str]:
+    endpoints: list[str] = []
+    for url in (route.board_url, board.website_url):
+        parsed = urlparse(url or "")
+        if not url or not (
+            wpjobmanager_is_rest_endpoint(url) or wpjobmanager_is_ajax_endpoint(url)
+        ):
+            continue
+        if wpjobmanager_is_ajax_endpoint(url):
+            endpoint = f"https://{parsed.netloc.lower()}/jm-ajax/get_listings/"
+        else:
+            endpoint = f"https://{parsed.netloc.lower()}/wp-json/wp/v2/job-listings"
+        if endpoint not in endpoints:
+            endpoints.append(endpoint)
+    return endpoints
+
+
+async def _try_wpjobmanager(
+    client: httpx.AsyncClient, request_json: JsonRequester, endpoint: str
+) -> int | None:
+    if wpjobmanager_is_ajax_endpoint(endpoint):
+        data = await _route_probe_json_or_none(
+            client,
+            request_json,
+            "GET",
+            endpoint,
+            params={"page": 1, "per_page": 1},
+            provider_id="wpjobmanager",
+            route_key=endpoint,
+        )
+        if not isinstance(data, dict):
+            return None
+        if data.get("found_jobs") is False:
+            return 0
+        html = data.get("html")
+        return 1 if isinstance(html, str) and "job_listing" in html else 0
+    data = await _route_probe_json_or_none(
+        client,
+        request_json,
+        "GET",
+        endpoint,
+        params={"per_page": 1},
+        provider_id="wpjobmanager",
+        route_key=endpoint,
+    )
+    return len(data) if isinstance(data, list) else None
 
 
 async def _route_probe_json_or_none(

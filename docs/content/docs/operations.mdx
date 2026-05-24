@@ -5,6 +5,34 @@ description: Storage, export, validation, and troubleshooting workflows.
 
 Use this page for local CLI operations and docs validation while working on OpenOpps v0.1. There is no hosted runtime to initialize; durable state lives in local SQLite files controlled by `OPENOPPS_` settings.
 
+<div className="openopps-ref-grid">
+  <div className="openopps-ref-card">
+    <strong>Local state</strong>
+    <span>
+      Sync and seed commands write to the database selected by
+      <code>OPENOPPS_DB_URL</code>.
+    </span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Dry-run diagnostics</strong>
+    <span>
+      Route probing and health checks report first and persist only with
+      <code>--apply</code>.
+    </span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Export boundary</strong>
+    <span>
+      JSONL, CSV, and Parquet exports preserve normalized records for audit or
+      analysis.
+    </span>
+  </div>
+</div>
+
+## Command Modes
+
+Use `uv run openopps ...` inside the checkout. After `uv tool install -e .` from the repo root, the same examples can be run as `openopps ...` directly.
+
 ## Storage
 
 SQLite is the default DB-backed storage mode:
@@ -12,13 +40,21 @@ SQLite is the default DB-backed storage mode:
 ```bash
 uv run openopps admin db init
 uv run openopps admin db status
+uv run openopps sync a16z --metrics-json
 uv run openopps sources sync a16z --metrics-json
+uv run openopps boards sync --source a16z --provider any --metrics-json
 uv run openopps jobs sync --provider any --metrics-json
 ```
 
 The default database path is controlled by `OPENOPPS_DB_URL` and resolves to `openopps.db` for `sqlite:///openopps.db`.
 
-`admin db init` runs Alembic migrations for the durable app SQLite schema. Existing unversioned OpenOpps ledgers are stamped after local schema repair hooks run. The optional HTTP response cache is separate and is not part of the Alembic migration history.
+All sync commands in this section write local SQLite records unless they explicitly use `--no-db` or are documented as dry-run diagnostics.
+
+`admin db init` applies the current v0.1 Alembic schema head for the durable app SQLite database. The optional HTTP response cache is separate and is not part of the Alembic schema history. If a pre-release `openopps.db` was stamped before the v0.1 schema was finalized, OpenOpps reports the missing schema columns and asks you to reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file.
+
+Job storage separates stable posting identity from changing content. The `jobs` table tracks lifecycle fields such as `status`, `first_seen_at`, `last_seen_at`, `closed_at`, and current hashes. `job_versions` stores one normalized content state per posting, with child tables for locations, skills, skill keywords, and responsibility or qualification bullets. `job_payload_snapshots` stores distinct raw listing/detail payloads so raw upstream JSON is never discarded.
+
+Every successful provider-route job sync writes a `job_sync_runs` row and `job_sync_observations` rows for `new`, `unchanged`, `changed`, `reopened`, and `closed` outcomes. Raw payload drift means provider JSON changed but normalized content stayed the same, such as an ignored metadata key, key order change, or provider-internal token change. Raw-only drift updates payload snapshots and observations but does not create a new `job_versions` row.
 
 Use `status` or `doctor` to inspect the full local runtime state:
 
@@ -40,6 +76,8 @@ uv run openopps jobs sync --provider any --refresh-cache --metrics-json
 
 `--refresh-cache` bypasses cache reads for that operation and lets successful responses update cache state.
 
+`admin cache purge` deletes cache rows. Scope it with `--namespace` when you only need to invalidate one cache family.
+
 ## Examples
 
 Seed deterministic synthetic records for local demos and smoke tests without upstream network access:
@@ -47,7 +85,11 @@ Seed deterministic synthetic records for local demos and smoke tests without ups
 ```bash
 uv run openopps examples seed --seed 42 --boards 4 --jobs-per-board 2 --json
 uv run openopps jobs list --source example --json
+uv run openopps providers coverage --json
+uv run openopps admin sources yield --json
 ```
+
+For a fully isolated smoke test, point `OPENOPPS_DB_URL` at a temporary SQLite file before seeding.
 
 ## No-DB Source Sync
 
@@ -57,12 +99,15 @@ For one-off source extraction without persistence, use explicit JSONL output:
 uv run openopps sources sync a16z --no-db --output /tmp/a16z-boards.jsonl
 ```
 
+Human sync commands use a brief dynamic progress display by default. The top-level `sync` command reports source, board, and job stages in order; individual `sources sync`, `boards sync`, and `jobs sync` commands report the stage they own. Add `--verbose` when you need detailed provider warnings on stderr. Machine-readable modes such as `--metrics-json` keep stdout parseable.
+
 ## Exports
 
 ```bash
 uv run openopps boards export --format jsonl --output /tmp/openopps-boards.jsonl
 uv run openopps boards export --provider ashbyhq --has-jobs --format jsonl --output /tmp/ashby-boards.jsonl
 uv run openopps jobs export --remote Full --skill Python --format csv --output /tmp/openopps-jobs.csv
+uv run openopps jobs export --status all --format jsonl --output /tmp/openopps-all-jobs.jsonl
 uv run openopps jobs export --source a16z --salary-min 150000 --format parquet --output /tmp/openopps-jobs.parquet
 ```
 
@@ -70,11 +115,17 @@ Use `jsonl` for auditability, `csv` for spreadsheet inspection, and `parquet` fo
 
 `boards export` accepts the same board filters as `boards list`, including `--source`, `--provider`, `--market`, `--location`, `--domain`, `--has-jobs`, `--min-staff`, `--max-staff`, and `--limit`.
 
-`jobs export` accepts the same job filters as `jobs list`, including `--source`, `--board`, `--provider`, `--location`, `--department`, `--team`, `--workplace-type`, `--remote`, `--employment-type`/`--type`, `--salary-min`, `--salary-max`, `--skill`, `--query`, `--posted-after`, `--posted-before`, and `--limit`. These filters use normalized job fields; raw upstream payloads remain exported for auditability but are not part of primary filtering semantics.
+`jobs export` accepts the same job filters as `jobs list`, including `--source`, `--board`, `--provider`, `--location`, `--department`, `--team`, `--workplace-type`, `--remote`, `--employment-type`/`--type`, `--salary-min`, `--salary-max`, `--skill`, `--query`, `--posted-after`, `--posted-before`, `--status`, and `--limit`. These filters use normalized current-version job fields; raw upstream payloads remain exported for auditability but are not part of primary filtering semantics. Job list and export commands default to `--status open`; pass `--status all` when you intentionally need closed jobs in an audit extract.
 
 ## Route Probing
 
-The CLI route-probing command is dry-run-first:
+The stable everyday route resolution command is `boards sync`, which enriches boards and applies successful missing route probes:
+
+```bash
+uv run openopps boards sync --source a16z --provider all --limit 25 --metrics-json
+```
+
+The admin route-probing command remains dry-run-first for diagnostics:
 
 ```bash
 uv run openopps admin providers probe-routes --source a16z --provider all --limit 25 --json
@@ -82,12 +133,34 @@ uv run openopps admin providers probe-routes --source a16z --provider all --limi
 
 Use `--apply` only after inspecting matched routes.
 
+## Source Yield
+
+Use source-yield reporting after source syncs, route probing, and job syncs when you need to compare which source families are turning into active job routes:
+
+```bash
+uv run openopps admin sources yield --json
+uv run openopps admin sources yield --source sec-company-tickers
+```
+
+The report is offline and reads persisted SQLite records only. It does not fetch sources, probe routes, or sync jobs. Treat `yieldScore` as a local snapshot metric rather than a global benchmark unless the database was refreshed from a representative source set.
+
 ## Validation
+
+Use `just` from the repository root for the contributor validation graph:
+
+```bash
+just quick
+just ci
+just openspec-validate-all
+just docs-check
+just kaggle-meta
+```
 
 Run Python tests from the repository root:
 
 ```bash
 uv run pytest
+uv run pytest --cov=openopps --cov-report=term-missing
 ```
 
 Run docs checks from the docs app:
@@ -97,18 +170,43 @@ cd docs
 pnpm data:generate
 pnpm types:check
 pnpm build
+pnpm lint
 rtk lint
 ```
 
-`pnpm data:generate` refreshes package-derived provider/source metadata. `pnpm types:check` also regenerates that metadata before generating Fumadocs MDX artifacts, generating Next.js route types, and running TypeScript without emitting files.
+`pnpm data:generate` refreshes package-derived provider/source metadata. `pnpm types:check` also regenerates that metadata before generating Fumadocs MDX artifacts, generating Next.js route types, and running TypeScript without emitting files. `pnpm lint` runs the Next ESLint surface; `rtk lint` is the broader repo-local docs lint from the project checklist.
+
+Run OpenSpec checks from the repository root:
+
+```bash
+rtk npx -y @fission-ai/openspec@latest list --json
+rtk npx -y @fission-ai/openspec@latest status --change prepare-v0-1-release --json
+rtk npx -y @fission-ai/openspec@latest validate --all --strict
+```
+
+OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested `AGENTS.md`, CI, and just recipes synchronized. Use `instructions --json` when handing an OpenSpec task graph to another agent.
+
+## CI/CD
+
+GitHub Actions mirrors local validation instead of inventing a second build path. CI should stay least-privilege, cache-aware, and split into independently debuggable lanes:
+
+- Python package tests and coverage through `uv`.
+- OpenSpec strict validation for every active change.
+- Docs generated data, MDX/type-check, build, and lint through `pnpm`.
+- Kaggle metadata generation for exported schema changes.
+- Workflow lint and whitespace checks.
+
+When CI changes, update `Justfile`, this operations page, root README, and repo instructions in the same logical change.
 
 ## Troubleshooting
 
-| Symptom                                | Check                                                                                                     |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| A source sync returns zero boards      | Run `uv run openopps admin sources test <source> --page-size 5` and check provider health.                |
-| A board has provider hints but no jobs | Run `admin providers probe-routes` and inspect unknown route candidates.                                  |
-| Cached data looks stale                | Rerun the operation with `--refresh-cache` or purge the relevant cache namespace.                         |
-| Workday sync is slow                   | Lower `OPENOPPS_WORKDAY_CONCURRENCY` and narrow sync with `--source`, `--board`, or `--provider workday`. |
-| Export output is unexpectedly empty    | Confirm the database has data with `uv run openopps admin db status` and inspect filters.                 |
-| Docs navigation is stale               | Update `docs/content/docs/meta.json`, then run `cd docs && pnpm types:check`.                             |
+| Symptom                                | Check                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| A source sync returns zero boards      | Run `uv run openopps admin sources test <source> --page-size 5` and check provider health.                     |
+| A board has provider hints but no jobs | Run `admin providers probe-routes` and inspect unknown route candidates.                                       |
+| A new source has low yield             | Run `uv run openopps admin sources yield --source <source>` after route probing and job sync.                  |
+| Cached data looks stale                | Rerun the operation with `--refresh-cache` or purge the relevant cache namespace.                              |
+| Local DB reports missing v0.1 columns  | Reset the pre-release local DB file or set `OPENOPPS_DB_URL` to a new SQLite path, then rerun `admin db init`. |
+| Workday sync is slow                   | Lower `OPENOPPS_WORKDAY_CONCURRENCY` and narrow sync with `--source`, `--board`, or `--provider workday`.      |
+| Export output is unexpectedly empty    | Confirm the database has data with `uv run openopps admin db status` and inspect filters.                      |
+| Docs navigation is stale               | Update `docs/content/docs/meta.json`, then run `cd docs && pnpm types:check`.                                  |

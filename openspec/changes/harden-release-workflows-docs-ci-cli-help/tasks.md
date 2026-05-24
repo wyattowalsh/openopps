@@ -1,0 +1,10 @@
+- [x] Extend `openspec/config.yaml` rules for workflow/tooling changes, agent-readable OpenSpec status, and local/CI parity.
+- [x] Add release-hardening proposal, design, and requirements for OpenSpec workflow, CI/CD, just recipes, docs/instructions, generated artifacts, and CLI help.
+- [x] Add a root Justfile that exposes local validation, docs, OpenSpec, Kaggle metadata, and CLI help recipes.
+- [x] Add GitHub Actions validation with least-privilege permissions, concurrency cancellation, uv/pnpm caching, and jobs that mirror just recipes.
+- [x] Update README, docs, DESIGN.md, and nested AGENTS.md to keep commands and contributor guidance synchronized.
+- [x] Refine CLI help language and add semantic help tests for first-run guidance, command grouping, and automation output guidance.
+- [x] Run targeted CLI help tests.
+- [x] Run OpenSpec strict validation for this change and all active changes.
+- [x] Run local CI parity checks through `just quick` and equivalent underlying full-CI commands.
+- [x] Run docs type-check/build/lint and Kaggle metadata generation.

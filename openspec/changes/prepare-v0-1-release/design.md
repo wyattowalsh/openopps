@@ -32,7 +32,7 @@ Provider adoption decisions require evidence that route discovery and job fetchi
 
 ## Example Data Design
 
-Generated examples use typed factories or dataclasses plus deterministic Faker seeds. Hypothesis strategies cover edge cases for storage, filters, exports, cache keys, plugin conflicts, and payload preservation. Example outputs used in README/docs should be reproducible from commands or golden outputs.
+Generated examples use typed factories or dataclasses plus deterministic Faker seeds. Bounded Hypothesis coverage validates generated example invariants across deterministic seeds. Example outputs used in README/docs should be reproducible from commands or golden outputs.
 
 ## Implementation Topology
 

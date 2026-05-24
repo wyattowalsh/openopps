@@ -5,6 +5,21 @@ description: Discover boards from sources and fetch public jobs from providers.
 
 OpenOpps v0.1 is a CLI-only Python app for discovering firm hiring boards from aggregate sources, detecting public provider routes, syncing normalized jobs, caching repeated HTTP JSON requests, and exporting an auditable local opportunity ledger. It intentionally ships without a hosted service, browser app, prompt UI, or TUI.
 
+<div className="openopps-ref-grid">
+  <div className="openopps-ref-card">
+    <strong>Discover</strong>
+    <span>Read source catalogs and persist durable board records.</span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Resolve</strong>
+    <span>Promote provider hints into executable public job routes.</span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Export</strong>
+    <span>Write normalized boards and jobs as JSONL, CSV, or Parquet.</span>
+  </div>
+</div>
+
 ## Domain
 
 - `sources` are aggregate discovery catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, and `yc`.
@@ -13,12 +28,57 @@ OpenOpps v0.1 is a CLI-only Python app for discovering firm hiring boards from a
 - `providers` are adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, and Workday.
 - `cache`, `plugins`, and `examples` cover operational cache inspection, installed Python plugin discovery, and deterministic demo data.
 
-## Quickstart
+## Install and Run
+
+Use `uv run` while working inside the repository checkout:
 
 ```bash
 uv sync
+just --list
+uv run openopps --help
 uv run openopps status
-uv run openopps examples seed --json
+```
+
+If you want `openopps` available directly from this editable checkout, install the repo as a uv tool from the repository root:
+
+```bash
+uv tool install -e .
+openopps --help
+openopps status
+```
+
+`uv tool install -e .` installs the console entry point from the current checkout. Runtime settings such as `OPENOPPS_DB_URL` still control where local SQLite state is read and written.
+
+## Contributor Command Map
+
+The root `Justfile` is the quickest way to discover local validation without hiding the underlying toolchain:
+
+```bash
+just --list
+just quick
+just ci
+just openspec-validate-all
+just docs-check
+just cli-help
+```
+
+`just ci` mirrors the GitHub Actions validation lanes: Python tests, coverage, OpenSpec validation, generated docs data, docs type-check/build/lint, Kaggle metadata generation, and whitespace checks. Use the raw `uv`, `pnpm`, and OpenSpec commands from the reference pages when a CI failure needs exact reproduction.
+
+## Safe Local Smoke Path
+
+These commands seed deterministic demo records and do not hit upstream source or provider services:
+
+```bash
+uv run openopps examples seed --seed 42 --boards 4 --jobs-per-board 2 --json
+uv run openopps jobs list --source example --json
+uv run openopps providers coverage --json
+```
+
+## Live Quickstart
+
+The commands below read public upstream catalogs and provider endpoints. They write local SQLite state unless a command is explicitly marked no-DB or dry-run.
+
+```bash
 uv run openopps sources list
 uv run openopps admin sources test a16z
 uv run openopps sources sync a16z --metrics-json --refresh-cache
@@ -45,7 +105,7 @@ Overlapping source coverage uses the persisted board keys shown by `boards list`
 | `jobs`        | OpenOpps can fetch public jobs for the provider.         |
 | `unsupported` | The provider is known only as raw metadata.              |
 
-Ashby, Greenhouse, Lever, and public Workday CXS boards are job-capable in v0.1. Teamtailor, Manatal, and Gem hints are detect-only until stable public fetching is added.
+Ashby, Greenhouse, Lever, and public Workday CXS boards are job-capable in v0.1. Teamtailor, Manatal, and Gem hints are detect-only until stable public fetching is added. See [Providers](/docs/providers) for the generated provider registry and route diagnostics.
 
 Ashby postings marked `isListed: false` are direct-link-only and are excluded from normal job sync output.
 
@@ -66,4 +126,4 @@ Provider hints from source catalogs may not include the token or URL needed for 
 uv run openopps admin providers probe-routes --source a16z --provider all --limit 25 --json
 ```
 
-Probing is read-only unless `--apply` is passed.
+Probing is read-only unless `--apply` is passed. Use [CLI Reference](/docs/cli-reference) for command flags and [Operations](/docs/operations) for local-state runbooks.

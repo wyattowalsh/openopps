@@ -3,11 +3,28 @@ title: CLI Reference
 description: Command groups, workflow order, filters, and output modes for the OpenOpps CLI.
 ---
 
-OpenOpps exposes the `openopps` console script from `openopps.cli:app`.
+OpenOpps exposes the `openopps` console script from `openopps.cli:app`. Use the reference as a command map: every surface is local-first, every write lands in SQLite, and every live provider check is explicit.
+
+## Invocation
+
+Run through the repository environment during development:
 
 ```bash
+uv sync
+just --list
 uv run openopps --help
+uv run openopps status
 ```
+
+Install the current checkout as an editable uv tool when you want to call `openopps` directly:
+
+```bash
+uv tool install -e .
+openopps --help
+openopps status
+```
+
+The editable tool uses the same runtime settings as `uv run`, including `OPENOPPS_DB_URL`, plugin allow lists, cache settings, and current working-directory-relative SQLite paths.
 
 ## Mental Model
 
@@ -15,10 +32,14 @@ OpenOpps is a local pipeline, not a hosted service:
 
 ```mermaid
 flowchart LR
-  sources[Sources] --> boards[Boards]
-  boards --> routes[Provider routes]
+  cli([CLI command]) --> settings[OPENOPPS settings]
+  settings --> sources[Source catalogs]
+  sources --> boards[Durable boards]
+  boards --> routes[Board provider routes]
   routes --> jobs[Normalized jobs]
-  jobs --> exports[JSONL / CSV / Parquet]
+  jobs --> exports[JSONL CSV Parquet]
+  routes --> coverage[Coverage and audit]
+  routes --> health[Dry-run health]
 ```
 
 The usual sequence is:
@@ -30,6 +51,36 @@ The usual sequence is:
 
 Use `status` or `doctor` between steps to see counts, route readiness, cache state, plugin load state, and the next recommended action.
 
+## Help Discovery
+
+OpenOpps help is part of the public CLI contract. It is organized around the normal workflow first, then operational surfaces, then advanced admin diagnostics:
+
+```bash
+uv run openopps --help
+uv run openopps sync --help
+uv run openopps providers --help
+uv run openopps admin providers probe-routes --help
+just cli-help
+```
+
+Use `--no-intro` when capturing root help in automation. Prefer semantic assertions in tests when help text changes: command groups, stable examples, JSON/metrics guidance, and key safety words should be covered without snapshotting terminal wrapping.
+
+## Command Safety Classes
+
+| Class                             | Examples                                                                                         | What changes                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Read-only local inspection        | `status`, `doctor`, `sources list`, `providers coverage`, `plugins list`, `cache status`         | Reads local SQLite/catalog state only.                                                     |
+| Writes local SQLite state         | `examples seed`, `sources sync`, `boards sync`, `jobs sync`, `admin boards add`, `admin db init` | Creates or updates records under `OPENOPPS_DB_URL` and cache settings.                     |
+| Live upstream/network diagnostics | `admin sources test`, `providers health`, `admin providers probe-routes`                         | Calls public source or provider endpoints; dry-run unless the command documents `--apply`. |
+| Destructive local maintenance     | `admin cache purge`                                                                              | Deletes local cache records; scope with `--namespace` when possible.                       |
+
+## Global Options
+
+| Option                   | Purpose                                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `--intro` / `--no-intro` | Toggle the interactive startup portal animation for that command invocation.                                           |
+| `OPENOPPS_NO_INTRO=1`    | Suppresses the animation across invocations, in addition to CI, completion, dumb-terminal, and non-interactive guards. |
+
 ## Command Groups
 
 | Surface     | Commands                                        | Purpose                                                                    |
@@ -39,7 +90,7 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | `doctor`    | top-level                                       | Same status payload with setup-oriented framing.                           |
 | `sources`   | `list`, `show`, `sync`                          | Inspect aggregate discovery catalogs and import board records.             |
 | `boards`    | `sync`, `list`, `show`, `export`                | Resolve, inspect, and export firm or company hiring board records.         |
-| `jobs`      | `sync`, `list`, `show`, `export`                | Fetch, inspect, and export normalized public postings.                     |
+| `jobs`      | `sync`, `list`, `show`, `history`, `export`     | Fetch, inspect, version, and export normalized public postings.            |
 | `providers` | `health`, `coverage`, `audit`                   | Inspect live health, persisted coverage gaps, and adoption evidence.       |
 | `cache`     | `status`                                        | Inspect the SQLite request cache.                                          |
 | `plugins`   | `list`                                          | Inspect installed plugin entry points, capabilities, and failures.         |
@@ -64,6 +115,8 @@ Examples use long flags for readability. The CLI also exposes script-friendly sh
 | `--verbose`       | `-v`, `-V` | Detailed sync warnings instead of compact progress. |
 
 `--provider any` and `--provider all` both remove the provider filter. They are useful in reusable scripts that always pass a provider argument, but they do not mean “only providers named any/all.”
+
+`--apply` is intentionally absent from most everyday commands. When it appears on diagnostics such as route probing or health checks, treat it as the boundary between inspection and persistence.
 
 ## Status Commands
 
@@ -92,6 +145,7 @@ uv run openopps sync --provider any --profile
 uv run openopps sources list --json
 uv run openopps sources show a16z
 uv run openopps admin sources test a16z --page-size 5 --refresh-cache
+uv run openopps admin sources yield --source a16z --json
 uv run openopps sources sync a16z --metrics-json --refresh-cache
 uv run openopps sources sync --profile
 ```
@@ -99,6 +153,8 @@ uv run openopps sources sync --profile
 `sources list` reads configured local sources when present and falls back to the packaged source catalog when the database is empty.
 
 `admin sources test` samples one adapter without writing board records to storage. Use it to confirm that an upstream source still returns parseable data before running a full sync.
+
+`admin sources yield` reports offline source-yield metrics from persisted SQLite records. Use it after syncs to compare source families by company candidates, canonical boards, provider hints, job-capable routes, active job routes, duplicate board rate, and yield score. It never fetches sources or probes routes.
 
 `sources sync` writes discovered sources, boards, and board-provider hints to SQLite by default. Add `--refresh-cache` when you need fresh upstream reads. Add `--verbose` when compact progress hides a useful adapter warning.
 
@@ -164,12 +220,13 @@ uv run openopps jobs sync --provider ashbyhq --metrics-json --refresh-cache
 uv run openopps jobs sync --source a16z --provider any --profile
 uv run openopps jobs list --remote Full --skill Python --salary-min 150000 --json
 uv run openopps jobs show <job-id>
+uv run openopps jobs history <job-id> --json
 uv run openopps jobs export --source a16z --type full --format parquet --output /tmp/openopps-jobs.parquet
 ```
 
-`jobs sync` targets every ready job-capable provider route unless narrowed with `--source`, `--board`, or `--provider`. It skips route hints that still lack executable metadata, reports duplicate route skips in metrics, and can also stream synced jobs to JSONL with `--output`.
+`jobs sync` targets every ready job-capable provider route unless narrowed with `--source`, `--board`, or `--provider`. It skips route hints that still lack executable metadata, reports duplicate route skips in metrics, and can also stream synced jobs to JSONL with `--output`. Each successful route sync records a sync run, one observation per seen posting, raw payload snapshots, and a normalized job version only when user-visible content changes. When a previously open job is absent from a successful provider response for the same board/provider route, OpenOpps marks it `closed`; provider errors and skipped routes never close jobs.
 
-`jobs list` and `jobs export` share these filters. They use normalized job fields from OpenOpps enrichment, not provider-specific `raw_listing` or `raw_detail` payloads:
+`jobs list` and `jobs export` default to current active jobs with `--status open` across all boards and providers. Use `--status closed` or `--status all` for lifecycle audits. The filters use normalized current-version job fields from OpenOpps enrichment, not provider-specific `raw_listing` or `raw_detail` payloads:
 
 | Flag                          | Semantics                                                                                      |
 | ----------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -188,10 +245,13 @@ uv run openopps jobs export --source a16z --type full --format parquet --output 
 | `--query`                     | Case-insensitive substring match across normalized title, company, and plain-text description. |
 | `--posted-after`              | Inclusive `YYYY-MM-DD` lower bound for normalized `posted_at` dates.                           |
 | `--posted-before`             | Inclusive `YYYY-MM-DD` upper bound for normalized `posted_at` dates.                           |
+| `--status`                    | Lifecycle filter: `open`, `closed`, or `all`. Defaults to `open`.                              |
 | `--limit`                     | Apply a final limit after filters.                                                             |
 | `--json`                      | JSON output mode for `jobs list`.                                                              |
 
 Date filters intentionally only match jobs whose normalized `posted_at` starts with `YYYY-MM-DD`, such as ISO timestamps. Relative provider text such as `Posted Yesterday` is not used for public filtering semantics.
+
+`jobs show <job-id>` returns the current job projection assembled from the stable job identity plus the current normalized version. `jobs history <job-id> --json` returns ordered content versions with `version`, `content_hash`, `payload_hash`, `first_seen_at`, and `last_seen_at` so long-lived postings can be audited. Raw payload drift means the provider JSON changed while normalized content did not; OpenOpps stores those distinct raw snapshots for replay without creating a user-visible content version.
 
 ## Provider Commands
 
@@ -203,7 +263,7 @@ uv run openopps providers health --source a16z --provider any --limit 25 --json
 
 `providers coverage` is an offline persisted-data report. It reads SQLite records only and reports source, board, route, and job counts; executable route and missing route metadata totals; detect-only provider examples; boards with route coverage gaps; and enrichment completeness percentages. It never fetches sources, probes routes, or samples live jobs.
 
-`providers audit` reports persisted-board evidence for candidate providers such as SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR. Use it to decide whether a provider has enough local evidence for reliable adoption.
+`providers audit` reports persisted-board evidence for candidate providers such as SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, Rippling, WP Job Manager, iCIMS, Jobvite, and JazzHR. Use it to decide whether a provider has enough local evidence for reliable adoption or should remain detect-only/unsupported metadata.
 
 `providers health` performs live sampled HTTP checks. It is a dry run unless `--apply` is passed, which persists source health under `raw_metadata.health` and board-provider route health under `last_status`.
 

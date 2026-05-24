@@ -100,6 +100,30 @@ def test_workday_route_ready_requires_complete_cxs_route():
     assert route_ready(complete)
 
 
+def test_route_ready_accepts_new_provider_route_shapes():
+    assert route_ready(
+        route_record(provider_id="workable").model_copy(update={"token": "acme"})
+    )
+    assert route_ready(
+        route_record(provider_id="teamtailor").model_copy(
+            update={"host": "acme.teamtailor.com"}
+        )
+    )
+    assert route_ready(
+        route_record(provider_id="bamboohr").model_copy(
+            update={"host": "acme.bamboohr.com", "tenant": "acme"}
+        )
+    )
+    assert route_ready(
+        route_record(provider_id="rippling").model_copy(update={"token": "acme"})
+    )
+    assert route_ready(
+        route_record(provider_id="wpjobmanager").model_copy(
+            update={"token": "https://acme.example.com"}
+        )
+    )
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_probe_routes_matches_greenhouse_and_persists(tmp_path: Path):
@@ -203,9 +227,17 @@ async def test_probe_routes_dedupes_overlapping_source_boards(tmp_path: Path):
     )
     store.upsert_board_providers(
         [
-            route_record(board_key="source-a-acme"),
+            route_record(board_key="source-a-acme").model_copy(
+                update={
+                    "id": "source-a:source-a-acme:greenhouse",
+                    "source_key": "source-a",
+                }
+            ),
             route_record(board_key="source-b-acme").model_copy(
-                update={"id": "source-b:source-b-acme:greenhouse"}
+                update={
+                    "id": "source-b:source-b-acme:greenhouse",
+                    "source_key": "source-b",
+                }
             ),
         ]
     )
@@ -278,6 +310,167 @@ async def test_probe_routes_matches_ashby(tmp_path: Path):
     persisted = store.list_board_providers(provider_id="ashbyhq")[0]
     assert persisted.token == "acme"
     assert persisted.board_url == "https://jobs.ashbyhq.com/acme"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_probe_routes_matches_new_public_board_providers(tmp_path: Path):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        provider_concurrency=3,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(source_record())
+    boards = [
+        board_record(
+            key="workable",
+            remote_id="workable",
+            remote_slug="workable",
+            name="Workable",
+            domain="workable.com",
+            website_url="https://workable.com/",
+        ),
+        board_record(
+            key="teamtailor",
+            remote_id="teamtailor",
+            remote_slug="teamtailor",
+            name="Teamtailor",
+            domain="teamtailor.com",
+            website_url="https://teamtailor.com/",
+        ),
+        board_record(
+            key="bamboohr",
+            remote_id="bamboohr",
+            remote_slug="bamboohr",
+            name="BambooHR",
+            domain="bamboohr.com",
+            website_url="https://bamboohr.com/",
+        ),
+        board_record(
+            key="rippling",
+            remote_id="rippling",
+            remote_slug="rippling",
+            name="Rippling",
+            domain="rippling.com",
+            website_url="https://rippling.com/",
+        ),
+        board_record(
+            key="wpjobmanager",
+            remote_id="wpjobmanager",
+            remote_slug="wpjobmanager",
+            name="WP Job Manager",
+            domain="jobs.example.com",
+            website_url="https://jobs.example.com/wp-json/wp/v2/job-listings",
+        ),
+    ]
+    store.upsert_boards(boards)
+    store.upsert_board_providers(
+        [
+            route_record(board_key="workable", provider_id="workable"),
+            route_record(board_key="teamtailor", provider_id="teamtailor"),
+            route_record(board_key="bamboohr", provider_id="bamboohr"),
+            route_record(board_key="rippling", provider_id="rippling"),
+            route_record(board_key="wpjobmanager", provider_id="wpjobmanager"),
+        ]
+    )
+    respx.get("https://www.workable.com/api/accounts/workable").mock(
+        return_value=httpx.Response(200, json={"jobs": [{"shortcode": "eng"}]})
+    )
+    respx.get("https://teamtailor.teamtailor.com/jobs.rss").mock(
+        return_value=httpx.Response(
+            200,
+            text="<rss><channel><item><title>Engineer</title></item></channel></rss>",
+        )
+    )
+    respx.get("https://bamboohr.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(200, json={"meta": {"totalCount": 2}, "result": []})
+    )
+    respx.get("https://ats.rippling.com/api/v2/board/rippling/jobs").mock(
+        return_value=httpx.Response(200, json={"totalItems": 3, "items": [{}]})
+    )
+    respx.get("https://jobs.example.com/wp-json/wp/v2/job-listings").mock(
+        return_value=httpx.Response(200, json=[{"id": 1}])
+    )
+
+    summary = await probe_routes(settings=settings, store=store, apply=True)
+
+    assert summary.checked == 5
+    assert summary.matched_by_provider == {
+        "bamboohr": 1,
+        "rippling": 1,
+        "teamtailor": 1,
+        "workable": 1,
+        "wpjobmanager": 1,
+    }
+    persisted = {route.provider_id: route for route in store.list_board_providers()}
+    assert persisted["workable"].board_url == "https://apply.workable.com/workable"
+    assert persisted["teamtailor"].host == "teamtailor.teamtailor.com"
+    assert persisted["bamboohr"].tenant == "bamboohr"
+    assert persisted["rippling"].host == "ats.rippling.com"
+    assert persisted["wpjobmanager"].board_url == (
+        "https://jobs.example.com/wp-json/wp/v2/job-listings"
+    )
+    assert persisted["wpjobmanager"].token == "https://jobs.example.com"
+
+
+@pytest.mark.asyncio
+async def test_wpjobmanager_probe_requires_explicit_rest_endpoint(tmp_path: Path):
+    board = board_record(
+        key="wordpress",
+        remote_slug="wordpress",
+        name="WordPress Site",
+        website_url="https://jobs.example.com/careers",
+    )
+    settings, store = store_with_route(
+        tmp_path, board, route_record(board_key="wordpress", provider_id="wpjobmanager")
+    )
+
+    summary = await probe_routes(
+        settings=settings, store=store, provider_id="wpjobmanager"
+    )
+
+    assert summary.checked == 1
+    assert summary.matched == []
+    assert summary.unknown[0].reason == "needs_explicit_wpjobmanager_endpoint"
+    assert summary.unknown[0].candidates == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_probe_accepts_explicit_ajax_endpoint(tmp_path: Path):
+    board = board_record(
+        key="wordpress",
+        remote_id="wordpress",
+        remote_slug="wordpress",
+        name="WordPress Site",
+        website_url="https://jobs.example.com/jm-ajax/get_listings/",
+    )
+    settings, store = store_with_route(
+        tmp_path, board, route_record(board_key="wordpress", provider_id="wpjobmanager")
+    )
+    respx.get("https://jobs.example.com/jm-ajax/get_listings/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "found_jobs": True,
+                "html": '<li class="job_listing"><a href="https://jobs.example.com/job/1">Engineer</a></li>',
+            },
+        )
+    )
+
+    summary = await probe_routes(
+        settings=settings, store=store, provider_id="wpjobmanager", apply=True
+    )
+
+    assert summary.checked == 1
+    assert summary.matched_by_provider == {"wpjobmanager": 1}
+    assert (
+        summary.matched[0].board_url == "https://jobs.example.com/jm-ajax/get_listings/"
+    )
+    persisted = store.list_board_providers(provider_id="wpjobmanager")[0]
+    assert persisted.board_url == "https://jobs.example.com/jm-ajax/get_listings/"
+    assert persisted.token == "https://jobs.example.com"
 
 
 @pytest.mark.asyncio

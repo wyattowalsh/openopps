@@ -25,26 +25,26 @@ typography:
     fontSize: "4.5rem"
     fontWeight: "700"
     lineHeight: "0.9"
-    letterSpacing: "-0.075em"
+    letterSpacing: "0"
     fontFeature: "ss01, ss02, calt, liga"
   h1:
     fontFamily: "Monaspace Argon"
     fontSize: "3.25rem"
     fontWeight: "700"
     lineHeight: "0.95"
-    letterSpacing: "-0.065em"
+    letterSpacing: "0"
   h2:
     fontFamily: "Monaspace Argon"
     fontSize: "2rem"
     fontWeight: "700"
     lineHeight: "1.05"
-    letterSpacing: "-0.055em"
+    letterSpacing: "0"
   body:
     fontFamily: "Monaspace Neon"
     fontSize: "1rem"
     fontWeight: "400"
     lineHeight: "1.7"
-    letterSpacing: "-0.018em"
+    letterSpacing: "0"
     fontFeature: "ss01, ss02, ss03, calt, liga"
   label-caps:
     fontFamily: "Monaspace Neon"
@@ -138,11 +138,11 @@ components:
 
 OpenOpps should feel like a field instrument for the public hiring web: part route map, part terminal ledger, part analyst workbench. The design is not a generic SaaS docs site. It should make the messy provider landscape feel inspectable and controllable.
 
-The visual thesis is **warm terminal cartography**. Monospace typography carries the interface, a parchment-and-pine palette keeps the product grounded, and small data-console details make the docs feel close to the CLI without turning the page into a gimmick.
+The visual thesis is **warm terminal cartography**. Monospace typography carries the interface, paper and pine colors keep the product grounded, and small data-console details make the docs feel close to the CLI without turning the page into a gimmick.
 
 ## Colors
 
-The palette is intentionally restrained: warm paper, pine ink, brass highlights, and provider-status semantic colors.
+The palette is intentionally restrained: warm paper, pine ink, brass highlights, and provider-status semantic colors. Avoid letting beige or tan surfaces dominate an entire viewport; pair warm surfaces with pine structure, blue diagnostic accents, and visible route/status data.
 
 - **Primary (#2f6f50):** Pine route green. Use for CTAs, active states, route health, and successful provider matches.
 - **Accent (#d99629):** Brass marker. Use sparingly for highlights, export modes, and important metadata.
@@ -163,7 +163,7 @@ The product should be all-Monaspace by default because the domain is CLI-first a
 - **Body/UI:** Monaspace Neon, 400-600. Use for navigation, prose, buttons, cards, and labels.
 - **Code/Data:** Monaspace Xenon, 400-600. Use for code blocks, command snippets, provider IDs, status rows, and metrics.
 
-Use contextual alternates and ligatures: `ss01`, `ss02`, `ss03`, `calt`, and `liga`. Tracking should be tighter than default for large type and slightly tighter for body text. Caps labels should be widely tracked.
+Use contextual alternates and ligatures: `ss01`, `ss02`, `ss03`, `calt`, and `liga`. Letter spacing should remain `0` for normal text and headings; use widely tracked caps labels only for short metadata or status labels.
 
 ## Layout
 
@@ -216,6 +216,7 @@ Do:
 - Make route/provider/status data feel first-class.
 - Use warm neutrals and pine/brass accents consistently.
 - Keep CLI examples runnable from the repository root.
+- Keep CLI help examples, docs snippets, just recipes, and CI commands synchronized.
 - Add visual detail with grids, ruled lines, scanlines, and data panels.
 
 Don't:
@@ -233,3 +234,4 @@ Don't:
 | 2026-05-16 | Created Google `design.md`-style DESIGN.md | Gives coding agents machine-readable tokens plus prose guidance before future UI work.                             |
 | 2026-05-16 | Adopted Monaspace Argon, Neon, and Xenon   | User prefers Monaspace fonts; the CLI/provider/table-heavy product benefits from an all-mono identity.             |
 | 2026-05-16 | Chose warm terminal cartography            | Distinguishes OpenOpps from generic SaaS docs while matching route probing, source catalogs, and job-data exports. |
+| 2026-05-24 | Normalized heading/body letter spacing     | Keeps docs and UI text predictable across responsive containers while preserving caps labels as the only tracked style. |

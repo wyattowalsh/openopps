@@ -1,0 +1,6 @@
+- [x] Add low-friction source adapters for SEC company tickers, public index CSVs, ranking CSVs, and CNCF landscape data.
+- [x] Preserve provider taxonomy, access, cadence, license, attribution, and default-enable rationale in source metadata.
+- [x] Add offline source-yield metrics and expose them through `providers coverage --json` and `admin sources yield`.
+- [x] Add focused unit and integration tests for source-yield reporting and source adapter normalization.
+- [x] Update provider, operations, and CLI docs for source families and yield reporting.
+- [x] Run Python, docs, and OpenSpec validation.

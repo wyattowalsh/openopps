@@ -1,5 +1,4 @@
 import asyncio
-import sqlite3
 from datetime import datetime, timezone
 
 import httpx
@@ -235,38 +234,6 @@ async def test_retrying_json_request_refresh_does_not_return_stale_on_error(tmp_
                 "https://api.example.test/refresh-stale",
                 cache_refresh=True,
             )
-
-
-def test_http_cache_migrates_existing_schema_without_stale_on_error(tmp_path):
-    cache_path = tmp_path / "openopps.cache.db"
-    with sqlite3.connect(cache_path) as conn:
-        conn.execute(
-            """
-            create table http_cache (
-                key text primary key,
-                namespace text not null,
-                method text not null,
-                url text not null,
-                request_identity text not null,
-                status_code integer not null,
-                response_headers text not null,
-                etag text,
-                last_modified text,
-                content_hash text not null,
-                fetched_at text not null,
-                expires_at text not null,
-                request_duration_ms integer,
-                payload text not null
-            )
-            """
-        )
-
-    status = HttpCache(cache_path).status()
-
-    assert status["total"] == 0
-    with sqlite3.connect(cache_path) as conn:
-        columns = {row[1] for row in conn.execute("pragma table_info(http_cache)")}
-    assert "stale_on_error" in columns
 
 
 @pytest.mark.asyncio

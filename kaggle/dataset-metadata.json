@@ -1,0 +1,20 @@
+{
+  "description": "OpenOpps exports the full openopps.sqlite SQLite ledger plus full CSV and Parquet table exports generated from the accumulated snapshot database. The companion datapackage.json file is generated from the OpenOpps package models and contains resource, table, and field-level descriptions, types, examples, and required flags.",
+  "id": "wyattowalsh/openoppsdb",
+  "isPrivate": false,
+  "keywords": [
+    "jobs",
+    "startups",
+    "hiring",
+    "venture-capital",
+    "public-data",
+    "openopps"
+  ],
+  "licenses": [
+    {
+      "name": "unknown"
+    }
+  ],
+  "subtitle": "Normalized public startup and portfolio company job data.",
+  "title": "openoppsdb"
+}

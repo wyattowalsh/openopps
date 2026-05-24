@@ -7,6 +7,8 @@ Fumadocs/Next.js developer docs site with a Tailwind CSS v4 and shadcn/ui theme 
 - Keep package-derived docs data in `lib/generated/openopps-data.json`; it is generated from `../src/openopps/docs_data.py` by `pnpm data:generate` and is refreshed automatically before `pnpm types:check` and `pnpm build`.
 - Keep Fumadocs MDX collection settings in `source.config.ts`; `includeProcessedMarkdown` supports `app/llms.txt/`, `app/llms-full.txt/`, and per-page markdown routes under `app/llms.mdx/`.
 - Read `../DESIGN.md` before changing theme tokens, typography, colors, spacing, or shadcn/ui component variants.
+- Keep docs synchronized with the CLI, `Justfile`, GitHub Actions, and OpenSpec changes. When commands change, update the MDX page, README, and just recipe references together.
+- Keep CLI examples runnable from the repository root and prefer `just` recipes for contributor validation summaries, with raw `uv`/`pnpm` commands still visible where users need exact execution.
 - Add shadcn/ui components with `pnpm dlx shadcn@latest add <component>` from `docs/`, then import or expose them through MDX as needed.
 - Prefer Fumadocs-native MDX components for callouts, cards, tables, code blocks, and tabs.
 - Keep custom MDX component wiring in `components/mdx.tsx`; expose project-specific components there instead of importing ad hoc implementations from content pages.
@@ -23,6 +25,8 @@ pnpm dev
 pnpm types:check
 pnpm build
 pnpm lint
+just docs-check
+just docs-build
 ```
 
 Use `pnpm types:check` after MDX/content graph edits because it runs `fumadocs-mdx`, `next typegen`, and `tsc --noEmit`.

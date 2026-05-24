@@ -8,6 +8,7 @@ from openopps.models import (
     BoardRecord,
     JobRecord,
     ProviderSupport,
+    SourceRecord,
     utc_now,
 )
 from openopps.providers.registry import provider_registry
@@ -18,22 +19,41 @@ from openopps.storage import OpenOppsStore
 
 EXAMPLE_LIMIT = 5
 BASELINE_JOB_PROVIDER_IDS = frozenset({"ashbyhq", "greenhouse", "lever", "workday"})
+ADOPTED_V01_PROVIDER_IDS = frozenset(
+    {
+        "ashbyhq",
+        "bamboohr",
+        "greenhouse",
+        "lever",
+        "rippling",
+        "teamtailor",
+        "workable",
+        "workday",
+        "wpjobmanager",
+    }
+)
 AUDIT_PROVIDER_TARGETS = (
     "smartrecruiters",
     "workable",
     "recruitee",
     "teamtailor",
     "bamboohr",
+    "rippling",
+    "wpjobmanager",
     "icims",
     "jobvite",
     "jazzhr",
 )
+ADOPTED_PROVIDER_RATIONALES = {
+    "workable": "Adopted for v0.1 using Workable's public no-auth account jobs endpoint.",
+    "teamtailor": "Adopted for v0.1 using Teamtailor's public jobs RSS feed.",
+    "bamboohr": "Adopted for v0.1 using BambooHR's public careers board JSON endpoints only.",
+    "rippling": "Adopted for v0.1 using Rippling's public ATS board JSON endpoints.",
+    "wpjobmanager": "Adopted for v0.1 only when an explicit WP Job Manager REST or AJAX endpoint is available.",
+}
 DO_NOT_ADOPT_RATIONALES = {
     "smartrecruiters": "Keep detect-only until a stable public hosted-board JSON route is proven across multiple boards.",
-    "workable": "Keep detect-only until generic public board URLs and pagination are validated without authenticated APIs.",
     "recruitee": "Keep detect-only until hosted-board payload stability and route token extraction are validated.",
-    "teamtailor": "Detect-only in v0.1; public fetching needs a separate generic endpoint audit before adoption.",
-    "bamboohr": "Keep unsupported for v0.1 because public job access varies by tenant and often lacks a stable JSON route.",
     "icims": "Keep unsupported for v0.1 because hosted pages vary widely and generic public fetching is brittle.",
     "jobvite": "Keep unsupported for v0.1 until modern hosted-board endpoints are proven generic and unauthenticated.",
     "jazzhr": "Keep unsupported for v0.1 until public board route extraction and pagination are proven generic.",
@@ -99,6 +119,20 @@ class ProviderAuditReport:
         }
 
 
+@dataclass(frozen=True)
+class SourceYieldReport:
+    snapshot: dict[str, Any]
+    totals: dict[str, Any]
+    sources: list[dict[str, Any]]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "snapshot": self.snapshot,
+            "totals": self.totals,
+            "sources": self.sources,
+        }
+
+
 def build_coverage_report(
     store: OpenOppsStore,
     *,
@@ -140,6 +174,15 @@ def build_coverage_report(
         board_key
         for board_key, board_routes in routes_by_board.items()
         if any(route.support_level == ProviderSupport.JOBS for route in board_routes)
+    }
+    board_keys_with_adopted_v01_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(
+            route.support_level == ProviderSupport.JOBS
+            and route.provider_id in ADOPTED_V01_PROVIDER_IDS
+            for route in board_routes
+        )
     }
     board_keys_with_baseline_job_capable_hints = {
         board_key
@@ -187,6 +230,7 @@ def build_coverage_report(
             "enabled": sum(1 for source in sources if source.enabled),
             "disabled": sum(1 for source in sources if not source.enabled),
             "byProvider": _count_by(source.provider_id for source in sources),
+            "yield": build_source_yield_report(store, source_key=source_key).totals,
         },
         boards={
             "total": len(boards),
@@ -196,7 +240,7 @@ def build_coverage_report(
             "withBaselineJobCapableProviderHints": len(
                 board_keys_with_baseline_job_capable_hints
             ),
-            "withAdoptedV01ProviderHints": len(board_keys_with_job_capable_hints),
+            "withAdoptedV01ProviderHints": len(board_keys_with_adopted_v01_hints),
             "withDetectOnlyProviderHints": len(board_keys_with_detect_only_hints),
             "withUnsupportedOrUnknownProviderHints": len(
                 board_keys_with_unsupported_hints
@@ -246,6 +290,71 @@ def build_coverage_report(
             ),
         },
         data_quality=_data_quality(jobs),
+    )
+
+
+def build_source_yield_report(
+    store: OpenOppsStore,
+    *,
+    source_key: str | None = None,
+) -> SourceYieldReport:
+    """Build an offline source-yield report from persisted sources, boards, routes, and jobs."""
+
+    sources = [
+        source
+        for source in store.list_sources()
+        if source_key is None or source.key == source_key
+    ]
+    selected_source_keys = {source.key for source in sources}
+    boards = store.list_boards(with_providers=False)
+    routes = store.list_board_providers()
+    jobs = store.list_jobs(status="open")
+
+    boards_by_source: dict[str, list[BoardRecord]] = {
+        key: [] for key in selected_source_keys
+    }
+    for board in boards:
+        for key in _board_source_keys(board) & selected_source_keys:
+            boards_by_source.setdefault(key, []).append(board)
+
+    routes_by_source: dict[str, list[BoardProviderRecord]] = {
+        key: [] for key in selected_source_keys
+    }
+    for route in routes:
+        if route.source_key in selected_source_keys:
+            routes_by_source.setdefault(route.source_key, []).append(route)
+
+    jobs_by_source: dict[str, list[JobRecord]] = {
+        key: [] for key in selected_source_keys
+    }
+    board_source_keys = {board.key: _board_source_keys(board) for board in boards}
+    for job in jobs:
+        for key in board_source_keys.get(job.board_key, set()) & selected_source_keys:
+            jobs_by_source.setdefault(key, []).append(job)
+
+    source_items = [
+        _source_yield_item(
+            source,
+            boards_by_source.get(source.key, []),
+            routes_by_source.get(source.key, []),
+            jobs_by_source.get(source.key, []),
+        )
+        for source in sorted(sources, key=lambda item: item.key)
+    ]
+    totals = _source_yield_totals(source_items, boards, selected_source_keys)
+    return SourceYieldReport(
+        snapshot={
+            "generatedAt": utc_now().isoformat(),
+            "scope": {"source": source_key},
+            "sourceCount": len(sources),
+            "snapshotKind": "persisted-scope",
+            "note": (
+                "Offline source-yield metrics are measured from persisted SQLite records; "
+                "run source sync, route probing, and job sync before comparing source families."
+            ),
+        },
+        totals=totals,
+        sources=source_items,
     )
 
 
@@ -312,7 +421,8 @@ def build_provider_audit_report(
                     "boards": len(board_keys),
                     "percentagePoints": metric["percentage"],
                 },
-                "rationale": DO_NOT_ADOPT_RATIONALES[provider_id],
+                "rationale": ADOPTED_PROVIDER_RATIONALES.get(provider_id)
+                or DO_NOT_ADOPT_RATIONALES[provider_id],
             }
         )
 
@@ -339,6 +449,105 @@ def build_provider_audit_report(
         candidates=candidates,
         do_not_adopt_rationales=DO_NOT_ADOPT_RATIONALES,
     )
+
+
+def _source_yield_item(
+    source: SourceRecord,
+    boards: list[BoardRecord],
+    routes: list[BoardProviderRecord],
+    jobs: list[JobRecord],
+) -> dict[str, Any]:
+    company_candidates = len(boards)
+    canonical_boards = len({board.key for board in boards})
+    provider_hints = len(routes)
+    job_capable_routes = [
+        route for route in routes if route.support_level == ProviderSupport.JOBS
+    ]
+    route_ready_count = sum(1 for route in job_capable_routes if route_ready(route))
+    active_job_routes = len({(job.board_key, job.provider_id) for job in jobs})
+    unique_active_boards = len({job.board_key for job in jobs})
+    duplicate_board_rate = _safe_ratio(
+        max(company_candidates - canonical_boards, 0), company_candidates
+    )
+    yield_score = _safe_ratio(unique_active_boards, company_candidates)
+    return {
+        "source": source.key,
+        "providerId": source.provider_id,
+        "enabled": source.enabled,
+        "taxonomy": _source_taxonomy(source.raw_metadata),
+        "companyCandidates": company_candidates,
+        "canonicalBoards": canonical_boards,
+        "providerHints": provider_hints,
+        "jobCapableRoutes": len(job_capable_routes),
+        "routeReady": route_ready_count,
+        "activeJobRoutes": active_job_routes,
+        "duplicateBoardRate": duplicate_board_rate,
+        "uniqueActiveBoardsAdded": unique_active_boards,
+        "yieldScore": yield_score,
+    }
+
+
+def _source_yield_totals(
+    source_items: list[dict[str, Any]],
+    boards: list[BoardRecord],
+    selected_source_keys: set[str],
+) -> dict[str, Any]:
+    company_candidates = sum(int(item["companyCandidates"]) for item in source_items)
+    canonical_board_keys = {
+        board.key
+        for board in boards
+        if _board_source_keys(board) & selected_source_keys
+    }
+    unique_active_boards = sum(
+        int(item["uniqueActiveBoardsAdded"]) for item in source_items
+    )
+    return {
+        "companyCandidates": company_candidates,
+        "canonicalBoards": len(canonical_board_keys),
+        "providerHints": sum(int(item["providerHints"]) for item in source_items),
+        "jobCapableRoutes": sum(int(item["jobCapableRoutes"]) for item in source_items),
+        "routeReady": sum(int(item["routeReady"]) for item in source_items),
+        "activeJobRoutes": sum(int(item["activeJobRoutes"]) for item in source_items),
+        "duplicateBoardRate": _safe_ratio(
+            max(company_candidates - len(canonical_board_keys), 0), company_candidates
+        ),
+        "uniqueActiveBoardsAdded": unique_active_boards,
+        "yieldScore": _safe_ratio(unique_active_boards, company_candidates),
+        "byProviderType": _count_by(
+            str(item["taxonomy"].get("providerType") or "unknown")
+            for item in source_items
+        ),
+        "byAccessType": _count_by(
+            str(item["taxonomy"].get("accessType") or "unknown")
+            for item in source_items
+        ),
+    }
+
+
+def _source_taxonomy(raw_metadata: dict[str, Any]) -> dict[str, Any]:
+    keys = {
+        "providerType",
+        "coverageMode",
+        "accessType",
+        "licenseStatus",
+        "refreshCadence",
+        "sourceYear",
+        "sourceCategory",
+        "sourceAttribution",
+        "defaultEnabledReason",
+    }
+    return {key: raw_metadata[key] for key in sorted(keys) if key in raw_metadata}
+
+
+def _board_source_keys(board: BoardRecord) -> set[str]:
+    keys = {board.source_key, *board.source_keys, *board.source_board_keys.keys()}
+    return {key for key in keys if key}
+
+
+def _safe_ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator, 4)
 
 
 def _routes_by_board(

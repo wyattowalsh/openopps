@@ -4,7 +4,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from openopps.cli import app
-from openopps.coverage import build_coverage_report, build_provider_audit_report
+from openopps.coverage import (
+    build_coverage_report,
+    build_provider_audit_report,
+    build_source_yield_report,
+)
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -138,20 +142,20 @@ def test_coverage_report_counts_persisted_records_and_routes(tmp_path: Path):
     data = build_coverage_report(store).as_dict()
 
     assert data["sources"]["total"] == 2
-    assert data["boards"]["total"] == 4
-    assert data["boards"]["withProviderHints"] == 4
-    assert data["boards"]["withJobCapableProviderHints"] == 4
-    assert data["boards"]["withBaselineJobCapableProviderHints"] == 4
-    assert data["boards"]["withAdoptedV01ProviderHints"] == 4
+    assert data["boards"]["total"] == 3
+    assert data["boards"]["withProviderHints"] == 3
+    assert data["boards"]["withJobCapableProviderHints"] == 3
+    assert data["boards"]["withBaselineJobCapableProviderHints"] == 3
+    assert data["boards"]["withAdoptedV01ProviderHints"] == 3
     assert data["boards"]["withDetectOnlyProviderHints"] == 1
     assert data["boards"]["withUnsupportedOrUnknownProviderHints"] == 0
     assert data["boards"]["withNonSupportedProviderHints"] == 1
     assert data["boards"]["withOnlyNonSupportedProviderHints"] == 0
     assert data["boards"]["nonSupportedProviderCoverage"] == {
         "present": 1,
-        "missing": 3,
-        "total": 4,
-        "percentage": 25.0,
+        "missing": 2,
+        "total": 3,
+        "percentage": 33.33,
     }
     assert data["routes"]["total"] == 5
     assert data["routes"]["byProvider"] == {
@@ -170,6 +174,19 @@ def test_coverage_report_counts_persisted_records_and_routes(tmp_path: Path):
     assert data["jobs"]["byProvider"] == {"greenhouse": 2}
     assert data["jobs"]["bySource"] == {"a16z": 2}
     assert data["jobs"]["byBoard"] == {"beta": 2}
+    assert data["sources"]["yield"] == {
+        "companyCandidates": 4,
+        "canonicalBoards": 3,
+        "providerHints": 5,
+        "jobCapableRoutes": 4,
+        "routeReady": 3,
+        "activeJobRoutes": 1,
+        "duplicateBoardRate": 0.25,
+        "uniqueActiveBoardsAdded": 1,
+        "yieldScore": 0.25,
+        "byProviderType": {"unknown": 2},
+        "byAccessType": {"unknown": 2},
+    }
 
 
 def test_coverage_report_detect_only_and_gap_summaries(tmp_path: Path):
@@ -385,6 +402,60 @@ def test_provider_audit_reports_candidate_provider_deltas(tmp_path: Path):
     assert "smartrecruiters" in data["doNotAdoptRationales"]
 
 
+def test_source_yield_report_counts_source_family_metrics(tmp_path: Path):
+    _settings, store = seeded_store(tmp_path)
+
+    data = build_source_yield_report(store, source_key="a16z").as_dict()
+
+    assert data["snapshot"]["scope"] == {"source": "a16z"}
+    assert data["snapshot"]["sourceCount"] == 1
+    assert data["totals"] == {
+        "companyCandidates": 3,
+        "canonicalBoards": 3,
+        "providerHints": 4,
+        "jobCapableRoutes": 3,
+        "routeReady": 2,
+        "activeJobRoutes": 1,
+        "duplicateBoardRate": 0.0,
+        "uniqueActiveBoardsAdded": 1,
+        "yieldScore": 0.3333,
+        "byProviderType": {"unknown": 1},
+        "byAccessType": {"unknown": 1},
+    }
+    assert data["sources"] == [
+        {
+            "source": "a16z",
+            "providerId": "consider",
+            "enabled": True,
+            "taxonomy": {},
+            "companyCandidates": 3,
+            "canonicalBoards": 3,
+            "providerHints": 4,
+            "jobCapableRoutes": 3,
+            "routeReady": 2,
+            "activeJobRoutes": 1,
+            "duplicateBoardRate": 0.0,
+            "uniqueActiveBoardsAdded": 1,
+            "yieldScore": 0.3333,
+        }
+    ]
+
+
+def test_admin_sources_yield_json_cli_output(tmp_path: Path):
+    _settings, _store = seeded_store(tmp_path)
+    result = runner.invoke(
+        app,
+        ["admin", "sources", "yield", "--source", "a16z", "--json"],
+        env={"OPENOPPS_DB_URL": f"sqlite:///{tmp_path / 'openopps.db'}"},
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["snapshot"]["scope"] == {"source": "a16z"}
+    assert data["totals"]["companyCandidates"] == 3
+    assert data["sources"][0]["source"] == "a16z"
+
+
 def test_providers_audit_json_cli_output(tmp_path: Path):
     _settings, _store = seeded_store(tmp_path)
     result = runner.invoke(
@@ -402,6 +473,8 @@ def test_providers_audit_json_cli_output(tmp_path: Path):
         "recruitee",
         "teamtailor",
         "bamboohr",
+        "rippling",
+        "wpjobmanager",
         "icims",
         "jobvite",
         "jazzhr",

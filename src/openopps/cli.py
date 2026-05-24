@@ -24,7 +24,11 @@ from rich.table import Table
 from typer.core import TyperGroup
 
 from openopps.cache import HttpCache
-from openopps.coverage import build_coverage_report, build_provider_audit_report
+from openopps.coverage import (
+    build_coverage_report,
+    build_provider_audit_report,
+    build_source_yield_report,
+)
 from openopps.enrichment import enrich_metadata
 from openopps.examples import build_example_dataset
 from openopps.export import export_records
@@ -97,6 +101,7 @@ SKILL_FILTER_HELP = "Match normalized skill names, levels, or keywords."
 QUERY_FILTER_HELP = "Search normalized title, company, and plain-text description."
 POSTED_AFTER_FILTER_HELP = "Inclusive YYYY-MM-DD lower bound for normalized posted_at."
 POSTED_BEFORE_FILTER_HELP = "Inclusive YYYY-MM-DD upper bound for normalized posted_at."
+JOB_STATUS_FILTER_HELP = "Job lifecycle filter: open, closed, or all. Defaults to open."
 
 BOARD_OPTION_FLAGS = ("--board", "-b", "-B")
 FORMAT_OPTION_FLAGS = ("--format", "-f", "-F")
@@ -140,41 +145,46 @@ class OpenOppsRootGroup(TyperGroup):
 app = typer.Typer(
     cls=OpenOppsRootGroup,
     help=(
-        "[bold]OpenOpps[/bold] maps public hiring boards into a local, "
-        "queryable opportunity ledger: discover sources, resolve provider routes, "
-        "sync normalized jobs, and export clean data."
+        "[bold]OpenOpps[/bold] is a local-first route ledger for public hiring "
+        "boards. Discover source catalogs, resolve executable provider routes, "
+        "sync normalized jobs, then inspect coverage and export clean data."
     ),
     epilog=(
-        "[dim]Suggested path:[/dim] "
-        "[bold]openopps sync a16z --metrics-json[/bold], then "
-        "[bold]openopps providers coverage --source a16z --provider any --json[/bold], then "
-        "[bold]openopps jobs list --remote Full --skill Python --json[/bold]."
+        "[dim]Start here:[/dim] "
+        "[bold]openopps status[/bold] to inspect local state, "
+        "[bold]openopps sync a16z --metrics-json[/bold] to populate one source, "
+        "[bold]openopps providers coverage --source a16z --provider any --json[/bold] "
+        "to inspect route readiness, and "
+        "[bold]openopps jobs list --remote Full --skill Python --json[/bold] "
+        "to query normalized jobs. "
+        "[dim]Automation:[/dim] use [bold]--json[/bold] or "
+        "[bold]--metrics-json[/bold] for parseable stdout."
     ),
 )
 sources_app = typer.Typer(
-    help="Discover, test, and sync aggregate source catalogs such as a16z, YC, and Getro boards."
+    help="Discover, test, and sync aggregate company catalogs such as a16z, YC, SEC, indexes, and Getro boards."
 )
 boards_app = typer.Typer(
-    help="Inspect discovered company boards and manage provider route metadata."
+    help="Inspect discovered company boards, enrich metadata, resolve routes, and export board records."
 )
 jobs_app = typer.Typer(
-    help="Sync, filter, inspect, and export normalized public job postings."
+    help="Sync, filter, inspect history for, and export normalized public job postings."
 )
 providers_app = typer.Typer(
-    help="Inspect provider readiness, live health, coverage gaps, and audit evidence."
+    help="Inspect persisted route readiness, live health samples, coverage gaps, and adoption evidence."
 )
 plugins_app = typer.Typer(
-    help="Inspect installed OpenOpps plugins and extension hooks."
+    help="Inspect trusted plugin entry points, loaded capabilities, conflicts, and failures."
 )
-cache_app = typer.Typer(help="Inspect and maintain the local OpenOpps request cache.")
+cache_app = typer.Typer(help="Inspect the local SQLite request cache used by shared HTTP paths.")
 examples_app = typer.Typer(help="Seed deterministic synthetic example data for demos.")
-admin_app = typer.Typer(help="Advanced maintenance and diagnostic commands.")
+admin_app = typer.Typer(help="Advanced dry-run diagnostics, manual route edits, and local maintenance.")
 admin_sources_app = typer.Typer(
-    help="Advanced source registration and adapter sampling."
+    help="Advanced source registration, adapter sampling, and offline yield reports."
 )
-admin_boards_app = typer.Typer(help="Advanced board and route metadata maintenance.")
+admin_boards_app = typer.Typer(help="Advanced board registration, enrichment, and explicit route metadata.")
 admin_providers_app = typer.Typer(
-    help="Advanced provider adapter and route diagnostics."
+    help="Advanced provider detection, dry-run route probing, and route-registry inspection."
 )
 admin_cache_app = typer.Typer(help="Advanced cache maintenance commands.")
 admin_db_app = typer.Typer(
@@ -272,8 +282,13 @@ def _run_sync_with_progress[T](
 
     with Progress(
         SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(bar_width=None),
+        TextColumn("{task.description}"),
+        BarColumn(
+            bar_width=18,
+            complete_style="bold cyan",
+            finished_style="bold green",
+            pulse_style="bold magenta",
+        ),
         TaskProgressColumn(),
         TimeElapsedColumn(),
         console=progress_console,
@@ -611,8 +626,11 @@ def _job_filters(
     query: str | None = None,
     posted_after: str | None = None,
     posted_before: str | None = None,
+    status: str = "open",
     limit: int | None = None,
 ) -> JobFilters:
+    if status not in {"open", "closed", "all"}:
+        raise typer.BadParameter("--status must be open, closed, or all")
     return JobFilters(
         source_key=source,
         board_key=board,
@@ -629,6 +647,7 @@ def _job_filters(
         query=query,
         posted_after=posted_after,
         posted_before=posted_before,
+        status=status,
         limit=limit,
     )
 
@@ -955,6 +974,67 @@ def sources_test(
 
     with _sync_logging(verbose):
         asyncio.run(_run())
+
+
+@admin_sources_app.command(
+    "yield", help="Report offline source-yield metrics from persisted records."
+)
+def sources_yield(
+    source: Annotated[
+        str | None,
+        typer.Option(
+            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    report = build_source_yield_report(_store(), source_key=source)
+    data = report.as_dict()
+    if json_output:
+        _json(data)
+        return
+    _table(
+        "Source Yield Snapshot",
+        [
+            "sources",
+            "company_candidates",
+            "canonical_boards",
+            "provider_hints",
+            "job_routes",
+            "active_job_routes",
+            "yield_score",
+        ],
+        [
+            [
+                data["snapshot"]["sourceCount"],
+                data["totals"]["companyCandidates"],
+                data["totals"]["canonicalBoards"],
+                data["totals"]["providerHints"],
+                data["totals"]["jobCapableRoutes"],
+                data["totals"]["activeJobRoutes"],
+                f"{data['totals']['yieldScore']:.2%}",
+            ]
+        ],
+    )
+    _table(
+        "Source Yield By Source",
+        ["source", "type", "access", "companies", "routes", "active", "score"],
+        [
+            [
+                item["source"],
+                item["taxonomy"].get("providerType", "unknown"),
+                item["taxonomy"].get("accessType", "unknown"),
+                item["companyCandidates"],
+                item["jobCapableRoutes"],
+                item["activeJobRoutes"],
+                f"{item['yieldScore']:.2%}",
+            ]
+            for item in data["sources"]
+        ],
+    )
 
 
 @sources_app.command(
@@ -1832,6 +1912,14 @@ def jobs_list(
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
+    status: Annotated[
+        str,
+        typer.Option(
+            "--status",
+            help=JOB_STATUS_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = "open",
     limit: Annotated[
         int | None,
         typer.Option(
@@ -1860,6 +1948,7 @@ def jobs_list(
             query=query,
             posted_after=posted_after,
             posted_before=posted_before,
+            status=status,
             limit=limit,
         )
     )
@@ -1884,6 +1973,37 @@ def jobs_show(
     if not job:
         raise typer.BadParameter(f"Unknown job: {job_id}")
     _json(job.model_dump(mode="json"))
+
+
+@jobs_app.command("history", help="Show normalized content versions for one job.")
+def jobs_history(
+    job_id: Annotated[str, typer.Argument(help="Job id to inspect.")],
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    versions = _store().list_job_versions(job_id)
+    if not versions:
+        raise typer.BadParameter(f"Unknown job: {job_id}")
+    rows = [version.model_dump(mode="json") for version in versions]
+    if json_output:
+        _json(rows)
+        return
+    _table(
+        "Job history",
+        ["version", "content_hash", "first_seen", "last_seen", "title"],
+        [
+            [
+                row.get("version"),
+                str(row.get("content_hash") or "")[:12],
+                row.get("first_seen_at") or "",
+                row.get("last_seen_at") or "",
+                row.get("title") or "",
+            ]
+            for row in rows
+        ],
+    )
 
 
 @jobs_app.command("export", help="Export filtered jobs to JSONL, CSV, or Parquet.")
@@ -2019,6 +2139,14 @@ def jobs_export(
             rich_help_panel=PANEL_SCOPE,
         ),
     ] = None,
+    status: Annotated[
+        str,
+        typer.Option(
+            "--status",
+            help=JOB_STATUS_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = "open",
     limit: Annotated[
         int | None,
         typer.Option(
@@ -2044,6 +2172,7 @@ def jobs_export(
                 query=query,
                 posted_after=posted_after,
                 posted_before=posted_before,
+                status=status,
                 limit=limit,
             )
         ),

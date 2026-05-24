@@ -168,6 +168,14 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# OpenOpps generated Kaggle data bundle
+kaggle/*.csv
+kaggle/*.db
+kaggle/*.db-*
+kaggle/*.sqlite
+kaggle/*.sqlite-*
+kaggle/exports/
+
 # IPython
 profile_default/
 ipython_config.py

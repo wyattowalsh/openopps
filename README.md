@@ -8,7 +8,7 @@ OpenOpps is a CLI-only v0.1 for discovering firm hiring boards from aggregate so
 
 The public domain nouns are:
 
-- `sources`: aggregate catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, and `yc`.
+- `sources`: aggregate catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, `yc`, public-company indexes, and ecosystem landscapes.
 - `boards`: firm/company hiring boards discovered from sources.
 - `jobs`: normalized public postings fetched from boards.
 - `providers`: adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, and Workday.
@@ -18,9 +18,12 @@ The public domain nouns are:
 
 ```bash
 uv sync
+just --list
 uv run openopps status
 uv run openopps --help
 ```
+
+`just` is the contributor command index. It mirrors CI while keeping the raw `uv`, `pnpm`, and OpenSpec commands visible in this README and the docs site.
 
 ## CLI
 
@@ -50,6 +53,8 @@ uv run openopps cache status --json
 uv run openopps plugins list --json
 ```
 
+For first-run discovery, start with `uv run openopps --help` and `uv run openopps status`. The root help groups stable workflow commands separately from advanced admin diagnostics, and automation-oriented commands use `--json` or `--metrics-json` for parseable stdout.
+
 Unscoped commands use superset behavior. For example, `jobs sync` targets every known board with a job-capable provider unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for removing the provider filter, which is useful in scripts that always pass a provider argument.
 
 When multiple sources discover the same company board, OpenOpps keeps the persisted board key visible through `boards list` and dedupes provider requests before syncing jobs or probing routes. Upstream slugs remain available as `remote_slug`. Metrics report `duplicateRoutesSkipped` so overlapping source coverage does not create duplicate Ashby, Greenhouse, Lever, or Workday requests.
@@ -74,7 +79,7 @@ uv run openopps providers audit --source a16z --json
 
 The JSON output includes filtered source, board, route, and job counts; route counts by provider, support level, and last status; executable and missing route metadata counts from the durable route registry; non-supported provider coverage; detect-only provider examples; boards with job-capable hints but no executable route; boards with executable routes but zero persisted jobs; and job enrichment completeness for posting URLs, apply URLs, locations, departments, descriptions, normalized compensation/salary, remote level, and employment type.
 
-`providers audit` uses the same persisted-board evidence model to report candidate-provider coverage for SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR, including examples and do-not-adopt rationales where generic public fetching is not reliable enough for v0.1.
+`providers audit` uses the same persisted-board evidence model to report candidate-provider coverage for SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, Rippling, WP Job Manager, iCIMS, Jobvite, and JazzHR, including examples, adopted-route rationales, and do-not-adopt rationales where generic public fetching is not reliable enough for v0.1.
 
 ## Cache
 
@@ -125,17 +130,24 @@ Provider definitions have a kind and a support level. Board source adapters disc
 | `southparkcommons`   | `detect` | Source adapter for South Park Commons jobs data.       |
 | `ycombinator`        | `detect` | Source adapter for YC companies via its Algolia index. |
 
-| Board provider                 | Support  | Notes                                                                |
-| ------------------------------ | -------- | -------------------------------------------------------------------- |
-| `greenhouse`                   | `jobs`   | Uses the public Greenhouse job board API.                            |
-| `lever`                        | `jobs`   | Uses the public Lever postings JSON API.                             |
-| `ashbyhq`                      | `jobs`   | Uses the public Ashby job posting API.                               |
-| `workday`                      | `jobs`   | Uses public Workday CXS careers-site endpoints.                      |
-| `teamtailor`, `manatal`, `gem` | `detect` | Preserved as board metadata until reliable public fetching is added. |
+| Board provider   | Support  | Notes                                                                            |
+| ---------------- | -------- | -------------------------------------------------------------------------------- |
+| `greenhouse`     | `jobs`   | Uses the public Greenhouse job board API.                                        |
+| `lever`          | `jobs`   | Uses the public Lever postings JSON API.                                         |
+| `ashbyhq`        | `jobs`   | Uses the public Ashby job posting API.                                           |
+| `workday`        | `jobs`   | Uses public Workday CXS careers-site endpoints.                                  |
+| `workable`       | `jobs`   | Uses Workable's public hosted-board account jobs endpoint.                       |
+| `teamtailor`     | `jobs`   | Uses Teamtailor's public jobs RSS feed.                                          |
+| `bamboohr`       | `jobs`   | Uses BambooHR's public careers board JSON endpoints, not authenticated ATS APIs. |
+| `rippling`       | `jobs`   | Uses Rippling's public ATS board JSON endpoints.                                 |
+| `wpjobmanager`   | `jobs`   | Uses explicit WP Job Manager REST or AJAX endpoints only.                        |
+| `manatal`, `gem` | `detect` | Preserved as board metadata until reliable public fetching is added.             |
 
 Workday support is limited to public postings visible on careers sites. It parses host, tenant, and site from public board URLs, then uses the public CXS listing and detail endpoints with conservative concurrency.
 
 Ashby support is limited to public postings exposed by `https://api.ashbyhq.com/posting-api/job-board/{JOB_BOARD_NAME}`. Job sync accepts route metadata from either `https://jobs.ashbyhq.com/{JOB_BOARD_NAME}` or the posting API URL; route probing tests candidate board tokens and reports matched hosted board URLs. Postings marked `isListed: false` are treated as direct-link-only and excluded from normal sync output.
+
+BambooHR support is limited to no-auth public careers board JSON endpoints such as `https://{tenant}.bamboohr.com/careers/list` and detail URLs under `/careers/{job_id}/detail`. WP Job Manager support requires an explicit `/wp-json/wp/v2/job-listings` or `/jm-ajax/get_listings/` endpoint; OpenOpps does not treat every WordPress site as a job-capable board.
 
 ## Provider Health
 
@@ -145,7 +157,7 @@ Provider health samples aggregate source adapters and job-capable board routes, 
 uv run openopps providers health --source a16z --provider any --limit 25 --json
 ```
 
-Health checks are dry runs by default and use lightweight count/sample requests for job routes instead of full job-detail syncs. Add `--apply` to persist source health under `raw_metadata.health` and board-provider route health under `last_status`. The `notCovered` output groups discovered detect-only providers, such as Teamtailor or Gem, that are preserved as metadata but do not yet have reliable job fetching.
+Health checks are dry runs by default and use lightweight count/sample requests for job routes instead of full job-detail syncs. Add `--apply` to persist source health under `raw_metadata.health` and board-provider route health under `last_status`. The `notCovered` output groups discovered detect-only providers, such as Manatal or Gem, that are preserved as metadata but do not yet have reliable job fetching.
 
 Use `providers coverage` when you want persisted-data coverage and enrichment quality. Use `providers audit` when you want candidate-provider adoption evidence. Use `providers health` when you want live sampled HTTP health.
 
@@ -222,19 +234,20 @@ Values can also be loaded from a local `.env` file.
 
 ## Repository Layout
 
-| Path                              | Purpose                                                               |
-| --------------------------------- | --------------------------------------------------------------------- |
-| `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                  |
-| `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                |
-| `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes. |
-| `src/openopps/cache.py`           | SQLite-backed HTTP JSON cache.                                        |
-| `src/openopps/plugins.py`         | Entry-point plugin contracts, validation, and load isolation.         |
-| `src/openopps/examples.py`        | Deterministic synthetic dataset builder for examples and smoke tests. |
-| `src/openopps/route_registry.py`  | Programmatic selector for executable and probe-verified board routes. |
-| `tests/`                          | Pytest suites split by `unit`, `integration`, and `smoke` scopes.     |
-| `scripts/`                        | Helper scripts, including deterministic docs metadata generation.     |
-| `docs/`                           | Next.js/Fumadocs developer docs site.                                 |
-| `openspec/`                       | OpenSpec specs and change tracking.                                   |
+| Path                              | Purpose                                                                    |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                       |
+| `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                     |
+| `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes.      |
+| `src/openopps/cache.py`           | SQLite-backed HTTP JSON cache.                                             |
+| `src/openopps/plugins.py`         | Entry-point plugin contracts, validation, and load isolation.              |
+| `src/openopps/examples.py`        | Deterministic synthetic dataset builder for examples and smoke tests.      |
+| `src/openopps/route_registry.py`  | Programmatic selector for executable and probe-verified board routes.      |
+| `tests/`                          | Pytest suites split by `unit`, `integration`, and `smoke` scopes.          |
+| `scripts/`                        | Helper scripts, including deterministic docs and Kaggle bundle generation. |
+| `kaggle/`                         | Generated Kaggle dataset metadata, data dictionary, and snapshot notebook. |
+| `docs/`                           | Next.js/Fumadocs developer docs site.                                      |
+| `openspec/`                       | OpenSpec specs and change tracking.                                        |
 
 ## Docs Site
 
@@ -250,13 +263,60 @@ rtk lint
 
 Documentation content lives in `docs/content/docs/`; Fumadocs navigation is curated by `docs/content/docs/meta.json`.
 
+## Contributor Workflow
+
+Use `just` for local parity with GitHub Actions:
+
+```bash
+just quick
+just ci
+just openspec-validate-all
+just docs-check
+just cli-help
+```
+
+The underlying commands remain direct and scriptable:
+
+```bash
+uv run pytest
+uv run pytest --cov=openopps --cov-report=term-missing
+rtk npx -y @fission-ai/openspec@latest validate --all --strict
+cd docs && pnpm types:check
+cd docs && pnpm build
+```
+
+Public workflow, CLI, docs-generation, CI, or validation behavior changes must update OpenSpec, README/docs, nested `AGENTS.md`, CI, and `Justfile` in the same logical change. Use OpenSpec JSON/status commands for agent-readable state:
+
+```bash
+rtk npx -y @fission-ai/openspec@latest list --json
+rtk npx -y @fission-ai/openspec@latest status --change prepare-v0-1-release --json
+rtk npx -y @fission-ai/openspec@latest instructions --change prepare-v0-1-release tasks --json
+```
+
 ## Validation
 
 ```bash
 uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
+uv run python scripts/generate_kaggle_metadata.py
+uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openopps.sqlite
 cd docs && pnpm types:check
 cd docs && pnpm build
 cd docs && rtk lint
 rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 ```
+
+## Kaggle Bundle
+
+The Kaggle upload bundle lives in `kaggle/`. Metadata and notebook files are checked in; generated CSV, Parquet, and SQLite data files are ignored by git and should be rebuilt before upload.
+
+```bash
+OPENOPPS_DB_URL="sqlite:///$PWD/kaggle/openopps.sqlite" uv run openopps sync --metrics-json
+uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openopps.sqlite
+KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle datasets create -p kaggle --public -q -t -r skip
+KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle kernels push -p kaggle/notebooks
+```
+
+Kaggle notebook schedules are configured in Kaggle after pushing the notebook; use a cron cadence such as `0 */6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook restores the prior input `openopps.sqlite`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, syncs active jobs into the existing SQLite ledger so versions and observations accumulate throughout the day, and exports every accumulated database table into `exports/csv/` and `exports/parquet/`. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`.
+
+The current Kaggle CLI checks a legacy API-key file before OAuth credentials; use the `KAGGLE_API_TOKEN="$(kaggle auth print-access-token)"` prefix for local create/version/push commands after running `kaggle auth login`.
