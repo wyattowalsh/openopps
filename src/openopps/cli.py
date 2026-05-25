@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 import json
+import runpy
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from click import ClickException, Context
 from loguru import logger
@@ -30,7 +31,6 @@ from openopps.coverage import (
     build_source_yield_report,
 )
 from openopps.enrichment import enrich_metadata
-from openopps.examples import build_example_dataset
 from openopps.export import export_records
 from openopps.health import check_provider_health
 from openopps.http import build_async_client
@@ -62,6 +62,7 @@ from openopps.utils import slugify, stable_id
 
 
 console = Console()
+EXAMPLES_DATA_SCRIPT = Path("examples") / "examples.py"
 PANEL_OUTPUT = "Output"
 PANEL_SCOPE = "Scope filters"
 PANEL_ROUTE = "Route metadata"
@@ -90,6 +91,7 @@ LOCATION_FILTER_HELP = "Case-insensitive substring match against normalized loca
 DOMAIN_FILTER_HELP = "Case-insensitive substring match against company domains."
 DEPARTMENT_FILTER_HELP = "Case-insensitive substring match against departments."
 TEAM_FILTER_HELP = "Case-insensitive substring match against teams."
+
 WORKPLACE_FILTER_HELP = "Case-insensitive substring match, such as Remote or Onsite."
 REMOTE_FILTER_HELP = "Case-insensitive exact remote level: Full, Hybrid, or None."
 EMPLOYMENT_TYPE_FILTER_HELP = (
@@ -113,6 +115,30 @@ PROVIDER_OPTION_FLAGS = ("--provider", "-p", "-P")
 REFRESH_CACHE_OPTION_FLAGS = ("--refresh-cache", "-r", "-R")
 SOURCE_OPTION_FLAGS = ("--source", "-s", "-S")
 VERBOSE_OPTION_FLAGS = ("--verbose", "-v", "-V")
+
+
+def _example_data_script_path() -> Path:
+    module_path = Path(__file__).resolve()
+    candidates = (
+        module_path.parents[2] / EXAMPLES_DATA_SCRIPT,
+        module_path.parents[1] / EXAMPLES_DATA_SCRIPT,
+        Path.cwd() / EXAMPLES_DATA_SCRIPT,
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise ClickException(f"Example dataset script not found at {EXAMPLES_DATA_SCRIPT}.")
+
+
+def _load_example_dataset_builder() -> Callable[..., Any]:
+    namespace = runpy.run_path(str(_example_data_script_path()))
+    builder = namespace.get("build_example_dataset")
+    if not callable(builder):
+        raise ClickException(
+            f"Example dataset script must define build_example_dataset: "
+            f"{EXAMPLES_DATA_SCRIPT}"
+        )
+    return cast("Callable[..., Any]", builder)
 
 
 class OpenOppsRootGroup(TyperGroup):
@@ -176,13 +202,19 @@ providers_app = typer.Typer(
 plugins_app = typer.Typer(
     help="Inspect trusted plugin entry points, loaded capabilities, conflicts, and failures."
 )
-cache_app = typer.Typer(help="Inspect the local SQLite request cache used by shared HTTP paths.")
+cache_app = typer.Typer(
+    help="Inspect the local SQLite request cache used by shared HTTP paths."
+)
 examples_app = typer.Typer(help="Seed deterministic synthetic example data for demos.")
-admin_app = typer.Typer(help="Advanced dry-run diagnostics, manual route edits, and local maintenance.")
+admin_app = typer.Typer(
+    help="Advanced dry-run diagnostics, manual route edits, and local maintenance."
+)
 admin_sources_app = typer.Typer(
     help="Advanced source registration, adapter sampling, and offline yield reports."
 )
-admin_boards_app = typer.Typer(help="Advanced board registration, enrichment, and explicit route metadata.")
+admin_boards_app = typer.Typer(
+    help="Advanced board registration, enrichment, and explicit route metadata."
+)
 admin_providers_app = typer.Typer(
     help="Advanced provider detection, dry-run route probing, and route-registry inspection."
 )
@@ -810,6 +842,7 @@ def examples_seed(
         typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
+    build_example_dataset = _load_example_dataset_builder()
     dataset = build_example_dataset(
         seed=seed, board_count=boards, jobs_per_board=jobs_per_board
     )

@@ -1,7 +1,18 @@
+from collections.abc import Callable
+from pathlib import Path
+import runpy
+from typing import Any, cast
+
 from hypothesis import given, settings, strategies as st
 
-from openopps.examples import build_example_dataset
 from openopps.models import ProviderSupport
+
+
+_EXAMPLES_SCRIPT = Path(__file__).resolve().parents[3] / "examples" / "examples.py"
+_EXAMPLES_NAMESPACE = runpy.run_path(str(_EXAMPLES_SCRIPT))
+build_example_dataset = cast(
+    "Callable[..., Any]", _EXAMPLES_NAMESPACE["build_example_dataset"]
+)
 
 
 def test_build_example_dataset_is_deterministic_for_stable_fields():
