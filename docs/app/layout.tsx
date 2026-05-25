@@ -1,6 +1,6 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import "./global.css";
-import { appName, siteUrl } from "@/lib/shared";
+import { appName, siteUrl, socialImages } from "@/lib/shared";
 import type { Metadata } from "next";
 
 const siteDescription =
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
 		siteName: appName,
 		images: [
 			{
-				url: "/og-image.png",
+				url: socialImages.repository,
 				width: 1200,
 				height: 630,
 				alt: `${appName} open-door social card`,
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
 		card: "summary_large_image",
 		title: appName,
 		description: siteDescription,
-		images: ["/og-image.png"],
+		images: [socialImages.repository],
 	},
 };
 

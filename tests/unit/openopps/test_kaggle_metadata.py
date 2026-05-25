@@ -160,12 +160,12 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "KAGGLE_API_TOKEN" in source
     assert "KAGGLE_API_V1_TOKEN_PATH" in source
     assert gen.DB_FILE in source
+    assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
 
 
 def test_generated_kaggle_metadata_artifacts_are_current() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     kaggle_dir = repo_root / "kaggle"
-    manager_dir = repo_root / "kaggle-manager"
 
     generated_dataset = json.loads(
         (kaggle_dir / "dataset-metadata.json").read_text(encoding="utf-8")
@@ -174,16 +174,17 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
         (kaggle_dir / "datapackage.json").read_text(encoding="utf-8")
     )
     generated_kernel = json.loads(
-        (manager_dir / "kernel-metadata.json").read_text(encoding="utf-8")
+        (kaggle_dir / "kernel-metadata.json").read_text(encoding="utf-8")
     )
     generated_notebook = json.loads(
-        (manager_dir / gen.NB_FILE).read_text(encoding="utf-8")
+        (kaggle_dir / gen.NB_FILE).read_text(encoding="utf-8")
     )
 
     assert generated_dataset == gen.dataset_metadata()
     assert generated_datapackage == gen.datapackage()
     assert generated_kernel == gen.kernel_metadata()
     assert generated_notebook == gen.notebook()
+    assert not any((repo_root / "kaggle-manager").glob("*"))
     assert not (kaggle_dir / "notebooks").exists()
     assert (kaggle_dir / gen.DATASET_IMAGE_FILE).is_file()
 

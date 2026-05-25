@@ -92,16 +92,16 @@ PARQUET_DIR = "exports/parquet"
 NB_FILE = "openoppsdb-manager.ipynb"
 NB_ID = "wyattowalsh/openoppsdb-manager"
 DATASET_IMAGE_FILE = "dataset-cover-image.png"
-DATASET_IMAGE_SOURCE = Path("docs/public/og-image.png")
+DATASET_IMAGE_SOURCE = Path("docs/public/social/openoppsdb.png")
 DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[1] / "kaggle"
-DEFAULT_MANAGER_DIR = Path(__file__).resolve().parents[1] / "kaggle-manager"
+DEFAULT_MANAGER_DIR = DEFAULT_DATASET_DIR
 GENERATOR_SCRIPT_URL = (
     "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
     "scripts/generate_kaggle_metadata.py"
 )
 DATASET_IMAGE_URL = (
     "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
-    "docs/public/og-image.png"
+    "docs/public/social/openoppsdb.png"
 )
 
 
@@ -360,8 +360,8 @@ def notebook() -> dict[str, Any]:
             _markdown_cell(
                 "overview",
                 "# openoppsdb manager\n\n"
-                "This notebook is connected to `wyattowalsh/openoppsdb`; it is "
-                "not part of the dataset upload. Schedule it with a Kaggle cron "
+                "This notebook is connected to `wyattowalsh/openoppsdb`. Schedule "
+                "it with a Kaggle cron "
                 "cadence such as `0 */6 * * *`. Each run installs OpenOpps from "
                 "GitHub, copies the current dataset SQLite file, syncs public jobs, "
                 "exports every table, regenerates metadata, and publishes a new "
@@ -653,7 +653,7 @@ GENERATOR_SCRIPT_URL = os.environ.get(
 )
 DATASET_IMAGE_URL = os.environ.get(
     "OPENOPPS_DATASET_IMAGE_URL",
-    "https://raw.githubusercontent.com/wyattowalsh/openopps/main/docs/public/og-image.png",
+    "https://raw.githubusercontent.com/wyattowalsh/openopps/main/docs/public/social/openoppsdb.png",
 )
 
 if OUTPUT_DIR.exists():
