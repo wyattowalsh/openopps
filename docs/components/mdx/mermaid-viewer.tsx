@@ -17,6 +17,7 @@ const viewerScript = String.raw`
   function getParts(root) {
     return {
       canvas: root.querySelector(".openopps-mermaid-canvas"),
+      svg: root.querySelector(".openopps-mermaid svg"),
       viewport: root.querySelector(".openopps-mermaid-viewport"),
       zoom: root.querySelector(".openopps-mermaid-zoom"),
       status: root.querySelector(".openopps-mermaid-status"),
@@ -46,31 +47,45 @@ const viewerScript = String.raw`
     }
   }
 
+  function getContentBox(root) {
+    const parts = getParts(root);
+    if (!parts.canvas || !parts.svg) return null;
+
+    const state = readState(root);
+    const canvas = parts.canvas.getBoundingClientRect();
+    const svg = parts.svg.getBoundingClientRect();
+    const scale = state.scale || 1;
+    return {
+      x: (svg.left - canvas.left) / scale,
+      y: (svg.top - canvas.top) / scale,
+      width: svg.width / scale,
+      height: svg.height / scale,
+    };
+  }
+
   function center(root, scale) {
     const parts = getParts(root);
-    if (!parts.viewport || !parts.canvas) return;
+    const box = getContentBox(root);
+    if (!parts.viewport || !box) return;
 
     const nextScale = scale ?? readState(root).scale;
     const viewport = parts.viewport.getBoundingClientRect();
-    const width = parts.canvas.offsetWidth || viewport.width;
-    const height = parts.canvas.offsetHeight || viewport.height;
     writeState(root, {
       scale: nextScale,
-      x: (viewport.width - width * nextScale) / 2,
-      y: (viewport.height - height * nextScale) / 2,
+      x: (viewport.width - box.width * nextScale) / 2 - box.x * nextScale,
+      y: (viewport.height - box.height * nextScale) / 2 - box.y * nextScale,
     });
   }
 
   function fit(root) {
     const parts = getParts(root);
-    if (!parts.viewport || !parts.canvas) return;
+    const box = getContentBox(root);
+    if (!parts.viewport || !box) return;
 
     const viewport = parts.viewport.getBoundingClientRect();
-    const width = parts.canvas.offsetWidth || viewport.width;
-    const height = parts.canvas.offsetHeight || viewport.height;
     const scale = Math.min(
-      (viewport.width - 32) / width,
-      (viewport.height - 32) / height,
+      (viewport.width - 48) / box.width,
+      (viewport.height - 96) / box.height,
       1
     );
     center(root, clamp(scale, minZoom, maxZoom));
@@ -98,31 +113,40 @@ const viewerScript = String.raw`
     const state = readState(root);
     switch (name) {
       case "zoom-out":
+        root.dataset.viewMode = "manual";
         zoomAt(root, state.scale / zoomFactor);
         break;
       case "zoom-in":
+        root.dataset.viewMode = "manual";
         zoomAt(root, state.scale * zoomFactor);
         break;
       case "fit":
       case "reset":
+        root.dataset.viewMode = "fit";
         fit(root);
         break;
       case "center":
+        root.dataset.viewMode = "manual";
         center(root);
         break;
       case "actual":
+        root.dataset.viewMode = "manual";
         center(root, 1.35);
         break;
       case "pan-left":
+        root.dataset.viewMode = "manual";
         writeState(root, { ...state, x: state.x - panStep });
         break;
       case "pan-right":
+        root.dataset.viewMode = "manual";
         writeState(root, { ...state, x: state.x + panStep });
         break;
       case "pan-up":
+        root.dataset.viewMode = "manual";
         writeState(root, { ...state, y: state.y - panStep });
         break;
       case "pan-down":
+        root.dataset.viewMode = "manual";
         writeState(root, { ...state, y: state.y + panStep });
         break;
       case "fullscreen":
@@ -156,6 +180,7 @@ const viewerScript = String.raw`
     const rect = parts.viewport.getBoundingClientRect();
     const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     const state = readState(root);
+    root.dataset.viewMode = "manual";
     zoomAt(root, event.deltaY < 0 ? state.scale * zoomFactor : state.scale / zoomFactor, point);
   }, { passive: false });
 
@@ -196,6 +221,7 @@ const viewerScript = String.raw`
     if (!root) return;
 
     const state = readState(root);
+    root.dataset.viewMode = "manual";
     drag = {
       pointerId: event.pointerId,
       root,
@@ -225,6 +251,29 @@ const viewerScript = String.raw`
 
   document.addEventListener("pointerup", stopDrag);
   document.addEventListener("pointercancel", stopDrag);
+
+  function initialize(root) {
+    if (root.dataset.viewerReady) return;
+    root.dataset.viewerReady = "true";
+    root.dataset.viewMode = "fit";
+    requestAnimationFrame(() => fit(root));
+  }
+
+  function initializeAll() {
+    document.querySelectorAll("[data-openopps-mermaid-viewer]").forEach(initialize);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeAll, { once: true });
+  } else {
+    requestAnimationFrame(initializeAll);
+  }
+
+  window.addEventListener("resize", () => {
+    document.querySelectorAll('[data-openopps-mermaid-viewer][data-view-mode="fit"]').forEach((root) => {
+      requestAnimationFrame(() => fit(root));
+    });
+  });
 })();
 `;
 
@@ -279,9 +328,6 @@ export function MermaidViewer({ svg }: { svg: string }) {
 				>
 					<div className="openopps-mermaid-toolbar-copy">
 						<span className="openopps-mermaid-eyebrow">Route map</span>
-						<span className="openopps-mermaid-hint">
-							Wheel zoom. Drag the surface. Arrow keys pan.
-						</span>
 					</div>
 					<div className="openopps-mermaid-control-strip">
 						<ControlButton

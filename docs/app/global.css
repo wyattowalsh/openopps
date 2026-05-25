@@ -339,7 +339,7 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid {
-    @apply my-8 overflow-hidden rounded-[1.85rem] border border-border/80 bg-card/90 p-1.5 shadow-[0_26px_90px_color-mix(in_oklab,var(--foreground)_9%,transparent)] md:p-2;
+    @apply my-8 overflow-hidden rounded-[1.45rem] border border-border/70 bg-card/80 p-1 shadow-[0_18px_60px_color-mix(in_oklab,var(--foreground)_7%,transparent)];
   }
 
   .openopps-mermaid-viewer:fullscreen {
@@ -351,15 +351,15 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid-toolbar {
-    @apply absolute left-3 right-3 top-3 z-[2] grid gap-2 rounded-[1.4rem] border border-border/70 bg-card/75 p-1.5 shadow-[0_18px_60px_color-mix(in_oklab,var(--foreground)_10%,transparent),inset_0_1px_0_color-mix(in_oklab,var(--background)_72%,transparent)] backdrop-blur-xl md:grid-cols-[minmax(15rem,1fr)_auto];
+    @apply pointer-events-none absolute left-2 right-2 top-2 z-[2] flex items-start justify-between gap-2;
   }
 
   .openopps-mermaid-toolbar-copy {
-    @apply flex min-w-0 items-center gap-3 px-1.5;
+    @apply pointer-events-auto flex min-w-0 items-center;
   }
 
   .openopps-mermaid-eyebrow {
-    @apply inline-flex shrink-0 rounded-full border border-primary/35 bg-primary/10 px-3 py-1.5 font-mono text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-primary shadow-[inset_0_1px_0_color-mix(in_oklab,var(--background)_75%,transparent)];
+    @apply inline-flex shrink-0 rounded-full border border-primary/25 bg-card/70 px-2.5 py-1 font-mono text-[0.56rem] font-semibold uppercase tracking-[0.2em] text-primary/90 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--background)_68%,transparent)] backdrop-blur-md;
   }
 
   .openopps-mermaid-hint {
@@ -371,19 +371,19 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid-control-strip {
-    @apply flex flex-wrap items-center justify-start gap-1 rounded-full border border-border/65 bg-background/65 p-1 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_6%,transparent)] md:justify-end;
+    @apply pointer-events-auto flex max-w-[min(100%,28rem)] flex-wrap items-center justify-end gap-0.5 rounded-full border border-border/60 bg-card/75 p-0.5 shadow-[0_10px_35px_color-mix(in_oklab,var(--foreground)_7%,transparent),inset_0_1px_0_color-mix(in_oklab,var(--background)_70%,transparent)] backdrop-blur-md;
   }
 
   .openopps-mermaid-control {
-    @apply inline-flex h-7 min-w-7 items-center justify-center rounded-full border border-transparent bg-transparent px-2 font-mono text-[0.63rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground transition-all duration-200 hover:-translate-y-px hover:border-primary/35 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:translate-y-0 active:scale-95;
+    @apply inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-transparent bg-transparent px-1.5 font-mono text-[0.56rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground transition-all duration-200 hover:-translate-y-px hover:border-primary/25 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:translate-y-0 active:scale-95;
   }
 
   .openopps-mermaid-zoom {
-    @apply min-w-16 rounded-full border border-border/75 bg-secondary/60 px-2.5 py-1 text-center font-mono text-[0.63rem] font-semibold uppercase tracking-[0.12em] text-foreground shadow-[inset_0_1px_0_color-mix(in_oklab,var(--background)_65%,transparent)];
+    @apply min-w-12 rounded-full border border-border/65 bg-secondary/50 px-2 py-0.5 text-center font-mono text-[0.56rem] font-semibold uppercase tracking-[0.08em] text-foreground shadow-[inset_0_1px_0_color-mix(in_oklab,var(--background)_65%,transparent)];
   }
 
   .openopps-mermaid-viewport {
-    @apply relative min-h-[25rem] overflow-hidden rounded-[1.45rem] border border-border/70 bg-background/45 bg-[linear-gradient(color-mix(in_oklab,var(--foreground)_6%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_oklab,var(--foreground)_6%,transparent)_1px,transparent_1px)] bg-[size:24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:min-h-[30rem];
+    @apply relative min-h-[22rem] overflow-hidden rounded-[1.15rem] border border-border/65 bg-background/45 bg-[linear-gradient(color-mix(in_oklab,var(--foreground)_5%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_oklab,var(--foreground)_5%,transparent)_1px,transparent_1px)] bg-[size:24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:min-h-[24rem];
   }
 
   .openopps-mermaid-viewport::after {
@@ -397,11 +397,11 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid-pan-pad {
-    @apply absolute bottom-3 right-3 z-[2] grid grid-cols-3 grid-rows-3 gap-1 rounded-[1.35rem] border border-border/70 bg-card/75 p-1.5 shadow-[0_18px_60px_color-mix(in_oklab,var(--foreground)_11%,transparent),inset_0_1px_0_color-mix(in_oklab,var(--background)_70%,transparent)] backdrop-blur-xl;
+    @apply absolute bottom-2 right-2 z-[2] grid grid-cols-3 grid-rows-3 gap-0.5 rounded-full p-0.5 opacity-65 transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100;
   }
 
   .openopps-mermaid-pan-pad .openopps-mermaid-control {
-    @apply size-8 rounded-2xl bg-background/70 p-0 text-[0.68rem] shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_5%,transparent)];
+    @apply size-7 rounded-full border-border/55 bg-card/70 p-0 text-[0.62rem] shadow-[0_8px_24px_color-mix(in_oklab,var(--foreground)_7%,transparent),inset_0_1px_0_color-mix(in_oklab,var(--background)_68%,transparent)] backdrop-blur-md;
   }
 
   .openopps-mermaid-pan-left {
@@ -425,7 +425,7 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid-canvas {
-    @apply flex min-h-[25rem] min-w-max cursor-grab touch-none select-none items-start justify-start px-7 pb-16 pt-24 transition-transform duration-200 ease-out active:cursor-grabbing md:min-h-[30rem] md:px-9 md:pb-20 md:pt-28;
+    @apply flex min-h-[22rem] min-w-max cursor-grab touch-none select-none items-start justify-start px-6 pb-12 pt-16 transition-transform duration-200 ease-out active:cursor-grabbing md:min-h-[24rem] md:px-8 md:pb-14 md:pt-18;
     transform-origin: 0 0;
     will-change: transform;
   }
@@ -440,17 +440,15 @@ html > body[data-scroll-locked] {
 
   @media (max-width: 47.99rem) {
     .openopps-mermaid-toolbar {
-      left: 0.65rem;
-      right: 0.65rem;
-      top: 0.65rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      left: 0.5rem;
+      right: 0.5rem;
+      top: 0.5rem;
+      align-items: flex-start;
+      gap: 0.4rem;
     }
 
     .openopps-mermaid-toolbar-copy {
       flex: 0 0 auto;
-      padding-inline: 0.15rem;
     }
 
     .openopps-mermaid-control-strip {
@@ -466,8 +464,13 @@ html > body[data-scroll-locked] {
     }
 
     .openopps-mermaid-pan-pad {
-      bottom: 0.7rem;
-      right: 0.7rem;
+      bottom: 0.5rem;
+      right: 0.5rem;
+    }
+
+    .openopps-mermaid-pan-pad .openopps-mermaid-control {
+      width: 1.55rem;
+      height: 1.55rem;
     }
 
     .openopps-mermaid svg {
