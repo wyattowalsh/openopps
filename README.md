@@ -230,7 +230,9 @@ Configuration uses `OPENOPPS_` environment variables:
 - `OPENOPPS_CACHE_REFRESH` bypasses cache reads for cacheable request paths.
 - `OPENOPPS_CACHE_STALE_ON_ERROR` allows eligible stale cache records on retryable failures.
 
-Values can also be loaded from a local `.env` file.
+Values can also be loaded from a local `.env` file. Copy `.env.example` to
+`.env` for local overrides; `.env` is ignored so machine-specific settings stay
+out of commits.
 
 ## Repository Layout
 
@@ -241,7 +243,7 @@ Values can also be loaded from a local `.env` file.
 | `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes.      |
 | `src/openopps/cache.py`           | SQLite-backed HTTP JSON cache.                                             |
 | `src/openopps/plugins.py`         | Entry-point plugin contracts, validation, and load isolation.              |
-| `src/openopps/examples.py`        | Deterministic synthetic dataset builder for examples and smoke tests.      |
+| `examples/examples.py`            | Deterministic synthetic dataset builder for examples and smoke tests.      |
 | `src/openopps/route_registry.py`  | Programmatic selector for executable and probe-verified board routes.      |
 | `tests/`                          | Pytest suites split by `unit`, `integration`, and `smoke` scopes.          |
 | `scripts/`                        | Helper scripts, including deterministic docs and Kaggle bundle generation. |
@@ -308,15 +310,15 @@ rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 
 ## Kaggle Bundle
 
-The Kaggle upload bundle lives in `kaggle/`. Metadata and notebook files are checked in; generated CSV, Parquet, and SQLite data files are ignored by git and should be rebuilt before upload.
+The Kaggle dataset upload root lives in `kaggle/`. It is data-only: `dataset-metadata.json`, `dataset-cover-image.png`, `datapackage.json`, `openopps.sqlite`, and full CSV/Parquet table exports. The connected manager notebook lives separately in `kaggle-manager/` so notebook source is not uploaded as dataset content. `dataset-metadata.json` is the Kaggle UI source of truth for cover image, file information, and column descriptors; `datapackage.json` remains a richer companion data dictionary with table metadata, examples, and required flags.
 
 ```bash
 OPENOPPS_DB_URL="sqlite:///$PWD/kaggle/openopps.sqlite" uv run openopps sync --metrics-json
 uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openopps.sqlite
-KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle datasets create -p kaggle --public -q -t -r skip
-KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle kernels push -p kaggle/notebooks
+KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle datasets create -p kaggle --public -q -t -r zip
+KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle kernels push -p kaggle-manager
 ```
 
-Kaggle notebook schedules are configured in Kaggle after pushing the notebook; use a cron cadence such as `0 */6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook restores the prior input `openopps.sqlite`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, syncs active jobs into the existing SQLite ledger so versions and observations accumulate throughout the day, and exports every accumulated database table into `exports/csv/` and `exports/parquet/`. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`.
+Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use a cron cadence such as `0 */6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` through `dataset_sources`, restores the prior input `openopps.sqlite`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, syncs active jobs into the existing SQLite ledger so versions and observations accumulate throughout the day, regenerates dataset metadata, writes `openopps_tables` and `openopps_columns` metadata tables into SQLite for in-file table and column descriptions, exports every accumulated database table into `exports/csv/` and `exports/parquet/`, and versions the dataset. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`.
 
 The current Kaggle CLI checks a legacy API-key file before OAuth credentials; use the `KAGGLE_API_TOKEN="$(kaggle auth print-access-token)"` prefix for local create/version/push commands after running `kaggle auth login`.

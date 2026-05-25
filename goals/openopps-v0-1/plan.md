@@ -116,7 +116,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 
 10. Add generated examples and deterministic smoke paths.
 
-- Touches: likely new `src/openopps/examples.py` or `src/openopps/fixtures.py`, `tests/fixtures/`, CLI commands, docs, and storage helpers.
+- Touches: likely new `examples/examples.py`, `tests/fixtures/`, CLI commands, docs, and storage helpers.
 - Define typed example dataclasses or factories for sources, boards, provider routes, jobs, plugin metadata, cache records, and raw upstream payloads.
 - Choose explicit user-facing commands such as `examples seed`, `examples reset`, and `examples export`, or document a smaller command shape if implementation finds a better CLI fit.
 - Use Faker with deterministic seeds to generate realistic demo content for docs and CLI smoke paths.

@@ -235,7 +235,7 @@ Validation:
 
 Primary files:
 
-- `src/openopps/examples.py` or `src/openopps/fixtures.py`
+- `examples/examples.py`
 - `tests/unit/openopps/test_examples.py`
 - `tests/fixtures/` if needed
 
