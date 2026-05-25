@@ -4,7 +4,7 @@
   "profile": "data-package",
   "resources": [
     {
-      "description": "Full SQLite ledger with source, board, provider route, job lifecycle, version history, raw payload snapshot, and sync observation tables.",
+      "description": "Full SQLite ledger with source, board, provider route, job lifecycle, version history, raw payload snapshot, sync observation, and in-DB table and column metadata tables.",
       "format": "sqlite",
       "mediatype": "application/vnd.sqlite3",
       "name": "openopps_database",
@@ -1229,6 +1229,165 @@
             ]
           },
           "title": "Job Sync Observations"
+        },
+        {
+          "description": "In-database table labels and descriptions for openopps.sqlite.",
+          "name": "openopps_tables",
+          "schema": {
+            "fields": [
+              {
+                "description": "SQLite table name.",
+                "jsonSchemaType": "string",
+                "name": "table_name",
+                "required": true,
+                "title": "Table Name",
+                "type": "str"
+              },
+              {
+                "description": "Human-readable table label.",
+                "jsonSchemaType": "string",
+                "name": "table_title",
+                "required": true,
+                "title": "Table Title",
+                "type": "str"
+              },
+              {
+                "description": "Plain-language table description.",
+                "jsonSchemaType": "string",
+                "name": "table_description",
+                "required": true,
+                "title": "Table Description",
+                "type": "str"
+              },
+              {
+                "description": "CSV export path for this SQLite table.",
+                "jsonSchemaType": "string",
+                "name": "csv_path",
+                "required": true,
+                "title": "Csv Path",
+                "type": "str"
+              },
+              {
+                "description": "Parquet export path for this SQLite table.",
+                "jsonSchemaType": "string",
+                "name": "parquet_path",
+                "required": true,
+                "title": "Parquet Path",
+                "type": "str"
+              }
+            ]
+          },
+          "title": "Openopps Tables"
+        },
+        {
+          "description": "In-database column labels, descriptions, and schema hints for openopps.sqlite.",
+          "name": "openopps_columns",
+          "schema": {
+            "fields": [
+              {
+                "description": "SQLite table that owns this column.",
+                "jsonSchemaType": "string",
+                "name": "table_name",
+                "required": true,
+                "title": "Table Name",
+                "type": "str"
+              },
+              {
+                "description": "SQLite column name.",
+                "jsonSchemaType": "string",
+                "name": "column_name",
+                "required": true,
+                "title": "Column Name",
+                "type": "str"
+              },
+              {
+                "description": "Human-readable column label.",
+                "jsonSchemaType": "string",
+                "name": "column_title",
+                "required": true,
+                "title": "Column Title",
+                "type": "str"
+              },
+              {
+                "description": "Plain-language column description.",
+                "jsonSchemaType": "string",
+                "name": "column_description",
+                "required": true,
+                "title": "Column Description",
+                "type": "str"
+              },
+              {
+                "description": "Python or typing-level logical type label.",
+                "jsonSchemaType": "string",
+                "name": "logical_type",
+                "required": true,
+                "title": "Logical Type",
+                "type": "str"
+              },
+              {
+                "description": "JSON Schema type derived from the model field.",
+                "jsonSchemaType": "string",
+                "name": "json_schema_type",
+                "required": true,
+                "title": "Json Schema Type",
+                "type": "str"
+              },
+              {
+                "description": "Whether the source model marks the column as required.",
+                "jsonSchemaType": "boolean",
+                "name": "required",
+                "required": true,
+                "title": "Required",
+                "type": "bool"
+              },
+              {
+                "default": null,
+                "description": "Original source alias when it differs from the column name.",
+                "jsonSchemaType": "string | null",
+                "name": "source_name",
+                "required": false,
+                "title": "Source Name",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "JSON Schema format hint, when available.",
+                "jsonSchemaType": "string | null",
+                "name": "format",
+                "required": false,
+                "title": "Format",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "JSON array of allowed values, when available.",
+                "jsonSchemaType": "string | null",
+                "name": "enum_json",
+                "required": false,
+                "title": "Enum Json",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "JSON array of example values, when available.",
+                "jsonSchemaType": "string | null",
+                "name": "examples_json",
+                "required": false,
+                "title": "Examples Json",
+                "type": "str | null"
+              },
+              {
+                "default": null,
+                "description": "JSON-encoded default value, when available.",
+                "jsonSchemaType": "string | null",
+                "name": "default_json",
+                "required": false,
+                "title": "Default Json",
+                "type": "str | null"
+              }
+            ]
+          },
+          "title": "Openopps Columns"
         }
       ],
       "title": "Openopps Database"
@@ -2490,6 +2649,171 @@
       "title": "JobSyncObservationRow"
     },
     {
+      "description": "Full CSV table export for In-database table labels and descriptions for openopps.sqlite.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "openopps_tables_csv",
+      "path": "exports/csv/openopps_tables.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "SQLite table name.",
+            "jsonSchemaType": "string",
+            "name": "table_name",
+            "required": true,
+            "title": "Table Name",
+            "type": "str"
+          },
+          {
+            "description": "Human-readable table label.",
+            "jsonSchemaType": "string",
+            "name": "table_title",
+            "required": true,
+            "title": "Table Title",
+            "type": "str"
+          },
+          {
+            "description": "Plain-language table description.",
+            "jsonSchemaType": "string",
+            "name": "table_description",
+            "required": true,
+            "title": "Table Description",
+            "type": "str"
+          },
+          {
+            "description": "CSV export path for this SQLite table.",
+            "jsonSchemaType": "string",
+            "name": "csv_path",
+            "required": true,
+            "title": "Csv Path",
+            "type": "str"
+          },
+          {
+            "description": "Parquet export path for this SQLite table.",
+            "jsonSchemaType": "string",
+            "name": "parquet_path",
+            "required": true,
+            "title": "Parquet Path",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "OpenOppsTableRow"
+    },
+    {
+      "description": "Full CSV table export for In-database column labels, descriptions, and schema hints for openopps.sqlite.",
+      "format": "csv",
+      "mediatype": "text/csv",
+      "name": "openopps_columns_csv",
+      "path": "exports/csv/openopps_columns.csv",
+      "schema": {
+        "fields": [
+          {
+            "description": "SQLite table that owns this column.",
+            "jsonSchemaType": "string",
+            "name": "table_name",
+            "required": true,
+            "title": "Table Name",
+            "type": "str"
+          },
+          {
+            "description": "SQLite column name.",
+            "jsonSchemaType": "string",
+            "name": "column_name",
+            "required": true,
+            "title": "Column Name",
+            "type": "str"
+          },
+          {
+            "description": "Human-readable column label.",
+            "jsonSchemaType": "string",
+            "name": "column_title",
+            "required": true,
+            "title": "Column Title",
+            "type": "str"
+          },
+          {
+            "description": "Plain-language column description.",
+            "jsonSchemaType": "string",
+            "name": "column_description",
+            "required": true,
+            "title": "Column Description",
+            "type": "str"
+          },
+          {
+            "description": "Python or typing-level logical type label.",
+            "jsonSchemaType": "string",
+            "name": "logical_type",
+            "required": true,
+            "title": "Logical Type",
+            "type": "str"
+          },
+          {
+            "description": "JSON Schema type derived from the model field.",
+            "jsonSchemaType": "string",
+            "name": "json_schema_type",
+            "required": true,
+            "title": "Json Schema Type",
+            "type": "str"
+          },
+          {
+            "description": "Whether the source model marks the column as required.",
+            "jsonSchemaType": "boolean",
+            "name": "required",
+            "required": true,
+            "title": "Required",
+            "type": "bool"
+          },
+          {
+            "default": null,
+            "description": "Original source alias when it differs from the column name.",
+            "jsonSchemaType": "string | null",
+            "name": "source_name",
+            "required": false,
+            "title": "Source Name",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON Schema format hint, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "format",
+            "required": false,
+            "title": "Format",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON array of allowed values, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "enum_json",
+            "required": false,
+            "title": "Enum Json",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON array of example values, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "examples_json",
+            "required": false,
+            "title": "Examples Json",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON-encoded default value, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "default_json",
+            "required": false,
+            "title": "Default Json",
+            "type": "str | null"
+          }
+        ]
+      },
+      "title": "OpenOppsColumnRow"
+    },
+    {
       "description": "Full Parquet table export for Durable source catalogs that discover company boards.",
       "format": "parquet",
       "mediatype": "application/vnd.apache.parquet",
@@ -3744,6 +4068,171 @@
         ]
       },
       "title": "JobSyncObservationRow"
+    },
+    {
+      "description": "Full Parquet table export for In-database table labels and descriptions for openopps.sqlite.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "openopps_tables_parquet",
+      "path": "exports/parquet/openopps_tables.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "SQLite table name.",
+            "jsonSchemaType": "string",
+            "name": "table_name",
+            "required": true,
+            "title": "Table Name",
+            "type": "str"
+          },
+          {
+            "description": "Human-readable table label.",
+            "jsonSchemaType": "string",
+            "name": "table_title",
+            "required": true,
+            "title": "Table Title",
+            "type": "str"
+          },
+          {
+            "description": "Plain-language table description.",
+            "jsonSchemaType": "string",
+            "name": "table_description",
+            "required": true,
+            "title": "Table Description",
+            "type": "str"
+          },
+          {
+            "description": "CSV export path for this SQLite table.",
+            "jsonSchemaType": "string",
+            "name": "csv_path",
+            "required": true,
+            "title": "Csv Path",
+            "type": "str"
+          },
+          {
+            "description": "Parquet export path for this SQLite table.",
+            "jsonSchemaType": "string",
+            "name": "parquet_path",
+            "required": true,
+            "title": "Parquet Path",
+            "type": "str"
+          }
+        ]
+      },
+      "title": "OpenOppsTableRow"
+    },
+    {
+      "description": "Full Parquet table export for In-database column labels, descriptions, and schema hints for openopps.sqlite.",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "name": "openopps_columns_parquet",
+      "path": "exports/parquet/openopps_columns.parquet",
+      "schema": {
+        "fields": [
+          {
+            "description": "SQLite table that owns this column.",
+            "jsonSchemaType": "string",
+            "name": "table_name",
+            "required": true,
+            "title": "Table Name",
+            "type": "str"
+          },
+          {
+            "description": "SQLite column name.",
+            "jsonSchemaType": "string",
+            "name": "column_name",
+            "required": true,
+            "title": "Column Name",
+            "type": "str"
+          },
+          {
+            "description": "Human-readable column label.",
+            "jsonSchemaType": "string",
+            "name": "column_title",
+            "required": true,
+            "title": "Column Title",
+            "type": "str"
+          },
+          {
+            "description": "Plain-language column description.",
+            "jsonSchemaType": "string",
+            "name": "column_description",
+            "required": true,
+            "title": "Column Description",
+            "type": "str"
+          },
+          {
+            "description": "Python or typing-level logical type label.",
+            "jsonSchemaType": "string",
+            "name": "logical_type",
+            "required": true,
+            "title": "Logical Type",
+            "type": "str"
+          },
+          {
+            "description": "JSON Schema type derived from the model field.",
+            "jsonSchemaType": "string",
+            "name": "json_schema_type",
+            "required": true,
+            "title": "Json Schema Type",
+            "type": "str"
+          },
+          {
+            "description": "Whether the source model marks the column as required.",
+            "jsonSchemaType": "boolean",
+            "name": "required",
+            "required": true,
+            "title": "Required",
+            "type": "bool"
+          },
+          {
+            "default": null,
+            "description": "Original source alias when it differs from the column name.",
+            "jsonSchemaType": "string | null",
+            "name": "source_name",
+            "required": false,
+            "title": "Source Name",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON Schema format hint, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "format",
+            "required": false,
+            "title": "Format",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON array of allowed values, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "enum_json",
+            "required": false,
+            "title": "Enum Json",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON array of example values, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "examples_json",
+            "required": false,
+            "title": "Examples Json",
+            "type": "str | null"
+          },
+          {
+            "default": null,
+            "description": "JSON-encoded default value, when available.",
+            "jsonSchemaType": "string | null",
+            "name": "default_json",
+            "required": false,
+            "title": "Default Json",
+            "type": "str | null"
+          }
+        ]
+      },
+      "title": "OpenOppsColumnRow"
     }
   ],
   "title": "OpenOpps DB"

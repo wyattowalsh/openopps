@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import runpy
 import copy
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
-from openopps.docs_data import build_docs_data
+_DOCS_DATA_SCRIPT = (
+    Path(__file__).resolve().parents[3] / "scripts" / "generate_docs_data.py"
+)
+_DOCS_DATA_NAMESPACE = runpy.run_path(str(_DOCS_DATA_SCRIPT))
+build_docs_data = cast(
+    "Callable[[], dict[str, Any]]",
+    _DOCS_DATA_NAMESPACE["build_docs_data"],
+)
 
 
 def test_build_docs_data_is_deterministic() -> None:
