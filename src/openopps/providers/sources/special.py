@@ -345,14 +345,14 @@ class YCombinatorSourceAdapter:
         response.raise_for_status()
         match = _ALGOLIA_OPTS_RE.search(response.text)
         if not match:
-            raise ValueError("Could not find YC Algolia options on the companies page")
+            raise ValueError("Could not find YC Algolia options on the source page")
         opts = json.loads(match.group(1))
         if (
             not isinstance(opts, dict)
             or opts.get("app") != application_id
             or not opts.get("key")
         ):
-            raise ValueError("YC companies page returned unexpected Algolia options")
+            raise ValueError("YC source page returned unexpected Algolia options")
         return str(opts["key"])
 
     async def _query_algolia(
