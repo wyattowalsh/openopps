@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 
+import httpx
 from loguru import logger
 
 from openopps.enrichment import enrich_metadata
@@ -20,9 +21,12 @@ from openopps.providers.boards import build_job_provider
 from openopps.providers.sources import BOARD_SOURCE_CATALOG, build_source_adapter
 from openopps.route_probe import probe_routes
 from openopps.route_registry import BoardRouteRegistry
-from openopps.route_select import normalize_provider_filter
+from openopps.route_select import normalize_provider_filter, route_request_key
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore, append_jsonl
+
+_ROUTE_UNAVAILABLE_STATUSES = {400, 401, 403, 404, 410}
+_ROUTE_CLOSE_MISSING_STATUSES = {400, 404, 410}
 
 
 def all_board_sources() -> list[SourceRecord]:
@@ -249,11 +253,6 @@ async def sync_boards(
     )
     metrics.board_providers = summary.checked
     metrics.duplicate_routes_skipped = summary.duplicate_routes_skipped
-    metrics.skipped = (
-        summary.route_ready_skipped
-        + summary.duplicate_routes_skipped
-        + len(summary.unknown)
-    )
     metrics.provider_errors.update(summary.errors)
     _report(
         report,
@@ -267,7 +266,7 @@ async def sync_boards(
                 _chunk("ready", _format_count(len(summary.matched)), "green"),
                 _chunk("unresolved", _format_count(len(summary.unknown)), "yellow"),
                 _chunk(
-                    "skipped",
+                    "not-probed",
                     _format_count(
                         summary.route_ready_skipped + summary.duplicate_routes_skipped
                     ),
@@ -285,17 +284,45 @@ def _select_sources(
     store: OpenOppsStore | None, source_key: str | None
 ) -> list[SourceRecord]:
     source_catalog = {source.key: source for source in all_board_sources()}
-    if store:
-        source_catalog.update({source.key: source for source in store.list_sources()})
-    sources = list(source_catalog.values())
+    stored_sources = (
+        {source.key: source for source in store.list_sources()} if store else {}
+    )
+    sources = [
+        _unscoped_source(catalog_source, stored_sources.get(key))
+        for key, catalog_source in source_catalog.items()
+    ]
+    sources.extend(
+        source for key, source in stored_sources.items() if key not in source_catalog
+    )
     if source_key:
-        selected = [source for source in sources if source.key == source_key]
-        if selected:
-            return selected
+        if source_key in stored_sources:
+            return [stored_sources[source_key]]
         if source_key in BOARD_SOURCE_CATALOG:
             return [BOARD_SOURCE_CATALOG[source_key]]
         raise ValueError(f"Unknown source: {source_key}")
     return [source for source in sources if source.enabled]
+
+
+def _unscoped_source(
+    catalog_source: SourceRecord, stored_source: SourceRecord | None
+) -> SourceRecord:
+    if stored_source is None:
+        return catalog_source
+    if (
+        stored_source.url != catalog_source.url
+        or stored_source.provider_id != catalog_source.provider_id
+    ):
+        return stored_source
+    if not catalog_source.enabled:
+        return catalog_source
+    return catalog_source.model_copy(
+        update={
+            "enabled": stored_source.enabled,
+            "version": stored_source.version,
+            "raw_metadata": catalog_source.raw_metadata | stored_source.raw_metadata,
+            "synced_at": stored_source.synced_at,
+        }
+    )
 
 
 def _compact_page_meta(page_meta: dict) -> dict:
@@ -325,8 +352,10 @@ async def sync_jobs(
         provider_id=provider_filter,
         ready_only=True,
     )
+    duplicate_routes_by_request_key = _duplicate_routes_by_request_key(
+        store, route_selection.duplicate_routes
+    )
     metrics.duplicate_routes_skipped += len(route_selection.duplicate_routes)
-    metrics.skipped += len(route_selection.missing_route_metadata)
     route_total = len(route_selection.entries)
     completed_routes = 0
     progress_lock = asyncio.Lock()
@@ -362,7 +391,9 @@ async def sync_jobs(
     write_lock = asyncio.Lock()
     async with build_async_client(settings) as client:
 
-        async def run_route(route: BoardProviderRecord, board: BoardRecord) -> None:
+        async def run_route(
+            route: BoardProviderRecord, board: BoardRecord, request_key: str
+        ) -> None:
             nonlocal completed_routes
             async with semaphore:
                 provider = build_job_provider(route.provider_id, settings)
@@ -417,6 +448,40 @@ async def sync_jobs(
                 try:
                     jobs = await provider.fetch_jobs(client, board, route)
                 except Exception as exc:
+                    unavailable_status = _route_unavailable_status(exc)
+                    if unavailable_status is not None:
+                        status = f"job_sync_unavailable_{unavailable_status}"
+                        unavailable_routes = [
+                            route,
+                            *duplicate_routes_by_request_key.get(request_key, []),
+                        ]
+                        async with write_lock:
+                            _remove_unavailable_routes(
+                                store,
+                                unavailable_routes,
+                                status=status,
+                                close_missing=(
+                                    unavailable_status
+                                    in _ROUTE_CLOSE_MISSING_STATUSES
+                                ),
+                            )
+                        async with progress_lock:
+                            completed_routes += 1
+                            _report_job_progress(
+                                report,
+                                completed_routes,
+                                route_total,
+                                metrics.jobs,
+                                _job_detail(board.key, f"removed: {status}"),
+                            )
+                        if verbose:
+                            logger.warning(
+                                "Removed unavailable job route board={} provider={} status={}",
+                                board.key,
+                                route.provider_id,
+                                unavailable_status,
+                            )
+                        return
                     metrics.error(route.provider_id)
                     async with progress_lock:
                         completed_routes += 1
@@ -477,9 +542,55 @@ async def sync_jobs(
                 )
 
         await asyncio.gather(
-            *(run_route(entry.route, entry.board) for entry in route_selection.entries)
+            *(
+                run_route(entry.route, entry.board, entry.request_key)
+                for entry in route_selection.entries
+            )
         )
     return metrics.finish()
+
+
+def _duplicate_routes_by_request_key(
+    store: OpenOppsStore, routes: Sequence[BoardProviderRecord]
+) -> dict[str, list[BoardProviderRecord]]:
+    grouped: dict[str, list[BoardProviderRecord]] = {}
+    for route in routes:
+        board = store.get_board(route.board_key)
+        if board is None:
+            continue
+        grouped.setdefault(route_request_key(board, route), []).append(route)
+    return grouped
+
+
+def _remove_unavailable_routes(
+    store: OpenOppsStore,
+    routes: Sequence[BoardProviderRecord],
+    *,
+    status: str,
+    close_missing: bool,
+) -> None:
+    closed_route_keys: set[tuple[str, str]] = set()
+    for route in routes:
+        if close_missing:
+            route_key = (route.board_key, route.provider_id)
+            if route_key not in closed_route_keys:
+                store.sync_jobs_for_route(
+                    route.board_key,
+                    route.provider_id,
+                    [],
+                    close_missing=True,
+                )
+                closed_route_keys.add(route_key)
+        store.deactivate_board_provider_route(route, status=status)
+
+
+def _route_unavailable_status(exc: Exception) -> int | None:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return None
+    status_code = exc.response.status_code
+    if status_code in _ROUTE_UNAVAILABLE_STATUSES:
+        return status_code
+    return None
 
 
 def _report(

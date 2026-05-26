@@ -244,7 +244,13 @@ def test_examples_seed_populates_database_and_cache(tmp_path: Path):
     assert status_payload["cache"]["total"] == 2
     assert status_payload["cache"]["fresh"] == 2
     assert cache_result.exit_code == 0
-    assert json.loads(cache_result.output)["byNamespace"] == {"example-source": 2}
+    cache_payload = json.loads(cache_result.output)
+    assert cache_payload["path"] == str(tmp_path / "openopps.db")
+    assert cache_payload["byNamespace"] == {"example-source": 2}
+    assert not (tmp_path / "openopps.cache.db").exists()
+    with sqlite3.connect(tmp_path / "openopps.db") as conn:
+        count = conn.execute("select count(*) from http_cache").fetchone()[0]
+    assert count == 2
 
 
 def test_sources_sync_unknown_source_is_actionable_typer_error(tmp_path: Path):

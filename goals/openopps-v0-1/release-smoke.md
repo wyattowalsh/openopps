@@ -7,7 +7,7 @@ This smoke run used a temporary SQLite database and deterministic example data s
 ## Environment
 
 - Database: `sqlite:////var/folders/z9/yr58561n1rj8_lqtzwkjt24m0000gp/T/opencode/openopps-v01-smoke/openopps.db`
-- Cache: `/var/folders/z9/yr58561n1rj8_lqtzwkjt24m0000gp/T/opencode/openopps-v01-smoke/openopps.cache.db`
+- Cache: `http_cache` table inside the configured SQLite database
 - Seed: `42`
 - Boards: `4`
 - Jobs per job-capable board: `2`

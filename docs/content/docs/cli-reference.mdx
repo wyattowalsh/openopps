@@ -309,7 +309,7 @@ uv run openopps examples seed --seed 42 --boards 4 --jobs-per-board 2 --json
 uv run openopps jobs list --source example --json
 ```
 
-`examples seed` writes deterministic synthetic sources, boards, routes, jobs, and cache records into the configured local database/cache without hitting upstream services.
+`examples seed` writes deterministic synthetic sources, boards, routes, jobs, and cache records into the configured local database without hitting upstream services.
 
 ## Database Commands
 
@@ -319,7 +319,7 @@ uv run openopps admin db status
 uv run openopps admin db vacuum
 ```
 
-SQLite is the default storage backend and uses the configured `OPENOPPS_DB_URL`. `admin db init` applies the current v0.1 Alembic schema head for the durable app database. The optional HTTP response cache is separate and is not managed by Alembic.
+SQLite is the default storage backend and uses the configured `OPENOPPS_DB_URL`. `admin db init` applies the current v0.1 Alembic schema head for the durable app database. HTTP response cache rows live in the same SQLite database and are managed by `cache.py`, not by Alembic.
 
 ## Export Formats
 

@@ -78,8 +78,8 @@ def _validate_sqlite_schema(settings: OpenOppsSettings) -> None:
                 "Reset that local DB and rerun `openopps admin db init` "
                 f"(path: {location}), or set OPENOPPS_DB_URL to a new SQLite file. "
                 f"Missing columns: {', '.join(missing)}. "
-                "This usually means a pre-release openopps.db was stamped before "
-                "the v0.1 schema was finalized."
+                "This usually means a pre-release local SQLite database was stamped "
+                "before the v0.1 schema was finalized."
             )
     finally:
         engine.dispose()

@@ -51,11 +51,20 @@ class WorkableProvider:
         token = workable_token(route)
         if not token:
             return []
-        data = await self._fetch_account(client, token, details=True)
-        jobs = data.get("jobs") if isinstance(data, dict) else None
+        data = await self._fetch_jobs(client, token)
+        jobs = data.get("results") if isinstance(data, dict) else None
         if not isinstance(jobs, list):
-            raise ValueError("Workable account endpoint returned invalid JSON")
-        return [self._normalize(board, item) for item in jobs if isinstance(item, dict)]
+            raise ValueError("Workable jobs endpoint returned invalid JSON")
+        normalized: list[JobRecord] = []
+        for item in jobs:
+            if not isinstance(item, dict):
+                continue
+            shortcode = _string(item.get("shortcode"))
+            detail = (
+                await self._fetch_detail(client, token, shortcode) if shortcode else {}
+            )
+            normalized.append(self._normalize(board, token, item | detail))
+        return normalized
 
     async def check_jobs(
         self,
@@ -66,26 +75,43 @@ class WorkableProvider:
         token = workable_token(route)
         if not token:
             return 0
-        data = await self._fetch_account(client, token, details=False)
-        jobs = data.get("jobs") if isinstance(data, dict) else None
-        if not isinstance(jobs, list):
-            raise ValueError("Workable account endpoint returned invalid JSON")
-        return len(jobs)
+        data = await self._fetch_jobs(client, token)
+        total = data.get("total") if isinstance(data, dict) else None
+        if isinstance(total, int):
+            return total
+        jobs = data.get("results") if isinstance(data, dict) else None
+        if isinstance(jobs, list):
+            return len(jobs)
+        raise ValueError("Workable jobs endpoint returned invalid JSON")
 
-    async def _fetch_account(
-        self, client: httpx.AsyncClient, token: str, *, details: bool
+    async def _fetch_jobs(self, client: httpx.AsyncClient, token: str) -> dict[str, Any]:
+        data = await self._request_json(
+            client,
+            "POST",
+            f"https://apply.workable.com/api/v3/accounts/{token}/jobs",
+            json={},
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Workable jobs endpoint returned invalid JSON")
+        return data
+
+    async def _fetch_detail(
+        self, client: httpx.AsyncClient, token: str, shortcode: str | None
     ) -> dict[str, Any]:
+        if not shortcode:
+            return {}
         data = await self._request_json(
             client,
             "GET",
-            f"https://www.workable.com/api/accounts/{token}",
-            params={"details": "true" if details else "false"},
+            f"https://apply.workable.com/api/v2/accounts/{token}/jobs/{shortcode}",
         )
         if not isinstance(data, dict):
-            raise ValueError("Workable account endpoint returned invalid JSON")
+            raise ValueError("Workable job detail endpoint returned invalid JSON")
         return data
 
-    def _normalize(self, board: BoardRecord, posting: dict[str, Any]) -> JobRecord:
+    def _normalize(
+        self, board: BoardRecord, token: str, posting: dict[str, Any]
+    ) -> JobRecord:
         remote_id = str(
             first_present(
                 posting.get("shortcode"),
@@ -100,6 +126,16 @@ class WorkableProvider:
             posting.get("compensation")
         )
         salary_min, salary_max, salary_currency = _salary_components(compensation)
+        posting_url = _posting_url(
+            token, remote_id, posting.get("url"), posting.get("shortlink")
+        )
+        apply_url = _posting_url(
+            token,
+            remote_id,
+            posting.get("application_url"),
+            posting.get("url"),
+            posting.get("shortlink"),
+        )
         return JobRecord(
             id=stable_id(board.key, self.provider_id, remote_id),
             board_key=board.key,
@@ -107,16 +143,22 @@ class WorkableProvider:
             remote_id=remote_id,
             title=_string(posting.get("title")) or remote_id,
             locations=locations,
-            department=_string(posting.get("department")),
+            department=_string_or_first(posting.get("department")),
             team=_string(posting.get("function")),
-            workplace_type=_string(posting.get("employment_type")),
+            workplace_type=_string(
+                first_present(posting.get("employment_type"), posting.get("type"))
+            ),
             company=board.name,
-            employment_type=_string(posting.get("employment_type")),
+            employment_type=_string(
+                first_present(posting.get("employment_type"), posting.get("type"))
+            ),
             description=strip_html(description_html),
             description_html=description_html,
             remote=normalize_remote_level(
                 locations,
-                is_remote=posting.get("telecommuting")
+                is_remote=posting.get("remote")
+                if isinstance(posting.get("remote"), bool)
+                else posting.get("telecommuting")
                 if isinstance(posting.get("telecommuting"), bool)
                 else None,
             ),
@@ -126,12 +168,14 @@ class WorkableProvider:
             salary_max=salary_max,
             salary_currency=salary_currency,
             experience=_string(posting.get("experience")),
-            posting_url=_string(
-                first_present(posting.get("url"), posting.get("shortlink"))
-            ),
-            apply_url=_string(posting.get("application_url")),
+            posting_url=posting_url,
+            apply_url=apply_url,
             posted_at=_string(
-                first_present(posting.get("published_on"), posting.get("created_at"))
+                first_present(
+                    posting.get("published_on"),
+                    posting.get("published"),
+                    posting.get("created_at"),
+                )
             ),
             raw_listing=_raw(posting),
         )
@@ -189,6 +233,19 @@ def _raw(value: dict[str, Any]) -> JsonDict:
 
 def _string(value: object) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _string_or_first(value: object) -> str | None:
+    if isinstance(value, list):
+        return next((_string(item) for item in value if _string(item)), None)
+    return _string(value)
+
+
+def _posting_url(token: str, remote_id: str, *values: object) -> str:
+    return (
+        _string(first_present(*values))
+        or f"https://apply.workable.com/{token}/j/{remote_id}"
+    )
 
 
 def _salary_components(

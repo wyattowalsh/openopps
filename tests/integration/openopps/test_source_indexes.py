@@ -51,7 +51,7 @@ async def test_sec_company_tickers_normalizes_listed_company_boards():
     assert meta["total"] == 1
     assert boards[0].key == "sec-company-tickers:aapl"
     assert boards[0].name == "Apple Inc."
-    assert boards[0].remote_id == "320193"
+    assert boards[0].remote_id == "320193:AAPL"
     assert boards[0].markets == ["Nasdaq"]
     assert boards[0].raw_payload["sourceProvider"] == "sec_company_tickers"
 

@@ -261,7 +261,26 @@ def _store() -> OpenOppsStore:
 
 
 def _cache() -> HttpCache:
-    return HttpCache(_settings().cache_path)
+    settings = _settings()
+    if settings.sqlite_path is None:
+        raise typer.BadParameter(
+            "Cache commands require a local sqlite:/// OPENOPPS_DB_URL because "
+            "OpenOpps stores HTTP cache records in the application SQLite database."
+        )
+    return HttpCache(settings.sqlite_path)
+
+
+def _cache_status(settings: OpenOppsSettings) -> dict[str, Any]:
+    if settings.sqlite_path is None:
+        return {
+            "path": None,
+            "total": 0,
+            "fresh": 0,
+            "expired": 0,
+            "staleOnErrorEligible": 0,
+            "byNamespace": {},
+        }
+    return HttpCache(settings.sqlite_path).status()
 
 
 def _settings_with_cache_refresh(refresh_cache: bool) -> OpenOppsSettings:
@@ -401,7 +420,7 @@ def _status_payload() -> dict[str, Any]:
             "path": str(settings.sqlite_path) if settings.sqlite_path else None,
             "counts": counts,
         },
-        "cache": _cache().status(),
+        "cache": _cache_status(settings),
         "plugins": _plugin_registry(settings).as_dict(),
         "readiness": readiness,
         "coverage": {
@@ -775,22 +794,20 @@ def plugins_list(
     )
 
 
-@cache_app.command(
-    "status", help="Show local cache path, record count, and namespaces."
-)
+@cache_app.command("status", help="Show local cache record count and namespaces.")
 def cache_status(
     json_output: Annotated[
         bool,
         typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
-    data = _cache().status()
+    data = _cache_status(_settings())
     if json_output:
         _json(data)
         return
     _table(
         "OpenOpps Cache",
-        ["path", "records", "fresh", "expired", "stale_on_error", "namespaces"],
+        ["database", "records", "fresh", "expired", "stale_on_error", "namespaces"],
         [
             [
                 data["path"],

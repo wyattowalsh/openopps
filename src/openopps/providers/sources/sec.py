@@ -22,7 +22,7 @@ SEC_COMPANY_TICKERS_SOURCE = SourceRecord(
     key="sec-company-tickers",
     url=SEC_COMPANY_TICKERS_URL,
     provider_id="sec_company_tickers",
-    enabled=True,
+    enabled=False,
     raw_metadata=source_taxonomy_metadata(
         provider_type="public_company_index",
         coverage_mode="listed_companies",
@@ -31,7 +31,11 @@ SEC_COMPANY_TICKERS_SOURCE = SourceRecord(
         refresh_cadence="periodic",
         source_category="public_companies",
         source_attribution="U.S. Securities and Exchange Commission company tickers file",
-        default_enabled_reason="Official public company ticker backbone with stable CIK metadata.",
+        default_enabled_reason=(
+            "Opt-in because SEC fair-access controls can reject generic scheduled "
+            "sync environments; run manually when the caller has a compliant "
+            "declared User-Agent and network path."
+        ),
     ),
 )
 
@@ -81,7 +85,7 @@ def _board_from_sec_row(source: SourceRecord, row: dict[str, Any]) -> BoardRecor
         row.get("name") or row.get("title") or row.get("Company Name") or ticker
     ).strip()
     exchange = str(row.get("exchange") or row.get("Exchange") or "").strip() or None
-    remote_id = str(cik or ticker or name)
+    remote_id = f"{cik}:{ticker}" if cik and ticker else str(ticker or cik or name)
     remote_slug = slugify(ticker or name)
     raw_payload = {
         "cik": cik,

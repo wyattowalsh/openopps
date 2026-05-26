@@ -15,13 +15,13 @@ uv tool install -e .
 openopps status
 ```
 
-The editable `uv tool install -e .` path makes the `openopps` command available directly from the current checkout. Relative SQLite URLs such as `sqlite:///openopps.db` are resolved by the running process, so keep your working directory and `OPENOPPS_DB_URL` explicit when switching between projects or smoke-test databases.
+The editable `uv tool install -e .` path makes the `openopps` command available directly from the current checkout. Relative SQLite URLs such as `sqlite:///openoppsdb.sqlite` are resolved by the running process, so keep your working directory and `OPENOPPS_DB_URL` explicit when switching between projects or smoke-test databases.
 
 ## Environment Variables
 
 | Variable                        | Default                                                   | Purpose                                                            |
 | ------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| `OPENOPPS_DB_URL`               | `sqlite:///openopps.db`                                   | Database URL used by storage commands and sync jobs.               |
+| `OPENOPPS_DB_URL`               | `sqlite:///openoppsdb.sqlite`                             | Database URL used by storage commands and sync jobs.               |
 | `OPENOPPS_MAX_CONNECTIONS`      | `40`                                                      | Maximum HTTP connection pool size.                                 |
 | `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.          |
 | `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Board-level concurrency during sync workflows.                     |
@@ -30,8 +30,8 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_DB_BATCH_SIZE`        | `500`                                                     | Batch size for SQLite writes.                                      |
 | `OPENOPPS_HTTP_TIMEOUT`         | `30.0`                                                    | HTTP timeout in seconds.                                           |
 | `OPENOPPS_RETRY_ATTEMPTS`       | `3`                                                       | Number of retry attempts for retriable upstream requests.          |
-| `OPENOPPS_USER_AGENT`           | `openopps/0.1 (+https://github.com/wyattowalsh/openopps)` | User agent sent to public source and provider endpoints.           |
-| `OPENOPPS_CACHE_ENABLED`        | `true`                                                    | Enables the shared SQLite JSON request cache.                      |
+| `OPENOPPS_USER_AGENT`           | `openopps/0.1 openopps@wyattowalsh.com`                   | User agent sent to public source and provider endpoints.           |
+| `OPENOPPS_CACHE_ENABLED`        | `true`                                                    | Enables the shared JSON request cache in the SQLite database.      |
 | `OPENOPPS_CACHE_TTL_SECONDS`    | `3600`                                                    | Default cache freshness window in seconds.                         |
 | `OPENOPPS_CACHE_REFRESH`        | `false`                                                   | Bypasses cache reads while still updating successful responses.    |
 | `OPENOPPS_CACHE_STALE_ON_ERROR` | `false`                                                   | Allows eligible stale cache data after retryable upstream errors.  |
@@ -51,7 +51,7 @@ OPENOPPS_USER_AGENT='openopps/0.1 (contact: jobs@example.com)' uv run openopps a
 For repeated local use from the repository checkout, place values in `.env` at the repository root:
 
 ```dotenv
-OPENOPPS_DB_URL=sqlite:///openopps.db
+OPENOPPS_DB_URL=sqlite:///openoppsdb.sqlite
 OPENOPPS_SOURCE_CONCURRENCY=4
 OPENOPPS_PROVIDER_CONCURRENCY=12
 OPENOPPS_CACHE_TTL_SECONDS=3600

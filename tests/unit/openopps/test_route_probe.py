@@ -170,7 +170,8 @@ async def test_probe_routes_uses_cached_greenhouse_response(tmp_path: Path):
     assert first.matched[0].observed_jobs == 1
     assert second.matched[0].observed_jobs == 1
     assert route.call_count == 1
-    assert HttpCache(settings.cache_path).status()["byNamespace"] == {"route_probe": 1}
+    assert settings.sqlite_path is not None
+    assert HttpCache(settings.sqlite_path).status()["byNamespace"] == {"route_probe": 1}
 
 
 @pytest.mark.asyncio
@@ -374,8 +375,10 @@ async def test_probe_routes_matches_new_public_board_providers(tmp_path: Path):
             route_record(board_key="wpjobmanager", provider_id="wpjobmanager"),
         ]
     )
-    respx.get("https://www.workable.com/api/accounts/workable").mock(
-        return_value=httpx.Response(200, json={"jobs": [{"shortcode": "eng"}]})
+    respx.post("https://apply.workable.com/api/v3/accounts/workable/jobs").mock(
+        return_value=httpx.Response(
+            200, json={"total": 1, "results": [{"shortcode": "eng"}]}
+        )
     )
     respx.get("https://teamtailor.teamtailor.com/jobs.rss").mock(
         return_value=httpx.Response(

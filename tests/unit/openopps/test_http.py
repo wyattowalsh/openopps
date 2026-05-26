@@ -10,6 +10,11 @@ from openopps.http import build_async_client, retrying_json_request
 from openopps.settings import OpenOppsSettings
 
 
+def _cache_for(settings: OpenOppsSettings) -> HttpCache:
+    assert settings.sqlite_path is not None
+    return HttpCache(settings.sqlite_path)
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_retrying_json_request_retries_transient_status():
@@ -85,7 +90,8 @@ async def test_retrying_json_request_caches_successful_json(tmp_path):
     assert first == {"ok": True}
     assert second == {"ok": True}
     assert route.call_count == 1
-    assert HttpCache(settings.cache_path).status()["total"] == 1
+    assert _cache_for(settings).status()["total"] == 1
+    assert not (tmp_path / "openopps.cache.db").exists()
 
 
 @pytest.mark.asyncio
@@ -115,7 +121,7 @@ async def test_retrying_json_request_coalesces_duplicate_inflight_cache_misses(
     assert first == {"ok": True}
     assert second == {"ok": True}
     assert route.call_count == 1
-    assert HttpCache(settings.cache_path).status()["total"] == 1
+    assert _cache_for(settings).status()["total"] == 1
 
 
 @pytest.mark.asyncio
@@ -154,7 +160,7 @@ async def test_retrying_json_request_returns_stale_on_retryable_error(tmp_path):
         retry_attempts=1,
         cache_stale_on_error=True,
     )
-    cache = HttpCache(settings.cache_path)
+    cache = _cache_for(settings)
     cache.put_json(
         "GET",
         "https://api.example.test/stale",
@@ -174,7 +180,7 @@ async def test_retrying_json_request_returns_stale_on_retryable_error(tmp_path):
 
     assert data == {"cached": True}
     assert route.call_count == 1
-    assert HttpCache(settings.cache_path).status()["staleOnErrorEligible"] == 1
+    assert _cache_for(settings).status()["staleOnErrorEligible"] == 1
 
 
 @pytest.mark.asyncio
@@ -185,7 +191,7 @@ async def test_retrying_json_request_does_not_return_ineligible_stale_record(tmp
         retry_attempts=1,
         cache_stale_on_error=True,
     )
-    cache = HttpCache(settings.cache_path)
+    cache = _cache_for(settings)
     cache.put_json(
         "GET",
         "https://api.example.test/ineligible-stale",
@@ -213,7 +219,7 @@ async def test_retrying_json_request_refresh_does_not_return_stale_on_error(tmp_
         retry_attempts=1,
         cache_stale_on_error=True,
     )
-    cache = HttpCache(settings.cache_path)
+    cache = _cache_for(settings)
     cache.put_json(
         "GET",
         "https://api.example.test/refresh-stale",
@@ -243,7 +249,7 @@ async def test_retrying_json_request_revalidates_with_etag(tmp_path):
         db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
         retry_attempts=1,
     )
-    cache = HttpCache(settings.cache_path)
+    cache = _cache_for(settings)
     cache.put_json(
         "GET",
         "https://api.example.test/revalidate",

@@ -27,7 +27,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 - Intelligent cache: necessary because source sync, route probing, job fetching, and metadata enrichment can duplicate upstream traffic; caching should reduce latency and load while preserving explicit refresh semantics.
 - Richer metadata: necessary because OpenOpps already preserves raw payloads; v0.1 should promote the useful parts into normalized fields for filtering, status, exports, and troubleshooting.
 - Robust plugin system: necessary because provider/source coverage is the core product constraint; community developers need documented extension seams for adapters and diagnostics without editing the core package.
-- Provider coverage audit: necessary because Ashby, Greenhouse, Lever, and Workday are strong baseline providers, but generic public ATS support for providers like SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, or JazzHR could materially improve startup-board coverage if implemented without bespoke per-company logic.
+- Provider coverage audit: necessary because Ashby, Greenhouse, Lever, public Workday CXS, and adopted no-auth providers are strong baseline providers, but generic public ATS support for additional providers like SmartRecruiters, Recruitee, iCIMS, Jobvite, or JazzHR could materially improve startup-board coverage if implemented without bespoke per-company logic.
 - Local `status` or `doctor` command: necessary because OpenOpps depends on local SQLite state, cache state, plugins, source/provider readiness, and live public endpoints.
 - Offline-friendly examples: useful because live source/provider endpoints can be flaky; deterministic generated examples let users verify behavior and let tests assert invariants without network dependency.
 - Next-step guidance for empty or partial results: necessary because empty board lists, missing route metadata, detect-only providers, stale cache, and no jobs can all be valid states.
@@ -98,7 +98,7 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 
 8. Run a provider coverage gap audit and only add extra job-fetching providers if they are high-coverage and generic.
    - Touches: `src/openopps/providers/boards/`, `src/openopps/route_probe.py`, `src/openopps/route_registry.py`, `src/openopps/providers/registry.py`, provider tests, README, and docs if new providers are adopted.
-   - Treat Ashby, Greenhouse, Lever, and Workday as the baseline v0.1 job-capable providers.
+   - Treat Ashby, Greenhouse, Lever, public Workday CXS, Workable, Teamtailor, BambooHR, Rippling, and explicit WP Job Manager routes as the baseline v0.1 job-capable providers.
    - Audit candidate public ATS providers that may significantly improve route coverage without bespoke per-company adapters: SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
    - Compute board-level percentages from persisted source snapshots: total boards, boards with provider hints, boards with baseline job-capable providers, boards with adopted v0.1 providers, boards with any non-supported provider hints, boards with only non-supported provider hints, boards with detect-only providers, boards with unsupported or unknown providers, and boards missing executable route metadata.
    - Add coverage report fields such as `boards.withNonSupportedProviderHints`, `boards.withOnlyNonSupportedProviderHints`, `boards.nonSupportedProviderCoverage.percentage`, `routes.nonSupportedTotal`, and `routes.nonSupportedByProvider`.
@@ -152,9 +152,9 @@ Make OpenOpps v0.1 the first public ground-truth release of a polished local-fir
 14. Run provider/source regression coverage before docs are finalized.
 
 - Touches: provider code only if tests reveal regressions: `src/openopps/providers/sources/`, `src/openopps/providers/boards/`, `src/openopps/providers/registry.py`, `src/openopps/route_select.py`, and `src/openopps/route_registry.py`.
-- Confirm Ashby, Greenhouse, Lever, and Workday remain the baseline v0.1 job-capable providers.
+- Confirm Ashby, Greenhouse, Lever, public Workday CXS, Workable, Teamtailor, BambooHR, Rippling, and explicit WP Job Manager routes remain the baseline v0.1 job-capable providers.
 - Confirm any added provider from the coverage audit has generic public fetching and meaningful coverage impact.
-- Confirm Teamtailor, Manatal, Gem, and other candidates remain detect-only metadata unless reliable public fetching has already landed or the audit justifies adoption.
+- Confirm Manatal, Gem, and other candidates remain detect-only metadata unless reliable public fetching has already landed or the audit justifies adoption.
 - Verification: `uv run pytest tests/unit/openopps/test_providers.py tests/integration/openopps/test_sources.py tests/unit/openopps/test_workday.py tests/unit/openopps/test_route_probe.py tests/unit/openopps/test_registry.py tests/unit/openopps/test_health.py tests/unit/openopps/test_coverage.py -q` plus adopted provider tests.
 
 15. Write a release acceptance matrix before final docs polish.

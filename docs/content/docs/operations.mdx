@@ -46,11 +46,11 @@ uv run openopps boards sync --source a16z --provider any --metrics-json
 uv run openopps jobs sync --provider any --metrics-json
 ```
 
-The default database path is controlled by `OPENOPPS_DB_URL` and resolves to `openopps.db` for `sqlite:///openopps.db`.
+The default database path is controlled by `OPENOPPS_DB_URL` and resolves to `openoppsdb.sqlite` for `sqlite:///openoppsdb.sqlite`.
 
 All sync commands in this section write local SQLite records unless they explicitly use `--no-db` or are documented as dry-run diagnostics.
 
-`admin db init` applies the current v0.1 Alembic schema head for the durable app SQLite database. The optional HTTP response cache is separate and is not part of the Alembic schema history. If a pre-release `openopps.db` was stamped before the v0.1 schema was finalized, OpenOpps reports the missing schema columns and asks you to reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file.
+`admin db init` applies the current v0.1 Alembic schema head for the durable app SQLite database. HTTP response cache rows live in that same SQLite database and are managed by `cache.py`, not by the Alembic schema history. If a pre-release local SQLite database was stamped before the v0.1 schema was finalized, OpenOpps reports the missing schema columns and asks you to reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file.
 
 Job storage separates stable posting identity from changing content. The `jobs` table tracks lifecycle fields such as `status`, `first_seen_at`, `last_seen_at`, `closed_at`, and current hashes. `job_versions` stores one normalized content state per posting, with child tables for locations, skills, skill keywords, and responsibility or qualification bullets. `job_payload_snapshots` stores distinct raw listing/detail payloads so raw upstream JSON is never discarded.
 
@@ -65,7 +65,7 @@ uv run openopps doctor --json
 
 ## Cache
 
-The shared SQLite request cache stores successful JSON request payloads for source adapters and job providers. It records deterministic request identity, payload hash, selected headers, freshness timestamps, ETag/Last-Modified validators, and stale-on-error eligibility.
+The shared request cache stores successful JSON request payloads in the configured SQLite application database for source adapters and job providers. It records deterministic request identity, payload hash, selected headers, freshness timestamps, ETag/Last-Modified validators, and stale-on-error eligibility.
 
 ```bash
 uv run openopps cache status

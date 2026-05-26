@@ -23,7 +23,7 @@ OpenOpps packages a small set of low-friction non-VC source families as source a
 
 | Source family                 | Packaged keys         | Default  | Notes                                                                                                    |
 | ----------------------------- | --------------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| Official public-company index | `sec-company-tickers` | Enabled  | Uses the official SEC company tickers file as a listed-company backbone.                                 |
+| Official public-company index | `sec-company-tickers` | Disabled | Opt-in listed-company backbone; SEC fair-access controls can reject generic scheduled sync environments. |
 | Public index CSV              | `sp500`, `nasdaq100`  | Disabled | Opt-in seed data for index membership; `nasdaq100` is manual until a reviewed CSV is configured.         |
 | Employer ranking CSV          | `fortune500`          | Disabled | Opt-in ranking seed data; supports embedded user-supplied CSV rows for reviewed local refreshes.         |
 | Ecosystem landscape           | `cncf-landscape`      | Enabled  | Reads CNCF `landscape.yml` public fields and intentionally excludes logos and Crunchbase-derived fields. |

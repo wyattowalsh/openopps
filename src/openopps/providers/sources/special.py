@@ -4,8 +4,9 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterable
+from html import unescape
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 import httpx
 
@@ -52,6 +53,17 @@ _SPC_JOBS_DATA_RE = re.compile(
     r'<script type="application/json" id="jobs-data">(?P<data>.*?)</script>',
     re.DOTALL,
 )
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+_VCC_COMPANY_LINK_RE = re.compile(
+    r'<a href="(?P<href>/companies/[^"]+)"><h3[^>]*>(?P<name>.*?)</h3></a>',
+    re.DOTALL,
+)
+_VCC_DESCRIPTION_RE = re.compile(
+    r'<p data-slot="text"[^>]*>(?P<text>.*?)</p>', re.DOTALL
+)
+_VCC_JOBS_RE = re.compile(r">(?P<count>\d[\d,]*) jobs?<", re.IGNORECASE)
+_VCC_PAGE_RE = re.compile(r'href="/companies\?page=(?P<page>\d+)"')
 
 SOUTHPARKCOMMONS_SOURCE = SourceRecord(
     key="southparkcommons",
@@ -88,6 +100,38 @@ YCOMBINATOR_SOURCE = SourceRecord(
         "applicationId": APPLICATION_ID,
         "indexName": INDEX_NAME,
     },
+)
+VENTURE_CAPITAL_CAREERS_SOURCE = SourceRecord(
+    key="venturecapitalcareers",
+    url="https://venturecapitalcareers.com/companies",
+    provider_id="venturecapitalcareers",
+    enabled=True,
+    raw_metadata=source_taxonomy_metadata(
+        provider_type="job_directory",
+        coverage_mode="venture_firm_directory",
+        access_type="public_page_html",
+        license_status="public_attribution_required",
+        refresh_cadence="periodic",
+        source_category="startup_ecosystem",
+        source_attribution="Venture Capital Careers public companies directory HTML.",
+        default_enabled_reason="Public venture capital firm directory with stable profile pages.",
+    ),
+)
+VENTURE_LOOP_SOURCE = SourceRecord(
+    key="ventureloop",
+    url="https://www.ventureloop.com/",
+    provider_id="ventureloop",
+    enabled=False,
+    raw_metadata=source_taxonomy_metadata(
+        provider_type="job_directory",
+        coverage_mode="portfolio_jobs",
+        access_type="public_landing_page",
+        license_status="needs_review",
+        refresh_cadence="manual",
+        source_category="startup_ecosystem",
+        source_attribution="VentureLoop public landing page. Its robots.txt disallows job search result scraping.",
+        default_enabled_reason="Disabled by default because the public home page does not expose a company-directory payload.",
+    ),
 )
 
 
@@ -258,6 +302,153 @@ class SouthParkCommonsSourceAdapter:
             seen.add(stripped)
             result.append(stripped)
         return result
+
+
+class VentureCapitalCareersSourceAdapter:
+    provider_id = "venturecapitalcareers"
+    provider_label = "Venture Capital Careers"
+    provider_description = (
+        "Aggregate Venture Capital Careers adapter that discovers public firm profiles."
+    )
+
+    def __init__(self, settings: OpenOppsSettings):
+        self.settings = settings
+
+    async def iter_boards(
+        self,
+        client: httpx.AsyncClient,
+        source: SourceRecord,
+        *,
+        page_size: int,
+    ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
+        validate_public_https_url(source.url)
+        first_response = await self._fetch_page(client, source.url)
+        first_html = first_response.text
+        max_page = self._max_page(first_html)
+
+        for page in range(1, max_page + 1):
+            if page == 1:
+                response = first_response
+                html = first_html
+            else:
+                response = await self._fetch_page(
+                    client, self._page_url(source.url, page)
+                )
+                html = response.text
+            boards = self._boards_from_html(source, html, str(response.url))
+            yield (
+                boards,
+                [],
+                {
+                    "page": page,
+                    "pageSize": len(boards),
+                    "sourceUrl": str(response.url),
+                    "totalPages": max_page,
+                },
+            )
+            if not boards:
+                break
+
+    async def _fetch_page(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
+        response = await client.get(
+            url,
+            headers={"accept": "text/html", "user-agent": "Mozilla/5.0"},
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        return response
+
+    def _page_url(self, source_url: str, page: int) -> str:
+        return source_url if page == 1 else f"{source_url}?page={page}"
+
+    def _max_page(self, html: str) -> int:
+        pages = [int(match.group("page")) for match in _VCC_PAGE_RE.finditer(html)]
+        return max(pages, default=1)
+
+    def _boards_from_html(
+        self, source: SourceRecord, html: str, source_url: str
+    ) -> list[BoardRecord]:
+        boards: list[BoardRecord] = []
+        now = utc_now()
+        for match in _VCC_COMPANY_LINK_RE.finditer(html):
+            href = match.group("href")
+            remote_slug = href.rsplit("/", 1)[-1]
+            name = self._html_text(match.group("name"))
+            if not remote_slug or not name:
+                continue
+            profile_url = urljoin(source.url, href)
+            description = self._description_after(html, match.end())
+            job_count = self._job_count_before(html, match.start())
+            boards.append(
+                BoardRecord(
+                    key=source_board_key(source.key, remote_slug),
+                    source_key=source.key,
+                    remote_id=remote_slug,
+                    remote_slug=remote_slug,
+                    name=name,
+                    description=description,
+                    num_jobs_hint=job_count,
+                    raw_payload={
+                        "profileUrl": profile_url,
+                        "sourceUrl": source_url,
+                        "jobCount": job_count,
+                    },
+                    synced_at=now,
+                )
+            )
+        return boards
+
+    def _description_after(self, html: str, position: int) -> str | None:
+        match = _VCC_DESCRIPTION_RE.search(html, position, position + 800)
+        if not match:
+            return None
+        return self._html_text(match.group("text")) or None
+
+    def _job_count_before(self, html: str, position: int) -> int | None:
+        matches = list(_VCC_JOBS_RE.finditer(html, max(0, position - 1500), position))
+        if not matches:
+            return None
+        value = matches[-1].group("count").replace(",", "")
+        return int(value)
+
+    def _html_text(self, value: str) -> str:
+        return _WHITESPACE_RE.sub(" ", unescape(_HTML_TAG_RE.sub(" ", value))).strip()
+
+
+class VentureLoopSourceAdapter:
+    provider_id = "ventureloop"
+    provider_label = "VentureLoop"
+    provider_description = "Metadata-only VentureLoop source adapter."
+
+    def __init__(self, settings: OpenOppsSettings):
+        self.settings = settings
+
+    async def iter_boards(
+        self,
+        client: httpx.AsyncClient,
+        source: SourceRecord,
+        *,
+        page_size: int,
+    ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
+        validate_public_https_url(source.url)
+        response = await client.get(
+            source.url,
+            headers={"accept": "text/html", "user-agent": "Mozilla/5.0"},
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        yield (
+            [],
+            [],
+            {
+                "sourceUrl": str(response.url),
+                "total": 0,
+                "note": (
+                    "VentureLoop does not expose company records on the public landing page; "
+                    "job-search result scraping is intentionally not used."
+                ),
+            },
+        )
 
 
 class YCombinatorSourceAdapter:
@@ -482,5 +673,7 @@ class YCombinatorSourceAdapter:
 
 SOURCE_RECORDS: tuple[SourceRecord, ...] = (
     SOUTHPARKCOMMONS_SOURCE,
+    VENTURE_CAPITAL_CAREERS_SOURCE,
+    VENTURE_LOOP_SOURCE,
     YCOMBINATOR_SOURCE,
 )

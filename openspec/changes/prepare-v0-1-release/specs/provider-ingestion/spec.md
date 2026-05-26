@@ -57,6 +57,12 @@ OpenOpps SHALL NOT add browser-driven, authenticated, or anti-bot-bypass source 
 - **THEN** OpenOpps records the source as disabled or unsupported metadata
 - **AND** points future authorized data flows toward plugins or explicit user-provided imports rather than browser/session scraping
 
+#### Scenario: Fair-access source rejects generic scheduled syncs
+
+- **WHEN** an official detect-only source requires caller-specific fair-access headers or network posture beyond the generic scheduled CLI environment
+- **THEN** OpenOpps keeps that source opt-in by default
+- **AND** documents how to run it explicitly when the caller can satisfy the upstream access policy
+
 ### Requirement: Provider requests remain bounded and deduped
 
 Source sync, route probing, provider health, metadata enrichment, and job sync SHALL use bounded concurrency and avoid duplicate provider requests where overlapping sources or routes refer to the same upstream provider route.
@@ -66,6 +72,18 @@ Source sync, route probing, provider health, metadata enrichment, and job sync S
 - **WHEN** multiple persisted boards resolve to the same provider request key
 - **THEN** OpenOpps performs at most one upstream request for that route in the same sync/probe operation
 - **AND** reports duplicate skips in metrics where relevant
+
+#### Scenario: Source refresh repeats provider hints
+
+- **WHEN** a later source sync reports the same provider hint without executable route metadata
+- **THEN** OpenOpps preserves any previously probed token, hosted board URL, Workday CXS fields, and route status
+- **AND** does not turn expected ready-route, duplicate-route, or missing-metadata filtering into warning-worthy skipped work
+
+#### Scenario: Persisted route becomes unavailable
+
+- **WHEN** a provider route returns a terminal unavailable status during job sync
+- **THEN** OpenOpps removes that route from future job-sync targets and continues unrelated routes
+- **AND** terminal not-found style responses close missing jobs for that route as a successful empty observation
 
 ### Requirement: Provider failures are isolated
 

@@ -25,7 +25,7 @@ OpenOpps v0.1 is a CLI-only Python app for discovering firm hiring boards from a
 - `sources` are aggregate discovery catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, and `yc`.
 - `boards` are firm/company hiring boards discovered from sources.
 - `jobs` are normalized postings fetched from boards.
-- `providers` are adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, and Workday.
+- `providers` are adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, Workday, Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager.
 - `cache`, `plugins`, and `examples` cover operational cache inspection, installed Python plugin discovery, and deterministic demo data.
 
 ## Install and Run
@@ -105,7 +105,7 @@ Overlapping source coverage uses the persisted board keys shown by `boards list`
 | `jobs`        | OpenOpps can fetch public jobs for the provider.         |
 | `unsupported` | The provider is known only as raw metadata.              |
 
-Ashby, Greenhouse, Lever, and public Workday CXS boards are job-capable in v0.1. Teamtailor, Manatal, and Gem hints are detect-only until stable public fetching is added. See [Providers](/docs/providers) for the generated provider registry and route diagnostics.
+Ashby, Greenhouse, Lever, public Workday CXS, Workable, Teamtailor, BambooHR, Rippling, and explicit WP Job Manager boards are job-capable in v0.1 through public no-auth routes. Manatal and Gem hints remain detect-only until stable public fetching is added. See [Providers](/docs/providers) for the generated provider registry and route diagnostics.
 
 Ashby postings marked `isListed: false` are direct-link-only and are excluded from normal job sync output.
 

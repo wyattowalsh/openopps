@@ -55,14 +55,14 @@
 - Advanced provider diagnostics, route registry inspection, manual board creation, manual route attachment, provider detection, database maintenance, and adapter explainers are moved behind clearly marked advanced, debug, admin, or private-facing command surfaces.
 - Existing low-level functionality remains available for maintainers and power users when it is needed to diagnose provider coverage or repair route metadata.
 - Help text distinguishes stable v0.1 user-facing commands from advanced commands that are versioned through future PyPI and GitHub releases.
-- The baseline v0.1 job-fetching providers are Ashby, Greenhouse, Lever, and Workday.
+- The baseline v0.1 job-fetching providers are Ashby, Greenhouse, Lever, public Workday CXS, Workable, Teamtailor, BambooHR, Rippling, and explicit WP Job Manager routes.
 - The v0.1 plan should include a provider coverage audit for high-coverage public ATS providers that may materially improve board coverage without bespoke per-company logic.
 - The provider coverage audit reports the measured percentage of persisted boards with any non-supported provider hints, using distinct persisted boards in the current report scope as the denominator.
 - The provider coverage audit separately reports boards with job-capable baseline providers, adopted v0.1 providers, detect-only providers, unsupported or unknown providers, only non-supported provider hints, and missing executable route metadata.
 - The provider coverage audit publishes persisted-data source set, denominator, numerator, percentage, examples, candidate-provider evidence, and do-not-adopt rationales for rejected providers. Representative live snapshot percentages are a post-v0.1 follow-up before publishing real-world percentages.
 - Candidate high-coverage provider audit targets include SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, iCIMS, Jobvite, and JazzHR.
 - Candidate providers should only become v0.1 job-fetching providers if route discovery and job fetching can be implemented through generic public endpoints or stable hosted-board payloads.
-- Teamtailor, Manatal, and Gem remain detect-only metadata in v0.1 unless reliable public fetching already exists or the provider audit proves a generic public job-fetching implementation is low risk.
+- Manatal and Gem remain detect-only metadata in v0.1 unless reliable public fetching already exists or the provider audit proves a generic public job-fetching implementation is low risk.
 - The supported v0.1 aggregate sources are the packaged source catalog already documented in the README, subject to test and live-health verification.
 - Public Python API stability is not a v0.1 guarantee.
 - The supported v0.1 surface is the CLI behavior, persisted local data behavior, and documented export formats.

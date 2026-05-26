@@ -8,7 +8,7 @@ import pytest
 import respx
 
 import openopps.ingest as ingest_module
-from openopps.ingest import sync_jobs, sync_sources
+from openopps.ingest import sync_boards, sync_jobs, sync_sources
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -16,6 +16,7 @@ from openopps.models import (
     SourceRecord,
 )
 from openopps.providers.sources.consider import CONSIDER_SOURCE_CATALOG
+from openopps.providers.sources.sec import SEC_COMPANY_TICKERS_SOURCE
 from openopps.route_probe import probe_routes
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
@@ -25,6 +26,45 @@ def _mock_greenhouse_jobs(token: str, jobs: list[dict[str, object]]) -> Any:
     return respx.get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs").mock(
         return_value=httpx.Response(200, json={"jobs": jobs})
     )
+
+
+def test_unscoped_source_selection_honors_current_catalog_disabled_defaults(
+    tmp_path: Path,
+):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SEC_COMPANY_TICKERS_SOURCE.model_copy(update={"enabled": True})
+    )
+
+    selected = ingest_module._select_sources(store, None)
+    explicit = ingest_module._select_sources(store, "sec-company-tickers")
+
+    assert "sec-company-tickers" not in {source.key for source in selected}
+    assert explicit[0].key == "sec-company-tickers"
+    assert explicit[0].enabled is True
+
+
+def test_unscoped_source_selection_preserves_custom_source_overrides(
+    tmp_path: Path,
+):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(
+            key="a16z",
+            url="https://custom.example/companies",
+            provider_id="consider",
+            enabled=False,
+        )
+    )
+
+    selected = ingest_module._select_sources(store, None)
+    explicit = ingest_module._select_sources(store, "a16z")
+
+    assert "a16z" not in {source.key for source in selected}
+    assert explicit[0].url == "https://custom.example/companies"
+    assert explicit[0].enabled is False
 
 
 @pytest.mark.asyncio
@@ -98,7 +138,9 @@ async def test_sync_jobs_dedupes_same_provider_route_across_sources(tmp_path: Pa
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_sync_jobs_skips_route_hints_without_executable_metadata(tmp_path: Path):
+async def test_sync_jobs_excludes_route_hints_without_executable_metadata(
+    tmp_path: Path,
+):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
     store.upsert_source(
@@ -123,8 +165,125 @@ async def test_sync_jobs_skips_route_hints_without_executable_metadata(tmp_path:
     metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
 
     assert route.call_count == 0
-    assert metrics.skipped == 1
+    assert metrics.skipped == 0
     assert metrics.jobs == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_boards_does_not_warn_on_unresolved_route_candidates(
+    tmp_path: Path,
+):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:future-provider",
+                source_key="manual",
+                board_key="acme",
+                provider_id="future-provider",
+                support_level=ProviderSupport.JOBS,
+            )
+        ]
+    )
+
+    metrics = await sync_boards(settings=settings, store=store)
+
+    assert metrics.skipped == 0
+    assert metrics.provider_errors == {}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_jobs_removes_terminal_provider_routes(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:greenhouse",
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+                last_status="route_ready",
+            )
+        ]
+    )
+    route = respx.get("https://boards-api.greenhouse.io/v1/boards/acme/jobs").mock(
+        return_value=httpx.Response(404, json={"message": "board not found"})
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
+
+    assert route.call_count == 1
+    assert metrics.provider_errors == {}
+    assert metrics.skipped == 0
+    stored = store.list_board_providers(provider_id="greenhouse")[0]
+    assert stored.support_level == ProviderSupport.DETECT
+    assert stored.last_status == "job_sync_unavailable_404"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_jobs_removes_duplicate_terminal_provider_routes(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_source(
+        SourceRecord(key="overlap", url="manual://overlap", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:greenhouse",
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+                last_status="route_ready",
+            ),
+            BoardProviderRecord(
+                id="overlap:acme:greenhouse",
+                source_key="overlap",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+                last_status="route_ready",
+            ),
+        ]
+    )
+    route = respx.get("https://boards-api.greenhouse.io/v1/boards/acme/jobs").mock(
+        return_value=httpx.Response(404, json={"message": "board not found"})
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
+
+    assert route.call_count == 1
+    assert metrics.duplicate_routes_skipped == 1
+    stored = store.list_board_providers(provider_id="greenhouse")
+    assert {route.support_level for route in stored} == {ProviderSupport.DETECT}
+    assert {route.last_status for route in stored} == {"job_sync_unavailable_404"}
 
 
 @pytest.mark.asyncio

@@ -50,7 +50,7 @@ kaggle-meta:
     uv run python scripts/generate_kaggle_metadata.py
 
 # Generate Kaggle metadata and table exports from an existing SQLite DB.
-kaggle-bundle db="kaggle/openopps.sqlite":
+kaggle-bundle db="kaggle/openoppsdb.sqlite":
     uv run python scripts/generate_kaggle_metadata.py --data-db "{{db}}"
 
 # List OpenSpec changes as agent-readable JSON.

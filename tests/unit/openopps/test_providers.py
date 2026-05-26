@@ -367,28 +367,38 @@ async def test_workday_fetches_listing_and_detail():
 @respx.mock
 async def test_workable_fetch_jobs():
     settings = OpenOppsSettings(cache_enabled=False)
-    respx.get("https://www.workable.com/api/accounts/acme").mock(
+    respx.post("https://apply.workable.com/api/v3/accounts/acme/jobs").mock(
         return_value=httpx.Response(
             200,
             json={
-                "jobs": [
+                "total": 1,
+                "results": [
                     {
                         "shortcode": "abc123",
                         "title": "Support Engineer",
-                        "department": "Support",
-                        "employment_type": "Full-time",
-                        "telecommuting": True,
+                        "department": ["Support"],
+                        "type": "Full-time",
+                        "remote": True,
                         "locations": [{"city": "Austin", "country": "US"}],
-                        "description": "<p>Help customers.</p>",
-                        "url": "https://apply.workable.com/acme/j/abc123",
-                        "application_url": "https://apply.workable.com/acme/j/abc123/apply",
-                        "salary": {
-                            "minValue": 90000,
-                            "maxValue": 110000,
-                            "currency": "USD",
-                        },
+                        "published": "2026-05-18T00:00:00.000Z",
                     }
-                ]
+                ],
+            },
+        )
+    )
+    respx.get("https://apply.workable.com/api/v2/accounts/acme/jobs/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "shortcode": "abc123",
+                "description": "<p>Help customers.</p>",
+                "url": "https://apply.workable.com/acme/j/abc123",
+                "application_url": "https://apply.workable.com/acme/j/abc123/apply",
+                "salary": {
+                    "minValue": 90000,
+                    "maxValue": 110000,
+                    "currency": "USD",
+                },
             },
         )
     )
@@ -434,12 +444,12 @@ def test_workable_route_detection_and_token_derivation():
 @respx.mock
 async def test_workable_check_jobs_and_invalid_payload():
     settings = OpenOppsSettings(cache_enabled=False)
-    respx.get(
-        "https://www.workable.com/api/accounts/acme", params={"details": "false"}
-    ).mock(return_value=httpx.Response(200, json={"jobs": [{}, {}]}))
-    respx.get(
-        "https://www.workable.com/api/accounts/broken", params={"details": "false"}
-    ).mock(return_value=httpx.Response(200, json={"jobs": "bad"}))
+    respx.post("https://apply.workable.com/api/v3/accounts/acme/jobs").mock(
+        return_value=httpx.Response(200, json={"total": 2, "results": [{}, {}]})
+    )
+    respx.post("https://apply.workable.com/api/v3/accounts/broken/jobs").mock(
+        return_value=httpx.Response(200, json={"results": "bad"})
+    )
 
     async with build_async_client(settings) as client:
         assert await WorkableProvider(settings).check_jobs(

@@ -26,6 +26,7 @@ from openopps.models import (
     JobVersionRow,
     JobVersionSkillKeywordRow,
     JobVersionSkillRow,
+    ProviderSupport,
     SourceRecord,
     SourceRow,
     board_from_row,
@@ -42,6 +43,18 @@ from openopps.models import (
 from openopps.migrations import upgrade_sqlite_database
 from openopps.settings import OpenOppsSettings
 from openopps.utils import stable_id
+
+_ROUTE_METADATA_FIELDS = ("board_url", "token", "host", "tenant", "site")
+_ROUTE_STATUS_FIELDS = (*_ROUTE_METADATA_FIELDS, "last_status")
+_ROUTE_DISABLED_STATUSES = frozenset(
+    {
+        "job_sync_unavailable_400",
+        "job_sync_unavailable_401",
+        "job_sync_unavailable_403",
+        "job_sync_unavailable_404",
+        "job_sync_unavailable_410",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -160,8 +173,29 @@ class OpenOppsStore:
                             "board_key": canonical_board_key,
                         }
                     )
-                    session.merge(board_provider_to_row(record))
+                    _merge_board_provider(session, record)
                 session.commit()
+
+    def deactivate_board_provider_route(
+        self, route: BoardProviderRecord, *, status: str
+    ) -> None:
+        self.init_db()
+        with Session(self.engine) as session:
+            row = session.get(BoardProviderRow, route.id)
+            if row is None:
+                row = session.exec(
+                    select(BoardProviderRow).where(
+                        BoardProviderRow.source_key == route.source_key,
+                        BoardProviderRow.board_key == route.board_key,
+                        BoardProviderRow.provider_id == route.provider_id,
+                    )
+                ).first()
+            if row is None:
+                return
+            row.support_level = ProviderSupport.DETECT.value
+            row.last_status = status
+            session.add(row)
+            session.commit()
 
     def upsert_jobs(self, jobs: Sequence[JobRecord]) -> None:
         self.init_db()
@@ -471,6 +505,46 @@ def _merge_board(session: Session, board: BoardRecord) -> None:
         return
 
     session.merge(_merged_board_row(existing, incoming))
+
+
+def _merge_board_provider(
+    session: Session, provider: BoardProviderRecord
+) -> None:
+    incoming = board_provider_to_row(provider)
+    existing = session.get(BoardProviderRow, incoming.id)
+    if existing is None:
+        session.merge(incoming)
+        return
+
+    session.merge(_merged_board_provider_row(existing, incoming))
+
+
+def _merged_board_provider_row(
+    existing: BoardProviderRow, incoming: BoardProviderRow
+) -> BoardProviderRow:
+    existing_data = existing.model_dump()
+    incoming_data = incoming.model_dump()
+    data = existing_data | incoming_data
+    for field in _ROUTE_STATUS_FIELDS:
+        if incoming_data.get(field) is None:
+            data[field] = existing_data.get(field)
+    if not incoming_data.get("raw_payload"):
+        data["raw_payload"] = existing_data.get("raw_payload") or {}
+    if not incoming_data.get("extra_payload"):
+        data["extra_payload"] = existing_data.get("extra_payload") or {}
+    if _should_preserve_disabled_route(existing, incoming):
+        data["support_level"] = existing.support_level
+    return BoardProviderRow(**data)
+
+
+def _should_preserve_disabled_route(
+    existing: BoardProviderRow, incoming: BoardProviderRow
+) -> bool:
+    if existing.last_status not in _ROUTE_DISABLED_STATUSES:
+        return False
+    if existing.support_level != ProviderSupport.DETECT.value:
+        return False
+    return not any(getattr(incoming, field) for field in _ROUTE_METADATA_FIELDS)
 
 
 def _find_merge_target(session: Session, incoming: BoardRow) -> BoardRow | None:

@@ -5,7 +5,7 @@ First-slice audit for the approved v0.1 overhaul plan. The goal is to keep `src/
 | Module              | Responsibility                                                         | Decision         | Rationale                                                                                                                        |
 | ------------------- | ---------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `__init__.py`       | Package metadata surface                                               | Keep             | Lightweight package boundary.                                                                                                    |
-| `cache.py`          | SQLite-backed HTTP JSON response cache                                 | Keep             | Live source-sync evidence shows strong repeated-run value; keep it optional and separate from Alembic-managed app SQLite.        |
+| `cache.py`          | SQLite-backed HTTP JSON response cache table                           | Keep             | Live source-sync evidence shows strong repeated-run value; keep it optional and stored in the configured app SQLite database.    |
 | `cli.py`            | Typer command wiring and output-mode routing                           | Keep             | Correct boundary for command composition; future progress UX belongs here or in explicit progress hooks.                         |
 | `coverage.py`       | Offline persisted-data coverage and provider adoption audit            | Keep             | Uses stored SQLite evidence only; should not merge with live health or export serialization.                                     |
 | `docs_data.py`      | Deterministic package-derived metadata for the docs site               | Move to script   | Docs-only generated metadata belongs with `scripts/generate_docs_data.py` instead of the installable CLI package.                |
@@ -18,14 +18,14 @@ First-slice audit for the approved v0.1 overhaul plan. The goal is to keep `src/
 | `intro.py`          | Optional CLI intro animation                                           | Keep             | Isolated UX concern; must stay off JSON/machine paths.                                                                           |
 | `main.py`           | Module execution entry point                                           | Keep             | Thin console entry support.                                                                                                      |
 | `metrics.py`        | Sync/runtime metrics structures                                        | Keep             | Cross-command metrics boundary.                                                                                                  |
-| `migrations.py`     | Programmatic Alembic migration and stamping helpers                    | Keep             | Durable app SQLite schema migration boundary; does not own optional HTTP cache schema.                                           |
+| `migrations.py`     | Programmatic Alembic migration and stamping helpers                    | Keep             | Durable app SQLite schema migration boundary; HTTP cache table creation remains owned by `cache.py`.                            |
 | `models.py`         | Pydantic domain models and normalized validation helpers               | Keep             | Source of truth for records and URL/host validation.                                                                             |
 | `plugins.py`        | Entry-point plugin loading and conflict reporting                      | Keep             | Trusted plugin execution boundary.                                                                                               |
 | `route_probe.py`    | Live route probing and optional persistence                            | Keep             | Network side-effect layer; pure readiness checks moved out.                                                                      |
 | `route_registry.py` | Durable route registry selection from stored records                   | Keep             | Programmatic selection boundary; should depend only on pure route helpers and storage.                                           |
 | `route_select.py`   | Pure provider filter, route readiness, request-key, and dedupe helpers | Keep and expand  | Owns side-effect-free route logic used by registry, coverage, health, and probe.                                                 |
 | `settings.py`       | `OPENOPPS_` runtime configuration                                      | Keep             | Pydantic Settings boundary.                                                                                                      |
-| `storage.py`        | Durable app SQLite persistence                                         | Keep             | Alembic will target this schema, not the optional HTTP cache.                                                                    |
+| `storage.py`        | Durable app SQLite persistence                                         | Keep             | Alembic targets durable app tables; `cache.py` owns the self-initializing HTTP cache table in the same SQLite file.              |
 | `url_validation.py` | Re-export shim for model validation helpers                            | Delete           | All validation helpers now live in `models.py`; no compatibility evidence requires the shim.                                     |
 | `utils.py`          | Small generic identifiers/string helpers                               | Keep             | Shared pure helpers.                                                                                                             |
 
@@ -37,9 +37,9 @@ First-slice audit for the approved v0.1 overhaul plan. The goal is to keep `src/
 
 ## Cache Decision Gate
 
-Decision: keep the HTTP response cache for v0.1, but keep it separate from durable app SQLite migrations.
+Decision: keep the HTTP response cache for v0.1, store its table in the configured app SQLite database, and keep cache table creation owned by `cache.py` rather than Alembic.
 
-Evidence gathered on 2026-05-21 with a temporary SQLite/cache path and `uv run openopps sources sync a16z --no-db --page-size 25 --metrics-json`:
+Evidence gathered on 2026-05-21 with a temporary SQLite path and `uv run openopps sources sync a16z --no-db --page-size 25 --metrics-json`:
 
 - Fresh run with `--refresh-cache`: 31 pages, 766 boards, 547 provider hints, `elapsedSeconds=21.18601312499959`.
 - Immediate cached run without refresh: same 31 pages, 766 boards, 547 provider hints, `elapsedSeconds=0.28579250001348555`.
@@ -47,4 +47,4 @@ Evidence gathered on 2026-05-21 with a temporary SQLite/cache path and `uv run o
 - Validator availability in the sampled cache DB: 31 of 31 records had `ETag`; 0 had `Last-Modified`.
 - Existing tests cover deterministic keying, TTL expiry, refresh bypass, conditional `304` reuse, stale-on-error eligibility, in-flight duplicate suppression, namespace purge, JSON cleanliness, and route-probe cache reuse.
 
-The cache should stay enabled by default for v0.1 because it materially reduces repeated upstream traffic while preserving explicit refresh semantics. Keep Alembic focused on durable app SQLite only; the optional HTTP cache remains self-initializing in `cache.py`.
+The cache should stay enabled by default for v0.1 because it materially reduces repeated upstream traffic while preserving explicit refresh semantics. Keep Alembic focused on durable app tables; the HTTP cache remains self-initializing in `cache.py` and shares the configured SQLite file.

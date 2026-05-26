@@ -15,6 +15,7 @@
 - [x] Write an acceptance matrix with evidence artifacts and validation status.
 - [x] Run targeted tests for CLI, cache, plugins, coverage, examples, storage/export, providers, routes, and health.
 - [x] Run full validation: `uv run pytest`, strict OpenSpec validation, `cd docs && pnpm types:check`, `cd docs && pnpm build`, JSON parse smoke checks, generated-example smoke path, cache/plugin smoke path, and provider coverage report.
-- [ ] Add no-auth board-provider support for Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager, with route detection, route probing, defensive parsing, and mocked provider tests.
+- [x] Add no-auth board-provider support for Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager, with route detection, route probing, defensive parsing, and mocked provider tests.
+- [x] Harden scheduled sync accounting so repeated source refreshes preserve executable route metadata, expected filtering does not emit skipped warnings, terminal unavailable routes are removed from future job-sync targets, and fair-access-gated detect-only sources stay opt-in.
 - [ ] Keep WorkAtAStartup out of scope in favor of the existing YC source provider, and document/test any Wellfound/Angel outcome as static no-auth source support or explicit unsupported/disabled metadata.
 - [ ] Audit Editorial/Editiorial source labels before adding any provider identity, and only add detection if a real public provider route is proven.

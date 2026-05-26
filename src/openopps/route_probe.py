@@ -468,14 +468,19 @@ async def _try_workable(
     data = await _route_probe_json_or_none(
         client,
         request_json,
-        "GET",
-        f"https://www.workable.com/api/accounts/{token}",
-        params={"details": "false"},
+        "POST",
+        f"https://apply.workable.com/api/v3/accounts/{token}/jobs",
+        json={},
         provider_id="workable",
         route_key=token,
     )
-    if isinstance(data, dict) and isinstance(data.get("jobs"), list):
-        return len(data["jobs"])
+    if not isinstance(data, dict):
+        return None
+    total = data.get("total")
+    if isinstance(total, int):
+        return total
+    if isinstance(data.get("results"), list):
+        return len(data["results"])
     return None
 
 

@@ -144,7 +144,8 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "git+https://github.com/wyattowalsh/openopps.git@main" in source
     assert "/kaggle/input" in source
     assert "openopps-*.whl" not in source
-    assert "**/openopps.sqlite" in source
+    assert "**/openoppsdb.sqlite" in source
+    assert "/kaggle/working/openoppsdb" in source
     assert "Copied prior OpenOpps DB snapshot" in source
     assert "OPENOPPS_GENERATOR_SCRIPT_URL" in source
     assert "generate_kaggle_metadata.py" in source
@@ -160,6 +161,14 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "KAGGLE_API_TOKEN" in source
     assert "KAGGLE_API_V1_TOKEN_PATH" in source
     assert gen.DB_FILE in source
+    assert source.index("install_openopps()") < source.index("copy_latest_input_db()")
+    assert source.index("copy_latest_input_db()") < source.index(
+        'run(["openopps", "admin", "db", "init"]'
+    )
+    assert source.index('run(["openopps", "sync", "--metrics-json"]') < source.index(
+        "--data-db"
+    )
+    assert source.index("--data-db") < source.index('"datasets"')
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
 
 
@@ -192,9 +201,27 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
 def test_data_artifact_writer_adds_metadata_before_exports() -> None:
     source = SCRIPT_PATH.read_text(encoding="utf-8")
 
+    assert source.index("_drop_cache_tables(target_db)") < source.index(
+        "_write_sqlite_metadata(target_db)"
+    )
     assert source.index("_write_sqlite_metadata(target_db)") < source.index(
         "_write_full_table_exports(output_dir, target_db)"
     )
+
+
+def test_kaggle_artifact_cleanup_drops_http_cache_table(tmp_path: Path) -> None:
+    db_path = tmp_path / gen.DB_FILE
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE http_cache (key TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO http_cache VALUES ('cached')")
+
+    gen._drop_cache_tables(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'http_cache'"
+        ).fetchone()
+    assert table is None
 
 
 def test_generated_data_files_are_all_described_when_present() -> None:

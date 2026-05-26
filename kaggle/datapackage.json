@@ -8,7 +8,7 @@
       "format": "sqlite",
       "mediatype": "application/vnd.sqlite3",
       "name": "openopps_database",
-      "path": "openopps.sqlite",
+      "path": "openoppsdb.sqlite",
       "tables": [
         {
           "description": "Durable source catalogs that discover company boards.",
@@ -1231,7 +1231,7 @@
           "title": "Job Sync Observations"
         },
         {
-          "description": "In-database table labels and descriptions for openopps.sqlite.",
+          "description": "In-database table labels and descriptions for openoppsdb.sqlite.",
           "name": "openopps_tables",
           "schema": {
             "fields": [
@@ -1280,7 +1280,7 @@
           "title": "Openopps Tables"
         },
         {
-          "description": "In-database column labels, descriptions, and schema hints for openopps.sqlite.",
+          "description": "In-database column labels, descriptions, and schema hints for openoppsdb.sqlite.",
           "name": "openopps_columns",
           "schema": {
             "fields": [
@@ -2649,7 +2649,7 @@
       "title": "JobSyncObservationRow"
     },
     {
-      "description": "Full CSV table export for In-database table labels and descriptions for openopps.sqlite.",
+      "description": "Full CSV table export for In-database table labels and descriptions for openoppsdb.sqlite.",
       "format": "csv",
       "mediatype": "text/csv",
       "name": "openopps_tables_csv",
@@ -2701,7 +2701,7 @@
       "title": "OpenOppsTableRow"
     },
     {
-      "description": "Full CSV table export for In-database column labels, descriptions, and schema hints for openopps.sqlite.",
+      "description": "Full CSV table export for In-database column labels, descriptions, and schema hints for openoppsdb.sqlite.",
       "format": "csv",
       "mediatype": "text/csv",
       "name": "openopps_columns_csv",
@@ -4070,7 +4070,7 @@
       "title": "JobSyncObservationRow"
     },
     {
-      "description": "Full Parquet table export for In-database table labels and descriptions for openopps.sqlite.",
+      "description": "Full Parquet table export for In-database table labels and descriptions for openoppsdb.sqlite.",
       "format": "parquet",
       "mediatype": "application/vnd.apache.parquet",
       "name": "openopps_tables_parquet",
@@ -4122,7 +4122,7 @@
       "title": "OpenOppsTableRow"
     },
     {
-      "description": "Full Parquet table export for In-database column labels, descriptions, and schema hints for openopps.sqlite.",
+      "description": "Full Parquet table export for In-database column labels, descriptions, and schema hints for openoppsdb.sqlite.",
       "format": "parquet",
       "mediatype": "application/vnd.apache.parquet",
       "name": "openopps_columns_parquet",

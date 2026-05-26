@@ -47,7 +47,11 @@ def build_async_client(settings: OpenOppsSettings) -> httpx.AsyncClient:
 def retrying_json_request(
     settings: OpenOppsSettings,
 ) -> Callable[..., Awaitable[dict[str, Any] | list[Any]]]:
-    cache = HttpCache(settings.cache_path) if settings.cache_enabled else None
+    cache = (
+        HttpCache(settings.sqlite_path)
+        if settings.cache_enabled and settings.sqlite_path is not None
+        else None
+    )
     inflight: dict[str, asyncio.Task[dict[str, Any] | list[Any]]] = {}
     inflight_lock = asyncio.Lock()
 

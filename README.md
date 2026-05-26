@@ -11,7 +11,7 @@ The public domain nouns are:
 - `sources`: aggregate catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, `yc`, public-company indexes, and ecosystem landscapes.
 - `boards`: firm/company hiring boards discovered from sources.
 - `jobs`: normalized public postings fetched from boards.
-- `providers`: adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, and Workday.
+- `providers`: adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, Workday, Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager.
 - `cache`, `plugins`, and `examples`: operational surfaces for request cache inspection, Python plugin discovery, and deterministic demo data.
 
 ## Install and Run
@@ -61,6 +61,8 @@ When multiple sources discover the same company board, OpenOpps keeps the persis
 
 The stable `openopps sync` workflow runs source discovery, board enrichment and route probing, then job sync in order. You can still run each stage independently with `sources sync`, `boards sync`, and `jobs sync` when you want to inspect or rerun one layer. Job sync uses the persisted board-route registry as the intermediate layer between board collection and job execution. Raw source syncs can discover provider hints, board sync can upgrade those hints into executable routes, and `jobs sync` only executes routes that have enough provider-specific route metadata to fetch jobs.
 
+Repeated source refreshes preserve existing executable route metadata when an aggregate source repeats only a provider hint. Already-ready routes, duplicate routes, and unresolved hint-only routes are filtered out of sync targets without inflating the warning `skipped` count. When a persisted provider route returns a terminal unavailable status, OpenOpps removes it from future job-sync targets instead of retrying the same broken route every scheduled run.
+
 Synced jobs include deterministic enrichment fields derived from provider payloads only. OpenOpps normalizes company, employment type, plain-text and HTML descriptions, remote level (`Full`, `Hybrid`, or `None` when knowable), compensation and salary range fields, experience, structured responsibilities, qualifications, skills, and a `job_description` object compatible with JSON Resume's Job Description Schema. Raw provider listing and detail payloads remain preserved as `raw_listing` and `raw_detail` for auditability and future reprocessing.
 
 Board lists and exports can be narrowed by source, detected provider route, market, location, domain, job availability, staff-count range, and limit. Job lists and exports share the same filter path and can be narrowed by source, board, provider, normalized location, department, team, workplace type, remote level, employment type, salary range overlap, skill, simple title/company/description query, posted date range, and limit. Job filters use normalized enriched fields rather than provider-specific raw payloads; `--provider any` and `--provider all` remain aliases for no provider filter.
@@ -83,7 +85,7 @@ The JSON output includes filtered source, board, route, and job counts; route co
 
 ## Cache
 
-OpenOpps uses a SQLite-backed request cache for shared JSON request paths used by source adapters and job providers. The cache key includes method, normalized URL/query, selected request headers, JSON body, namespace, and optional provider identity. Successful responses store payload hashes, selected response headers, freshness timestamps, ETag/Last-Modified validators, and stale-on-error eligibility.
+OpenOpps stores shared JSON request cache records in the configured SQLite application database. The cache key includes method, normalized URL/query, selected request headers, JSON body, namespace, and optional provider identity. Successful responses store payload hashes, selected response headers, freshness timestamps, ETag/Last-Modified validators, and stale-on-error eligibility.
 
 ```bash
 uv run openopps cache status
@@ -184,10 +186,10 @@ Without `--include-missing`, the registry shows job-capable routes that already 
 
 ## Database Initialization
 
-OpenOpps uses a single Alembic initial schema for the v0.1 durable app SQLite database. `uv run openopps admin db init` creates or upgrades the configured `OPENOPPS_DB_URL` SQLite database to that current schema head. The optional HTTP response cache is separate and is not managed by Alembic. If a pre-release local database was stamped before the v0.1 schema was finalized, OpenOpps fails fast with a reset message instead of silently repairing it; reset that local `openopps.db` or point `OPENOPPS_DB_URL` at a new SQLite file.
+OpenOpps uses a single Alembic initial schema for the v0.1 durable app SQLite database. `uv run openopps admin db init` creates or upgrades the configured `OPENOPPS_DB_URL` SQLite database to that current schema head. HTTP response cache rows live in the same SQLite database and are managed by `cache.py`, not by Alembic. If a pre-release local database was stamped before the v0.1 schema was finalized, OpenOpps fails fast with a reset message instead of silently repairing it; reset that local SQLite file or point `OPENOPPS_DB_URL` at a new SQLite file.
 
 ```bash
-OPENOPPS_DB_URL=sqlite:///openopps.db uv run alembic upgrade head
+OPENOPPS_DB_URL=sqlite:///openoppsdb.sqlite uv run alembic upgrade head
 ```
 
 ## Storage Modes
@@ -215,7 +217,7 @@ CSV exports neutralize spreadsheet formula-leading strings by prefixing a single
 
 Configuration uses `OPENOPPS_` environment variables:
 
-- `OPENOPPS_DB_URL` defaults to `sqlite:///openopps.db`.
+- `OPENOPPS_DB_URL` defaults to `sqlite:///openoppsdb.sqlite`.
 - `OPENOPPS_MAX_CONNECTIONS` bounds HTTP connection pooling.
 - `OPENOPPS_SOURCE_CONCURRENCY` bounds source adapter work.
 - `OPENOPPS_BOARD_CONCURRENCY` bounds board-level processing.
@@ -225,7 +227,7 @@ Configuration uses `OPENOPPS_` environment variables:
 - `OPENOPPS_HTTP_TIMEOUT` controls HTTP request timeouts.
 - `OPENOPPS_RETRY_ATTEMPTS` controls retry attempts for retriable requests.
 - `OPENOPPS_USER_AGENT` customizes the HTTP user agent.
-- `OPENOPPS_CACHE_ENABLED` enables or disables shared JSON request caching.
+- `OPENOPPS_CACHE_ENABLED` enables or disables shared JSON request caching in the configured SQLite database.
 - `OPENOPPS_CACHE_TTL_SECONDS` controls default cache freshness.
 - `OPENOPPS_CACHE_REFRESH` bypasses cache reads for cacheable request paths.
 - `OPENOPPS_CACHE_STALE_ON_ERROR` allows eligible stale cache records on retryable failures.
@@ -241,7 +243,7 @@ out of commits.
 | `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                       |
 | `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                     |
 | `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes.      |
-| `src/openopps/cache.py`           | SQLite-backed HTTP JSON cache.                                             |
+| `src/openopps/cache.py`           | HTTP JSON cache table management.                                          |
 | `src/openopps/plugins.py`         | Entry-point plugin contracts, validation, and load isolation.              |
 | `examples/examples.py`            | Deterministic synthetic dataset builder for examples and smoke tests.      |
 | `src/openopps/route_registry.py`  | Programmatic selector for executable and probe-verified board routes.      |
@@ -301,7 +303,7 @@ rtk npx -y @fission-ai/openspec@latest instructions --change prepare-v0-1-releas
 uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
 uv run python scripts/generate_kaggle_metadata.py
-uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openopps.sqlite
+uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite
 cd docs && pnpm types:check
 cd docs && pnpm build
 cd docs && rtk lint
@@ -313,12 +315,12 @@ rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 The Kaggle upload root lives in `kaggle/`. It contains dataset metadata (`dataset-metadata.json`, `dataset-cover-image.png`, `datapackage.json`), the connected manager notebook (`kernel-metadata.json`, `openoppsdb-manager.ipynb`), and generated SQLite/CSV/Parquet data artifacts. `dataset-metadata.json` is the Kaggle UI source of truth for cover image, file information, and column descriptors; `datapackage.json` remains a richer companion data dictionary with table metadata, examples, and required flags.
 
 ```bash
-OPENOPPS_DB_URL="sqlite:///$PWD/kaggle/openopps.sqlite" uv run openopps sync --metrics-json
-uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openopps.sqlite
+OPENOPPS_DB_URL="sqlite:///$PWD/kaggle/openoppsdb.sqlite" uv run openopps sync --metrics-json
+uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite
 KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle datasets create -p kaggle --public -q -t -r zip
 KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle kernels push -p kaggle
 ```
 
-Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use a cron cadence such as `0 */6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` through `dataset_sources`, restores the prior input `openopps.sqlite`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, syncs active jobs into the existing SQLite ledger so versions and observations accumulate throughout the day, regenerates dataset metadata, writes `openopps_tables` and `openopps_columns` metadata tables into SQLite for in-file table and column descriptions, exports every accumulated database table into `exports/csv/` and `exports/parquet/`, and versions the dataset. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`.
+Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use a cron cadence such as `0 */6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` through `dataset_sources`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, copies the newest `/kaggle/input/**/openoppsdb.sqlite` snapshot into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, syncs active jobs into that existing SQLite ledger so versions and observations accumulate throughout the day, regenerates dataset metadata, writes `openopps_tables` and `openopps_columns` metadata tables into SQLite for in-file table and column descriptions, exports every accumulated database table into `exports/csv/` and `exports/parquet/`, and versions the dataset. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`.
 
 The current Kaggle CLI checks a legacy API-key file before OAuth credentials; use the `KAGGLE_API_TOKEN="$(kaggle auth print-access-token)"` prefix for local create/version/push commands after running `kaggle auth login`.

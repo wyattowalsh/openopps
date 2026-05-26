@@ -337,3 +337,4 @@ $RECYCLE.BIN/
 # Local OpenOpps SQLite artifacts
 openopps.db*
 openopps.cache.db*
+openoppsdb.sqlite*

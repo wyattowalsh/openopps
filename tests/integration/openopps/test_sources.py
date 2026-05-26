@@ -15,6 +15,10 @@ from openopps.providers.sources.getro import GETRO_SOURCE_CATALOG, GetroSourceAd
 from openopps.providers.sources.special import (
     SOUTHPARKCOMMONS_SOURCE,
     SouthParkCommonsSourceAdapter,
+    VENTURE_CAPITAL_CAREERS_SOURCE,
+    VENTURE_LOOP_SOURCE,
+    VentureCapitalCareersSourceAdapter,
+    VentureLoopSourceAdapter,
     YCOMBINATOR_SOURCE,
     YCombinatorSourceAdapter,
 )
@@ -337,6 +341,82 @@ async def test_southparkcommons_normalizes_embedded_jobs_data():
     assert provider_map[("southparkcommons:acme", "lever")].token == "acme"
     assert provider_map[("southparkcommons:beta", "ashbyhq")].token == "beta"
     assert meta == {"jobs": 3, "total": 2}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_venturecapitalcareers_normalizes_company_cards():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://venturecapitalcareers.com/companies").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<div><div class="inline-flex">80 jobs</div></div>'
+                '<a href="/companies/cvx-ventures">'
+                '<h3 class="font-heading">CVX Ventures</h3></a>'
+                '<p data-slot="text">We invest in venture and growth opportunities.</p>'
+                '<div><div class="inline-flex">13 jobs</div></div>'
+                '<a href="/companies/iconiq-growth">'
+                '<h3 class="font-heading">ICONIQ Capital</h3></a>'
+                '<p data-slot="text">A global investment firm.</p>'
+            ),
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in VentureCapitalCareersSourceAdapter(settings).iter_boards(
+                client, VENTURE_CAPITAL_CAREERS_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert [board.key for board in boards] == [
+        "venturecapitalcareers:cvx-ventures",
+        "venturecapitalcareers:iconiq-growth",
+    ]
+    assert boards[0].name == "CVX Ventures"
+    assert boards[0].description == "We invest in venture and growth opportunities."
+    assert boards[0].num_jobs_hint == 80
+    assert boards[0].raw_payload["profileUrl"] == (
+        "https://venturecapitalcareers.com/companies/cvx-ventures"
+    )
+    assert providers == []
+    assert meta["pageSize"] == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ventureloop_source_preserves_landing_page_without_scraping_search():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://www.ventureloop.com/").mock(
+        return_value=httpx.Response(
+            302,
+            headers={
+                "location": "https://www.ventureloop.com/ventureloop/home.php"
+            },
+        )
+    )
+    landing = respx.get("https://www.ventureloop.com/ventureloop/home.php").mock(
+        return_value=httpx.Response(200, text="<title>VentureLoop</title>")
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in VentureLoopSourceAdapter(settings).iter_boards(
+                client, VENTURE_LOOP_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert boards == []
+    assert providers == []
+    assert landing.call_count == 1
+    assert meta["sourceUrl"].endswith("/ventureloop/home.php")
+    assert meta["total"] == 0
+    assert "does not expose company records" in meta["note"]
 
 
 def test_source_catalog_includes_requested_portfolio_boards():
@@ -2534,6 +2614,300 @@ def test_source_catalog_includes_requested_portfolio_boards():
             "https://jobs.scribble.vc/companies",
             "board",
             "scribble",
+        ),
+        "getrocommunity": (
+            "getro",
+            "https://community.getro.com/companies",
+            "collectionId",
+            "8870",
+        ),
+        "phoenixcourt": (
+            "consider",
+            "https://jobs.phoenixcourt.vc/companies",
+            "board",
+            "localglobe-all",
+        ),
+        "ventureloop": (
+            "ventureloop",
+            "https://www.ventureloop.com/",
+            "sourceCategory",
+            "startup_ecosystem",
+        ),
+        "techaviv": (
+            "consider",
+            "https://jobs.techaviv.com/companies",
+            "board",
+            "techaviv",
+        ),
+        "ctinnovations": (
+            "consider",
+            "https://careers.ctinnovations.com/companies",
+            "board",
+            "connecticut-innovations",
+        ),
+        "innovationendeavors": (
+            "getro",
+            "https://jobs.innovationendeavors.com/companies",
+            "collectionId",
+            "156",
+        ),
+        "goodwatercap": (
+            "consider",
+            "https://portfoliojobs.goodwatercap.com/companies",
+            "board",
+            "goodwater-capital",
+        ),
+        "shima": (
+            "consider",
+            "https://jobs.shima.capital/companies",
+            "board",
+            "shima-capital",
+        ),
+        "fabricvc": (
+            "consider",
+            "https://careers.fabric.vc/companies",
+            "board",
+            "fabric-ventures",
+        ),
+        "venturesplatform": (
+            "getro",
+            "https://jobs.venturesplatform.com/companies",
+            "collectionId",
+            "10784",
+        ),
+        "deepworkcapital": (
+            "getro",
+            "https://careers.deepworkcapital.com/companies",
+            "collectionId",
+            "9497",
+        ),
+        "makersfund": (
+            "consider",
+            "https://jobs.makersfund.com/companies",
+            "board",
+            "makers-fund",
+        ),
+        "uppartners": (
+            "consider",
+            "https://careers.up.partners/companies",
+            "board",
+            "up-partners",
+        ),
+        "blueyard": (
+            "getro",
+            "https://jobs.blueyard.com/companies",
+            "collectionId",
+            "796",
+        ),
+        "abven": (
+            "getro",
+            "https://jobs.abven.com/companies",
+            "collectionId",
+            "400",
+        ),
+        "differentialvc": (
+            "getro",
+            "https://jobs.differential.vc/companies",
+            "collectionId",
+            "765",
+        ),
+        "arcternventures": (
+            "getro",
+            "https://careers.arcternventures.com/companies",
+            "collectionId",
+            "1087",
+        ),
+        "fiveelms": (
+            "getro",
+            "https://careers.fiveelms.com/companies",
+            "collectionId",
+            "10586",
+        ),
+        "greathillpartners": (
+            "consider",
+            "https://jobs.greathillpartners.com/companies",
+            "board",
+            "great-hill-partners",
+        ),
+        "thirdrockventures": (
+            "consider",
+            "https://jobs.thirdrockventures.com/companies",
+            "board",
+            "third-rock-ventures",
+        ),
+        "genoavc": (
+            "consider",
+            "https://careers.genoavc.com/companies",
+            "board",
+            "genoa",
+        ),
+        "echelon": (
+            "getro",
+            "https://careers.echelon.xyz/companies",
+            "collectionId",
+            "12203",
+        ),
+        "gridironcapital": (
+            "consider",
+            "https://jobs.gridironcapital.com/companies",
+            "board",
+            "gridiron-capital",
+        ),
+        "k1": (
+            "consider",
+            "https://portfoliocareers.k1.com/companies",
+            "board",
+            "k1",
+        ),
+        "cerberus": (
+            "getro",
+            "https://portfoliojobs.cerberus.com/companies",
+            "collectionId",
+            "12962",
+        ),
+        "pumagrowthpartners": (
+            "consider",
+            "https://jobs.pumagrowthpartners.co.uk/companies",
+            "board",
+            "puma-pe",
+        ),
+        "arsenalgrowth": (
+            "consider",
+            "https://jobs.arsenalgrowth.com/companies",
+            "board",
+            "arsenal-growth",
+        ),
+        "meron": (
+            "getro",
+            "https://careers.meron.co/companies",
+            "collectionId",
+            "1257",
+        ),
+        "relevanceventures": (
+            "getro",
+            "https://careers.relevanceventures.com/companies",
+            "collectionId",
+            "6065",
+        ),
+        "elabvc": (
+            "getro",
+            "https://jobs.elabvc.com/companies",
+            "collectionId",
+            "1089",
+        ),
+        "nightdragon": (
+            "getro",
+            "https://careers.nightdragon.com/companies",
+            "collectionId",
+            "1105",
+        ),
+        "greymattercapital": (
+            "getro",
+            "https://careers.greymattercapital.com/companies",
+            "collectionId",
+            "4910",
+        ),
+        "amplitudevc": (
+            "getro",
+            "https://careers.amplitudevc.com/companies",
+            "collectionId",
+            "1271",
+        ),
+        "aldrichcap": (
+            "getro",
+            "https://careers.aldrichcap.com/companies",
+            "collectionId",
+            "6659",
+        ),
+        "valoventures": (
+            "getro",
+            "https://valoventures.getro.com/companies",
+            "collectionId",
+            "1540",
+        ),
+        "kcrise": (
+            "getro",
+            "https://kcrise.getro.com/companies",
+            "collectionId",
+            "1503",
+        ),
+        "skyviewventures": (
+            "getro",
+            "https://jobs.skyviewventures.com/companies",
+            "collectionId",
+            "5339",
+        ),
+        "pulsefund": (
+            "getro",
+            "https://careers.pulsefund.com/companies",
+            "collectionId",
+            "13985",
+        ),
+        "superorganism": (
+            "getro",
+            "https://jobs.superorganism.com/companies",
+            "collectionId",
+            "10058",
+        ),
+        "azollaventures": (
+            "consider",
+            "https://jobs.azollaventures.com/companies",
+            "board",
+            "azolla-ventures",
+        ),
+        "byldvc": (
+            "consider",
+            "https://careers.byld.vc/companies",
+            "board",
+            "byld-ventures",
+        ),
+        "m1c": (
+            "consider",
+            "https://careers.m1c.vc/companies",
+            "board",
+            "mission-one",
+        ),
+        "revent": (
+            "consider",
+            "https://careers.revent.vc/companies",
+            "board",
+            "revent",
+        ),
+        "zeldavc": (
+            "consider",
+            "https://jobs.zelda.vc/companies",
+            "board",
+            "zelda-ventures",
+        ),
+        "i2iventures": (
+            "getro",
+            "https://i2iventures.getro.com/companies",
+            "collectionId",
+            "1485",
+        ),
+        "parameter": (
+            "consider",
+            "https://jobs.parameter.vc/companies",
+            "board",
+            "parameter-ventures",
+        ),
+        "westlygroup": (
+            "getro",
+            "https://jobs.westlygroup.com/companies",
+            "collectionId",
+            "10685",
+        ),
+        "jobsinvc": (
+            "getro",
+            "https://jobsinvc.getro.com/companies",
+            "collectionId",
+            "15272",
+        ),
+        "venturecapitalcareers": (
+            "venturecapitalcareers",
+            "https://venturecapitalcareers.com/companies",
+            "sourceCategory",
+            "startup_ecosystem",
         ),
         "usv": (
             "consider",

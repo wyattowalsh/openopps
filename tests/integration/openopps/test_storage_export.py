@@ -135,6 +135,95 @@ def seeded_filter_store(tmp_path: Path) -> OpenOppsStore:
     return store
 
 
+def test_board_provider_upsert_preserves_executable_route_metadata(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="a16z", url="manual://a16z", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="a16z", remote_id="acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="a16z:acme:greenhouse",
+                source_key="a16z",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                count_hint=1,
+                token="acme",
+                board_url="https://boards.greenhouse.io/acme",
+                last_status="route_ready",
+            )
+        ]
+    )
+
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="a16z:acme:greenhouse",
+                source_key="a16z",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                count_hint=3,
+                raw_payload={"id": "greenhouse", "count": 3},
+            )
+        ]
+    )
+
+    stored = store.list_board_providers(provider_id="greenhouse")[0]
+    assert stored.token == "acme"
+    assert stored.board_url == "https://boards.greenhouse.io/acme"
+    assert stored.last_status == "route_ready"
+    assert stored.count_hint == 3
+    assert stored.raw_payload == {"id": "greenhouse", "count": 3}
+
+
+def test_deactivated_provider_route_survives_hint_only_refresh(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="a16z", url="manual://a16z", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="a16z", remote_id="acme", name="Acme")]
+    )
+    route = BoardProviderRecord(
+        id="a16z:acme:greenhouse",
+        source_key="a16z",
+        board_key="acme",
+        provider_id="greenhouse",
+        support_level=ProviderSupport.JOBS,
+        token="acme",
+        last_status="route_ready",
+    )
+    store.upsert_board_providers([route])
+    stored_route = store.list_board_providers(provider_id="greenhouse")[0]
+
+    store.deactivate_board_provider_route(
+        stored_route, status="job_sync_unavailable_404"
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="a16z:acme:greenhouse",
+                source_key="a16z",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+            )
+        ]
+    )
+
+    stored = store.list_board_providers(provider_id="greenhouse")[0]
+    assert stored.support_level == ProviderSupport.DETECT
+    assert stored.last_status == "job_sync_unavailable_404"
+    assert stored.token == "acme"
+
+
 def test_storage_roundtrip_and_export(tmp_path: Path):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
