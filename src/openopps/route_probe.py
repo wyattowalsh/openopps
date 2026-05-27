@@ -14,6 +14,7 @@ from loguru import logger
 from openopps.http import build_async_client, retrying_json_request
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport, utc_now
 from openopps.models import host_matches, validate_provider_host
+from openopps.providers.boards.workable import wait_for_workable_rate_limit
 from openopps.providers.boards.workday import parse_workday_board_url
 from openopps.providers.boards.wpjobmanager import (
     wpjobmanager_is_ajax_endpoint,
@@ -216,17 +217,18 @@ async def probe_routes(
                         route,
                         max_candidates=max_candidates,
                     )
-                except Exception:
+                except Exception as exc:
+                    reason = _probe_error_reason(exc)
                     summary.errors[route.provider_id] = (
                         summary.errors.get(route.provider_id, 0) + 1
                     )
-                    _increment(summary.unknown_by_reason, "probe_error")
+                    _increment(summary.unknown_by_reason, reason)
                     summary.unknown.append(
                         ProbeUnknown(
                             board_key=route.board_key,
                             provider_id=route.provider_id,
                             name=board.name,
-                            reason="probe_error",
+                            reason=reason,
                             candidates=token_candidates(
                                 board, max_candidates=max_candidates
                             ),
@@ -287,6 +289,12 @@ async def probe_routes(
 
 def _increment(values: dict[str, int], key: str) -> None:
     values[key] = values.get(key, 0) + 1
+
+
+def _probe_error_reason(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        return "rate_limited"
+    return "probe_error"
 
 
 async def _probe_route(
@@ -465,6 +473,7 @@ async def _try_ashby(
 async def _try_workable(
     client: httpx.AsyncClient, request_json: JsonRequester, token: str
 ) -> int | None:
+    await wait_for_workable_rate_limit()
     data = await _route_probe_json_or_none(
         client,
         request_json,

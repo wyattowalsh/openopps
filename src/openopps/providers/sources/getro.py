@@ -254,13 +254,6 @@ GETRO_SOURCE_CATALOG = {
         enabled=True,
         raw_metadata={"collectionId": "258"},
     ),
-    "generalcatalyst": SourceRecord(
-        key="generalcatalyst",
-        url="https://jobs.generalcatalyst.com/companies",
-        provider_id="getro",
-        enabled=True,
-        raw_metadata={"collectionId": "222"},
-    ),
     "hvcapital": SourceRecord(
         key="hvcapital",
         url="https://hv.getro.com/companies",
@@ -1492,13 +1485,6 @@ GETRO_SOURCE_CATALOG = {
         provider_id="getro",
         enabled=True,
         raw_metadata={"collectionId": "997"},
-    ),
-    "ncbiotech": SourceRecord(
-        key="ncbiotech",
-        url="https://careers.ncbiotech.org/companies",
-        provider_id="getro",
-        enabled=True,
-        raw_metadata={"collectionId": "14777"},
     ),
     "annarborusa": SourceRecord(
         key="annarborusa",

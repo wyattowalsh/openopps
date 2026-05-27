@@ -14,6 +14,8 @@ OpenOpps currently exposes many internal maintenance and diagnostic commands as 
 - Add a documented plugin architecture based on Python package entry points and validated OpenOpps-owned hooks/contracts.
 - Add deterministic generated examples for docs, smoke tests, and invariant tests.
 - Add board-level provider coverage metrics, including the measured percentage of boards with non-supported provider hints.
+- Clarify public sync metrics so automation can distinguish provider-fetched postings from unique SQLite job observations.
+- Remove packaged source catalog entries when live evidence proves the public source is no longer runnable and no replacement endpoint is known.
 - Update README, docs, package instructions, and release validation artifacts to match v0.1.
 
 ## Non-Goals

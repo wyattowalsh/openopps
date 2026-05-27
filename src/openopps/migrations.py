@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+import hashlib
 from importlib import resources
 from pathlib import Path
+import tempfile
+import threading
+from collections.abc import Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback keeps process lock only.
+    fcntl = None
 
 from alembic import command
 from alembic.config import Config
@@ -11,6 +21,8 @@ from openopps.settings import OpenOppsSettings
 
 
 ALEMBIC_HEAD = "head"
+_SQLITE_UPGRADE_LOCKS_GUARD = threading.Lock()
+_SQLITE_UPGRADE_LOCKS: dict[str, threading.Lock] = {}
 REQUIRED_SQLITE_COLUMNS: dict[str, set[str]] = {
     "boards": {"source_keys", "source_board_keys"},
     "jobs": {"current_version_id", "current_content_hash", "last_seen_at"},
@@ -33,8 +45,9 @@ def upgrade_sqlite_database(settings: OpenOppsSettings) -> None:
     if settings.sqlite_path:
         settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
-    command.upgrade(_alembic_config(settings), ALEMBIC_HEAD)
-    _validate_sqlite_schema(settings)
+    with _sqlite_upgrade_lock(settings):
+        command.upgrade(_alembic_config(settings), ALEMBIC_HEAD)
+        _validate_sqlite_schema(settings)
 
 
 def migration_script_location() -> Path:
@@ -49,6 +62,43 @@ def _alembic_config(settings: OpenOppsSettings) -> Config:
     config.set_main_option("sqlalchemy.url", settings.db_url)
     config.attributes["openopps_explicit_url"] = True
     return config
+
+
+@contextmanager
+def _sqlite_upgrade_lock(settings: OpenOppsSettings) -> Iterator[None]:
+    lock_key = _sqlite_lock_key(settings)
+    process_lock = _process_upgrade_lock(lock_key)
+    with process_lock:
+        lock_path = _sqlite_lock_path(lock_key)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _sqlite_lock_key(settings: OpenOppsSettings) -> str:
+    if settings.sqlite_path is not None:
+        return str(settings.sqlite_path.expanduser().resolve(strict=False))
+    return settings.db_url
+
+
+def _sqlite_lock_path(lock_key: str) -> Path:
+    digest = hashlib.sha256(lock_key.encode("utf-8")).hexdigest()
+    return Path(tempfile.gettempdir()) / "openopps-locks" / f"{digest}.init.lock"
+
+
+def _process_upgrade_lock(lock_key: str) -> threading.Lock:
+    with _SQLITE_UPGRADE_LOCKS_GUARD:
+        lock = _SQLITE_UPGRADE_LOCKS.get(lock_key)
+        if lock is None:
+            lock = threading.Lock()
+            _SQLITE_UPGRADE_LOCKS[lock_key] = lock
+        return lock
 
 
 def _validate_sqlite_schema(settings: OpenOppsSettings) -> None:

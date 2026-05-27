@@ -2,6 +2,7 @@ import httpx
 import pytest
 import respx
 
+import openopps.providers.boards.workable as workable_module
 from openopps.http import build_async_client
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport
 from openopps.providers.boards.ashby import AshbyProvider, ashby_token
@@ -59,7 +60,7 @@ async def test_greenhouse_fetch_jobs():
                         "location": {"name": "Remote"},
                         "departments": [{"name": "Engineering"}],
                         "offices": [{"name": "United States"}],
-                        "absolute_url": "https://boards.greenhouse.io/acme/jobs/123",
+                        "absolute_url": "http://boards.greenhouse.io/acme/jobs/123",
                         "content": "<p>Build reliable APIs.</p>",
                         "metadata": [{"name": "level", "value": "staff"}],
                     }
@@ -91,7 +92,39 @@ async def test_greenhouse_fetch_jobs():
         jobs[0].job_description.meta["canonical"]
         == "https://boards.greenhouse.io/acme/jobs/123"
     )
+    assert jobs[0].posting_url == "https://boards.greenhouse.io/acme/jobs/123"
     assert jobs[0].raw_listing["metadata"] == [{"name": "level", "value": "staff"}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_greenhouse_drops_unsafe_public_job_urls():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        params={"content": "true"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "id": 123,
+                        "title": "Engineer",
+                        "absolute_url": "https://greenhouse.io.evil.example/jobs/123",
+                    }
+                ]
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await GreenhouseProvider(settings).fetch_jobs(
+            client, board(), route("greenhouse", token="acme")
+        )
+
+    assert jobs[0].posting_url is None
+    assert jobs[0].apply_url is None
 
 
 @pytest.mark.asyncio
@@ -163,6 +196,48 @@ async def test_lever_fetch_jobs():
         "customCategory": "preserved",
     }
     assert jobs[0].raw_listing["customField"] == {"remote": True}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lever_extracts_structured_sections_with_empty_headings():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://api.lever.co/v0/postings/acme").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "abc",
+                    "text": "Designer",
+                    "hostedUrl": "https://jobs.lever.co/acme/abc",
+                    "categories": {},
+                    "lists": [
+                        {
+                            "text": "",
+                            "content": (
+                                "<h3>Responsibilities</h3>"
+                                "<ul><li>Ship clear flows</li></ul>"
+                            ),
+                        },
+                        {
+                            "text": "",
+                            "content": (
+                                "<h3>Requirements</h3><ul><li>5+ years design</li></ul>"
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await LeverProvider(settings).fetch_jobs(
+            client, board(), route("lever", token="acme")
+        )
+
+    assert jobs[0].responsibilities == ["Ship clear flows"]
+    assert jobs[0].qualifications == ["5+ years design"]
 
 
 @pytest.mark.asyncio
@@ -417,6 +492,36 @@ async def test_workable_fetch_jobs():
     assert jobs[0].raw_listing["shortcode"] == "abc123"
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_workable_fetch_jobs_uses_shared_rate_limiter(monkeypatch):
+    class RecordingLimiter:
+        calls = 0
+
+        async def wait(self):
+            self.calls += 1
+
+    limiter = RecordingLimiter()
+    monkeypatch.setattr(workable_module, "_WORKABLE_RATE_LIMITER", limiter)
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.post("https://apply.workable.com/api/v3/accounts/acme/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            json={"total": 1, "results": [{"shortcode": "abc123", "title": "Support"}]},
+        )
+    )
+    respx.get("https://apply.workable.com/api/v2/accounts/acme/jobs/abc123").mock(
+        return_value=httpx.Response(200, json={"shortcode": "abc123"})
+    )
+
+    async with build_async_client(settings) as client:
+        await WorkableProvider(settings).fetch_jobs(
+            client, board(), route("workable", token="acme")
+        )
+
+    assert limiter.calls == 2
+
+
 def test_workable_route_detection_and_token_derivation():
     hosted = WorkableProvider.detect_route("https://apply.workable.com/acme/")
     api = WorkableProvider.detect_route("https://www.workable.com/api/accounts/acme")
@@ -434,7 +539,9 @@ def test_workable_route_detection_and_token_derivation():
         == "bravo"
     )
     assert (
-        workable_token(route("workable", board_url="https://apply.workable.com/charlie/"))
+        workable_token(
+            route("workable", board_url="https://apply.workable.com/charlie/")
+        )
         == "charlie"
     )
     assert workable_token(route("workable")) is None
@@ -452,12 +559,18 @@ async def test_workable_check_jobs_and_invalid_payload():
     )
 
     async with build_async_client(settings) as client:
-        assert await WorkableProvider(settings).check_jobs(
-            client, board(), route("workable", token="acme")
-        ) == 2
-        assert await WorkableProvider(settings).check_jobs(
-            client, board(), route("workable")
-        ) == 0
+        assert (
+            await WorkableProvider(settings).check_jobs(
+                client, board(), route("workable", token="acme")
+            )
+            == 2
+        )
+        assert (
+            await WorkableProvider(settings).check_jobs(
+                client, board(), route("workable")
+            )
+            == 0
+        )
         with pytest.raises(ValueError, match="invalid JSON"):
             await WorkableProvider(settings).check_jobs(
                 client, board(), route("workable", token="broken")
@@ -547,9 +660,12 @@ async def test_teamtailor_check_jobs_and_missing_route():
     )
 
     async with build_async_client(settings) as client:
-        assert await TeamtailorProvider(settings).check_jobs(
-            client, board(), route("teamtailor", token="acme")
-        ) == 2
+        assert (
+            await TeamtailorProvider(settings).check_jobs(
+                client, board(), route("teamtailor", token="acme")
+            )
+            == 2
+        )
         with pytest.raises(ValueError, match="missing a public board host"):
             await TeamtailorProvider(settings).fetch_jobs(
                 client, board(), route("teamtailor")
@@ -623,8 +739,9 @@ def test_bamboohr_route_detection_and_route_derivation():
         parse_bamboohr_board_url("https://acme.bamboohr.com/jobs")
     assert bamboohr_route(route("bamboohr", host="acme.bamboohr.com")).tenant == "acme"
     assert (
-        bamboohr_route(route("bamboohr", board_url="https://bravo.bamboohr.com/careers"))
-        .tenant
+        bamboohr_route(
+            route("bamboohr", board_url="https://bravo.bamboohr.com/careers")
+        ).tenant
         == "bravo"
     )
     assert bamboohr_route(route("bamboohr", token="charlie")).host == (
@@ -648,15 +765,24 @@ async def test_bamboohr_check_jobs_count_paths_and_invalid_payload():
     )
 
     async with build_async_client(settings) as client:
-        assert await BambooHRProvider(settings).check_jobs(
-            client, board(), route("bamboohr", token="meta")
-        ) == 3
-        assert await BambooHRProvider(settings).check_jobs(
-            client, board(), route("bamboohr", token="items")
-        ) == 2
-        assert await BambooHRProvider(settings).check_jobs(
-            client, board(), route("bamboohr")
-        ) == 0
+        assert (
+            await BambooHRProvider(settings).check_jobs(
+                client, board(), route("bamboohr", token="meta")
+            )
+            == 3
+        )
+        assert (
+            await BambooHRProvider(settings).check_jobs(
+                client, board(), route("bamboohr", token="items")
+            )
+            == 2
+        )
+        assert (
+            await BambooHRProvider(settings).check_jobs(
+                client, board(), route("bamboohr")
+            )
+            == 0
+        )
         with pytest.raises(ValueError, match="invalid JSON"):
             await BambooHRProvider(settings).check_jobs(
                 client, board(), route("bamboohr", token="broken")
@@ -712,7 +838,9 @@ async def test_rippling_fetch_jobs_preserves_listing_and_detail():
 
 
 def test_rippling_route_detection_and_slug_derivation():
-    api = RipplingProvider.detect_route("https://ats.rippling.com/api/v2/board/acme/jobs")
+    api = RipplingProvider.detect_route(
+        "https://ats.rippling.com/api/v2/board/acme/jobs"
+    )
     hosted = RipplingProvider.detect_route("https://ats.rippling.com/bravo/jobs")
 
     assert api is not None
@@ -724,12 +852,16 @@ def test_rippling_route_detection_and_slug_derivation():
     assert rippling_slug(route("rippling", token=" token ")) == "token"
     assert (
         rippling_slug(
-            route("rippling", board_url="https://ats.rippling.com/api/v2/board/api/jobs")
+            route(
+                "rippling", board_url="https://ats.rippling.com/api/v2/board/api/jobs"
+            )
         )
         == "api"
     )
     assert (
-        rippling_slug(route("rippling", board_url="https://ats.rippling.com/hosted/jobs"))
+        rippling_slug(
+            route("rippling", board_url="https://ats.rippling.com/hosted/jobs")
+        )
         == "hosted"
     )
     assert rippling_slug(route("rippling")) is None
@@ -753,15 +885,24 @@ async def test_rippling_check_jobs_count_paths_and_invalid_payload():
     ).mock(return_value=httpx.Response(200, json={"items": "bad"}))
 
     async with build_async_client(settings) as client:
-        assert await RipplingProvider(settings).check_jobs(
-            client, board(), route("rippling", token="total")
-        ) == 4
-        assert await RipplingProvider(settings).check_jobs(
-            client, board(), route("rippling", token="items")
-        ) == 2
-        assert await RipplingProvider(settings).check_jobs(
-            client, board(), route("rippling")
-        ) == 0
+        assert (
+            await RipplingProvider(settings).check_jobs(
+                client, board(), route("rippling", token="total")
+            )
+            == 4
+        )
+        assert (
+            await RipplingProvider(settings).check_jobs(
+                client, board(), route("rippling", token="items")
+            )
+            == 2
+        )
+        assert (
+            await RipplingProvider(settings).check_jobs(
+                client, board(), route("rippling")
+            )
+            == 0
+        )
         with pytest.raises(ValueError, match="invalid JSON"):
             await RipplingProvider(settings).check_jobs(
                 client, board(), route("rippling", token="broken")
@@ -870,11 +1011,15 @@ def test_wpjobmanager_route_detection_and_endpoint_derivation():
     assert wpjobmanager_endpoint(route("wpjobmanager", board_url=rest_url)) == rest_url
     assert wpjobmanager_endpoint(route("wpjobmanager", board_url=ajax_url)) == ajax_url
     assert (
-        wpjobmanager_endpoint(route("wpjobmanager", board_url="https://jobs.example.com"))
+        wpjobmanager_endpoint(
+            route("wpjobmanager", board_url="https://jobs.example.com")
+        )
         == rest_url
     )
     assert (
-        wpjobmanager_endpoint(route("wpjobmanager", token="https://careers.example.com"))
+        wpjobmanager_endpoint(
+            route("wpjobmanager", token="https://careers.example.com")
+        )
         == "https://careers.example.com/wp-json/wp/v2/job-listings"
     )
     assert (
@@ -901,15 +1046,24 @@ async def test_wpjobmanager_check_jobs_count_paths_and_invalid_payload():
     )
 
     async with build_async_client(settings) as client:
-        assert await WPJobManagerProvider(settings).check_jobs(
-            client, board(), route("wpjobmanager", board_url=rest_url)
-        ) == 1
-        assert await WPJobManagerProvider(settings).check_jobs(
-            client, board(), route("wpjobmanager", board_url=ajax_url)
-        ) == 7
-        assert await WPJobManagerProvider(settings).check_jobs(
-            client, board(), route("wpjobmanager")
-        ) == 0
+        assert (
+            await WPJobManagerProvider(settings).check_jobs(
+                client, board(), route("wpjobmanager", board_url=rest_url)
+            )
+            == 1
+        )
+        assert (
+            await WPJobManagerProvider(settings).check_jobs(
+                client, board(), route("wpjobmanager", board_url=ajax_url)
+            )
+            == 7
+        )
+        assert (
+            await WPJobManagerProvider(settings).check_jobs(
+                client, board(), route("wpjobmanager")
+            )
+            == 0
+        )
         with pytest.raises(ValueError, match="invalid JSON"):
             await WPJobManagerProvider(settings).check_jobs(
                 client,

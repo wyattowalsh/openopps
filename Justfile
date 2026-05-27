@@ -38,7 +38,7 @@ docs-check:
 
 # Build the Fumadocs/Next.js docs site.
 docs-build:
-    cd docs && pnpm build
+    @if [ "$(uname -s)" = "Darwin" ]; then zsh -lc 'cd docs && pnpm build'; else cd docs && pnpm build; fi
 
 # Run docs lint surfaces.
 docs-lint:

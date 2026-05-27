@@ -33,9 +33,7 @@ def test_unscoped_source_selection_honors_current_catalog_disabled_defaults(
 ):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
-    store.upsert_source(
-        SEC_COMPANY_TICKERS_SOURCE.model_copy(update={"enabled": True})
-    )
+    store.upsert_source(SEC_COMPANY_TICKERS_SOURCE.model_copy(update={"enabled": True}))
 
     selected = ingest_module._select_sources(store, None)
     explicit = ingest_module._select_sources(store, "sec-company-tickers")
@@ -138,6 +136,53 @@ async def test_sync_jobs_dedupes_same_provider_route_across_sources(tmp_path: Pa
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_sync_jobs_reports_persisted_runs_and_deduped_jobs(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:greenhouse",
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+            )
+        ]
+    )
+    _mock_greenhouse_jobs(
+        "acme",
+        [
+            {
+                "id": 1,
+                "title": "Engineer",
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/1",
+            },
+            {
+                "id": 1,
+                "title": "Engineer",
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/1",
+            },
+        ],
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
+
+    assert metrics.jobs == 2
+    assert metrics.jobs_persisted == 1
+    assert metrics.job_sync_runs == 1
+    assert metrics.jobs_deduped == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_sync_jobs_excludes_route_hints_without_executable_metadata(
     tmp_path: Path,
 ):
@@ -197,6 +242,52 @@ async def test_sync_boards_does_not_warn_on_unresolved_route_candidates(
 
     assert metrics.skipped == 0
     assert metrics.provider_errors == {}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_boards_reports_route_probe_error_details(tmp_path: Path):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="acme",
+                source_key="manual",
+                remote_id="Acme",
+                name="Acme",
+            )
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:greenhouse",
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+            )
+        ]
+    )
+    respx.get(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        params={"content": "false"},
+    ).mock(return_value=httpx.Response(429, json={"error": "rate limit"}))
+
+    metrics = await sync_boards(
+        settings=settings, store=store, provider_id="greenhouse", max_candidates=1
+    )
+
+    assert metrics.provider_errors == {"greenhouse": 1}
+    assert metrics.provider_error_details == {"greenhouse": {"rate_limited": 1}}
 
 
 @pytest.mark.asyncio
@@ -555,7 +646,6 @@ async def test_sync_sources_progress_reports_unique_canonical_board_count(
         ("oneragtime", "https://careers.oneragtime.com", "oneragtime"),
         ("adverb", "https://jobs.adverb.vc", "adverb-ventures"),
         ("expa", "https://jobs.expa.com", "expa"),
-        ("qplusequality", "https://jobs.qplusequality.org", "q-plus-equality"),
         ("01a", "https://jobs.01a.com", "01-advisors"),
         ("360cap", "https://jobs.360cap.vc", "360-capital"),
         ("adara", "https://talent.adara.vc", "adara-ventures"),

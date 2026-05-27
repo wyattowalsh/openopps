@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from openopps.models import JobRecord, job_content_hash, job_payload_hash
 
 
@@ -37,3 +39,31 @@ def test_job_payload_hash_is_stable_for_raw_key_order():
     )
 
     assert job_payload_hash(left) == job_payload_hash(right)
+
+
+def test_job_content_hash_ignores_json_resume_last_modified():
+    left = JobRecord(
+        id="acme:greenhouse:1",
+        board_key="acme",
+        provider_id="greenhouse",
+        remote_id="1",
+        title="Engineer",
+        description="Build systems.",
+        synced_at=datetime(2026, 5, 22, tzinfo=timezone.utc),
+    )
+    right = JobRecord(
+        id="acme:greenhouse:1",
+        board_key="acme",
+        provider_id="greenhouse",
+        remote_id="1",
+        title="Engineer",
+        description="Build systems.",
+        synced_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+    )
+
+    assert left.job_description is not None
+    assert right.job_description is not None
+    assert left.job_description.meta["lastModified"] != right.job_description.meta[
+        "lastModified"
+    ]
+    assert job_content_hash(left) == job_content_hash(right)

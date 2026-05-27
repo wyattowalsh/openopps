@@ -479,13 +479,6 @@ CONSIDER_SOURCE_CATALOG = {
         enabled=True,
         raw_metadata={"board": "startx"},
     ),
-    "qplusequality": SourceRecord(
-        key="qplusequality",
-        url="https://jobs.qplusequality.org/companies",
-        provider_id="consider",
-        enabled=True,
-        raw_metadata={"board": "q-plus-equality"},
-    ),
     "hoxtonventures": SourceRecord(
         key="hoxtonventures",
         url="https://jobs.hoxtonventures.com/companies",

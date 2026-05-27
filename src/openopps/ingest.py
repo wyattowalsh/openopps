@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 from loguru import logger
+from pydantic import ValidationError
 
 from openopps.enrichment import enrich_metadata
 from openopps.http import build_async_client
@@ -163,7 +164,9 @@ async def sync_sources(
                             _source_detail(source.key, "complete"),
                         )
                 except Exception as exc:
-                    metrics.error(source.provider_id)
+                    metrics.error(
+                        source.provider_id, _error_reason(exc, "source_fetch")
+                    )
                     metrics.skipped += 1
                     async with progress_lock:
                         completed_sources += 1
@@ -179,7 +182,7 @@ async def sync_sources(
                             "Failed to sync source={} provider={}: {}",
                             source.key,
                             source.provider_id,
-                            exc,
+                            _format_exception(exc),
                         )
 
         await asyncio.gather(*(run_source(source) for source in sources))
@@ -253,7 +256,9 @@ async def sync_boards(
     )
     metrics.board_providers = summary.checked
     metrics.duplicate_routes_skipped = summary.duplicate_routes_skipped
-    metrics.provider_errors.update(summary.errors)
+    for unknown in summary.unknown:
+        if unknown.reason in {"probe_error", "rate_limited"}:
+            metrics.error(unknown.provider_id, unknown.reason)
     _report(
         report,
         "boards",
@@ -461,8 +466,7 @@ async def sync_jobs(
                                 unavailable_routes,
                                 status=status,
                                 close_missing=(
-                                    unavailable_status
-                                    in _ROUTE_CLOSE_MISSING_STATUSES
+                                    unavailable_status in _ROUTE_CLOSE_MISSING_STATUSES
                                 ),
                             )
                         async with progress_lock:
@@ -482,7 +486,8 @@ async def sync_jobs(
                                 unavailable_status,
                             )
                         return
-                    metrics.error(route.provider_id)
+                    error_reason = _error_reason(exc, "job_fetch")
+                    metrics.error(route.provider_id, error_reason)
                     async with progress_lock:
                         completed_routes += 1
                         _report_job_progress(
@@ -490,19 +495,24 @@ async def sync_jobs(
                             completed_routes,
                             route_total,
                             metrics.jobs,
-                            _job_detail(board.key, "skipped: error"),
+                            _job_detail(
+                                board.key,
+                                "skipped: rate limited"
+                                if error_reason == "rate_limited"
+                                else "skipped: error",
+                            ),
                         )
                     if verbose:
                         logger.warning(
                             "Failed to sync jobs for board={} provider={}: {}",
                             board.key,
                             route.provider_id,
-                            exc,
+                            _format_exception(exc),
                         )
                     return
                 if jobs:
                     async with write_lock:
-                        store.sync_jobs_for_route(
+                        run = store.sync_jobs_for_route(
                             board.key,
                             route.provider_id,
                             jobs,
@@ -513,12 +523,15 @@ async def sync_jobs(
                     metrics.jobs += len(jobs)
                 else:
                     async with write_lock:
-                        store.sync_jobs_for_route(
+                        run = store.sync_jobs_for_route(
                             board.key,
                             route.provider_id,
                             jobs,
                             close_missing=True,
                         )
+                metrics.job_sync_runs += 1
+                metrics.jobs_persisted += run.job_count
+                metrics.jobs_deduped += max(0, len(jobs) - run.job_count)
                 async with progress_lock:
                     completed_routes += 1
                     _report_job_progress(
@@ -740,6 +753,25 @@ def _chunk(label: str, value: str, value_style: str = "bold") -> str:
 
 def _format_count(value: int) -> str:
     return f"{value:,}"
+
+
+def _error_reason(exc: Exception, default: str) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code == 429:
+            return "rate_limited"
+        if exc.response.status_code in _ROUTE_UNAVAILABLE_STATUSES:
+            return "unavailable"
+        return default
+    if isinstance(exc, (ValidationError, ValueError)):
+        return "validation"
+    return default
+
+
+def _format_exception(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return type(exc).__name__
 
 
 def _track_unique_boards(

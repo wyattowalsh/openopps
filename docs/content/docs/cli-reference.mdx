@@ -137,7 +137,7 @@ uv run openopps sync a16z --metrics-json --refresh-cache
 uv run openopps sync --provider any --profile
 ```
 
-`sync` runs `sources sync`, `boards sync`, then `jobs sync` with the same source, board, provider, cache, metrics, and verbosity conventions as the individual stages. Human output uses compact stage-aware progress; `--metrics-json` prints one combined metrics payload without progress text on stdout.
+`sync` runs `sources sync`, `boards sync`, then `jobs sync` with the same source, board, provider, cache, metrics, and verbosity conventions as the individual stages. Human output uses compact stage-aware progress; `--metrics-json` prints one combined metrics payload without progress text on stdout. The `jobs` count is the number of postings fetched from successful provider routes, while `jobsPersisted`, `jobSyncRuns`, and `jobsDeduped` report the unique route observations written to SQLite.
 
 ## Source Commands
 
@@ -224,7 +224,7 @@ uv run openopps jobs history <job-id> --json
 uv run openopps jobs export --source a16z --type full --format parquet --output /tmp/openopps-jobs.parquet
 ```
 
-`jobs sync` targets every ready job-capable provider route unless narrowed with `--source`, `--board`, or `--provider`. It skips route hints that still lack executable metadata, reports duplicate route skips in metrics, and can also stream synced jobs to JSONL with `--output`. Each successful route sync records a sync run, one observation per seen posting, raw payload snapshots, and a normalized job version only when user-visible content changes. When a previously open job is absent from a successful provider response for the same board/provider route, OpenOpps marks it `closed`; provider errors and skipped routes never close jobs.
+`jobs sync` targets every ready job-capable provider route unless narrowed with `--source`, `--board`, or `--provider`. It skips route hints that still lack executable metadata, reports duplicate route skips in metrics, and can also stream synced jobs to JSONL with `--output`. Each successful route sync records a sync run, one observation per unique seen posting, raw payload snapshots, and a normalized job version only when user-visible content changes. When a previously open job is absent from a successful provider response for the same board/provider route, OpenOpps marks it `closed`; provider errors and skipped routes never close jobs. In metrics output, `jobs` remains the fetched-provider count, `jobsPersisted` is the unique observed postings recorded across route runs, `jobSyncRuns` is the count of successful route write transactions, and `jobsDeduped` is the fetched-minus-persisted duplicate count.
 
 `jobs list` and `jobs export` default to current active jobs with `--status open` across all boards and providers. Use `--status closed` or `--status all` for lifecycle audits. The filters use normalized current-version job fields from OpenOpps enrichment, not provider-specific `raw_listing` or `raw_detail` payloads:
 

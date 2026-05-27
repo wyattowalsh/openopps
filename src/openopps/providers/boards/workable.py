@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from openopps.http import retrying_json_request
+from openopps.http import AsyncSlidingWindowRateLimiter, retrying_json_request
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -18,6 +18,13 @@ from openopps.models import (
 from openopps.providers.base import ProviderRouteMatch
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
+
+
+_WORKABLE_RATE_LIMITER = AsyncSlidingWindowRateLimiter(limit=10, window_seconds=10.0)
+
+
+async def wait_for_workable_rate_limit() -> None:
+    await _WORKABLE_RATE_LIMITER.wait()
 
 
 class WorkableProvider:
@@ -84,7 +91,10 @@ class WorkableProvider:
             return len(jobs)
         raise ValueError("Workable jobs endpoint returned invalid JSON")
 
-    async def _fetch_jobs(self, client: httpx.AsyncClient, token: str) -> dict[str, Any]:
+    async def _fetch_jobs(
+        self, client: httpx.AsyncClient, token: str
+    ) -> dict[str, Any]:
+        await wait_for_workable_rate_limit()
         data = await self._request_json(
             client,
             "POST",
@@ -100,6 +110,7 @@ class WorkableProvider:
     ) -> dict[str, Any]:
         if not shortcode:
             return {}
+        await wait_for_workable_rate_limit()
         data = await self._request_json(
             client,
             "GET",

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from email.utils import parsedate_to_datetime
+from time import monotonic, time
 from typing import Any
 
 import httpx
@@ -24,6 +26,27 @@ RetryableHttpError = (
     httpx.TimeoutException,
 )
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+MAX_RETRY_AFTER_SECONDS = 60.0
+
+
+class AsyncSlidingWindowRateLimiter:
+    def __init__(self, *, limit: int, window_seconds: float):
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self._lock = asyncio.Lock()
+        self._calls: list[float] = []
+
+    async def wait(self) -> None:
+        async with self._lock:
+            while True:
+                now = monotonic()
+                cutoff = now - self.window_seconds
+                self._calls = [item for item in self._calls if item > cutoff]
+                if len(self._calls) < self.limit:
+                    self._calls.append(now)
+                    return
+                delay = self.window_seconds - (now - self._calls[0])
+                await asyncio.sleep(max(delay, 0.0))
 
 
 def build_async_client(settings: OpenOppsSettings) -> httpx.AsyncClient:
@@ -70,6 +93,8 @@ def retrying_json_request(
         response = await client.request(method, url, **kwargs)
         if response.status_code == 304:
             return None, response
+        if response.status_code == 429:
+            await _sleep_for_retry_after(response)
         response.raise_for_status()
         data = response.json()
         if not isinstance(data, (dict, list)):
@@ -223,6 +248,37 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in RETRYABLE_STATUS_CODES
     return False
+
+
+async def _sleep_for_retry_after(response: httpx.Response) -> None:
+    delay = _retry_after_seconds(response)
+    if delay is not None and delay > 0:
+        await asyncio.sleep(min(delay, MAX_RETRY_AFTER_SECONDS))
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    for name in ("retry-after", "x-ratelimit-reset", "x-rate-limit-reset"):
+        value = response.headers.get(name)
+        if not value:
+            continue
+        parsed = _retry_header_seconds(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _retry_header_seconds(value: str) -> float | None:
+    stripped = value.strip()
+    try:
+        numeric = float(stripped)
+    except ValueError:
+        try:
+            return max(parsedate_to_datetime(stripped).timestamp() - time(), 0.0)
+        except (TypeError, ValueError, IndexError, OverflowError):
+            return None
+    if numeric > 1_000_000_000:
+        return max(numeric - time(), 0.0)
+    return max(numeric, 0.0)
 
 
 def _mapping_or_none(value: object) -> dict[str, Any] | None:

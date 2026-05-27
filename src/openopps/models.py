@@ -161,17 +161,27 @@ def job_content_hash(record: JobRecord) -> str:
                 skill.model_dump(mode="python", exclude_none=True)
                 for skill in record.skills
             ],
-            "job_description": (
-                record.job_description.model_dump(mode="python", exclude_none=True)
-                if record.job_description
-                else None
-            ),
+            "job_description": _job_description_hash_payload(record),
             "posting_url": record.posting_url,
             "apply_url": record.apply_url,
             "posted_at": record.posted_at,
             "updated_at": record.updated_at,
         }
     )
+
+
+def _job_description_hash_payload(record: JobRecord) -> dict[str, object] | None:
+    if record.job_description is None:
+        return None
+    payload = record.job_description.model_dump(mode="python", exclude_none=True)
+    meta = payload.get("meta")
+    if isinstance(meta, dict):
+        stable_meta = {key: value for key, value in meta.items() if key != "lastModified"}
+        if stable_meta:
+            payload["meta"] = stable_meta
+        else:
+            payload.pop("meta", None)
+    return payload
 
 
 def job_payload_hash(record: JobRecord) -> str:
@@ -971,6 +981,13 @@ class LeverPostingList(ProviderPayload):
         description="Lever HTML section content.",
         examples=["<li>Build APIs.</li>"],
     )
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _blank_heading_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class LeverPosting(ProviderPayload):

@@ -8,7 +8,7 @@ OpenOpps is a CLI-only v0.1 for discovering firm hiring boards from aggregate so
 
 The public domain nouns are:
 
-- `sources`: aggregate catalogs such as `a16z`, `accel`, `generalcatalyst`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, `yc`, public-company indexes, and ecosystem landscapes.
+- `sources`: aggregate catalogs such as `a16z`, `accel`, `lsvp`, `sequoia`, `bvp`, `greylock`, `kleinerperkins`, `southparkcommons`, `signalfire`, `yc`, public-company indexes, and ecosystem landscapes.
 - `boards`: firm/company hiring boards discovered from sources.
 - `jobs`: normalized public postings fetched from boards.
 - `providers`: adapters that detect or fetch provider-specific boards, such as Ashby, Greenhouse, Lever, Workday, Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager.

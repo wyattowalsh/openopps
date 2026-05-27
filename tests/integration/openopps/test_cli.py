@@ -388,7 +388,13 @@ def test_top_level_sync_runs_sources_boards_and_jobs_in_order(
 def test_combined_sync_metrics_span_stage_timings():
     sources = SyncMetrics(name="sources.sync", boards=2)
     boards = SyncMetrics(name="boards.sync", board_providers=1)
-    jobs = SyncMetrics(name="jobs.sync", jobs=3)
+    jobs = SyncMetrics(
+        name="jobs.sync",
+        jobs=3,
+        jobs_persisted=2,
+        job_sync_runs=1,
+        jobs_deduped=1,
+    )
     sources.started_at = 10.0
     sources.finished_at = 12.0
     boards.started_at = 12.0
@@ -402,6 +408,9 @@ def test_combined_sync_metrics_span_stage_timings():
     assert combined.as_dict()["boards"] == 2
     assert combined.as_dict()["boardProviders"] == 1
     assert combined.as_dict()["jobs"] == 3
+    assert combined.as_dict()["jobsPersisted"] == 2
+    assert combined.as_dict()["jobSyncRuns"] == 1
+    assert combined.as_dict()["jobsDeduped"] == 1
 
 
 def test_run_sync_with_progress_renders_update_message(monkeypatch):
@@ -480,6 +489,7 @@ def test_profile_metrics_include_provider_errors_and_warning(capsys):
     captured = capsys.readouterr()
 
     assert "provider_errors={'ashbyhq': 1}" in captured.out
+    assert "provider_error_details={'ashbyhq': {'error': 1}}" in captured.out
     assert "Warning: jobs.sync completed with skipped=0" in captured.err
     assert "--verbose" in captured.err
 

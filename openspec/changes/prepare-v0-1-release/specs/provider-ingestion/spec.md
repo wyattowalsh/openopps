@@ -85,6 +85,44 @@ Source sync, route probing, provider health, metadata enrichment, and job sync S
 - **THEN** OpenOpps removes that route from future job-sync targets and continues unrelated routes
 - **AND** terminal not-found style responses close missing jobs for that route as a successful empty observation
 
+#### Scenario: Provider publishes rate-limit headers
+
+- **WHEN** a provider responds with a retry-after or rate-limit reset header
+- **THEN** OpenOpps waits for that provider-directed delay before retrying the JSON request
+- **AND** classifies repeated 429 failures as rate-limited diagnostics instead of generic provider errors
+
+#### Scenario: Workable routes are probed or synced
+
+- **WHEN** OpenOpps makes public Workable route-probe, listing, or detail requests
+- **THEN** requests are throttled to the documented public ceiling of 10 requests per 10 seconds
+- **AND** unrelated providers continue using the general bounded concurrency settings
+
+### Requirement: Sync metrics distinguish fetched and persisted jobs
+
+OpenOpps SHALL keep the existing `jobs` metric as the fetched job count while adding persisted-job accounting for route-level SQLite writes.
+
+#### Scenario: Jobs sync writes metrics JSON
+
+- **WHEN** a jobs sync or combined sync emits `--metrics-json`
+- **THEN** the payload includes `jobsPersisted`, `jobSyncRuns`, and `jobsDeduped`
+- **AND** existing consumers that read `jobs`, `providerErrors`, `skipped`, or `duplicateRoutesSkipped` continue to receive those fields
+
+#### Scenario: Provider failures are summarized
+
+- **WHEN** provider work fails during source sync, route probing, or job sync
+- **THEN** OpenOpps reports the existing provider error counts
+- **AND** additive diagnostics classify source fetch, job fetch, validation, unavailable, and rate-limited failures where the failure type is known
+
+### Requirement: Broken packaged sources are removed instead of tombstoned
+
+Packaged source catalog entries SHALL only include currently runnable public sources or sources with explicit opt-in access constraints.
+
+#### Scenario: A packaged source no longer exposes a runnable public endpoint
+
+- **WHEN** live evidence shows a source returns no boards because its public page or API is forbidden, timed out, or unavailable and no replacement endpoint is proven
+- **THEN** OpenOpps removes that source from the active packaged catalog
+- **AND** does not add disabled tombstones, aliases, fallback legacy entries, or SQLite migrations for pre-release local rows
+
 ### Requirement: Provider failures are isolated
 
 Live-network failures SHALL be isolated to the affected source, board, route, provider, cache entry, or plugin-provided adapter and SHALL not crash unrelated work.

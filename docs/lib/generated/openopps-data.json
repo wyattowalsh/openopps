@@ -1510,13 +1510,6 @@
     },
     {
       "enabled": true,
-      "key": "generalcatalyst",
-      "providerId": "getro",
-      "taxonomy": {},
-      "url": "https://jobs.generalcatalyst.com/companies"
-    },
-    {
-      "enabled": true,
       "key": "genoavc",
       "providerId": "consider",
       "taxonomy": {},
@@ -2254,13 +2247,6 @@
     },
     {
       "enabled": true,
-      "key": "ncbiotech",
-      "providerId": "getro",
-      "taxonomy": {},
-      "url": "https://careers.ncbiotech.org/companies"
-    },
-    {
-      "enabled": true,
       "key": "nea",
       "providerId": "consider",
       "taxonomy": {},
@@ -2615,13 +2601,6 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.qedinvestors.com/companies"
-    },
-    {
-      "enabled": true,
-      "key": "qplusequality",
-      "providerId": "consider",
-      "taxonomy": {},
-      "url": "https://jobs.qplusequality.org/companies"
     },
     {
       "enabled": true,
@@ -3473,6 +3452,6 @@
     "exportFormatCount": 3,
     "jobProviderCount": 9,
     "sourceAdapterCount": 11,
-    "sourceRecordCount": 458
+    "sourceRecordCount": 455
   }
 }

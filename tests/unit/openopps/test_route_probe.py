@@ -284,6 +284,29 @@ async def test_probe_routes_lists_unknown_candidates(tmp_path: Path):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_probe_routes_classifies_rate_limited_candidates(tmp_path: Path):
+    settings, store = store_with_route(
+        tmp_path,
+        board_record(),
+        route_record(provider_id="workable"),
+    )
+    settings = settings.model_copy(update={"cache_enabled": False, "retry_attempts": 1})
+    respx.post("https://apply.workable.com/api/v3/accounts/acme/jobs").mock(
+        return_value=httpx.Response(429, json={"error": "rate limit"})
+    )
+
+    summary = await probe_routes(
+        settings=settings, store=store, provider_id="workable", max_candidates=1
+    )
+
+    assert summary.checked == 1
+    assert summary.errors == {"workable": 1}
+    assert summary.unknown_by_reason == {"rate_limited": 1}
+    assert summary.unknown[0].reason == "rate_limited"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_probe_routes_matches_ashby(tmp_path: Path):
     settings, store = store_with_route(
         tmp_path, board_record(), route_record(provider_id="ashbyhq")

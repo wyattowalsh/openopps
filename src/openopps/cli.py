@@ -308,9 +308,13 @@ def _metrics(metrics, metrics_json: bool, profile: bool) -> None:
         data = metrics.as_dict()
         console.print(
             f"{data['name']} completed in {data['elapsedSeconds']:.2f}s "
-            f"boards={data['boards']} jobs={data['jobs']} pages={data['pages']} "
+            f"boards={data['boards']} jobs={data['jobs']} "
+            f"jobs_persisted={data['jobsPersisted']} "
+            f"job_sync_runs={data['jobSyncRuns']} "
+            f"jobs_deduped={data['jobsDeduped']} pages={data['pages']} "
             f"skipped={data['skipped']} duplicate_routes_skipped={data['duplicateRoutesSkipped']} "
-            f"provider_errors={data['providerErrors']}"
+            f"provider_errors={data['providerErrors']} "
+            f"provider_error_details={data['providerErrorDetails']}"
         )
     if has_issues:
         Console(stderr=True).print(
@@ -370,6 +374,9 @@ def _combine_sync_metrics(name: str, *metrics: SyncMetrics) -> SyncMetrics:
         combined.boards += item.boards
         combined.board_providers += item.board_providers
         combined.jobs += item.jobs
+        combined.jobs_persisted += item.jobs_persisted
+        combined.job_sync_runs += item.job_sync_runs
+        combined.jobs_deduped += item.jobs_deduped
         combined.skipped += item.skipped
         combined.duplicate_routes_skipped += item.duplicate_routes_skipped
         combined.retries += item.retries
@@ -377,6 +384,12 @@ def _combine_sync_metrics(name: str, *metrics: SyncMetrics) -> SyncMetrics:
             combined.provider_errors[provider_id] = (
                 combined.provider_errors.get(provider_id, 0) + count
             )
+        for provider_id, details in item.provider_error_details.items():
+            combined_details = combined.provider_error_details.setdefault(
+                provider_id, {}
+            )
+            for reason, count in details.items():
+                combined_details[reason] = combined_details.get(reason, 0) + count
     if metrics:
         combined.started_at = min(item.started_at for item in metrics)
         combined.finished_at = max(

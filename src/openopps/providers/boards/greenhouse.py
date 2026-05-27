@@ -11,6 +11,7 @@ from openopps.models import (
     GreenhouseJobsResponse,
     GreenhouseJobPosting,
     JobRecord,
+    normalize_public_website_url,
     normalize_remote_level,
     strip_html,
     host_matches,
@@ -84,6 +85,7 @@ class GreenhouseProvider:
         )
         locations = _locations(posting)
         department = posting.departments[0].name if posting.departments else None
+        posting_url = _greenhouse_public_url(posting.absolute_url)
         return JobRecord(
             id=stable_id(board.key, self.provider_id, remote_id),
             board_key=board.key,
@@ -96,8 +98,8 @@ class GreenhouseProvider:
             description=strip_html(posting.content),
             description_html=posting.content,
             remote=normalize_remote_level(locations),
-            posting_url=posting.absolute_url,
-            apply_url=posting.absolute_url,
+            posting_url=posting_url,
+            apply_url=posting_url,
             updated_at=posting.updated_at,
             raw_listing=posting.as_raw_payload(),
         )
@@ -109,6 +111,14 @@ def _locations(posting: GreenhouseJobPosting) -> list[str]:
         locations.append(posting.location.name)
     locations.extend(office.name for office in posting.offices if office.name)
     return list(dict.fromkeys(locations))
+
+
+def _greenhouse_public_url(value: object) -> str | None:
+    url = normalize_public_website_url(value)
+    if not url:
+        return None
+    parsed = urlparse(url)
+    return url if host_matches(parsed.hostname, "greenhouse.io") else None
 
 
 def _token_from_route(route: BoardProviderRecord) -> str | None:

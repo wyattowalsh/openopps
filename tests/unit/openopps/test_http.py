@@ -37,6 +37,30 @@ async def test_retrying_json_request_retries_transient_status():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_retrying_json_request_retries_rate_limit_reset_header():
+    settings = OpenOppsSettings(retry_attempts=2, cache_enabled=False)
+    route = respx.get("https://api.example.test/data").mock(
+        side_effect=[
+            httpx.Response(
+                429,
+                json={"error": "rate limit"},
+                headers={"x-rate-limit-reset": "0"},
+            ),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+
+    async with build_async_client(settings) as client:
+        data = await retrying_json_request(settings)(
+            client, "GET", "https://api.example.test/data"
+        )
+
+    assert data == {"ok": True}
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_retrying_json_request_does_not_retry_not_found():
     settings = OpenOppsSettings(retry_attempts=2, cache_enabled=False)
     route = respx.get("https://api.example.test/missing").mock(

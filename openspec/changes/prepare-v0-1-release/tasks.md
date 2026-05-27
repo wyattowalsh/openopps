@@ -17,5 +17,8 @@
 - [x] Run full validation: `uv run pytest`, strict OpenSpec validation, `cd docs && pnpm types:check`, `cd docs && pnpm build`, JSON parse smoke checks, generated-example smoke path, cache/plugin smoke path, and provider coverage report.
 - [x] Add no-auth board-provider support for Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager, with route detection, route probing, defensive parsing, and mocked provider tests.
 - [x] Harden scheduled sync accounting so repeated source refreshes preserve executable route metadata, expected filtering does not emit skipped warnings, terminal unavailable routes are removed from future job-sync targets, and fair-access-gated detect-only sources stay opt-in.
+- [x] Clarify sync metrics with additive fetched-vs-persisted job counts, reason-level provider diagnostics, and Workable-aware throttling/rate-limit handling.
+- [x] Repair previously failed source syncs through existing Getro embedded-state fallback where live first-page validation works, and remove proven-unavailable packaged sources without tombstones.
+- [x] Keep the local `just docs-build` validation path reliable on macOS while preserving the direct `pnpm build` path used by CI.
 - [ ] Keep WorkAtAStartup out of scope in favor of the existing YC source provider, and document/test any Wellfound/Angel outcome as static no-auth source support or explicit unsupported/disabled metadata.
 - [ ] Audit Editorial/Editiorial source labels before adding any provider identity, and only add detection if a real public provider route is proven.

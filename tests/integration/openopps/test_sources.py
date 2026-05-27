@@ -1707,12 +1707,6 @@ def test_source_catalog_includes_requested_portfolio_boards():
             "collectionId",
             "638",
         ),
-        "qplusequality": (
-            "consider",
-            "https://jobs.qplusequality.org/companies",
-            "board",
-            "q-plus-equality",
-        ),
         "rev1ventures": (
             "getro",
             "https://jobs.rev1ventures.com/companies",
@@ -2036,12 +2030,6 @@ def test_source_catalog_includes_requested_portfolio_boards():
             "https://consider.com/boards/vc/leadership-for-educational-equity/companies",
             "board",
             "leadership-for-educational-equity",
-        ),
-        "ncbiotech": (
-            "getro",
-            "https://careers.ncbiotech.org/companies",
-            "collectionId",
-            "14777",
         ),
         "annarborusa": (
             "getro",

@@ -126,8 +126,10 @@ def _structured_sections(posting: LeverPosting) -> tuple[list[str], list[str]]:
     responsibilities: list[str] = []
     qualifications: list[str] = []
     for section in posting.lists:
-        heading = (section.text or "").lower()
-        bullets = _bullets(section.content)
+        heading = _section_heading(section)
+        bullets = _bullets(
+            section.content, heading=heading if not section.text else None
+        )
         if any(
             term in heading
             for term in ("responsibil", "duties", "what you'll do", "impact")
@@ -147,7 +149,40 @@ def _structured_sections(posting: LeverPosting) -> tuple[list[str], list[str]]:
     return list(dict.fromkeys(responsibilities)), list(dict.fromkeys(qualifications))
 
 
-def _bullets(value: str | None) -> list[str]:
+def _section_heading(section: object) -> str:
+    text = getattr(section, "text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip().lower()
+    content = getattr(section, "content", None)
+    lines = _plain_lines(content if isinstance(content, str) else None)
+    if not lines:
+        return ""
+    candidate = lines[0].strip(":").lower()
+    heading_terms = (
+        "responsibil",
+        "duties",
+        "what you'll do",
+        "impact",
+        "qualification",
+        "requirement",
+        "you have",
+        "about you",
+        "skill",
+    )
+    return candidate if any(term in candidate for term in heading_terms) else ""
+
+
+def _bullets(value: str | None, *, heading: str | None = None) -> list[str]:
+    lines = _plain_lines(value)
+    if heading and lines:
+        normalized_heading = heading.strip(":").lower()
+        lines = [
+            line for line in lines if line.strip(":").lower() != normalized_heading
+        ]
+    return lines
+
+
+def _plain_lines(value: str | None) -> list[str]:
     text = strip_html(value)
     if not text:
         return []

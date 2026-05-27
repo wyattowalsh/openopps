@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -63,6 +66,49 @@ def test_initial_sqlite_schema_has_app_constraints_and_indexes(tmp_path: Path):
         assert _has_sqlite_index(conn, "boards", ("source_key",))
         assert _has_sqlite_index(conn, "jobs", ("provider_id",))
         assert _has_sqlite_index(conn, "job_versions", ("job_id",))
+
+
+def test_concurrent_first_use_initializes_sqlite_schema_once(tmp_path: Path):
+    pytest.importorskip("fcntl")
+    db_path = tmp_path / "openopps.db"
+    script = """
+import sys
+from openopps.settings import OpenOppsSettings
+from openopps.storage import OpenOppsStore
+
+db_path = sys.argv[1]
+store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+assert store.status() == {
+    "sources": 0,
+    "boards": 0,
+    "boardProviders": 0,
+    "jobs": 0,
+}
+"""
+    env = {**os.environ, "PYTHONPATH": str(Path.cwd() / "src")}
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", script, str(db_path)],
+            cwd=Path.cwd(),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(6)
+    ]
+
+    results = [process.communicate(timeout=30) for process in processes]
+
+    failures = [
+        (process.returncode, stdout, stderr)
+        for process, (stdout, stderr) in zip(processes, results, strict=True)
+        if process.returncode != 0
+    ]
+    assert failures == []
+    with sqlite3.connect(db_path) as conn:
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert version == ("0001_initial_app_sqlite",)
 
 
 def test_stamped_sqlite_db_missing_v01_columns_fails_with_reset_guidance(
