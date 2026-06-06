@@ -38,7 +38,7 @@ docs-check:
 
 # Build the Fumadocs/Next.js docs site.
 docs-build:
-    @if [ "$(uname -s)" = "Darwin" ]; then zsh -lc 'cd docs && pnpm build'; else cd docs && pnpm build; fi
+    @if [ "$(uname -s)" = "Darwin" ]; then zsh -lc 'cd docs && CI=true pnpm build'; else cd docs && CI=true pnpm build; fi
 
 # Run docs lint surfaces.
 docs-lint:
@@ -67,8 +67,8 @@ kaggle-dataset-version message="OpenOppsDB snapshot":
     @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets version -p kaggle -m "{{ message }}" -q -t -r zip
 
 # Push the connected OpenOppsDB manager notebook to Kaggle.
-kaggle-notebook-push:
-    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle kernels push -p kaggle
+kaggle-notebook-push timeout="3600":
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle kernels push -p kaggle --timeout "{{ timeout }}"
 
 # Show live OpenOppsDB dataset status from Kaggle.
 kaggle-live-status:

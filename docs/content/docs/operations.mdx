@@ -210,6 +210,7 @@ just kaggle-live-verify
 ```
 
 Use `just kaggle-dataset-create` only for the first public upload; use `just kaggle-dataset-version` after the dataset exists. The live write recipes wrap the Kaggle CLI with `KAGGLE_API_TOKEN` from `kaggle auth print-access-token`, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when OAuth credentials are unavailable and are intentionally outside CI.
+`just kaggle-notebook-push` also passes a one-hour Kaggle kernel timeout by default; override it with `just kaggle-notebook-push timeout=5400` only for a deliberate longer maintenance run.
 
 ## CI/CD
 

@@ -487,7 +487,8 @@ async def sync_jobs(
                     total=max(route_total, 1),
                 )
                 try:
-                    jobs = await provider.fetch_jobs(client, board, route)
+                    async with asyncio.timeout(settings.job_route_timeout_seconds):
+                        jobs = await provider.fetch_jobs(client, board, route)
                 except Exception as exc:
                     unavailable_status = _route_unavailable_status(exc)
                     if unavailable_status is not None:

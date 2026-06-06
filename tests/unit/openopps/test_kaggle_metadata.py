@@ -166,6 +166,12 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "--metrics-json" in source
     assert "OPENOPPS_SYNC_ENV_DEFAULTS" in source
     assert "openopps_env.setdefault(key, value)" in source
+    assert "OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS" in source
+    assert f'"{gen.NOTEBOOK_SYNC_TIMEOUT_SECONDS}"' in source
+    assert "timeout_seconds=KAGGLE_SYNC_TIMEOUT_SECONDS" in source
+    assert "Command exceeded" in source
+    assert "stdout=subprocess.PIPE" in source
+    assert "capture_output=True" not in source
     for key, value in gen.NOTEBOOK_SYNC_ENV_DEFAULTS.items():
         assert f'"{key}": "{value}"' in source
     assert "run_json" in source

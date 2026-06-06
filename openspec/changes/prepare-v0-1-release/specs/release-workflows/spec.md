@@ -42,6 +42,18 @@ OpenOpps SHALL block Kaggle dataset publishing when the generated snapshot is st
 - **WHEN** one source adapter exceeds the configured source sync wall-clock timeout during the default full workflow
 - **THEN** OpenOpps records a classified timeout in sync metrics, skips that source for the current run, and continues syncing the remaining sources
 
+#### Scenario: Slow job provider routes cannot block the daily run indefinitely
+
+- **WHEN** one executable job provider route exceeds the configured job-route wall-clock timeout during the default full workflow
+- **THEN** OpenOpps records a classified timeout in sync metrics, skips that route for the current run, and continues syncing the remaining routes
+
+#### Scenario: Manager notebook execution is bounded and observable
+
+- **WHEN** the connected manager notebook runs the default full workflow on Kaggle
+- **THEN** it applies a hard wall-clock timeout to `openopps sync --metrics-json`
+- **AND** it streams command diagnostics to Kaggle logs while preserving JSON stdout for evidence files
+- **AND** the documented notebook push recipe applies a Kaggle kernel runtime timeout by default
+
 #### Scenario: Provider failures make the snapshot misleading
 
 - **WHEN** provider or source failures are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without enabled source, board, executable route, or current/persisted job evidence

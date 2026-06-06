@@ -332,6 +332,53 @@ async def test_sync_jobs_removes_terminal_provider_routes(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_sync_jobs_classifies_stuck_provider_route_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        job_route_timeout_seconds=0.01,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:greenhouse",
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+            )
+        ]
+    )
+
+    class HangingProvider:
+        async def fetch_jobs(self, *_args: object) -> list[object]:
+            await asyncio.sleep(1)
+            return []
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: HangingProvider(),
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
+
+    assert metrics.provider_errors == {"greenhouse": 1}
+    assert metrics.provider_error_details == {"greenhouse": {"timeout": 1}}
+    assert metrics.job_sync_runs == 0
+    assert metrics.jobs == 0
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_sync_jobs_removes_duplicate_terminal_provider_routes(tmp_path: Path):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")

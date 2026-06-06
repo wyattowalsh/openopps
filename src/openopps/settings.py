@@ -108,6 +108,15 @@ class OpenOppsSettings(BaseSettings):
         ),
         examples=[16],
     )
+    job_route_timeout_seconds: PositiveFloatSetting = Field(
+        default=180.0,
+        description=(
+            "Maximum wall-clock time, in seconds, allowed for one executable job "
+            "provider route during job sync before OpenOpps records a classified "
+            "timeout and continues with the remaining routes."
+        ),
+        examples=[180.0],
+    )
     provider_concurrency: PositiveIntSetting = Field(
         default=12,
         description=(

@@ -116,11 +116,13 @@ NOTEBOOK_SYNC_ENV_DEFAULTS: dict[str, str] = {
     "OPENOPPS_SOURCE_CONCURRENCY": "40",
     "OPENOPPS_PROVIDER_CONCURRENCY": "80",
     "OPENOPPS_BOARD_CONCURRENCY": "80",
+    "OPENOPPS_JOB_ROUTE_TIMEOUT_SECONDS": "180",
     "OPENOPPS_MAX_CONNECTIONS": "120",
     "OPENOPPS_SOURCE_TIMEOUT_SECONDS": "120",
     "OPENOPPS_HTTP_TIMEOUT": "20",
     "OPENOPPS_RETRY_ATTEMPTS": "2",
 }
+NOTEBOOK_SYNC_TIMEOUT_SECONDS = 3300
 
 
 DATA_TABLES: tuple[Table, ...] = (
@@ -1111,6 +1113,12 @@ DATASET_IMAGE_URL = os.environ.get(
     "https://raw.githubusercontent.com/wyattowalsh/openopps/main/docs/public/social/openoppsdb.png",
 )
 OPENOPPS_SYNC_ENV_DEFAULTS = __OPENOPPS_SYNC_ENV_DEFAULTS__
+KAGGLE_SYNC_TIMEOUT_SECONDS = float(
+    os.environ.get(
+        "OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS",
+        "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
+    )
+)
 
 if OUTPUT_DIR.exists():
     shutil.rmtree(OUTPUT_DIR)
@@ -1125,11 +1133,26 @@ def run_json(
     output_path: Path,
     *,
     env: dict[str, str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> dict:
     print("+", " ".join(command), ">", output_path)
-    completed = subprocess.run(command, env=env, text=True, capture_output=True)
-    if completed.stderr:
-        print(completed.stderr, file=sys.stderr)
+    try:
+        completed = subprocess.run(
+            command,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if exc.stdout:
+            print(exc.stdout)
+        timeout_label = (
+            f"{timeout_seconds:g}" if timeout_seconds is not None else "unknown"
+        )
+        raise TimeoutError(
+            f"Command exceeded {timeout_label}s: {' '.join(command)}"
+        ) from exc
     if completed.returncode:
         if completed.stdout:
             print(completed.stdout)
@@ -1158,7 +1181,10 @@ def download_dataset_assets() -> None:
 install_openopps()
 copy_latest_input_db()
 download_dataset_assets()
-""".replace("__OPENOPPS_SYNC_ENV_DEFAULTS__", sync_env_defaults)
+""".replace("__OPENOPPS_SYNC_ENV_DEFAULTS__", sync_env_defaults).replace(
+        "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
+        str(NOTEBOOK_SYNC_TIMEOUT_SECONDS),
+    )
 
 
 def _notebook_sync_source() -> str:
@@ -1169,10 +1195,12 @@ for key, value in OPENOPPS_SYNC_ENV_DEFAULTS.items():
     openopps_env.setdefault(key, value)
 
 run(["openopps", "admin", "db", "init"], env=openopps_env)
+print(f"OpenOpps sync timeout: {KAGGLE_SYNC_TIMEOUT_SECONDS:g}s")
 sync_metrics = run_json(
     ["openopps", "sync", "--metrics-json"],
     OUTPUT_DIR / "sync_metrics.json",
     env=openopps_env,
+    timeout_seconds=KAGGLE_SYNC_TIMEOUT_SECONDS,
 )
 status = run_json(
     ["openopps", "status", "--json"],
