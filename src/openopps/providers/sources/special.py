@@ -12,8 +12,10 @@ import httpx
 
 from openopps.http import retrying_json_request
 from openopps.models import (
+    AshbyJobBoardResponse,
     BoardProviderRecord,
     BoardRecord,
+    ProviderSupport,
     SourceRecord,
     YCombinatorAlgoliaResponse,
     YCombinatorAlgoliaResult,
@@ -133,6 +135,137 @@ VENTURE_LOOP_SOURCE = SourceRecord(
         default_enabled_reason="Disabled by default because the public home page does not expose a company-directory payload.",
     ),
 )
+PEAR_VC_SOURCE = SourceRecord(
+    key="pearvc",
+    url="https://jobs.ashbyhq.com/Pear-VC",
+    provider_id="ashby",
+    enabled=True,
+    raw_metadata={
+        **source_taxonomy_metadata(
+            provider_type="venture_firm",
+            coverage_mode="portfolio_jobs",
+            access_type="public_json_api",
+            license_status="public_attribution_required",
+            refresh_cadence="periodic",
+            source_category="startup_ecosystem",
+            source_attribution="Pear VC public Ashby job board.",
+            default_enabled_reason="Public venture firm job board with an existing Ashby job provider route.",
+        ),
+        "token": "Pear-VC",
+        "label": "Pear VC",
+    },
+)
+FORUM_VENTURES_SOURCE = SourceRecord(
+    key="forumventures",
+    url="https://jobs.ashbyhq.com/forum-ventures",
+    provider_id="ashby",
+    enabled=True,
+    raw_metadata={
+        **source_taxonomy_metadata(
+            provider_type="venture_firm",
+            coverage_mode="portfolio_jobs",
+            access_type="public_json_api",
+            license_status="public_attribution_required",
+            refresh_cadence="periodic",
+            source_category="startup_ecosystem",
+            source_attribution="Forum Ventures public Ashby job board.",
+            default_enabled_reason="Public venture firm job board with an existing Ashby job provider route.",
+        ),
+        "token": "forum-ventures",
+        "label": "Forum Ventures",
+    },
+)
+
+
+class AshbySourceAdapter:
+    provider_id = "ashby"
+    provider_label = "Ashby Source"
+    provider_description = "Aggregate Ashby source adapter that exposes a public Ashby job board as one board route."
+
+    def __init__(self, settings: OpenOppsSettings):
+        self.settings = settings
+        self._request_json = retrying_json_request(settings)
+
+    async def iter_boards(
+        self,
+        client: httpx.AsyncClient,
+        source: SourceRecord,
+        *,
+        page_size: int,
+    ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
+        validate_public_https_url(source.url)
+        token = str(
+            source.raw_metadata.get("token") or self._token_from_url(source.url)
+        )
+        label = str(source.raw_metadata.get("label") or token)
+        data = await self._request_json(
+            client,
+            "GET",
+            f"https://api.ashbyhq.com/posting-api/job-board/{token}",
+            params={"includeCompensation": "false"},
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Ashby source API returned invalid JSON")
+        response = AshbyJobBoardResponse.model_validate(data)
+        listed_jobs = [job for job in response.jobs if job.is_listed is not False]
+        remote_slug = slugify(token)
+        board_key = source_board_key(source.key, remote_slug)
+        now = utc_now()
+        boards = [
+            BoardRecord(
+                key=board_key,
+                source_key=source.key,
+                remote_id=token,
+                remote_slug=remote_slug,
+                name=label,
+                num_jobs_hint=len(listed_jobs),
+                raw_payload={
+                    **response.as_raw_payload(),
+                    "sourceUrl": source.url,
+                    "token": token,
+                    "jobCount": len(listed_jobs),
+                },
+                synced_at=now,
+            )
+        ]
+        providers = [
+            BoardProviderRecord(
+                id=stable_id(source.key, board_key, "ashbyhq"),
+                source_key=source.key,
+                board_key=board_key,
+                provider_id="ashbyhq",
+                label="Ashby",
+                support_level=ProviderSupport.JOBS,
+                count_hint=len(listed_jobs),
+                board_url=source.url,
+                token=token,
+                raw_payload={
+                    "apiVersion": response.api_version,
+                    "sourceUrl": source.url,
+                    "token": token,
+                    "jobCount": len(listed_jobs),
+                },
+                detected_at=now,
+            )
+        ]
+        yield (
+            boards,
+            providers,
+            {
+                "apiVersion": response.api_version,
+                "token": token,
+                "total": len(listed_jobs),
+            },
+        )
+
+    def _token_from_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        if (parsed.hostname or "").lower() != "jobs.ashbyhq.com":
+            raise ValueError("Ashby source URL must use jobs.ashbyhq.com")
+        parts = [part for part in parsed.path.split("/") if part]
+        if not parts:
+            raise ValueError("Ashby source URL must include a board token")
+        return parts[0]
 
 
 class SouthParkCommonsSourceAdapter:
@@ -672,6 +805,8 @@ class YCombinatorSourceAdapter:
 
 
 SOURCE_RECORDS: tuple[SourceRecord, ...] = (
+    FORUM_VENTURES_SOURCE,
+    PEAR_VC_SOURCE,
     SOUTHPARKCOMMONS_SOURCE,
     VENTURE_CAPITAL_CAREERS_SOURCE,
     VENTURE_LOOP_SOURCE,

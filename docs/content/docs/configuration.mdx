@@ -24,6 +24,8 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_DB_URL`               | `sqlite:///openoppsdb.sqlite`                             | Database URL used by storage commands and sync jobs.               |
 | `OPENOPPS_MAX_CONNECTIONS`      | `40`                                                      | Maximum HTTP connection pool size.                                 |
 | `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.          |
+| `OPENOPPS_SOURCE_TIMEOUT_SECONDS` | `900.0`                                                 | Maximum seconds one source adapter can run before timed-out skip.  |
+| `OPENOPPS_SOURCE_FRESHNESS_SECONDS` | `0.0`                                                 | Skip recently synced source catalogs during unscoped full-sync retries. |
 | `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Board-level concurrency during sync workflows.                     |
 | `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Provider job-fetch concurrency across job-capable routes.          |
 | `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests.   |
@@ -53,6 +55,8 @@ For repeated local use from the repository checkout, place values in `.env` at t
 ```dotenv
 OPENOPPS_DB_URL=sqlite:///openoppsdb.sqlite
 OPENOPPS_SOURCE_CONCURRENCY=4
+OPENOPPS_SOURCE_TIMEOUT_SECONDS=900
+OPENOPPS_SOURCE_FRESHNESS_SECONDS=0
 OPENOPPS_PROVIDER_CONCURRENCY=12
 OPENOPPS_CACHE_TTL_SECONDS=3600
 OPENOPPS_PLUGIN_ALLOWED=trusted-plugin

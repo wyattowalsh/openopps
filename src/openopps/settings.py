@@ -29,6 +29,7 @@ DatabaseUrl = Annotated[
 ]
 PositiveIntSetting = Annotated[int, Field(ge=1)]
 PositiveFloatSetting = Annotated[float, Field(gt=0, allow_inf_nan=False)]
+NonNegativeFloatSetting = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 StrippedString = Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
@@ -79,6 +80,24 @@ class OpenOppsSettings(BaseSettings):
             "same time during source sync and provider health checks."
         ),
         examples=[4],
+    )
+    source_timeout_seconds: PositiveFloatSetting = Field(
+        default=900.0,
+        description=(
+            "Maximum wall-clock time, in seconds, allowed for one source adapter "
+            "during source sync before OpenOpps records a classified timeout and "
+            "continues with the remaining sources."
+        ),
+        examples=[900.0],
+    )
+    source_freshness_seconds: NonNegativeFloatSetting = Field(
+        default=0.0,
+        description=(
+            "Freshness window, in seconds, for skipping recently synced source "
+            "catalogs during unscoped full sync retries. A value of 0 disables the "
+            "skip and refreshes every enabled source."
+        ),
+        examples=[0.0, 86400.0],
     )
     board_concurrency: PositiveIntSetting = Field(
         default=16,

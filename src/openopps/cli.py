@@ -425,7 +425,7 @@ def _status_payload() -> dict[str, Any]:
     settings = _settings()
     counts = store.status()
     readiness = _readiness_payload(store)
-    coverage = build_coverage_report(store).as_dict()
+    coverage = _status_coverage_payload(store)
     issues = _status_issues(counts, readiness, coverage)
     return {
         "database": {
@@ -459,6 +459,111 @@ def _readiness_payload(store: OpenOppsStore) -> dict[str, Any]:
             1 for route in routes if route.support_level == ProviderSupport.UNSUPPORTED
         ),
     }
+
+
+def _status_coverage_payload(store: OpenOppsStore) -> dict[str, Any]:
+    boards = store.list_boards(with_providers=False)
+    routes = store.list_board_providers()
+    routes_by_board: dict[str, list[BoardProviderRecord]] = {}
+    for route in routes:
+        routes_by_board.setdefault(route.board_key, []).append(route)
+
+    board_keys_with_provider_hints = set(routes_by_board)
+    board_keys_with_job_capable_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(route.support_level == ProviderSupport.JOBS for route in board_routes)
+    }
+    board_keys_with_detect_only_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(route.support_level == ProviderSupport.DETECT for route in board_routes)
+    }
+    board_keys_with_unsupported_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(
+            route.support_level == ProviderSupport.UNSUPPORTED for route in board_routes
+        )
+    }
+    board_keys_with_non_supported_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if any(route.support_level != ProviderSupport.JOBS for route in board_routes)
+    }
+    board_keys_with_only_non_supported_hints = {
+        board_key
+        for board_key, board_routes in routes_by_board.items()
+        if board_routes
+        and all(route.support_level != ProviderSupport.JOBS for route in board_routes)
+    }
+    board_total = len(boards)
+    non_supported_present = len(board_keys_with_non_supported_hints)
+    return {
+        "boards": {
+            "total": board_total,
+            "withProviderHints": len(board_keys_with_provider_hints),
+            "withJobCapableProviderHints": len(board_keys_with_job_capable_hints),
+            "withDetectOnlyProviderHints": len(board_keys_with_detect_only_hints),
+            "withUnsupportedOrUnknownProviderHints": len(
+                board_keys_with_unsupported_hints
+            ),
+            "withNonSupportedProviderHints": non_supported_present,
+            "withOnlyNonSupportedProviderHints": len(
+                board_keys_with_only_non_supported_hints
+            ),
+            "nonSupportedProviderCoverage": {
+                "present": non_supported_present,
+                "missing": board_total - non_supported_present,
+                "total": board_total,
+                "percentage": (
+                    round((non_supported_present / board_total) * 100, 2)
+                    if board_total
+                    else 0.0
+                ),
+            },
+        },
+        "gaps": {
+            "detectOnlyProviders": _status_provider_gaps(
+                routes, support_level=ProviderSupport.DETECT
+            ),
+            "nonSupportedProviders": _status_provider_gaps(
+                routes,
+                support_level=None,
+                exclude_support_level=ProviderSupport.JOBS,
+            ),
+        },
+    }
+
+
+def _status_provider_gaps(
+    routes: list[BoardProviderRecord],
+    *,
+    support_level: ProviderSupport | None = None,
+    exclude_support_level: ProviderSupport | None = None,
+) -> list[dict[str, Any]]:
+    providers: dict[str, dict[str, Any]] = {}
+    for route in routes:
+        if support_level is not None and route.support_level != support_level:
+            continue
+        if (
+            exclude_support_level is not None
+            and route.support_level == exclude_support_level
+        ):
+            continue
+        item = providers.setdefault(
+            route.provider_id,
+            {
+                "provider": route.provider_id,
+                "supportLevel": route.support_level.value,
+                "count": 0,
+                "examples": [],
+            },
+        )
+        item["count"] += 1
+        if len(item["examples"]) < 5 and route.board_key not in item["examples"]:
+            item["examples"].append(route.board_key)
+    return [providers[key] for key in sorted(providers)]
 
 
 def _plugin_registry(settings: OpenOppsSettings | None = None):

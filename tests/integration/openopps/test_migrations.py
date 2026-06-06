@@ -111,6 +111,62 @@ assert store.status() == {
     assert version == ("0001_initial_app_sqlite",)
 
 
+def test_concurrent_first_use_serializes_app_and_cache_init(tmp_path: Path):
+    pytest.importorskip("fcntl")
+    db_path = tmp_path / "openopps.db"
+    script = """
+import sys
+from openopps.cache import HttpCache
+from openopps.settings import OpenOppsSettings
+from openopps.storage import OpenOppsStore
+
+db_path = sys.argv[1]
+mode = sys.argv[2]
+if mode == "cache":
+    assert HttpCache(db_path).status()["total"] == 0
+else:
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+    assert store.status() == {
+        "sources": 0,
+        "boards": 0,
+        "boardProviders": 0,
+        "jobs": 0,
+    }
+"""
+    env = {**os.environ, "PYTHONPATH": str(Path.cwd() / "src")}
+    modes = ["store", "cache", "store", "cache", "cache", "store", "cache", "store"]
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", script, str(db_path), mode],
+            cwd=Path.cwd(),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for mode in modes
+    ]
+
+    results = [process.communicate(timeout=30) for process in processes]
+
+    failures = [
+        (process.returncode, stdout, stderr)
+        for process, (stdout, stderr) in zip(processes, results, strict=True)
+        if process.returncode != 0
+    ]
+    assert failures == []
+    with sqlite3.connect(db_path) as conn:
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert version == ("0001_initial_app_sqlite",)
+    assert "http_cache" in tables
+
+
 def test_stamped_sqlite_db_missing_v01_columns_fails_with_reset_guidance(
     tmp_path: Path,
 ):

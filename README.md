@@ -220,6 +220,8 @@ Configuration uses `OPENOPPS_` environment variables:
 - `OPENOPPS_DB_URL` defaults to `sqlite:///openoppsdb.sqlite`.
 - `OPENOPPS_MAX_CONNECTIONS` bounds HTTP connection pooling.
 - `OPENOPPS_SOURCE_CONCURRENCY` bounds source adapter work.
+- `OPENOPPS_SOURCE_TIMEOUT_SECONDS` bounds one source adapter run before recording a classified timeout.
+- `OPENOPPS_SOURCE_FRESHNESS_SECONDS` skips recently synced sources during unscoped full-sync retries when set above `0`.
 - `OPENOPPS_BOARD_CONCURRENCY` bounds board-level processing.
 - `OPENOPPS_PROVIDER_CONCURRENCY` bounds provider job fetching.
 - `OPENOPPS_WORKDAY_CONCURRENCY` keeps Workday CXS requests conservative.
@@ -287,6 +289,8 @@ uv run pytest --cov=openopps --cov-report=term-missing
 rtk npx -y @fission-ai/openspec@latest validate --all --strict
 cd docs && pnpm types:check
 cd docs && pnpm build
+just kaggle-meta
+just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
 Public workflow, CLI, docs-generation, CI, or validation behavior changes must update OpenSpec, README/docs, nested `AGENTS.md`, CI, and `Justfile` in the same logical change. Use OpenSpec JSON/status commands for agent-readable state:
@@ -312,15 +316,16 @@ rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 
 ## Kaggle Bundle
 
-The Kaggle upload root lives in `kaggle/`. It contains dataset metadata (`dataset-metadata.json`, `dataset-cover-image.png`, `datapackage.json`), the connected manager notebook (`kernel-metadata.json`, `openoppsdb-manager.ipynb`), and generated SQLite/CSV/Parquet data artifacts. `dataset-metadata.json` is the Kaggle UI source of truth for cover image, file information, and column descriptors; `datapackage.json` remains a richer companion data dictionary with table metadata, examples, and required flags.
+The Kaggle upload root lives in `kaggle/`. It contains dataset metadata (`dataset-metadata.json`, `dataset-cover-image.png`, `datapackage.json`), the connected manager notebook (`kernel-metadata.json`, `openoppsdb-manager.ipynb`), generated SQLite/CSV/Parquet data artifacts, and manager-run evidence files (`sync_metrics.json`, `status.json`, `coverage.json`, `snapshot-quality.json`) when a full snapshot is bundled. `dataset-metadata.json` is the Kaggle UI source of truth for cover image, file information, and column descriptors; `datapackage.json` remains a richer companion data dictionary with table metadata, examples, and required flags. Kaggle may reserve the root `datapackage.json` filename internally, so the generated bundle also publishes the same data dictionary as `metadata/datapackage.json` for live dataset downloads.
 
 ```bash
 OPENOPPS_DB_URL="sqlite:///$PWD/kaggle/openoppsdb.sqlite" uv run openopps sync --metrics-json
-uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite
-KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle datasets create -p kaggle --public -q -t -r zip
-KAGGLE_API_TOKEN="$(kaggle auth print-access-token)" kaggle kernels push -p kaggle
+just kaggle-bundle-check kaggle/openoppsdb.sqlite
+just kaggle-dataset-version "OpenOppsDB daily snapshot"
+just kaggle-notebook-push
+just kaggle-live-verify
 ```
 
-Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use a cron cadence such as `0 */6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` through `dataset_sources`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, copies the newest `/kaggle/input/**/openoppsdb.sqlite` snapshot into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, syncs active jobs into that existing SQLite ledger so versions and observations accumulate throughout the day, regenerates dataset metadata, writes `openopps_tables` and `openopps_columns` metadata tables into SQLite for in-file table and column descriptions, exports every accumulated database table into `exports/csv/` and `exports/parquet/`, and versions the dataset. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`.
+Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use one daily cron cadence such as `0 6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` through `dataset_sources`, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, copies the newest `/kaggle/input/**/openoppsdb.sqlite` snapshot into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, syncs active jobs into that existing SQLite ledger so versions and observations accumulate across daily runs, writes `sync_metrics.json`, `status.json`, and `coverage.json`, regenerates dataset metadata, writes `openopps_tables` and `openopps_columns` metadata tables into SQLite for in-file table and column descriptions, exports every accumulated database table into `exports/csv/` and `exports/parquet/`, writes `snapshot-quality.json`, and versions the dataset only when the quality gate passes. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`. The manager keeps the sync command unfiltered as `openopps sync --metrics-json`, but seeds Kaggle runtime defaults for source freshness, concurrency, connection limits, timeouts, and retries; set the corresponding `OPENOPPS_` variables in the notebook environment to override those defaults.
 
-The current Kaggle CLI checks a legacy API-key file before OAuth credentials; use the `KAGGLE_API_TOKEN="$(kaggle auth print-access-token)"` prefix for local create/version/push commands after running `kaggle auth login`.
+Use `just kaggle-dataset-create` instead of `just kaggle-dataset-version` for the first public upload. The live write recipes are thin wrappers around the Kaggle CLI and set `KAGGLE_API_TOKEN` from `kaggle auth print-access-token`, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail before upload when OAuth credentials are missing and do not run in CI.

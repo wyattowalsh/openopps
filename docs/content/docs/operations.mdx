@@ -154,6 +154,7 @@ just ci
 just openspec-validate-all
 just docs-check
 just kaggle-meta
+just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
 Run Python tests from the repository root:
@@ -185,6 +186,30 @@ rtk npx -y @fission-ai/openspec@latest validate --all --strict
 ```
 
 OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested `AGENTS.md`, CI, and just recipes synchronized. Use `instructions --json` when handing an OpenSpec task graph to another agent.
+
+## OpenOppsDB Kaggle
+
+The generated Kaggle upload root lives in `kaggle/`. It contains `dataset-metadata.json`, `datapackage.json`, `kernel-metadata.json`, the connected `openoppsdb-manager.ipynb` notebook, and generated SQLite/CSV/Parquet artifacts when a data DB is supplied. Full snapshot bundles also include `sync_metrics.json`, `status.json`, `coverage.json`, and `snapshot-quality.json`. Kaggle may reserve the root `datapackage.json` filename internally, so the generator also publishes the same data dictionary as `metadata/datapackage.json` for live dataset downloads.
+
+Run the local non-live generation and validation path from the repository root:
+
+```bash
+just kaggle-meta
+just kaggle-bundle-check kaggle/openoppsdb.sqlite
+```
+
+The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, runs the unfiltered `openopps sync --metrics-json` workflow, writes status and coverage evidence, regenerates metadata, exports every SQLite table to CSV and Parquet, writes `snapshot-quality.json`, and versions the dataset only when the quality gate passes. The notebook seeds bounded Kaggle runtime defaults for source freshness, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
+
+Live deployment remains a local maintainer action with Kaggle CLI credentials:
+
+```bash
+just kaggle-dataset-create
+just kaggle-dataset-version "OpenOppsDB daily snapshot"
+just kaggle-notebook-push
+just kaggle-live-verify
+```
+
+Use `just kaggle-dataset-create` only for the first public upload; use `just kaggle-dataset-version` after the dataset exists. The live write recipes wrap the Kaggle CLI with `KAGGLE_API_TOKEN` from `kaggle auth print-access-token`, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when OAuth credentials are unavailable and are intentionally outside CI.
 
 ## CI/CD
 

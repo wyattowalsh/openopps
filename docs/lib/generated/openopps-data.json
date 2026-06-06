@@ -92,6 +92,14 @@
   ],
   "sourceAdapters": [
     {
+      "description": "Aggregate Ashby source adapter that exposes a public Ashby job board as one board route.",
+      "detectsRoutes": false,
+      "id": "ashby",
+      "kind": "board_source",
+      "label": "Ashby Source",
+      "supportLevel": "detect"
+    },
+    {
       "description": "CNCF landscape source adapter that discovers cloud-native projects and vendors from public GitHub data.",
       "detectsRoutes": false,
       "id": "cncf_landscape",
@@ -239,6 +247,13 @@
     },
     {
       "enabled": true,
+      "key": "4pt0",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.4pt0.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "53stations",
       "providerId": "getro",
       "taxonomy": {},
@@ -372,6 +387,13 @@
     },
     {
       "enabled": true,
+      "key": "albumvc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.album.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "aldrichcap",
       "providerId": "getro",
       "taxonomy": {},
@@ -414,10 +436,24 @@
     },
     {
       "enabled": true,
+      "key": "americanunderground",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.americanunderground.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "amplifyla",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.amplify.la/companies"
+    },
+    {
+      "enabled": true,
+      "key": "amplifylaunchpad",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://amplifylaunchpad.getro.com/companies"
     },
     {
       "enabled": true,
@@ -631,6 +667,13 @@
     },
     {
       "enabled": true,
+      "key": "bekventures",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.bekventures.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "benchstrengthvc",
       "providerId": "getro",
       "taxonomy": {},
@@ -666,6 +709,13 @@
     },
     {
       "enabled": true,
+      "key": "blackwoodvc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.blackwood.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "blockchaincapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -677,6 +727,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.bluebearcap.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "bluehaveninitiative",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.bluehaveninitiative.com/companies"
     },
     {
       "enabled": true,
@@ -726,6 +783,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.brightspark.com/"
+    },
+    {
+      "enabled": true,
+      "key": "brv",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.brv.com/companies"
     },
     {
       "enabled": true,
@@ -785,6 +849,20 @@
     },
     {
       "enabled": true,
+      "key": "capitalg",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://careers.capitalg.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "cardinalrefer",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/cardinal-refer/companies"
+    },
+    {
+      "enabled": true,
       "key": "cerberus",
       "providerId": "getro",
       "taxonomy": {},
@@ -838,6 +916,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.cleanenergyventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "clearventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.clear.ventures/companies"
     },
     {
       "enabled": true,
@@ -976,17 +1061,17 @@
     },
     {
       "enabled": true,
+      "key": "cranevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.crane.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "creandum",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.creandum.com/companies"
-    },
-    {
-      "enabled": true,
-      "key": "credoventures",
-      "providerId": "getro",
-      "taxonomy": {},
-      "url": "https://jobs.credoventures.com/companies"
     },
     {
       "enabled": true,
@@ -1008,6 +1093,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.ctinnovations.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "cultivationcapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://portfoliojobs.cultivationcapital.com/companies"
     },
     {
       "enabled": true,
@@ -1046,6 +1138,13 @@
     },
     {
       "enabled": true,
+      "key": "deciens",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.deciens.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "deepscienceventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -1078,6 +1177,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.detroit.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "dfdf",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/dfdf/companies"
     },
     {
       "enabled": true,
@@ -1207,6 +1313,13 @@
     },
     {
       "enabled": true,
+      "key": "engine",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.engine.xyz/companies"
+    },
+    {
+      "enabled": true,
       "key": "eniac",
       "providerId": "getro",
       "taxonomy": {},
@@ -1333,6 +1446,13 @@
     },
     {
       "enabled": true,
+      "key": "firstraysvc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.firstraysvc.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "fiveelms",
       "providerId": "getro",
       "taxonomy": {},
@@ -1374,6 +1494,13 @@
       "url": "https://careers.foresitelabs.com/companies"
     },
     {
+      "enabled": true,
+      "key": "forgepointcap",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.forgepointcap.com/companies"
+    },
+    {
       "enabled": false,
       "key": "fortune500",
       "providerId": "ranking_csv",
@@ -1388,6 +1515,22 @@
         "sourceCategory": "employer_ranking"
       },
       "url": "https://raw.githubusercontent.com/cmusam/fortune500/master/fortune500.csv"
+    },
+    {
+      "enabled": true,
+      "key": "forumventures",
+      "providerId": "ashby",
+      "taxonomy": {
+        "accessType": "public_json_api",
+        "coverageMode": "portfolio_jobs",
+        "defaultEnabledReason": "Public venture firm job board with an existing Ashby job provider route.",
+        "licenseStatus": "public_attribution_required",
+        "providerType": "venture_firm",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "Forum Ventures public Ashby job board.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://jobs.ashbyhq.com/forum-ventures"
     },
     {
       "enabled": true,
@@ -1517,6 +1660,13 @@
     },
     {
       "enabled": true,
+      "key": "georgiafintechacademy",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.georgiafintechacademy.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "georgian",
       "providerId": "getro",
       "taxonomy": {},
@@ -1556,6 +1706,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.gradient.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "greaterwashingtonpartnership",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/greater-washington-partnership/companies"
     },
     {
       "enabled": true,
@@ -1605,6 +1762,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.gridironcapital.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "grovevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.grovevc.com/companies"
     },
     {
       "enabled": true,
@@ -1734,6 +1898,13 @@
     },
     {
       "enabled": true,
+      "key": "ideavillage",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.ideavillage.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "illuminatefinancial",
       "providerId": "consider",
       "taxonomy": {},
@@ -1745,6 +1916,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://imaginary.getro.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "imagineh2o",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://watertechjobs.imagineh2o.org/companies"
     },
     {
       "enabled": true,
@@ -1766,6 +1944,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.initialized.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "innovationbay",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.innovationbay.com/companies"
     },
     {
       "enabled": true,
@@ -1794,6 +1979,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.inspiredcapital.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "integritypowersearch",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/integrity-power-search/companies"
     },
     {
       "enabled": true,
@@ -1839,6 +2031,13 @@
     },
     {
       "enabled": true,
+      "key": "javelinvp",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.javelinvp.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "jobsinvc",
       "providerId": "getro",
       "taxonomy": {},
@@ -1874,6 +2073,13 @@
     },
     {
       "enabled": true,
+      "key": "kaszek",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.kaszek.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "kcrise",
       "providerId": "getro",
       "taxonomy": {},
@@ -1885,6 +2091,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.khoslaventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "kickstart",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.kickstart.com/companies"
     },
     {
       "enabled": true,
@@ -1944,6 +2157,13 @@
     },
     {
       "enabled": true,
+      "key": "learncapital",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://learncapital.getro.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "leftlanecap",
       "providerId": "getro",
       "taxonomy": {},
@@ -1955,6 +2175,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.lemniscap.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "leoportfolio",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/leo-portfolio/companies"
     },
     {
       "enabled": true,
@@ -2021,6 +2248,13 @@
     },
     {
       "enabled": true,
+      "key": "luminarventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.luminarventures.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "luxcapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -2081,6 +2315,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.mantisvc.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "marble",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.marble.studio/companies"
     },
     {
       "enabled": true,
@@ -2282,6 +2523,13 @@
     },
     {
       "enabled": true,
+      "key": "nextfrontiercapital",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.nextfrontiercapital.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "nextview",
       "providerId": "consider",
       "taxonomy": {},
@@ -2314,6 +2562,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.nightdragon.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "nightlabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/night-labs/companies"
     },
     {
       "enabled": true,
@@ -2401,10 +2656,24 @@
     },
     {
       "enabled": true,
+      "key": "onewayvc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.onewayvc.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "openocean",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.openocean.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "orbitmit",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.orbit.mit.edu/companies"
     },
     {
       "enabled": true,
@@ -2461,6 +2730,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.peakxv.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "pearvc",
+      "providerId": "ashby",
+      "taxonomy": {
+        "accessType": "public_json_api",
+        "coverageMode": "portfolio_jobs",
+        "defaultEnabledReason": "Public venture firm job board with an existing Ashby job provider route.",
+        "licenseStatus": "public_attribution_required",
+        "providerType": "venture_firm",
+        "refreshCadence": "periodic",
+        "sourceAttribution": "Pear VC public Ashby job board.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://jobs.ashbyhq.com/Pear-VC"
     },
     {
       "enabled": true,
@@ -2545,6 +2830,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.powerhouse-ventures.co/companies"
+    },
+    {
+      "enabled": true,
+      "key": "praxis",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.praxis.co/companies"
     },
     {
       "enabled": true,
@@ -2685,6 +2977,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.ret.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "rethinkcapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://rethink-education-portfolio-jobs.rethink-capital.com/companies"
     },
     {
       "enabled": true,
@@ -2981,6 +3280,13 @@
     },
     {
       "enabled": true,
+      "key": "startupcincy",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.startupcincy.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "startx",
       "providerId": "consider",
       "taxonomy": {},
@@ -3009,6 +3315,13 @@
     },
     {
       "enabled": true,
+      "key": "supermooncapital",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.supermooncapital.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "superorganism",
       "providerId": "getro",
       "taxonomy": {},
@@ -3027,6 +3340,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.susaventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "symboliccapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/symbolic-capital/companies"
     },
     {
       "enabled": true,
@@ -3079,6 +3399,13 @@
     },
     {
       "enabled": true,
+      "key": "techtitans",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.techtitans.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "tenexcm",
       "providerId": "getro",
       "taxonomy": {},
@@ -3090,6 +3417,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.thecolumngroup.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "thegarage",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.thegarage.northwestern.edu/companies"
     },
     {
       "enabled": true,
@@ -3184,6 +3518,13 @@
     },
     {
       "enabled": true,
+      "key": "trilogyequity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://trilogy-equity.board.staging.consider.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "trinityventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -3237,6 +3578,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.unreasonablegroup.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "upfront",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.upfront.com/companies"
     },
     {
       "enabled": true,
@@ -3370,10 +3718,31 @@
     },
     {
       "enabled": true,
+      "key": "waed",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://portfoliojobs.waed.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "wassonenterprise",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.wassonenterprise.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "westboundequity",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.westboundequity.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "westcap",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/westcap/companies"
     },
     {
       "enabled": true,
@@ -3451,7 +3820,7 @@
   "stats": {
     "exportFormatCount": 3,
     "jobProviderCount": 9,
-    "sourceAdapterCount": 11,
-    "sourceRecordCount": 455
+    "sourceAdapterCount": 12,
+    "sourceRecordCount": 504
   }
 }

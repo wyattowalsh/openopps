@@ -151,13 +151,22 @@ class OpenOppsStore:
                     _merge_board(session, board)
                 session.commit()
 
-    def upsert_board_providers(self, providers: Sequence[BoardProviderRecord]) -> None:
+    def upsert_board_providers(
+        self,
+        providers: Sequence[BoardProviderRecord],
+        *,
+        boards: Sequence[BoardRecord] | None = None,
+    ) -> None:
         self.init_db()
         if not providers:
             return
         batch_size = self.settings.db_batch_size
         with Session(self.engine) as session:
-            board_key_aliases = _board_key_aliases(session)
+            board_key_aliases = (
+                _board_key_aliases_for_boards(session, boards)
+                if boards is not None
+                else _board_key_aliases(session)
+            )
             for offset in range(0, len(providers), batch_size):
                 for provider in providers[offset : offset + batch_size]:
                     canonical_board_key = board_key_aliases.get(
@@ -292,6 +301,29 @@ class OpenOppsStore:
             row = session.get(SourceRow, key)
             return source_from_row(row) if row else None
 
+    def count_boards(
+        self,
+        *,
+        source_key: str | None = None,
+        board_key: str | None = None,
+        provider_id: str | None = None,
+        filters: BoardFilters | None = None,
+    ) -> int:
+        filters = filters or BoardFilters(
+            source_key=source_key,
+            board_key=board_key,
+            provider_id=provider_id,
+        )
+        if _board_needs_python_filter(filters):
+            return len(self.list_boards(filters=filters, with_providers=False))
+        provider_id = _normalize_provider_alias(filters.provider_id)
+        self.init_db()
+        with Session(self.engine) as session:
+            statement = _apply_board_sql_filters(
+                select(func.count()).select_from(BoardRow), filters, provider_id
+            )
+            return int(session.exec(statement).one())
+
     def list_boards(
         self,
         *,
@@ -399,6 +431,7 @@ class OpenOppsStore:
         status: str = "open",
         limit: int | None = None,
         filters: JobFilters | None = None,
+        hydrate_related: bool = True,
     ) -> list[JobRecord]:
         filters = filters or JobFilters(
             source_key=source_key,
@@ -434,10 +467,20 @@ class OpenOppsStore:
             )
             if filters.limit and not _job_needs_python_filter(filters):
                 statement = statement.limit(filters.limit)
-            jobs = [
-                _job_from_identity_and_version(session, row, version)
-                for row, version in session.exec(statement).all()
-            ]
+            hydrate_records = hydrate_related or _job_needs_python_filter(filters)
+            rows = session.exec(statement).all()
+            if hydrate_records:
+                jobs = [
+                    _job_from_identity_and_version(session, row, version)
+                    for row, version in rows
+                ]
+            else:
+                jobs = [
+                    _job_from_identity_and_version(
+                        session, row, version, hydrate_related=False
+                    )
+                    for row, version in rows
+                ]
             if _job_needs_python_filter(filters):
                 board_source_keys = _board_source_keys_by_key(session, jobs)
                 jobs = [
@@ -448,6 +491,90 @@ class OpenOppsStore:
             if filters.limit and _job_needs_python_filter(filters):
                 jobs = jobs[: filters.limit]
             return jobs
+
+    def coverage_job_summary(
+        self,
+        *,
+        provider_id: str | None = None,
+        board_keys: Iterable[str] | None = None,
+        status: str = "open",
+    ) -> dict[str, object]:
+        provider_id = _normalize_provider_alias(provider_id)
+        selected_board_keys = tuple(dict.fromkeys(board_keys or ()))
+        if board_keys is not None and not selected_board_keys:
+            return _empty_coverage_job_summary()
+        self.init_db()
+        with Session(self.engine) as session:
+            filters = []
+            if status != "all":
+                filters.append(JobRow.status == status)
+            if provider_id:
+                filters.append(JobRow.provider_id == provider_id)
+            if board_keys is not None:
+                filters.append(col(JobRow.board_key).in_(selected_board_keys))
+            total = _coverage_job_count(session, filters)
+            by_provider = _coverage_job_group_count(
+                session, filters, JobRow.provider_id
+            )
+            by_board = _coverage_job_group_count(session, filters, JobRow.board_key)
+            by_board_provider = {
+                (str(board_key), str(provider)): int(count)
+                for board_key, provider, count in session.exec(
+                    select(JobRow.board_key, JobRow.provider_id, func.count())
+                    .select_from(JobRow)
+                    .join(
+                        JobVersionRow,
+                        JobRow.current_version_id == JobVersionRow.id,
+                    )
+                    .where(*filters)
+                    .group_by(JobRow.board_key, JobRow.provider_id)
+                ).all()
+            }
+            present = {
+                "postingUrl": _coverage_job_count(
+                    session, filters, _present_text(JobVersionRow.posting_url)
+                ),
+                "applyUrl": _coverage_job_count(
+                    session, filters, _present_text(JobVersionRow.apply_url)
+                ),
+                "locations": _coverage_job_count(
+                    session, filters, func.json_array_length(JobVersionRow.locations) > 0
+                ),
+                "department": _coverage_job_count(
+                    session, filters, _present_text(JobVersionRow.department)
+                ),
+                "description": _coverage_job_count(
+                    session,
+                    filters,
+                    or_(
+                        _present_text(JobVersionRow.description),
+                        _present_text(JobVersionRow.description_html),
+                    ),
+                ),
+                "compensationSalary": _coverage_job_count(
+                    session,
+                    filters,
+                    or_(
+                        _present_json(JobVersionRow.compensation),
+                        _present_text(JobVersionRow.salary),
+                        JobVersionRow.salary_min.is_not(None),
+                        JobVersionRow.salary_max.is_not(None),
+                    ),
+                ),
+                "remote": _coverage_job_count(
+                    session, filters, _present_text(JobVersionRow.remote)
+                ),
+                "employmentType": _coverage_job_count(
+                    session, filters, _present_text(JobVersionRow.employment_type)
+                ),
+            }
+        return {
+            "total": total,
+            "byProvider": by_provider,
+            "byBoard": by_board,
+            "byBoardProvider": by_board_provider,
+            "dataQuality": _coverage_data_quality(total, present),
+        }
 
     def get_job(self, job_id: str) -> JobRecord | None:
         self.init_db()
@@ -495,6 +622,73 @@ def append_jsonl(path: Path, records: Iterable[object]) -> int:
 def _count_rows(session: Session, row_type: type[SQLModel]) -> int:
     value = session.exec(select(func.count()).select_from(row_type)).one()
     return int(value or 0)
+
+
+def _empty_coverage_job_summary() -> dict[str, object]:
+    return {
+        "total": 0,
+        "byProvider": {},
+        "byBoard": {},
+        "byBoardProvider": {},
+        "dataQuality": _coverage_data_quality(0, {}),
+    }
+
+
+def _coverage_job_count(session: Session, filters: Sequence[object], *extra) -> int:
+    value = session.exec(
+        select(func.count())
+        .select_from(JobRow)
+        .join(JobVersionRow, JobRow.current_version_id == JobVersionRow.id)
+        .where(*filters, *extra)
+    ).one()
+    return int(value or 0)
+
+
+def _coverage_job_group_count(
+    session: Session, filters: Sequence[object], column
+) -> dict[str, int]:
+    rows = session.exec(
+        select(column, func.count())
+        .select_from(JobRow)
+        .join(JobVersionRow, JobRow.current_version_id == JobVersionRow.id)
+        .where(*filters)
+        .group_by(column)
+    ).all()
+    return dict(sorted((str(key), int(count)) for key, count in rows))
+
+
+def _present_text(column):
+    return column.is_not(None) & (column != "")
+
+
+def _present_json(column):
+    return column.is_not(None) & (func.json(column).not_in(["null", "{}", "[]"]))
+
+
+def _coverage_data_quality(total: int, present: dict[str, int]) -> dict[str, object]:
+    keys = (
+        "postingUrl",
+        "applyUrl",
+        "locations",
+        "department",
+        "description",
+        "compensationSalary",
+        "remote",
+        "employmentType",
+    )
+    missing = {key: total - int(present.get(key, 0)) for key in keys}
+    completeness = {
+        key: {
+            "present": int(present.get(key, 0)),
+            "missing": missing[key],
+            "total": total,
+            "percentage": (
+                round((int(present.get(key, 0)) / total) * 100, 2) if total else 0.0
+            ),
+        }
+        for key in keys
+    }
+    return {"totalJobs": total, "missing": missing, "completeness": completeness}
 
 
 def _merge_board(session: Session, board: BoardRecord) -> None:
@@ -625,6 +819,20 @@ def _board_key_aliases(session: Session) -> dict[tuple[str, str], str]:
         aliases[(row.source_key, row.key)] = row.key
         for source_key, emitted_key in (row.source_board_keys or {}).items():
             aliases[(source_key, emitted_key)] = row.key
+    return aliases
+
+
+def _board_key_aliases_for_boards(
+    session: Session, boards: Sequence[BoardRecord]
+) -> dict[tuple[str, str], str]:
+    aliases: dict[tuple[str, str], str] = {}
+    for board in boards:
+        row = _find_merge_target(session, _board_row_with_source_keys(board))
+        canonical_key = row.key if row else board.key
+        aliases[(board.source_key, board.key)] = canonical_key
+        if row:
+            for source_key, emitted_key in (row.source_board_keys or {}).items():
+                aliases[(source_key, emitted_key)] = row.key
     return aliases
 
 
@@ -961,6 +1169,8 @@ def _job_from_identity_and_version(
     session: Session,
     row: JobRow,
     version: JobVersionRow,
+    *,
+    hydrate_related: bool = True,
 ) -> JobRecord:
     data = version.model_dump()
     extra_payload = data.pop("extra_payload", {}) or {}
@@ -981,12 +1191,32 @@ def _job_from_identity_and_version(
             "last_seen_at": _ensure_aware(version.last_seen_at),
             "closed_at": _ensure_aware(row.closed_at),
             "synced_at": _ensure_aware(version.last_seen_at),
-            "locations": _version_locations(session, version),
-            "responsibilities": _version_bullets(session, version, "responsibility"),
-            "qualifications": _version_bullets(session, version, "qualification"),
-            "skills": _version_skills(session, version),
-            "raw_listing": _latest_payload(session, row.id, "listing"),
-            "raw_detail": _latest_payload(session, row.id, "detail"),
+            "locations": (
+                _version_locations(session, version)
+                if hydrate_related
+                else list(version.locations or [])
+            ),
+            "responsibilities": (
+                _version_bullets(session, version, "responsibility")
+                if hydrate_related
+                else list(version.responsibilities or [])
+            ),
+            "qualifications": (
+                _version_bullets(session, version, "qualification")
+                if hydrate_related
+                else list(version.qualifications or [])
+            ),
+            "skills": (
+                _version_skills(session, version)
+                if hydrate_related
+                else list(version.skills or [])
+            ),
+            "raw_listing": (
+                _latest_payload(session, row.id, "listing") if hydrate_related else {}
+            ),
+            "raw_detail": (
+                _latest_payload(session, row.id, "detail") if hydrate_related else {}
+            ),
         }
     )
     return JobRecord.model_validate(data)

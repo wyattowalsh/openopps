@@ -174,7 +174,12 @@ kaggle/*.db
 kaggle/*.db-*
 kaggle/*.sqlite
 kaggle/*.sqlite-*
+kaggle/coverage.json
 kaggle/exports/
+kaggle/snapshot-quality.json
+kaggle/status.json
+kaggle/sync_metrics.json
+kaggle/sync_stderr.txt
 
 # IPython
 profile_default/

@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from openopps.migrations import sqlite_database_lock
+
 
 CACHE_SCHEMA_VERSION = "v1"
 DEFAULT_CACHE_NAMESPACE = "http-json"
@@ -278,37 +280,38 @@ class HttpCache:
         )
 
     def _init_db(self) -> None:
-        with self._connect() as conn:
-            conn.execute("pragma journal_mode=WAL")
-            conn.execute("pragma synchronous=NORMAL")
-            conn.execute(
-                """
-                create table if not exists http_cache (
-                    key text primary key,
-                    namespace text not null,
-                    method text not null,
-                    url text not null,
-                    request_identity text not null,
-                    status_code integer not null,
-                    response_headers text not null,
-                    etag text,
-                    last_modified text,
-                    content_hash text not null,
-                    fetched_at text not null,
-                    expires_at text not null,
-                    stale_on_error integer not null default 0,
-                    request_duration_ms integer,
-                    payload text not null
+        with sqlite_database_lock(self.path):
+            with self._connect() as conn:
+                conn.execute("pragma journal_mode=WAL")
+                conn.execute("pragma synchronous=NORMAL")
+                conn.execute(
+                    """
+                    create table if not exists http_cache (
+                        key text primary key,
+                        namespace text not null,
+                        method text not null,
+                        url text not null,
+                        request_identity text not null,
+                        status_code integer not null,
+                        response_headers text not null,
+                        etag text,
+                        last_modified text,
+                        content_hash text not null,
+                        fetched_at text not null,
+                        expires_at text not null,
+                        stale_on_error integer not null default 0,
+                        request_duration_ms integer,
+                        payload text not null
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                "create index if not exists ix_http_cache_namespace on http_cache(namespace)"
-            )
+                conn.execute(
+                    "create index if not exists ix_http_cache_namespace on http_cache(namespace)"
+                )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=30)
         try:
             yield conn
             conn.commit()

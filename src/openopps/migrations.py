@@ -65,8 +65,10 @@ def _alembic_config(settings: OpenOppsSettings) -> Config:
 
 
 @contextmanager
-def _sqlite_upgrade_lock(settings: OpenOppsSettings) -> Iterator[None]:
-    lock_key = _sqlite_lock_key(settings)
+def sqlite_database_lock(path_or_url: Path | str) -> Iterator[None]:
+    """Serialize first-use SQLite initialization across local processes."""
+
+    lock_key = _sqlite_lock_key(path_or_url)
     process_lock = _process_upgrade_lock(lock_key)
     with process_lock:
         lock_path = _sqlite_lock_path(lock_key)
@@ -81,10 +83,20 @@ def _sqlite_upgrade_lock(settings: OpenOppsSettings) -> Iterator[None]:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
-def _sqlite_lock_key(settings: OpenOppsSettings) -> str:
+@contextmanager
+def _sqlite_upgrade_lock(settings: OpenOppsSettings) -> Iterator[None]:
     if settings.sqlite_path is not None:
-        return str(settings.sqlite_path.expanduser().resolve(strict=False))
-    return settings.db_url
+        with sqlite_database_lock(settings.sqlite_path):
+            yield
+        return
+    with sqlite_database_lock(settings.db_url):
+        yield
+
+
+def _sqlite_lock_key(path_or_url: Path | str) -> str:
+    if isinstance(path_or_url, Path):
+        return str(path_or_url.expanduser().resolve(strict=False))
+    return path_or_url
 
 
 def _sqlite_lock_path(lock_key: str) -> Path:

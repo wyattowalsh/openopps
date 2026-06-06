@@ -13,6 +13,8 @@ from openopps.providers.sources.consider import (
 )
 from openopps.providers.sources.getro import GETRO_SOURCE_CATALOG, GetroSourceAdapter
 from openopps.providers.sources.special import (
+    AshbySourceAdapter,
+    PEAR_VC_SOURCE,
     SOUTHPARKCOMMONS_SOURCE,
     SouthParkCommonsSourceAdapter,
     VENTURE_CAPITAL_CAREERS_SOURCE,
@@ -150,6 +152,55 @@ async def test_getro_falls_back_to_embedded_initial_state():
     assert providers == []
     assert meta["total"] == 581
     assert meta["partial"] is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_getro_follows_redirects_when_discovering_collection_id():
+    settings = OpenOppsSettings(cache_enabled=False)
+    source = GETRO_SOURCE_CATALOG["accel"].model_copy(
+        update={"url": "https://jobs.example.com/", "raw_metadata": {}}
+    )
+    respx.get("https://jobs.example.com/").mock(
+        return_value=httpx.Response(
+            302, headers={"location": "https://jobs.example.com/companies"}
+        )
+    )
+    respx.get("https://jobs.example.com/companies").mock(
+        return_value=httpx.Response(200, text='{"id":"8672","label":"Companies"}')
+    )
+    respx.post("https://api.getro.com/api/v2/collections/8672/search/companies").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": {
+                    "count": 1,
+                    "companies": [
+                        {
+                            "id": 202755,
+                            "slug": "100ms-2",
+                            "name": "100ms",
+                            "domain": "100ms.live",
+                            "activeJobsCount": 10,
+                        }
+                    ],
+                }
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in GetroSourceAdapter(settings).iter_boards(
+                client, source, page_size=12
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert boards[0].key == "accel:100ms-2"
+    assert providers == []
+    assert meta["collectionId"] == "8672"
 
 
 @pytest.mark.asyncio
@@ -345,6 +396,56 @@ async def test_southparkcommons_normalizes_embedded_jobs_data():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_ashby_source_emits_board_and_provider_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(
+        "https://api.ashbyhq.com/posting-api/job-board/Pear-VC?includeCompensation=false"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "apiVersion": "1",
+                "jobs": [
+                    {
+                        "id": "job-1",
+                        "title": "Engineer",
+                        "jobUrl": "https://jobs.ashbyhq.com/Pear-VC/job-1",
+                        "isListed": True,
+                    },
+                    {
+                        "id": "job-2",
+                        "title": "Hidden Role",
+                        "jobUrl": "https://jobs.ashbyhq.com/Pear-VC/job-2",
+                        "isListed": False,
+                    },
+                ],
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in AshbySourceAdapter(settings).iter_boards(
+                client, PEAR_VC_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert boards[0].key == "pearvc:pear-vc"
+    assert boards[0].name == "Pear VC"
+    assert boards[0].num_jobs_hint == 1
+    assert boards[0].raw_payload["token"] == "Pear-VC"
+    assert providers[0].provider_id == "ashbyhq"
+    assert providers[0].support_level == "jobs"
+    assert providers[0].count_hint == 1
+    assert providers[0].board_url == "https://jobs.ashbyhq.com/Pear-VC"
+    assert providers[0].token == "Pear-VC"
+    assert meta == {"apiVersion": "1", "token": "Pear-VC", "total": 1}
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_venturecapitalcareers_normalizes_company_cards():
     settings = OpenOppsSettings(cache_enabled=False)
     respx.get("https://venturecapitalcareers.com/companies").mock(
@@ -393,9 +494,7 @@ async def test_ventureloop_source_preserves_landing_page_without_scraping_search
     respx.get("https://www.ventureloop.com/").mock(
         return_value=httpx.Response(
             302,
-            headers={
-                "location": "https://www.ventureloop.com/ventureloop/home.php"
-            },
+            headers={"location": "https://www.ventureloop.com/ventureloop/home.php"},
         )
     )
     landing = respx.get("https://www.ventureloop.com/ventureloop/home.php").mock(
@@ -1832,12 +1931,6 @@ def test_source_catalog_includes_requested_portfolio_boards():
             "board",
             "congruent-ventures",
         ),
-        "credoventures": (
-            "getro",
-            "https://jobs.credoventures.com/companies",
-            "collectionId",
-            "1623",
-        ),
         "dawncapital": (
             "getro",
             "https://jobs.dawncapital.com/companies",
@@ -2896,6 +2989,306 @@ def test_source_catalog_includes_requested_portfolio_boards():
             "https://venturecapitalcareers.com/companies",
             "sourceCategory",
             "startup_ecosystem",
+        ),
+        "innovationbay": (
+            "getro",
+            "https://jobs.innovationbay.com/companies",
+            "collectionId",
+            "1014",
+        ),
+        "capitalg": (
+            "consider",
+            "https://careers.capitalg.com/companies",
+            "board",
+            "capitalg",
+        ),
+        "integritypowersearch": (
+            "consider",
+            "https://consider.com/boards/vc/integrity-power-search/companies",
+            "board",
+            "integrity-power-search",
+        ),
+        "praxis": (
+            "getro",
+            "https://jobs.praxis.co/companies",
+            "collectionId",
+            "130",
+        ),
+        "cultivationcapital": (
+            "consider",
+            "https://portfoliojobs.cultivationcapital.com/companies",
+            "board",
+            "cultivation-capital",
+        ),
+        "cardinalrefer": (
+            "consider",
+            "https://consider.com/boards/vc/cardinal-refer/companies",
+            "board",
+            "cardinal-refer",
+        ),
+        "kaszek": (
+            "consider",
+            "https://jobs.kaszek.com/companies",
+            "board",
+            "kaszek",
+        ),
+        "cranevc": (
+            "getro",
+            "https://careers.crane.vc/companies",
+            "collectionId",
+            "1940",
+        ),
+        "upfront": (
+            "getro",
+            "https://jobs.upfront.com/companies",
+            "collectionId",
+            "184",
+        ),
+        "rethinkcapital": (
+            "consider",
+            "https://rethink-education-portfolio-jobs.rethink-capital.com/companies",
+            "board",
+            "rethink-capital",
+        ),
+        "kickstart": (
+            "getro",
+            "https://jobs.kickstart.com/companies",
+            "collectionId",
+            "131",
+        ),
+        "learncapital": (
+            "getro",
+            "https://learncapital.getro.com/companies",
+            "collectionId",
+            "396",
+        ),
+        "imagineh2o": (
+            "getro",
+            "https://watertechjobs.imagineh2o.org/companies",
+            "collectionId",
+            "2336",
+        ),
+        "engine": (
+            "getro",
+            "https://jobs.engine.xyz/companies",
+            "collectionId",
+            "223",
+        ),
+        "orbitmit": (
+            "getro",
+            "https://jobs.orbit.mit.edu/companies",
+            "collectionId",
+            "186",
+        ),
+        "waed": (
+            "consider",
+            "https://portfoliojobs.waed.com/companies",
+            "board",
+            "waed",
+        ),
+        "brv": (
+            "getro",
+            "https://jobs.brv.com/companies",
+            "collectionId",
+            "168",
+        ),
+        "startupcincy": (
+            "getro",
+            "https://jobs.startupcincy.com/companies",
+            "collectionId",
+            "14810",
+        ),
+        "amplifylaunchpad": (
+            "getro",
+            "https://amplifylaunchpad.getro.com/companies",
+            "collectionId",
+            "925",
+        ),
+        "wassonenterprise": (
+            "getro",
+            "https://careers.wassonenterprise.com/companies",
+            "collectionId",
+            "873",
+        ),
+        "onewayvc": (
+            "getro",
+            "https://careers.onewayvc.com/companies",
+            "collectionId",
+            "942",
+        ),
+        "luminarventures": (
+            "getro",
+            "https://careers.luminarventures.com/companies",
+            "collectionId",
+            "10487",
+        ),
+        "clearventures": (
+            "getro",
+            "https://jobs.clear.ventures/companies",
+            "collectionId",
+            "36293",
+        ),
+        "javelinvp": (
+            "getro",
+            "https://careers.javelinvp.com/companies",
+            "collectionId",
+            "324",
+        ),
+        "grovevc": (
+            "getro",
+            "https://careers.grovevc.com/companies",
+            "collectionId",
+            "9398",
+        ),
+        "forgepointcap": (
+            "getro",
+            "https://jobs.forgepointcap.com/companies",
+            "collectionId",
+            "1369",
+        ),
+        "blackwoodvc": (
+            "getro",
+            "https://careers.blackwood.vc/companies",
+            "collectionId",
+            "11543",
+        ),
+        "westcap": (
+            "consider",
+            "https://consider.com/boards/vc/westcap/companies",
+            "board",
+            "westcap",
+        ),
+        "albumvc": (
+            "getro",
+            "https://jobs.album.vc/companies",
+            "collectionId",
+            "134",
+        ),
+        "americanunderground": (
+            "getro",
+            "https://jobs.americanunderground.com/companies",
+            "collectionId",
+            "1117",
+        ),
+        "deciens": (
+            "getro",
+            "https://careers.deciens.com/companies",
+            "collectionId",
+            "5240",
+        ),
+        "georgiafintechacademy": (
+            "getro",
+            "https://jobs.georgiafintechacademy.org/companies",
+            "collectionId",
+            "1357",
+        ),
+        "ideavillage": (
+            "getro",
+            "https://jobs.ideavillage.org/companies",
+            "collectionId",
+            "1183",
+        ),
+        "4pt0": (
+            "getro",
+            "https://jobs.4pt0.org/companies",
+            "collectionId",
+            "13523",
+        ),
+        "supermooncapital": (
+            "getro",
+            "https://jobs.supermooncapital.com/companies",
+            "collectionId",
+            "1208",
+        ),
+        "dfdf": (
+            "consider",
+            "https://consider.com/boards/vc/dfdf/companies",
+            "board",
+            "dfdf",
+        ),
+        "symboliccapital": (
+            "consider",
+            "https://consider.com/boards/vc/symbolic-capital/companies",
+            "board",
+            "symbolic-capital",
+        ),
+        "greaterwashingtonpartnership": (
+            "consider",
+            "https://consider.com/boards/vc/greater-washington-partnership/companies",
+            "board",
+            "greater-washington-partnership",
+        ),
+        "trilogyequity": (
+            "consider",
+            "https://trilogy-equity.board.staging.consider.com/companies",
+            "board",
+            "trilogy-equity",
+        ),
+        "leoportfolio": (
+            "consider",
+            "https://consider.com/boards/vc/leo-portfolio/companies",
+            "board",
+            "leo-portfolio",
+        ),
+        "nightlabs": (
+            "consider",
+            "https://consider.com/boards/vc/night-labs/companies",
+            "board",
+            "night-labs",
+        ),
+        "bluehaveninitiative": (
+            "getro",
+            "https://jobs.bluehaveninitiative.com/companies",
+            "collectionId",
+            "329",
+        ),
+        "firstraysvc": (
+            "getro",
+            "https://jobs.firstraysvc.com/companies",
+            "collectionId",
+            "1194",
+        ),
+        "bekventures": (
+            "consider",
+            "https://jobs.bekventures.com/companies",
+            "board",
+            "digital-east",
+        ),
+        "pearvc": (
+            "ashby",
+            "https://jobs.ashbyhq.com/Pear-VC",
+            "token",
+            "Pear-VC",
+        ),
+        "forumventures": (
+            "ashby",
+            "https://jobs.ashbyhq.com/forum-ventures",
+            "token",
+            "forum-ventures",
+        ),
+        "nextfrontiercapital": (
+            "getro",
+            "https://jobs.nextfrontiercapital.com/companies",
+            "collectionId",
+            "583",
+        ),
+        "marble": (
+            "getro",
+            "https://careers.marble.studio/companies",
+            "collectionId",
+            "7946",
+        ),
+        "techtitans": (
+            "getro",
+            "https://careers.techtitans.org/companies",
+            "collectionId",
+            "1186",
+        ),
+        "thegarage": (
+            "getro",
+            "https://jobs.thegarage.northwestern.edu/companies",
+            "collectionId",
+            "5801",
         ),
         "usv": (
             "consider",

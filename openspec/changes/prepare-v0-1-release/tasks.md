@@ -20,5 +20,8 @@
 - [x] Clarify sync metrics with additive fetched-vs-persisted job counts, reason-level provider diagnostics, and Workable-aware throttling/rate-limit handling.
 - [x] Repair previously failed source syncs through existing Getro embedded-state fallback where live first-page validation works, and remove proven-unavailable packaged sources without tombstones.
 - [x] Keep the local `just docs-build` validation path reliable on macOS while preserving the direct `pnpm build` path used by CI.
+- [x] Add OpenOppsDB Kaggle dataset workflow requirements, local/live Just recipes, docs, and regenerated daily manager artifacts.
+- [x] Implement snapshot quality reports and hard gates before live OpenOppsDB publishing.
+- [x] Deploy and verify the live OpenOppsDB Kaggle dataset and manager notebook surfaces.
 - [ ] Keep WorkAtAStartup out of scope in favor of the existing YC source provider, and document/test any Wellfound/Angel outcome as static no-auth source support or explicit unsupported/disabled metadata.
 - [ ] Audit Editorial/Editiorial source labels before adding any provider identity, and only add detection if a real public provider route is proven.

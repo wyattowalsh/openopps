@@ -3,7 +3,7 @@ import pytest
 import respx
 
 import openopps.providers.boards.workable as workable_module
-from openopps.http import build_async_client
+from openopps.http import build_async_client, retrying_json_request
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport
 from openopps.providers.boards.ashby import AshbyProvider, ashby_token
 from openopps.providers.boards.bamboohr import (
@@ -490,6 +490,44 @@ async def test_workable_fetch_jobs():
     assert jobs[0].description == "Help customers."
     assert jobs[0].salary == "USD 90000 - 110000"
     assert jobs[0].raw_listing["shortcode"] == "abc123"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_workable_fetch_jobs_reuses_route_probe_listing_cache(tmp_path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    listing_url = "https://apply.workable.com/api/v3/accounts/acme/jobs"
+    listing_route = respx.post(listing_url).mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "total": 1,
+                    "results": [{"shortcode": "abc123", "title": "Support"}],
+                },
+            ),
+            httpx.Response(429, json={"error": "rate limited"}),
+        ]
+    )
+    respx.get("https://apply.workable.com/api/v2/accounts/acme/jobs/abc123").mock(
+        return_value=httpx.Response(200, json={"shortcode": "abc123"})
+    )
+
+    async with build_async_client(settings) as client:
+        await retrying_json_request(settings)(
+            client,
+            "POST",
+            listing_url,
+            json={},
+            cache_namespace="route_probe",
+            cache_identity={"provider": "workable", "route": "acme"},
+        )
+        jobs = await WorkableProvider(settings).fetch_jobs(
+            client, board(), route("workable", token="acme")
+        )
+
+    assert [job.title for job in jobs] == ["Support"]
+    assert listing_route.call_count == 1
 
 
 @pytest.mark.asyncio

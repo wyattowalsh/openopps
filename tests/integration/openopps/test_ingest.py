@@ -1,5 +1,7 @@
+import asyncio
 import json
 import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +16,7 @@ from openopps.models import (
     BoardRecord,
     ProviderSupport,
     SourceRecord,
+    utc_now,
 )
 from openopps.providers.sources.consider import CONSIDER_SOURCE_CATALOG
 from openopps.providers.sources.sec import SEC_COMPANY_TICKERS_SOURCE
@@ -549,6 +552,141 @@ async def test_sync_sources_progress_reports_unique_canonical_board_count(
     assert len(store.list_boards()) == 1
     assert any("[dim]boards[/] [green]1[/]" in message for message in reports)
     assert not any("[dim]boards[/] [green]2[/]" in message for message in reports)
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_skips_recent_sources_with_freshness_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    class FakeSourceAdapter:
+        async def iter_boards(self, _client, source, *, page_size: int):
+            calls.append(source.key)
+            yield (
+                [
+                    BoardRecord(
+                        key=f"{source.key}:acme",
+                        source_key=source.key,
+                        remote_id="acme",
+                        name="Acme",
+                    )
+                ],
+                [],
+                {"version": {"pageSize": page_size}},
+            )
+
+    now = utc_now()
+    calls: list[str] = []
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        source_freshness_seconds=3600,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    sources = {
+        "fresh": SourceRecord(
+            key="fresh",
+            url="fresh://source",
+            provider_id="fake",
+            synced_at=now,
+        ),
+        "stale": SourceRecord(
+            key="stale",
+            url="stale://source",
+            provider_id="fake",
+            synced_at=now - timedelta(hours=2),
+        ),
+    }
+    for source in sources.values():
+        store.upsert_source(source)
+    monkeypatch.setattr(ingest_module, "BOARD_SOURCE_CATALOG", sources)
+    monkeypatch.setattr(
+        ingest_module,
+        "all_board_sources",
+        lambda: list(sources.values()),
+    )
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: FakeSourceAdapter(),
+    )
+
+    metrics = await sync_sources(settings=settings, store=store, page_size=10)
+
+    assert calls == ["stale"]
+    assert metrics.skipped == 1
+    assert [board.key for board in store.list_boards()] == ["stale:acme"]
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_times_out_slow_source_and_continues(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    class FastSourceAdapter:
+        async def iter_boards(self, _client, source, *, page_size: int):
+            yield (
+                [
+                    BoardRecord(
+                        key=f"{source.key}:acme",
+                        source_key=source.key,
+                        remote_id="acme",
+                        name="Acme",
+                        domain="acme.com",
+                    )
+                ],
+                [],
+                {"version": {"pageSize": page_size}},
+            )
+
+    class SlowSourceAdapter:
+        async def iter_boards(self, _client, _source, *, page_size: int):
+            await asyncio.sleep(0.05)
+            yield [], [], {"version": {"pageSize": page_size}}
+
+    def build_fake_source_adapter(provider_id: str, _settings: OpenOppsSettings):
+        if provider_id == "fast":
+            return FastSourceAdapter()
+        if provider_id == "slow":
+            return SlowSourceAdapter()
+        return None
+
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=2,
+        source_timeout_seconds=0.01,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    sources = {
+        "fast": SourceRecord(key="fast", url="fast://source", provider_id="fast"),
+        "slow": SourceRecord(key="slow", url="slow://source", provider_id="slow"),
+    }
+    monkeypatch.setattr(ingest_module, "BOARD_SOURCE_CATALOG", sources)
+    monkeypatch.setattr(
+        ingest_module,
+        "all_board_sources",
+        lambda: list(sources.values()),
+    )
+    reports: list[str] = []
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        build_fake_source_adapter,
+    )
+
+    metrics = await sync_sources(
+        settings=settings,
+        store=store,
+        page_size=10,
+        report=lambda update: reports.append(update.message),
+    )
+
+    assert metrics.boards == 1
+    assert metrics.skipped == 1
+    assert metrics.provider_error_details == {"slow": {"timeout": 1}}
+    assert [board.key for board in store.list_boards()] == ["fast:acme"]
+    assert any("source[/] [yellow]slow[/]" in message for message in reports)
+    assert any("skipped: timeout" in message for message in reports)
 
 
 @pytest.mark.asyncio

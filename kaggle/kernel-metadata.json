@@ -9,7 +9,6 @@
   "enable_internet": true,
   "enable_tpu": false,
   "id": "wyattowalsh/openoppsdb-manager",
-  "id_no": 120479527,
   "is_private": true,
   "kernel_sources": [],
   "kernel_type": "notebook",

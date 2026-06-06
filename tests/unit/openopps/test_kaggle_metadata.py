@@ -33,16 +33,22 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert metadata["userSpecifiedSources"]
     assert metadata["keywords"]
     assert "datapackage.json" in metadata["description"]
+    assert gen.EXPOSED_DATAPACKAGE_FILE in metadata["description"]
+    assert "snapshot-quality.json" in metadata["description"]
     assert "openoppsdb-manager" in metadata["description"]
     assert "Quick start" in metadata["description"]
     assert gen.DB_FILE in metadata["description"]
     assert "Parquet" in metadata["description"]
     assert set(resources) == {resource.path for resource in gen.RESOURCES} | {
-        "datapackage.json"
+        gen.DATAPACKAGE_FILE,
+        gen.EXPOSED_DATAPACKAGE_FILE,
     }
     assert resources[gen.DB_FILE]["description"]
     assert "schema" not in resources[gen.DB_FILE]
-    assert resources["datapackage.json"]["description"]
+    for resource in gen.EVIDENCE_RESOURCES:
+        assert resources[resource.path]["description"]
+    assert resources[gen.DATAPACKAGE_FILE]["description"]
+    assert resources[gen.EXPOSED_DATAPACKAGE_FILE]["description"]
 
 
 def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
@@ -107,7 +113,10 @@ def test_kaggle_datapackage_annotates_all_resource_fields() -> None:
         if "schema" in resource:
             schemas.append(resource["schema"])
         schemas.extend(table["schema"] for table in resource.get("tables", []))
-        assert schemas
+        if not schemas:
+            assert resource["description"]
+            assert resource["format"] == "json"
+            continue
         for schema in schemas:
             fields = schema["fields"]
             assert fields
@@ -133,13 +142,14 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert metadata["is_private"] is True
     assert metadata["id"] == "wyattowalsh/openoppsdb-manager"
     assert metadata["id"] == gen.NB_ID
-    assert metadata["id_no"] == 120479527
+    assert "id_no" not in metadata
     assert metadata["title"] == "openoppsdb manager"
     assert metadata["dataset_sources"] == [gen.DATASET_ID]
     assert metadata["code_file"] == gen.NB_FILE
     assert metadata["code_file"] == "openoppsdb-manager.ipynb"
     assert metadata["code_file"].endswith(".ipynb")
-    assert "0 */6 * * *" in source
+    assert "0 6 * * *" in source
+    assert "0 */6 * * *" not in source
     assert gen.DATASET_ID in source
     assert "git+https://github.com/wyattowalsh/openopps.git@main" in source
     assert "/kaggle/input" in source
@@ -154,21 +164,37 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "openopps" in source
     assert "sync" in source
     assert "--metrics-json" in source
+    assert "OPENOPPS_SYNC_ENV_DEFAULTS" in source
+    assert "openopps_env.setdefault(key, value)" in source
+    for key, value in gen.NOTEBOOK_SYNC_ENV_DEFAULTS.items():
+        assert f'"{key}": "{value}"' in source
+    assert "run_json" in source
+    assert "sync_metrics.json" in source
+    assert "status.json" in source
+    assert "coverage.json" in source
+    assert "snapshot-quality.json" in source
+    assert '"providers", "coverage", "--json"' in source
+    assert "--quality-report" in source
+    assert "OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION" in source
     assert "kaggle" in source
     assert "datasets" in source
     assert "version" in source
+    assert '"status", DATASET_ID, "--format", "json"' in source
+    assert '"files", DATASET_ID, "--page-size", "200"' in source
     assert "zip" in source
     assert "KAGGLE_API_TOKEN" in source
     assert "KAGGLE_API_V1_TOKEN_PATH" in source
+    assert "Kaggle API credentials are required" in source
     assert gen.DB_FILE in source
     assert source.index("install_openopps()") < source.index("copy_latest_input_db()")
     assert source.index("copy_latest_input_db()") < source.index(
         'run(["openopps", "admin", "db", "init"]'
     )
-    assert source.index('run(["openopps", "sync", "--metrics-json"]') < source.index(
+    assert source.index('["openopps", "sync", "--metrics-json"]') < source.index(
         "--data-db"
     )
-    assert source.index("--data-db") < source.index('"datasets"')
+    assert source.index("--data-db") < source.index("--quality-report")
+    assert source.index("--quality-report") < source.index('"datasets"')
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
 
 
@@ -180,7 +206,10 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
         (kaggle_dir / "dataset-metadata.json").read_text(encoding="utf-8")
     )
     generated_datapackage = json.loads(
-        (kaggle_dir / "datapackage.json").read_text(encoding="utf-8")
+        (kaggle_dir / gen.DATAPACKAGE_FILE).read_text(encoding="utf-8")
+    )
+    generated_exposed_datapackage = json.loads(
+        (kaggle_dir / gen.EXPOSED_DATAPACKAGE_FILE).read_text(encoding="utf-8")
     )
     generated_kernel = json.loads(
         (kaggle_dir / "kernel-metadata.json").read_text(encoding="utf-8")
@@ -191,6 +220,7 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
 
     assert generated_dataset == gen.dataset_metadata()
     assert generated_datapackage == gen.datapackage()
+    assert generated_exposed_datapackage == gen.datapackage()
     assert generated_kernel == gen.kernel_metadata()
     assert generated_notebook == gen.notebook()
     assert not any((repo_root / "kaggle-manager").glob("*"))
@@ -209,6 +239,19 @@ def test_data_artifact_writer_adds_metadata_before_exports() -> None:
     )
 
 
+def test_table_export_frame_infers_full_sqlite_table_schema() -> None:
+    rows = [
+        {"id": "first", "remote": None},
+        {"id": "second", "remote": None},
+        {"id": "third", "remote": "REMOTE"},
+    ]
+
+    frame = gen._table_export_frame(gen.TABLES[0], rows)
+
+    assert frame.height == 3
+    assert frame["remote"].to_list() == [None, None, "REMOTE"]
+
+
 def test_kaggle_artifact_cleanup_drops_http_cache_table(tmp_path: Path) -> None:
     db_path = tmp_path / gen.DB_FILE
     with sqlite3.connect(db_path) as conn:
@@ -222,6 +265,21 @@ def test_kaggle_artifact_cleanup_drops_http_cache_table(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'http_cache'"
         ).fetchone()
     assert table is None
+
+
+def test_sqlite_sidecar_cleanup_removes_upload_extra_files(tmp_path: Path) -> None:
+    db_path = tmp_path / gen.DB_FILE
+    db_path.write_bytes(b"SQLite format 3\x00")
+    for suffix in gen.SQLITE_SIDECAR_SUFFIXES:
+        db_path.with_name(f"{db_path.name}{suffix}").write_text(
+            "stale sidecar", encoding="utf-8"
+        )
+
+    gen._remove_sqlite_sidecars(db_path)
+
+    assert db_path.exists()
+    for suffix in gen.SQLITE_SIDECAR_SUFFIXES:
+        assert not db_path.with_name(f"{db_path.name}{suffix}").exists()
 
 
 def test_generated_data_files_are_all_described_when_present() -> None:
@@ -274,3 +332,247 @@ def test_sqlite_metadata_tables_store_table_and_column_descriptions(
     assert jobs["table_description"] == "Stable job identities and lifecycle state."
     assert job_column["column_title"] == "Board Key"
     assert job_column["column_description"] == "Board key this job belongs to."
+
+
+def test_snapshot_quality_report_passes_for_complete_snapshot(tmp_path: Path) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "pass"
+    assert report["hardBlockers"] == []
+    assert report["counts"]["currentJobs"] == 1
+
+
+def test_snapshot_quality_report_blocks_structurally_unusable_snapshot(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(
+        tmp_path,
+        enabled_sources=0,
+        boards=0,
+        routes=0,
+    )
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(job_sync_runs=0, jobs_persisted=0),
+        status=_status(sources=0, boards=0, routes=0, jobs=0),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "fail"
+    assert "missing_enabled_source_evidence" in report["hardBlockers"]
+    assert "missing_board_data" in report["hardBlockers"]
+    assert "missing_executable_route_evidence" in report["hardBlockers"]
+
+
+def test_snapshot_quality_report_blocks_empty_jobs_without_explanation(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, jobs=0)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(jobs_persisted=0),
+        status=_status(jobs=0),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "fail"
+    assert "missing_current_job_evidence" in report["hardBlockers"]
+
+
+def test_snapshot_quality_report_allows_documented_empty_snapshot(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, jobs=0)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(jobs_persisted=0),
+        status=_status(jobs=0),
+        coverage=_coverage(),
+        empty_snapshot_explanation="documented upstream outage",
+    )
+
+    assert report["status"] == "pass"
+    assert "empty_snapshot_explanation_present" in report["warnings"]
+
+
+def test_snapshot_quality_report_warns_for_classified_provider_errors(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(
+            provider_errors={"workable": 1},
+            provider_error_details={"workable": {"rate_limited": 1}},
+        ),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "pass"
+    assert "classified_provider_errors_present" in report["warnings"]
+
+
+def test_snapshot_quality_report_blocks_unclassified_provider_errors(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(
+            provider_errors={"workable": 2},
+            provider_error_details={"workable": {"rate_limited": 1}},
+        ),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "fail"
+    assert "unclassified_provider_errors:workable" in report["hardBlockers"]
+
+
+def test_snapshot_quality_report_blocks_dominant_provider_failures(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, jobs=0)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(
+            job_sync_runs=1,
+            jobs_persisted=0,
+            provider_errors={"workable": 2},
+            provider_error_details={"workable": {"rate_limited": 2}},
+        ),
+        status=_status(jobs=0),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "fail"
+    assert "dominant_provider_failures" in report["hardBlockers"]
+
+
+def _write_quality_bundle(
+    output_dir: Path,
+    *,
+    enabled_sources: int = 1,
+    boards: int = 1,
+    routes: int = 1,
+    jobs: int = 1,
+    job_sync_runs: int = 1,
+) -> Path:
+    db_path = output_dir / gen.DB_FILE
+    with sqlite3.connect(db_path) as conn:
+        for table in gen.DATA_TABLES:
+            extra_columns = {
+                "sources": "enabled INTEGER",
+                "jobs": "status TEXT",
+                "board_providers": "support_level TEXT",
+                "job_sync_runs": "success INTEGER",
+            }.get(table.name)
+            columns = "row_id INTEGER"
+            if extra_columns:
+                columns = f"{columns}, {extra_columns}"
+            conn.execute(f'CREATE TABLE "{table.name}" ({columns})')
+        conn.executemany(
+            "INSERT INTO sources (enabled) VALUES (1)",
+            [() for _ in range(enabled_sources)],
+        )
+        conn.executemany(
+            "INSERT INTO boards (row_id) VALUES (1)",
+            [() for _ in range(boards)],
+        )
+        conn.executemany(
+            "INSERT INTO board_providers (support_level) VALUES ('jobs')",
+            [() for _ in range(routes)],
+        )
+        conn.executemany(
+            "INSERT INTO jobs (status) VALUES ('open')",
+            [() for _ in range(jobs)],
+        )
+        conn.executemany(
+            "INSERT INTO job_sync_runs (success) VALUES (1)",
+            [() for _ in range(job_sync_runs)],
+        )
+    gen._write_sqlite_metadata(db_path)
+    _write_required_quality_files(output_dir)
+    return db_path
+
+
+def _write_required_quality_files(output_dir: Path) -> None:
+    paths = [
+        "dataset-metadata.json",
+        gen.DATAPACKAGE_FILE,
+        gen.EXPOSED_DATAPACKAGE_FILE,
+        gen.DATASET_IMAGE_FILE,
+        gen.SYNC_METRICS_FILE,
+        gen.STATUS_FILE,
+        gen.COVERAGE_FILE,
+        gen.SNAPSHOT_QUALITY_FILE,
+    ]
+    paths.extend(f"{gen.CSV_DIR}/{table.name}.csv" for table in gen.TABLES)
+    paths.extend(f"{gen.PARQUET_DIR}/{table.name}.parquet" for table in gen.TABLES)
+    for relative_path in paths:
+        path = output_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+
+
+def _sync_metrics(
+    *,
+    job_sync_runs: int = 1,
+    jobs_persisted: int = 1,
+    provider_errors: dict[str, int] | None = None,
+    provider_error_details: dict[str, dict[str, int]] | None = None,
+) -> dict[str, object]:
+    return {
+        "name": "sync",
+        "jobsPersisted": jobs_persisted,
+        "jobSyncRuns": job_sync_runs,
+        "jobsDeduped": 0,
+        "providerErrors": provider_errors or {},
+        "providerErrorDetails": provider_error_details or {},
+    }
+
+
+def _status(
+    *,
+    sources: int = 1,
+    boards: int = 1,
+    routes: int = 1,
+    jobs: int = 1,
+) -> dict[str, object]:
+    return {
+        "database": {
+            "counts": {
+                "sources": sources,
+                "boards": boards,
+                "boardProviders": routes,
+                "jobs": jobs,
+            }
+        },
+        "readiness": {"executableRoutes": routes},
+    }
+
+
+def _coverage() -> dict[str, object]:
+    return {"routes": {"executable": 1}, "jobs": {"current": 1}}

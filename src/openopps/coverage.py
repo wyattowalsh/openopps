@@ -154,8 +154,9 @@ def build_coverage_report(
         provider_id=provider_filter,
     )
 
-    jobs = _filter_jobs_by_source(
-        store.list_jobs(provider_id=provider_filter), boards_by_key, source_key
+    job_summary = store.coverage_job_summary(
+        provider_id=provider_filter,
+        board_keys=boards_by_key if source_key is not None else None,
     )
     selection = select_routes_from_records(
         boards=boards,
@@ -163,11 +164,8 @@ def build_coverage_report(
             route for route in routes if route.support_level == ProviderSupport.JOBS
         ],
     )
-    jobs_by_board_provider = {(job.board_key, job.provider_id): 0 for job in jobs}
-    for job in jobs:
-        jobs_by_board_provider[(job.board_key, job.provider_id)] = (
-            jobs_by_board_provider.get((job.board_key, job.provider_id), 0) + 1
-        )
+    jobs_by_board = _string_int_dict(job_summary["byBoard"])
+    jobs_by_board_provider = _tuple_int_dict(job_summary["byBoardProvider"])
     routes_by_board = _routes_by_board(boards, routes)
     board_keys_with_provider_hints = set(routes_by_board)
     board_keys_with_job_capable_hints = {
@@ -267,10 +265,10 @@ def build_coverage_report(
             "duplicateRoutesSkipped": len(selection.duplicate_routes),
         },
         jobs={
-            "total": len(jobs),
-            "byProvider": _count_by(job.provider_id for job in jobs),
-            "bySource": _count_jobs_by_source(jobs, boards_by_key),
-            "byBoard": _count_by(job.board_key for job in jobs),
+            "total": int(job_summary["total"]),
+            "byProvider": _string_int_dict(job_summary["byProvider"]),
+            "bySource": _count_jobs_by_source(jobs_by_board, boards_by_key),
+            "byBoard": jobs_by_board,
         },
         gaps={
             "boardsWithJobCapableProviderHintsButNoExecutableRoute": (
@@ -289,7 +287,7 @@ def build_coverage_report(
                 )
             ),
         },
-        data_quality=_data_quality(jobs),
+        data_quality=job_summary["dataQuality"],
     )
 
 
@@ -308,7 +306,8 @@ def build_source_yield_report(
     selected_source_keys = {source.key for source in sources}
     boards = store.list_boards(with_providers=False)
     routes = store.list_board_providers()
-    jobs = store.list_jobs(status="open")
+    job_summary = store.coverage_job_summary(status="open")
+    jobs_by_board_provider = _tuple_int_dict(job_summary["byBoardProvider"])
 
     boards_by_source: dict[str, list[BoardRecord]] = {
         key: [] for key in selected_source_keys
@@ -324,20 +323,22 @@ def build_source_yield_report(
         if route.source_key in selected_source_keys:
             routes_by_source.setdefault(route.source_key, []).append(route)
 
-    jobs_by_source: dict[str, list[JobRecord]] = {
-        key: [] for key in selected_source_keys
-    }
     board_source_keys = {board.key: _board_source_keys(board) for board in boards}
-    for job in jobs:
-        for key in board_source_keys.get(job.board_key, set()) & selected_source_keys:
-            jobs_by_source.setdefault(key, []).append(job)
+    jobs_by_source_board_provider: dict[
+        str, dict[tuple[str, str], int]
+    ] = {key: {} for key in selected_source_keys}
+    for (board_key, provider_id), count in jobs_by_board_provider.items():
+        for key in board_source_keys.get(board_key, set()) & selected_source_keys:
+            jobs_by_source_board_provider.setdefault(key, {})[
+                (board_key, provider_id)
+            ] = count
 
     source_items = [
         _source_yield_item(
             source,
             boards_by_source.get(source.key, []),
             routes_by_source.get(source.key, []),
-            jobs_by_source.get(source.key, []),
+            jobs_by_source_board_provider.get(source.key, {}),
         )
         for source in sorted(sources, key=lambda item: item.key)
     ]
@@ -455,7 +456,7 @@ def _source_yield_item(
     source: SourceRecord,
     boards: list[BoardRecord],
     routes: list[BoardProviderRecord],
-    jobs: list[JobRecord],
+    jobs_by_board_provider: dict[tuple[str, str], int],
 ) -> dict[str, Any]:
     company_candidates = len(boards)
     canonical_boards = len({board.key for board in boards})
@@ -464,8 +465,14 @@ def _source_yield_item(
         route for route in routes if route.support_level == ProviderSupport.JOBS
     ]
     route_ready_count = sum(1 for route in job_capable_routes if route_ready(route))
-    active_job_routes = len({(job.board_key, job.provider_id) for job in jobs})
-    unique_active_boards = len({job.board_key for job in jobs})
+    active_job_routes = sum(1 for count in jobs_by_board_provider.values() if count > 0)
+    unique_active_boards = len(
+        {
+            board_key
+            for (board_key, _provider_id), count in jobs_by_board_provider.items()
+            if count > 0
+        }
+    )
     duplicate_board_rate = _safe_ratio(
         max(company_candidates - canonical_boards, 0), company_candidates
     )
@@ -748,13 +755,31 @@ def _has_employment_type(job: JobRecord) -> bool:
 
 
 def _count_jobs_by_source(
-    jobs: list[JobRecord], boards_by_key: dict[str, BoardRecord]
+    jobs_by_board: dict[str, int], boards_by_key: dict[str, BoardRecord]
 ) -> dict[str, int]:
-    return _count_by(
-        board.source_key
-        for job in jobs
-        if (board := boards_by_key.get(job.board_key)) is not None
-    )
+    counts: dict[str, int] = {}
+    for board_key, count in jobs_by_board.items():
+        board = boards_by_key.get(board_key)
+        if board is None:
+            continue
+        counts[board.source_key] = counts.get(board.source_key, 0) + count
+    return dict(sorted(counts.items()))
+
+
+def _string_int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return dict(sorted((str(key), int(count)) for key, count in value.items()))
+
+
+def _tuple_int_dict(value: object) -> dict[tuple[str, str], int]:
+    if not isinstance(value, dict):
+        return {}
+    output: dict[tuple[str, str], int] = {}
+    for key, count in value.items():
+        if isinstance(key, tuple) and len(key) == 2:
+            output[(str(key[0]), str(key[1]))] = int(count)
+    return output
 
 
 def _count_by(values: Iterable[str]) -> dict[str, int]:

@@ -1381,13 +1381,6 @@ GETRO_SOURCE_CATALOG = {
         enabled=True,
         raw_metadata={"collectionId": "256"},
     ),
-    "credoventures": SourceRecord(
-        key="credoventures",
-        url="https://jobs.credoventures.com/companies",
-        provider_id="getro",
-        enabled=True,
-        raw_metadata={"collectionId": "1623"},
-    ),
     "dawncapital": SourceRecord(
         key="dawncapital",
         url="https://jobs.dawncapital.com/companies",
@@ -2165,6 +2158,237 @@ GETRO_SOURCE_CATALOG = {
         enabled=True,
         raw_metadata={"collectionId": "15272"},
     ),
+    "innovationbay": SourceRecord(
+        key="innovationbay",
+        url="https://jobs.innovationbay.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1014"},
+    ),
+    "praxis": SourceRecord(
+        key="praxis",
+        url="https://jobs.praxis.co/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "130"},
+    ),
+    "cranevc": SourceRecord(
+        key="cranevc",
+        url="https://careers.crane.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1940"},
+    ),
+    "upfront": SourceRecord(
+        key="upfront",
+        url="https://jobs.upfront.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "184"},
+    ),
+    "kickstart": SourceRecord(
+        key="kickstart",
+        url="https://jobs.kickstart.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "131"},
+    ),
+    "learncapital": SourceRecord(
+        key="learncapital",
+        url="https://learncapital.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "396"},
+    ),
+    "imagineh2o": SourceRecord(
+        key="imagineh2o",
+        url="https://watertechjobs.imagineh2o.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "2336"},
+    ),
+    "engine": SourceRecord(
+        key="engine",
+        url="https://jobs.engine.xyz/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "223"},
+    ),
+    "orbitmit": SourceRecord(
+        key="orbitmit",
+        url="https://jobs.orbit.mit.edu/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "186"},
+    ),
+    "brv": SourceRecord(
+        key="brv",
+        url="https://jobs.brv.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "168"},
+    ),
+    "startupcincy": SourceRecord(
+        key="startupcincy",
+        url="https://jobs.startupcincy.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "14810"},
+    ),
+    "amplifylaunchpad": SourceRecord(
+        key="amplifylaunchpad",
+        url="https://amplifylaunchpad.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "925"},
+    ),
+    "wassonenterprise": SourceRecord(
+        key="wassonenterprise",
+        url="https://careers.wassonenterprise.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "873"},
+    ),
+    "onewayvc": SourceRecord(
+        key="onewayvc",
+        url="https://careers.onewayvc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "942"},
+    ),
+    "luminarventures": SourceRecord(
+        key="luminarventures",
+        url="https://careers.luminarventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "10487"},
+    ),
+    "clearventures": SourceRecord(
+        key="clearventures",
+        url="https://jobs.clear.ventures/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "36293"},
+    ),
+    "javelinvp": SourceRecord(
+        key="javelinvp",
+        url="https://careers.javelinvp.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "324"},
+    ),
+    "grovevc": SourceRecord(
+        key="grovevc",
+        url="https://careers.grovevc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "9398"},
+    ),
+    "forgepointcap": SourceRecord(
+        key="forgepointcap",
+        url="https://jobs.forgepointcap.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1369"},
+    ),
+    "blackwoodvc": SourceRecord(
+        key="blackwoodvc",
+        url="https://careers.blackwood.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "11543"},
+    ),
+    "albumvc": SourceRecord(
+        key="albumvc",
+        url="https://jobs.album.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "134"},
+    ),
+    "americanunderground": SourceRecord(
+        key="americanunderground",
+        url="https://jobs.americanunderground.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1117"},
+    ),
+    "deciens": SourceRecord(
+        key="deciens",
+        url="https://careers.deciens.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "5240"},
+    ),
+    "georgiafintechacademy": SourceRecord(
+        key="georgiafintechacademy",
+        url="https://jobs.georgiafintechacademy.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1357"},
+    ),
+    "ideavillage": SourceRecord(
+        key="ideavillage",
+        url="https://jobs.ideavillage.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1183"},
+    ),
+    "4pt0": SourceRecord(
+        key="4pt0",
+        url="https://jobs.4pt0.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "13523"},
+    ),
+    "supermooncapital": SourceRecord(
+        key="supermooncapital",
+        url="https://jobs.supermooncapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1208"},
+    ),
+    "bluehaveninitiative": SourceRecord(
+        key="bluehaveninitiative",
+        url="https://jobs.bluehaveninitiative.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "329"},
+    ),
+    "firstraysvc": SourceRecord(
+        key="firstraysvc",
+        url="https://jobs.firstraysvc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1194"},
+    ),
+    "nextfrontiercapital": SourceRecord(
+        key="nextfrontiercapital",
+        url="https://jobs.nextfrontiercapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "583"},
+    ),
+    "marble": SourceRecord(
+        key="marble",
+        url="https://careers.marble.studio/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "7946"},
+    ),
+    "techtitans": SourceRecord(
+        key="techtitans",
+        url="https://careers.techtitans.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1186"},
+    ),
+    "thegarage": SourceRecord(
+        key="thegarage",
+        url="https://jobs.thegarage.northwestern.edu/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "5801"},
+    ),
 }
 
 SOURCE_RECORDS: tuple[SourceRecord, ...] = tuple(GETRO_SOURCE_CATALOG.values())
@@ -2250,7 +2474,7 @@ class GetroSourceAdapter:
     async def _discover_collection_id(
         self, client: httpx.AsyncClient, source: SourceRecord
     ) -> str:
-        response = await client.get(source.url)
+        response = await client.get(source.url, follow_redirects=True)
         response.raise_for_status()
         match = _COLLECTION_RE.search(response.text)
         if not match:
@@ -2262,7 +2486,7 @@ class GetroSourceAdapter:
     async def _embedded_initial_state(
         self, client: httpx.AsyncClient, source: SourceRecord
     ) -> dict[str, Any]:
-        response = await client.get(source.url)
+        response = await client.get(source.url, follow_redirects=True)
         response.raise_for_status()
         match = _NEXT_DATA_RE.search(response.text)
         if not match:

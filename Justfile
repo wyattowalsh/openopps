@@ -51,27 +51,68 @@ kaggle-meta:
 
 # Generate Kaggle metadata and table exports from an existing SQLite DB.
 kaggle-bundle db="kaggle/openoppsdb.sqlite":
-    uv run python scripts/generate_kaggle_metadata.py --data-db "{{db}}"
+    uv run python scripts/generate_kaggle_metadata.py --data-db "{{ db }}"
+
+# Validate generated Kaggle metadata and optional SQLite/CSV/Parquet bundle surfaces locally.
+kaggle-bundle-check db="kaggle/openoppsdb.sqlite":
+    @if [ -f "{{ db }}" ]; then uv run python scripts/generate_kaggle_metadata.py --data-db "{{ db }}"; else echo "No SQLite DB at {{ db }}; validating metadata-only Kaggle bundle."; uv run python scripts/generate_kaggle_metadata.py; fi
+    uv run pytest tests/unit/openopps/test_kaggle_metadata.py -q
+
+# Create the public OpenOppsDB Kaggle dataset from the local kaggle/ bundle.
+kaggle-dataset-create:
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets create -p kaggle --public -q -t -r zip
+
+# Version the public OpenOppsDB Kaggle dataset from the local kaggle/ bundle.
+kaggle-dataset-version message="OpenOppsDB snapshot":
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets version -p kaggle -m "{{ message }}" -q -t -r zip
+
+# Push the connected OpenOppsDB manager notebook to Kaggle.
+kaggle-notebook-push:
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle kernels push -p kaggle
+
+# Show live OpenOppsDB dataset status from Kaggle.
+kaggle-live-status:
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets status wyattowalsh/openoppsdb --format json
+
+# List live OpenOppsDB dataset files from Kaggle.
+kaggle-live-files page_size="200":
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets files wyattowalsh/openoppsdb --page-size "{{ page_size }}"
+
+# Download live OpenOppsDB dataset metadata from Kaggle.
+kaggle-live-metadata output="/tmp/openoppsdb-kaggle-metadata":
+    @mkdir -p "{{ output }}"
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets metadata wyattowalsh/openoppsdb -p "{{ output }}"
+
+# Show live OpenOppsDB manager notebook availability from Kaggle.
+kaggle-notebook-status:
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; listing="$(KAGGLE_API_TOKEN="$token" kaggle kernels list --mine --page-size 100)"; echo "$listing"; echo "$listing" | awk '$1 == "wyattowalsh/openoppsdb-manager" { found=1 } END { exit !found }'
+
+# List live OpenOppsDB manager notebook files from Kaggle.
+kaggle-notebook-files page_size="200":
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle kernels files wyattowalsh/openoppsdb-manager --page-size "{{ page_size }}"
+
+# Run the live non-destructive Kaggle status/file verification commands.
+kaggle-live-verify: kaggle-live-status kaggle-live-files kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files
 
 # List OpenSpec changes as agent-readable JSON.
 openspec-list:
-    {{openspec}} list --json
+    {{ openspec }} list --json
 
 # Show one OpenSpec change status as agent-readable JSON.
 openspec-status change="prepare-v0-1-release":
-    {{openspec}} status --change "{{change}}" --json
+    {{ openspec }} status --change "{{ change }}" --json
 
 # Show OpenSpec task instructions for one change as agent-readable JSON.
 openspec-tasks change="prepare-v0-1-release":
-    {{openspec}} instructions --change "{{change}}" tasks --json
+    {{ openspec }} instructions --change "{{ change }}" tasks --json
 
 # Validate one OpenSpec change strictly.
 openspec-validate change="prepare-v0-1-release":
-    {{openspec}} validate "{{change}}" --strict
+    {{ openspec }} validate "{{ change }}" --strict
 
 # Validate all active OpenSpec changes strictly.
 openspec-validate-all:
-    {{openspec}} validate --all --strict
+    {{ openspec }} validate --all --strict
 
 # Smoke root and key command help.
 cli-help:

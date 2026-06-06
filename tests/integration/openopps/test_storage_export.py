@@ -435,24 +435,21 @@ def test_boards_merge_cross_source_duplicates_by_domain(tmp_path: Path):
             provider_id="ycombinator",
         )
     )
-    store.upsert_boards(
-        [
-            BoardRecord(
-                key="a16z:acme",
-                source_key="a16z",
-                remote_id="acme",
-                name="Acme AI",
-                domain="acme.ai",
-            ),
-            BoardRecord(
-                key="yc:acme-ai",
-                source_key="yc",
-                remote_id="31503",
-                name="Acme AI",
-                domain="acme.ai",
-            ),
-        ]
+    a16z_board = BoardRecord(
+        key="a16z:acme",
+        source_key="a16z",
+        remote_id="acme",
+        name="Acme AI",
+        domain="acme.ai",
     )
+    yc_board = BoardRecord(
+        key="yc:acme-ai",
+        source_key="yc",
+        remote_id="31503",
+        name="Acme AI",
+        domain="acme.ai",
+    )
+    store.upsert_boards([a16z_board, yc_board])
     store.upsert_board_providers(
         [
             BoardProviderRecord(
@@ -462,7 +459,8 @@ def test_boards_merge_cross_source_duplicates_by_domain(tmp_path: Path):
                 provider_id="lever",
                 support_level=ProviderSupport.JOBS,
             )
-        ]
+        ],
+        boards=[yc_board],
     )
 
     boards = store.list_boards(domain="acme.ai")

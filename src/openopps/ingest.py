@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from datetime import timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -45,7 +46,13 @@ async def sync_sources(
     report: ProgressReporter | None = None,
 ) -> SyncMetrics:
     metrics = SyncMetrics(name="sources.sync")
-    sources = _select_sources(store, source_key)
+    selected_sources = _select_sources(store, source_key)
+    fresh_sources, sources = _partition_fresh_sources(
+        selected_sources,
+        freshness_seconds=settings.source_freshness_seconds,
+        source_key=source_key,
+    )
+    metrics.skipped += len(fresh_sources)
     source_total = len(sources)
     completed_sources = 0
     unique_board_keys: set[str] = set()
@@ -105,55 +112,58 @@ async def sync_sources(
                     source.provider_id,
                 )
                 try:
-                    async for boards, providers, page_meta in adapter.iter_boards(
-                        client, source, page_size=page_size
-                    ):
-                        compact_meta = _compact_page_meta(page_meta)
-                        metrics.pages += 1
-                        metrics.boards += len(boards)
-                        metrics.board_providers += len(providers)
-                        logger.trace(
-                            "Source page synced source={} boards={} provider_hints={} page_meta={}",
-                            source.key,
-                            len(boards),
-                            len(providers),
-                            compact_meta,
-                        )
-                        updated_source = source.model_copy(
-                            update={
-                                "version": page_meta.get("version") or {},
-                                "raw_metadata": source.raw_metadata
-                                | {"lastPage": compact_meta},
-                                "synced_at": utc_now(),
-                            }
-                        )
-                        if store or output:
-                            async with write_lock:
-                                if store:
-                                    store.upsert_source(updated_source)
-                                    store.upsert_boards(boards)
-                                    store.upsert_board_providers(providers)
-                                    unique_count = len(
-                                        store.list_boards(source_key=source_key)
-                                    )
-                                else:
-                                    _track_unique_boards(unique_board_keys, boards)
-                                    unique_count = len(unique_board_keys)
-                                if output:
-                                    append_jsonl(output, boards)
-                                _report_source_progress(
-                                    report,
-                                    completed_sources,
-                                    source_total,
-                                    unique_count,
-                                    _source_detail(
-                                        source.key,
-                                        (
-                                            f"+{_format_count(len(boards))} boards "
-                                            f"+{_format_count(len(providers))} routes"
+                    async with asyncio.timeout(settings.source_timeout_seconds):
+                        async for boards, providers, page_meta in adapter.iter_boards(
+                            client, source, page_size=page_size
+                        ):
+                            compact_meta = _compact_page_meta(page_meta)
+                            metrics.pages += 1
+                            metrics.boards += len(boards)
+                            metrics.board_providers += len(providers)
+                            logger.trace(
+                                "Source page synced source={} boards={} provider_hints={} page_meta={}",
+                                source.key,
+                                len(boards),
+                                len(providers),
+                                compact_meta,
+                            )
+                            updated_source = source.model_copy(
+                                update={
+                                    "version": page_meta.get("version") or {},
+                                    "raw_metadata": source.raw_metadata
+                                    | {"lastPage": compact_meta},
+                                    "synced_at": utc_now(),
+                                }
+                            )
+                            if store or output:
+                                async with write_lock:
+                                    if store:
+                                        store.upsert_source(updated_source)
+                                        store.upsert_boards(boards)
+                                        store.upsert_board_providers(
+                                            providers, boards=boards
+                                        )
+                                        unique_count = store.count_boards(
+                                            source_key=source_key
+                                        )
+                                    else:
+                                        _track_unique_boards(unique_board_keys, boards)
+                                        unique_count = len(unique_board_keys)
+                                    if output:
+                                        append_jsonl(output, boards)
+                                    _report_source_progress(
+                                        report,
+                                        completed_sources,
+                                        source_total,
+                                        unique_count,
+                                        _source_detail(
+                                            source.key,
+                                            (
+                                                f"+{_format_count(len(boards))} boards "
+                                                f"+{_format_count(len(providers))} routes"
+                                            ),
                                         ),
-                                    ),
-                                )
+                                    )
                     async with progress_lock:
                         completed_sources += 1
                         _report_source_progress(
@@ -164,9 +174,8 @@ async def sync_sources(
                             _source_detail(source.key, "complete"),
                         )
                 except Exception as exc:
-                    metrics.error(
-                        source.provider_id, _error_reason(exc, "source_fetch")
-                    )
+                    error_reason = _error_reason(exc, "source_fetch")
+                    metrics.error(source.provider_id, error_reason)
                     metrics.skipped += 1
                     async with progress_lock:
                         completed_sources += 1
@@ -175,7 +184,12 @@ async def sync_sources(
                             completed_sources,
                             source_total,
                             _unique_board_count(store, source_key, unique_board_keys),
-                            _source_detail(source.key, "skipped: error"),
+                            _source_detail(
+                                source.key,
+                                "skipped: timeout"
+                                if error_reason == "timeout"
+                                else "skipped: error",
+                            ),
                         )
                     if verbose:
                         logger.warning(
@@ -306,6 +320,28 @@ def _select_sources(
             return [BOARD_SOURCE_CATALOG[source_key]]
         raise ValueError(f"Unknown source: {source_key}")
     return [source for source in sources if source.enabled]
+
+
+def _partition_fresh_sources(
+    sources: Sequence[SourceRecord],
+    *,
+    freshness_seconds: float,
+    source_key: str | None,
+) -> tuple[list[SourceRecord], list[SourceRecord]]:
+    if source_key or freshness_seconds <= 0:
+        return [], list(sources)
+    cutoff = utc_now() - timedelta(seconds=freshness_seconds)
+    fresh_sources: list[SourceRecord] = []
+    stale_sources: list[SourceRecord] = []
+    for source in sources:
+        synced_at = source.synced_at
+        if synced_at and synced_at.tzinfo is None:
+            synced_at = synced_at.replace(tzinfo=timezone.utc)
+        if synced_at and synced_at >= cutoff:
+            fresh_sources.append(source)
+        else:
+            stale_sources.append(source)
+    return fresh_sources, stale_sources
 
 
 def _unscoped_source(
@@ -762,6 +798,8 @@ def _error_reason(exc: Exception, default: str) -> str:
         if exc.response.status_code in _ROUTE_UNAVAILABLE_STATUSES:
             return "unavailable"
         return default
+    if isinstance(exc, TimeoutError):
+        return "timeout"
     if isinstance(exc, (ValidationError, ValueError)):
         return "validation"
     return default
@@ -787,5 +825,5 @@ def _unique_board_count(
     unique_board_keys: set[str],
 ) -> int:
     if store:
-        return len(store.list_boards(source_key=source_key))
+        return store.count_boards(source_key=source_key)
     return len(unique_board_keys)

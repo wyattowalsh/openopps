@@ -1,0 +1,114 @@
+{
+  "stage": "interview",
+  "title": "OpenOppsDB Kaggle Dataset",
+  "goalSlug": "openoppsdb-kaggle-dataset",
+  "questions": [
+    {
+      "id": "cadence",
+      "prompt": "What schedule should the Kaggle manager target?",
+      "description": "The request says daily snapshots; the current repo docs mention a more frequent example cadence. This decides the default schedule language and verification target.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Use one full daily run as the default target, with the exact cron documented clearly. Avoid implying multiple daily versions unless intentionally selected.",
+      "recommendedOptionIds": [
+        "daily"
+      ],
+      "options": [
+        {
+          "id": "daily",
+          "label": "Daily full snapshot"
+        },
+        {
+          "id": "multi_daily",
+          "label": "Several per day"
+        },
+        {
+          "id": "manual_schedule",
+          "label": "Document manual setup"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "deployment_scope",
+      "prompt": "How far should the execution go once the implementation is ready?",
+      "description": "Kaggle dataset versioning is a live, credentialed action. This determines whether the plan should include an actual dataset/kernel push when local checks pass.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Use configured Kaggle CLI credentials to create or version the public dataset and push the connected manager notebook, then verify the live dataset contents and metadata.",
+      "recommendedOptionIds": [
+        "live_deploy"
+      ],
+      "options": [
+        {
+          "id": "live_deploy",
+          "label": "Deploy live"
+        },
+        {
+          "id": "implementation_only",
+          "label": "Implementation only"
+        },
+        {
+          "id": "manual_gate",
+          "label": "Manual deploy gate"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "publish_failure_policy",
+      "prompt": "What should block a dataset version from being published?",
+      "description": "The full sync touches public third-party job boards; transient 429s, 404s, and provider-specific failures can occur even when the pipeline is structurally correct.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Block on CLI crashes, schema/export/metadata validation failures, missing required artifacts, or an empty unusable snapshot; tolerate provider-level failures only when they are captured in metrics/provider error details and the dataset remains internally consistent.",
+      "recommendedOptionIds": [
+        "structural_gate"
+      ],
+      "options": [
+        {
+          "id": "structural_gate",
+          "label": "Structural gate"
+        },
+        {
+          "id": "zero_provider_errors",
+          "label": "Zero provider errors"
+        },
+        {
+          "id": "minimum_thresholds",
+          "label": "Minimum thresholds"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "verification_depth",
+      "prompt": "What verification should be required before calling the goal done?",
+      "description": "The repo has local unit/integration/docs/OpenSpec gates and Kaggle has live file/version surfaces. This chooses the expected assurance bar.",
+      "answerMode": "multi-custom",
+      "recommendedAnswer": "Require generated-artifact parity, focused Kaggle metadata/export tests, full repo CI parity if feasible, a live Kaggle CLI create/version or dry-run-equivalent depending on deployment scope, and post-deploy checks for SQLite, CSV, Parquet, datapackage, dataset metadata, and manager notebook availability.",
+      "recommendedOptionIds": [
+        "artifact_parity",
+        "focused_tests",
+        "ci_parity",
+        "live_postdeploy"
+      ],
+      "options": [
+        {
+          "id": "artifact_parity",
+          "label": "Generated parity"
+        },
+        {
+          "id": "focused_tests",
+          "label": "Focused tests"
+        },
+        {
+          "id": "ci_parity",
+          "label": "Full CI parity"
+        },
+        {
+          "id": "live_postdeploy",
+          "label": "Live post-deploy"
+        }
+      ],
+      "required": true
+    }
+  ]
+}

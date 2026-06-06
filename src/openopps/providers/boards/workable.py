@@ -21,6 +21,7 @@ from openopps.utils import first_present, stable_id
 
 
 _WORKABLE_RATE_LIMITER = AsyncSlidingWindowRateLimiter(limit=10, window_seconds=10.0)
+_WORKABLE_LISTING_CACHE_NAMESPACE = "route_probe"
 
 
 async def wait_for_workable_rate_limit() -> None:
@@ -100,6 +101,8 @@ class WorkableProvider:
             "POST",
             f"https://apply.workable.com/api/v3/accounts/{token}/jobs",
             json={},
+            cache_namespace=_WORKABLE_LISTING_CACHE_NAMESPACE,
+            cache_identity={"provider": self.provider_id, "route": token},
         )
         if not isinstance(data, dict):
             raise ValueError("Workable jobs endpoint returned invalid JSON")
