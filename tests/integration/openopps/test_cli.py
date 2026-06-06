@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+from click import unstyle
 import openopps.cli as cli_module
 from typer.testing import CliRunner
 
@@ -23,16 +24,19 @@ def invoke(tmp_path: Path, *args: str):
     return runner.invoke(app, list(args), env={"OPENOPPS_DB_URL": db_url})
 
 
+def plain(text: str) -> str:
+    return unstyle(text)
+
+
 def test_cli_root_help_shows_intro_art_at_top():
     result = runner.invoke(app, ["--help"], terminal_width=HELP_TERMINAL_WIDTH)
+    output = plain(result.output)
 
     assert result.exit_code == 0
-    assert "opening opportunity portal" in result.output
-    assert result.output.index("opening opportunity portal") < result.output.index(
-        "Usage:"
-    )
-    assert "--intro" in result.output
-    assert "--no-intro" in result.output
+    assert "opening opportunity portal" in output
+    assert output.index("opening opportunity portal") < output.index("Usage:")
+    assert "--intro" in output
+    assert "--no-intro" in output
 
 
 def test_cli_root_help_respects_no_intro_option():
@@ -66,10 +70,11 @@ def test_cli_nested_command_help_skips_intro_art():
         ["admin", "providers", "list", "--help"],
         terminal_width=HELP_TERMINAL_WIDTH,
     )
+    output = plain(result.output)
 
     assert result.exit_code == 0
-    assert "--json" in result.output
-    assert "opening opportunity portal" not in result.output
+    assert "--json" in output
+    assert "opening opportunity portal" not in output
 
 
 def test_sync_commands_expose_cache_refresh_option():
@@ -90,6 +95,10 @@ def test_sync_commands_expose_cache_refresh_option():
     assert sources_result.exit_code == 0
     assert boards_result.exit_code == 0
     assert jobs_result.exit_code == 0
+    top_level_output = plain(top_level_result.output)
+    sources_output = plain(sources_result.output)
+    boards_output = plain(boards_result.output)
+    jobs_output = plain(jobs_result.output)
     for flag in [
         "--metrics-json",
         "--refresh-cache",
@@ -101,10 +110,10 @@ def test_sync_commands_expose_cache_refresh_option():
         "-r",
         "-v",
     ]:
-        assert flag in top_level_result.output
-        assert flag in sources_result.output
-        assert flag in boards_result.output
-        assert flag in jobs_result.output
+        assert flag in top_level_output
+        assert flag in sources_output
+        assert flag in boards_output
+        assert flag in jobs_output
 
 
 def test_top_level_help_examples_prefer_stable_commands():
