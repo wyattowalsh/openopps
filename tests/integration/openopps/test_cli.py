@@ -15,6 +15,7 @@ from openopps.utils import source_board_key, stable_id
 
 
 runner = CliRunner()
+HELP_TERMINAL_WIDTH = 120
 
 
 def invoke(tmp_path: Path, *args: str):
@@ -23,7 +24,7 @@ def invoke(tmp_path: Path, *args: str):
 
 
 def test_cli_root_help_shows_intro_art_at_top():
-    result = runner.invoke(app, ["--help"])
+    result = runner.invoke(app, ["--help"], terminal_width=HELP_TERMINAL_WIDTH)
 
     assert result.exit_code == 0
     assert "opening opportunity portal" in result.output
@@ -60,7 +61,11 @@ def test_cli_subcommand_help_skips_intro_art():
 
 
 def test_cli_nested_command_help_skips_intro_art():
-    result = runner.invoke(app, ["admin", "providers", "list", "--help"])
+    result = runner.invoke(
+        app,
+        ["admin", "providers", "list", "--help"],
+        terminal_width=HELP_TERMINAL_WIDTH,
+    )
 
     assert result.exit_code == 0
     assert "--json" in result.output
@@ -68,10 +73,18 @@ def test_cli_nested_command_help_skips_intro_art():
 
 
 def test_sync_commands_expose_cache_refresh_option():
-    top_level_result = runner.invoke(app, ["sync", "--help"])
-    sources_result = runner.invoke(app, ["sources", "sync", "--help"])
-    boards_result = runner.invoke(app, ["boards", "sync", "--help"])
-    jobs_result = runner.invoke(app, ["jobs", "sync", "--help"])
+    top_level_result = runner.invoke(
+        app, ["sync", "--help"], terminal_width=HELP_TERMINAL_WIDTH
+    )
+    sources_result = runner.invoke(
+        app, ["sources", "sync", "--help"], terminal_width=HELP_TERMINAL_WIDTH
+    )
+    boards_result = runner.invoke(
+        app, ["boards", "sync", "--help"], terminal_width=HELP_TERMINAL_WIDTH
+    )
+    jobs_result = runner.invoke(
+        app, ["jobs", "sync", "--help"], terminal_width=HELP_TERMINAL_WIDTH
+    )
 
     assert top_level_result.exit_code == 0
     assert sources_result.exit_code == 0
