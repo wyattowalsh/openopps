@@ -4,94 +4,116 @@ Last updated: 2026-06-06
 
 ## Current Status
 
-The OpenOppsDB Kaggle dataset is live at `wyattowalsh/openoppsdb` version 13,
-but version 13 is no longer accepted as the intended file-surface contract
-because it exposes private manager evidence and datapackage files. The corrected
-contract is that the public dataset file list contains only `openoppsdb.sqlite`,
-`exports/csv/*.csv`, and `exports/parquet/*.parquet`, with field-level metadata
-defined in `dataset-metadata.json`. The connected manager notebook is deployed
-and scheduled, but its latest Kaggle run fails fast because the Kaggle notebook
-environment does not yet expose publish credentials.
+The OpenOppsDB Kaggle dataset is live at `wyattowalsh/openoppsdb` version 14 and
+now matches the corrected public file-surface contract. The public file list is
+limited to `openoppsdb.sqlite`, `exports/csv/*.csv`, and
+`exports/parquet/*.parquet`. Private manager evidence and datapackage files are
+not present in the live v14 file list.
+
+The connected manager notebook `wyattowalsh/openoppsdb-manager` was pushed as
+Kaggle kernel version 4. Its latest run still fails fast because the Kaggle
+notebook environment does not expose publish credentials.
 
 ## Repository Evidence
 
-- Branch/worktree: `main`, correction in progress locally.
-- Latest implementation commit before this correction:
-  `23e7aa3124714cacdc47804d197a66e725a4398f`.
-- Latest GitHub CI: run `27068360705`, status `completed`, conclusion `success`.
-- The credential hardening commit makes the manager fail before installing
-  OpenOpps, copying the prior database, or running sync when Kaggle credentials
-  are absent.
+- Branch/worktree at implementation time: `main`.
+- Implementation commit: `26f09f970b4f8089fab522e9842ab4346e2622ab`
+  (`fix: narrow openoppsdb kaggle surface`).
+- GitHub CI for that commit:
+  - run `27071844368`
+  - status `completed`
+  - conclusion `success`
+  - URL: `https://github.com/wyattowalsh/openopps/actions/runs/27071844368`
+- Local validation passed:
+  - `uv run pytest tests/unit/openopps/test_kaggle_metadata.py -q`
+    (`21 passed`)
+  - `just kaggle-bundle-check kaggle/openoppsdb.sqlite` (`21 passed`)
+  - `rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict`
+  - `just docs-build`
+  - `just ci` (`328 passed`, coverage `90.45%`, docs typecheck/build/lint
+    passed)
+- Local generated `kaggle/` tree contains only Kaggle control files,
+  manager notebook files, `openoppsdb.sqlite`, 14 CSV exports, and 14 Parquet
+  exports. Staged live dataset uploads contain only Kaggle dataset control files
+  plus the SQLite/CSV/Parquet data files.
 
 ## Live Dataset Evidence
 
 - `just kaggle-live-status` reports:
   - `status`: `ready`
-  - `current_version_number`: `13`
-- `just kaggle-live-verify` passes against `wyattowalsh/openoppsdb`, but this
-  was too broad and allowed private evidence/datapackage files.
-- Version 13 includes the rejected public artifact surface:
-  - `openoppsdb.sqlite` (`4047974400` bytes)
-  - `metadata/datapackage.json`
-  - `snapshot-quality.json`
-  - `status.json`
+  - `current_version_number`: `14`
+- `just kaggle-live-files 200` reports exactly `29` public files:
+  - `openoppsdb.sqlite`
+  - 14 CSV exports under `exports/csv/`
+  - 14 Parquet exports under `exports/parquet/`
+- The live v14 file list does not contain:
   - `coverage.json`
+  - `status.json`
   - `sync_metrics.json`
-  - full CSV exports under `exports/csv/`
-  - full Parquet exports under `exports/parquet/`
-- Browser/Chrome DevTools inspection of the public dataset page verified:
-  - page title `openoppsdb`
-  - expected update frequency `Daily`
-  - visible evidence files in the Data Explorer
-  - visible dataset size `7.13 GB`
-  - dataset description documenting the daily manager flow
+  - `snapshot-quality.json`
+  - `sync_stderr.txt`
+  - `datapackage.json`
+  - `metadata/datapackage.json`
+- Live creation timestamps for v14 files are around
+  `2026-06-06 19:39:26` through `2026-06-06 19:40:01` UTC.
+- `kaggle datasets metadata wyattowalsh/openoppsdb` returns the v14 dataset
+  `info` block with the corrected description and expected update frequency,
+  but Kaggle's metadata download endpoint strips the uploaded `resources`
+  schema array.
+
+## Field Metadata Evidence
+
+- The generated and uploaded `dataset-metadata.json` declares `29` resources:
+  `openoppsdb.sqlite`, every CSV export, and every Parquet export.
+- Every CSV and Parquet resource schema includes field names, titles,
+  descriptions, and Kaggle-supported field types.
+- Sample generated field metadata for `exports/csv/jobs.csv` field
+  `board_key`:
+  - `title`: `Board Key`
+  - `description`: `Board key this job belongs to.`
+  - `type`: `id`
+- Focused tests enforce that CSV/Parquet field titles are human-readable labels,
+  not duplicated descriptions, and that private evidence/datapackage resources
+  are absent from Kaggle dataset metadata.
 
 ## Downloaded Artifact Evidence
 
-Representative live files were downloaded from Kaggle and inspected locally:
+Representative live v14 files were downloaded from Kaggle and inspected locally:
 
-- `snapshot-quality.json`
-  - `status`: `pass`
-  - `hardBlockers`: `[]`
-  - warnings: `classified_provider_errors_present`,
-    `status_issue:missing_route_metadata`, `status_issue:detect_only_routes`,
-    `status_issue:only_non_supported_provider_hints`
-- quality counts:
-  - `sources`: `502`
-  - `boards`: `25411`
-  - `persistedJobs`: `64513`
-  - `currentJobs`: `64487`
-  - `jobSyncRuns`: `2719`
-  - `providerErrorCount`: `493`
-- `sync_metrics.json` excerpt:
-  - `jobs`: `62223`
-  - `boards`: `27163`
-  - `skipped`: `450`
-  - `jobsPersisted`: `61770`
-  - `jobsDeduped`: `453`
-- `metadata/datapackage.json` was present in version 13, but this is now treated
-  as an exposed private metadata artifact that must be absent from the next
-  accepted public version.
-- `exports/csv/openopps_tables.csv` and
-  `exports/parquet/openopps_tables.parquet` are readable and match:
-  - `14` rows
-  - columns: `table_name`, `table_title`, `table_description`, `csv_path`,
-    `parquet_path`
+- `exports/csv/openopps_tables.csv`
+- `exports/parquet/openopps_tables.parquet`
+
+The downloaded CSV and Parquet files are readable and match:
+
+- rows: `14`
+- columns: `table_name`, `table_title`, `table_description`, `csv_path`,
+  `parquet_path`
+
+## Browser Evidence
+
+- Chrome DevTools MCP opened `https://www.kaggle.com/datasets/wyattowalsh/openoppsdb`
+  successfully and captured accessibility snapshots plus network requests.
+- The public Kaggle page and a fresh isolated cache-busting Chrome context still
+  showed stale v13 content immediately after v14 became ready: old description,
+  `34 files`, and private evidence files in Data Explorer.
+- The CLI/API status and file endpoints consistently report v14 ready with the
+  corrected 29-file surface, so the browser discrepancy is treated as Kaggle
+  public page cache lag, not as the live dataset API state.
+- Chrome DevTools also opened the private manager notebook URL, but the browser
+  context is unauthenticated and Kaggle displays `We can't find that page.`
 
 ## Manager Notebook Evidence
 
 - Kaggle manager id: `wyattowalsh/openoppsdb-manager`.
-- Pulled Kaggle metadata reports:
-  - `id_no`: `121909491`
-  - `kernel_type`: `notebook`
-  - `is_private`: `true`
-  - `enable_internet`: `true`
-  - `keywords`: `["scheduled"]`
-  - `dataset_sources`: `["wyattowalsh/openoppsdb"]`
-- `just kaggle-live-verify` sees the manager in the authenticated notebook list
-  with `lastRunTime` `2026-06-06 16:58:52.160000`.
-- The latest downloaded manager log shows the expected fail-fast blocker at
-  about `10.139s`:
+- Pushed manager notebook: Kaggle kernel version `4`.
+- Authenticated kernel list reports:
+  - ref: `wyattowalsh/openoppsdb-manager`
+  - title: `openoppsdb manager`
+  - lastRunTime: `2026-06-06 19:43:27.227000`
+- Direct `kaggle kernels status wyattowalsh/openoppsdb-manager` currently
+  returns Kaggle `500 Server Error`; authenticated kernel list and logs are the
+  usable status surfaces.
+- Latest manager log shows the expected fail-fast blocker at about `10.588s`:
   - fails in cell 1 at `require_kaggle_credentials()`
   - occurs before `install_openopps()`, `copy_latest_input_db()`, or sync
   - error message: `Kaggle API credentials are required to publish openoppsdb.
@@ -103,19 +125,12 @@ Representative live files were downloaded from Kaggle and inspected locally:
 Kaggle-side notebook publish credentials must be configured for
 `wyattowalsh/openoppsdb-manager`. The Kaggle CLI 2.1.2 surface available here
 supports kernel push/list/status/log/output operations, but it does not expose a
-kernel secret or notebook environment-variable setter. The private manager page
-is also not accessible from the current unauthenticated Chrome DevTools browser
-context.
-
-The dataset generator also needs a corrected publish surface before another
-accepted live version is claimed: private evidence and datapackage files must be
-pruned from the local upload root and the live file list must be checked for
-absence after the next dataset version.
+kernel secret or notebook environment-variable setter.
 
 Required external action:
 
 - Configure `KAGGLE_API_TOKEN` or `KAGGLE_USERNAME`/`KAGGLE_KEY` as Kaggle
   notebook secrets/environment variables for `wyattowalsh/openoppsdb-manager`.
 - Rerun the manager notebook.
-- Verify that the manager completes the full sync, quality gate, and dataset
-  publish path and creates a new live dataset version greater than `13`.
+- Verify that the manager completes the full sync, quality gate, prune step, and
+  dataset publish path and creates a new live dataset version greater than `14`.
