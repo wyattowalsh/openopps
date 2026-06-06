@@ -200,6 +200,8 @@ just kaggle-bundle-check kaggle/openoppsdb.sqlite
 
 The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, runs the unfiltered `openopps sync --metrics-json` workflow, writes status and coverage evidence, regenerates metadata, exports every SQLite table to CSV and Parquet, writes `snapshot-quality.json`, and versions the dataset only when the quality gate passes. The notebook seeds bounded Kaggle runtime defaults for source freshness, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
 
+The scheduled Kaggle notebook environment must expose Kaggle API credentials before the manager starts. Configure `KAGGLE_USERNAME` and `KAGGLE_KEY`, or `KAGGLE_API_TOKEN`, as Kaggle notebook secrets/environment variables; otherwise the manager fails fast before running the expensive sync.
+
 Live deployment remains a local maintainer action with Kaggle CLI credentials:
 
 ```bash

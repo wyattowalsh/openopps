@@ -191,7 +191,13 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "KAGGLE_API_TOKEN" in source
     assert "KAGGLE_API_V1_TOKEN_PATH" in source
     assert "Kaggle API credentials are required" in source
+    assert "KAGGLE_USERNAME" in source
+    assert "KAGGLE_KEY" in source
+    assert "def require_kaggle_credentials()" in source
     assert gen.DB_FILE in source
+    assert source.index("require_kaggle_credentials()") < source.index(
+        "install_openopps()"
+    )
     assert source.index("install_openopps()") < source.index("copy_latest_input_db()")
     assert source.index("copy_latest_input_db()") < source.index(
         'run(["openopps", "admin", "db", "init"]'

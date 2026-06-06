@@ -54,6 +54,12 @@ OpenOpps SHALL block Kaggle dataset publishing when the generated snapshot is st
 - **AND** it streams command diagnostics to Kaggle logs while preserving JSON stdout for evidence files
 - **AND** the documented notebook push recipe applies a Kaggle kernel runtime timeout by default
 
+#### Scenario: Manager notebook fails fast without publish credentials
+
+- **WHEN** the connected manager notebook starts without Kaggle API credentials available through `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME`/`KAGGLE_KEY`, a token path, or a local `kaggle.json`
+- **THEN** it fails before installing OpenOpps, copying the prior database, or running the expensive sync
+- **AND** it reports that Kaggle API credentials are required to publish `openoppsdb`
+
 #### Scenario: Provider failures make the snapshot misleading
 
 - **WHEN** provider or source failures are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without enabled source, board, executable route, or current/persisted job evidence

@@ -1119,10 +1119,29 @@ KAGGLE_SYNC_TIMEOUT_SECONDS = float(
         "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
     )
 )
+KAGGLE_CREDENTIALS_ERROR = (
+    "Kaggle API credentials are required to publish openoppsdb. "
+    "Configure KAGGLE_USERNAME/KAGGLE_KEY or KAGGLE_API_TOKEN as Kaggle "
+    "notebook secrets before running the manager."
+)
 
 if OUTPUT_DIR.exists():
     shutil.rmtree(OUTPUT_DIR)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def has_kaggle_credentials() -> bool:
+    kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
+    token_path = os.environ.get("KAGGLE_API_V1_TOKEN_PATH")
+    return bool(
+        os.environ.get("KAGGLE_API_TOKEN")
+        or (token_path and Path(token_path).expanduser().exists())
+        or (os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"))
+        or kaggle_json.exists()
+    )
+
+def require_kaggle_credentials() -> None:
+    if not has_kaggle_credentials():
+        raise RuntimeError(KAGGLE_CREDENTIALS_ERROR)
 
 def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
@@ -1178,6 +1197,7 @@ def download_dataset_assets() -> None:
     urllib.request.urlretrieve(GENERATOR_SCRIPT_URL, GENERATOR_SCRIPT)
     urllib.request.urlretrieve(DATASET_IMAGE_URL, OUTPUT_DIR / "dataset-cover-image.png")
 
+require_kaggle_credentials()
 install_openopps()
 copy_latest_input_db()
 download_dataset_assets()
@@ -1253,17 +1273,7 @@ for path in sorted(OUTPUT_DIR.iterdir()):
 
 def _notebook_publish_source() -> str:
     return """message = f"Scheduled OpenOpps active-job snapshot {datetime.now(UTC).isoformat()}"
-kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
-token_path = os.environ.get("KAGGLE_API_V1_TOKEN_PATH")
-has_kaggle_credentials = bool(
-    os.environ.get("KAGGLE_API_TOKEN")
-    or (token_path and Path(token_path).exists())
-    or (os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"))
-    or kaggle_json.exists()
-)
-
-if not has_kaggle_credentials:
-    raise RuntimeError("Kaggle API credentials are required to publish openoppsdb.")
+require_kaggle_credentials()
 
 run([
     "kaggle",
