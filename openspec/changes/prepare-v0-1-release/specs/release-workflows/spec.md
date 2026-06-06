@@ -11,16 +11,17 @@ OpenOpps SHALL provide a generated Kaggle workflow for `wyattowalsh/openoppsdb` 
 - **AND** it copies the newest prior `/kaggle/input/**/openoppsdb.sqlite` file into `/kaggle/working/openoppsdb/openoppsdb.sqlite` before syncing
 - **AND** it initializes the database and runs `openopps sync --metrics-json` without source, board, provider, or limit filters
 - **AND** it captures `sync_metrics.json`, `status.json`, `coverage.json`, and `snapshot-quality.json`
-- **AND** it publishes `openoppsdb.sqlite`, every SQLite table as CSV and Parquet exports, `dataset-metadata.json`, the generated data dictionary exposed as `metadata/datapackage.json`, manager-run evidence files, and the generated manager notebook metadata
+- **AND** it prunes manager-run evidence files before publishing
+- **AND** it publishes only `openoppsdb.sqlite` and every SQLite table as CSV and Parquet exports as public dataset data files
 
 #### Scenario: Published metadata describes the full bundle
 
 - **WHEN** the Kaggle bundle is generated
 - **THEN** transient HTTP cache tables are excluded from the published SQLite database
 - **AND** normalized sources, boards, provider routes, jobs, versions, raw payload snapshots, sync runs, sync observations, `openopps_tables`, and `openopps_columns` remain in the published SQLite database
-- **AND** `dataset-metadata.json` describes every published file and includes useful Kaggle resource and column descriptions for CSV and Parquet exports
-- **AND** `datapackage.json` includes the richer generated data dictionary for every resource, table, and field, with a byte-identical `metadata/datapackage.json` copy for live Kaggle downloads
-- **AND** `openoppsdb.sqlite` includes `openopps_tables` and `openopps_columns` metadata tables matching the generated data dictionary
+- **AND** `dataset-metadata.json` describes every published public data file and includes useful Kaggle resource and field descriptions for CSV and Parquet exports
+- **AND** each CSV and Parquet resource schema lists all fields in file order with field names, human-readable labels, field descriptions, and supported Kaggle field types
+- **AND** `openoppsdb.sqlite` includes `openopps_tables` and `openopps_columns` metadata tables matching the generated field metadata
 
 ### Requirement: OpenOppsDB publishing is quality-gated
 
@@ -29,7 +30,7 @@ OpenOpps SHALL block Kaggle dataset publishing when the generated snapshot is st
 #### Scenario: Required generation or live publish step fails
 
 - **WHEN** database initialization, default sync, artifact generation, schema validation, required-file validation, dataset create/version, manager notebook push, or post-upload status/version verification fails
-- **THEN** the OpenOppsDB workflow blocks publishing and reports the blocker in `snapshot-quality.json` instead of silently publishing a misleading version
+- **THEN** the OpenOppsDB workflow blocks publishing and reports the blocker in private `snapshot-quality.json` evidence instead of silently publishing a misleading version
 
 #### Scenario: Provider failures are classified but the snapshot remains defensible
 
@@ -52,6 +53,7 @@ OpenOpps SHALL block Kaggle dataset publishing when the generated snapshot is st
 - **WHEN** the connected manager notebook runs the default full workflow on Kaggle
 - **THEN** it applies a hard wall-clock timeout to `openopps sync --metrics-json`
 - **AND** it streams command diagnostics to Kaggle logs while preserving JSON stdout for evidence files
+- **AND** it removes private evidence files from the dataset upload directory before calling `kaggle datasets version`
 - **AND** the documented notebook push recipe applies a Kaggle kernel runtime timeout by default
 
 #### Scenario: Manager notebook fails fast without publish credentials
@@ -72,12 +74,13 @@ OpenOpps SHALL keep live Kaggle deployment credentialed and local/manual while p
 #### Scenario: Contributor validates the bundle without live credentials
 
 - **WHEN** a contributor runs the local Kaggle bundle validation recipe
-- **THEN** OpenOpps regenerates deterministic metadata and, when a local SQLite database is supplied, validates the generated SQLite/CSV/Parquet/data-dictionary artifact surface without requiring Kaggle credentials
+- **THEN** OpenOpps regenerates deterministic metadata and, when a local SQLite database is supplied, validates the generated SQLite/CSV/Parquet artifact surface without requiring Kaggle credentials
 
 #### Scenario: Maintainer deploys the live Kaggle dataset
 
 - **WHEN** a maintainer runs the documented live create/version and manager notebook push recipes with Kaggle CLI credentials
 - **THEN** the commands use the local `KAGGLE_API_TOKEN="$(kaggle auth print-access-token)"` credential pattern without printing secrets
+- **AND** dataset create/version recipes stage a temporary upload directory that excludes private evidence and manager notebook files before calling the Kaggle dataset write command
 - **AND** CI does not publish the dataset, push the manager notebook, or require Kaggle secrets
 
 #### Scenario: Maintainer verifies the live Kaggle surfaces

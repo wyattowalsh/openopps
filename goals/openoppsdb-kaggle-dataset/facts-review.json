@@ -61,7 +61,7 @@
     },
     {
       "id": "fact-8",
-      "text": "`dataset-metadata.json` describes every published file and includes concise, useful Kaggle resource and column descriptions for every CSV and Parquet table export.",
+      "text": "`dataset-metadata.json` describes every published SQLite, CSV, and Parquet data file and includes concise, useful Kaggle resource and field descriptions for every CSV and Parquet table export.",
       "accepted": false,
       "removed": false,
       "recommendedAutomatedVerification": true,
@@ -69,7 +69,7 @@
     },
     {
       "id": "fact-9",
-      "text": "`datapackage.json` provides a richer generated data dictionary covering every resource, table, field, logical type, JSON schema type, examples, defaults, required flags, and table descriptions.",
+      "text": "Manager-run evidence files such as `sync_metrics.json`, `status.json`, `coverage.json`, `snapshot-quality.json`, `sync_stderr.txt`, and generated datapackage metadata are private quality-gate artifacts and must be pruned before dataset publication.",
       "accepted": false,
       "removed": false,
       "recommendedAutomatedVerification": true,
@@ -77,7 +77,7 @@
     },
     {
       "id": "fact-10",
-      "text": "The published SQLite database includes `openopps_tables` and `openopps_columns` metadata tables with table and column descriptions that match the generated data dictionary.",
+      "text": "The published SQLite database includes `openopps_tables` and `openopps_columns` metadata tables with table and column descriptions that match the generated Kaggle field metadata.",
       "accepted": false,
       "removed": false,
       "recommendedAutomatedVerification": true,
@@ -125,7 +125,7 @@
     },
     {
       "id": "fact-16",
-      "text": "Post-deploy verification confirms the live Kaggle dataset version is complete and current, including `openoppsdb.sqlite`, CSV exports, Parquet exports, `datapackage.json`, `dataset-metadata.json`, dataset status/version, and manager notebook availability.",
+      "text": "Post-deploy verification confirms the live Kaggle dataset version is complete and current, including `openoppsdb.sqlite`, CSV exports, Parquet exports, generated field-level Kaggle metadata, dataset status/version, and manager notebook availability, while excluding private evidence and datapackage files from the public file list.",
       "accepted": false,
       "removed": false,
       "recommendedAutomatedVerification": true,

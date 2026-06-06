@@ -4,16 +4,20 @@ Last updated: 2026-06-06
 
 ## Current Status
 
-The OpenOppsDB Kaggle dataset is live and verified at `wyattowalsh/openoppsdb`
-version 13, but the full daily scheduled publisher is not complete yet. The
-connected manager notebook is deployed and scheduled, but its latest Kaggle run
-fails fast because the Kaggle notebook environment does not yet expose publish
-credentials.
+The OpenOppsDB Kaggle dataset is live at `wyattowalsh/openoppsdb` version 13,
+but version 13 is no longer accepted as the intended file-surface contract
+because it exposes private manager evidence and datapackage files. The corrected
+contract is that the public dataset file list contains only `openoppsdb.sqlite`,
+`exports/csv/*.csv`, and `exports/parquet/*.parquet`, with field-level metadata
+defined in `dataset-metadata.json`. The connected manager notebook is deployed
+and scheduled, but its latest Kaggle run fails fast because the Kaggle notebook
+environment does not yet expose publish credentials.
 
 ## Repository Evidence
 
-- Branch/worktree: `main`, clean against `origin/main`.
-- Latest implementation commit: `9b353b557df9f6db0905f8644672b6dccbeee644`.
+- Branch/worktree: `main`, correction in progress locally.
+- Latest implementation commit before this correction:
+  `23e7aa3124714cacdc47804d197a66e725a4398f`.
 - Latest GitHub CI: run `27068360705`, status `completed`, conclusion `success`.
 - The credential hardening commit makes the manager fail before installing
   OpenOpps, copying the prior database, or running sync when Kaggle credentials
@@ -24,8 +28,9 @@ credentials.
 - `just kaggle-live-status` reports:
   - `status`: `ready`
   - `current_version_number`: `13`
-- `just kaggle-live-verify` passes against `wyattowalsh/openoppsdb`.
-- Version 13 includes the expected public artifact surface:
+- `just kaggle-live-verify` passes against `wyattowalsh/openoppsdb`, but this
+  was too broad and allowed private evidence/datapackage files.
+- Version 13 includes the rejected public artifact surface:
   - `openoppsdb.sqlite` (`4047974400` bytes)
   - `metadata/datapackage.json`
   - `snapshot-quality.json`
@@ -64,8 +69,9 @@ Representative live files were downloaded from Kaggle and inspected locally:
   - `skipped`: `450`
   - `jobsPersisted`: `61770`
   - `jobsDeduped`: `453`
-- `metadata/datapackage.json` contains `33` resources and includes the sampled
-  required resources.
+- `metadata/datapackage.json` was present in version 13, but this is now treated
+  as an exposed private metadata artifact that must be absent from the next
+  accepted public version.
 - `exports/csv/openopps_tables.csv` and
   `exports/parquet/openopps_tables.parquet` are readable and match:
   - `14` rows
@@ -100,6 +106,11 @@ supports kernel push/list/status/log/output operations, but it does not expose a
 kernel secret or notebook environment-variable setter. The private manager page
 is also not accessible from the current unauthenticated Chrome DevTools browser
 context.
+
+The dataset generator also needs a corrected publish surface before another
+accepted live version is claimed: private evidence and datapackage files must be
+pruned from the local upload root and the live file list must be checked for
+absence after the next dataset version.
 
 Required external action:
 

@@ -58,13 +58,13 @@ kaggle-bundle-check db="kaggle/openoppsdb.sqlite":
     @if [ -f "{{ db }}" ]; then uv run python scripts/generate_kaggle_metadata.py --data-db "{{ db }}"; else echo "No SQLite DB at {{ db }}; validating metadata-only Kaggle bundle."; uv run python scripts/generate_kaggle_metadata.py; fi
     uv run pytest tests/unit/openopps/test_kaggle_metadata.py -q
 
-# Create the public OpenOppsDB Kaggle dataset from the local kaggle/ bundle.
+# Create the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-create:
-    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets create -p kaggle --public -q -t -r zip
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; KAGGLE_API_TOKEN="$token" kaggle datasets create -p "$upload_dir" --public -q -t -r zip
 
-# Version the public OpenOppsDB Kaggle dataset from the local kaggle/ bundle.
+# Version the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-version message="OpenOppsDB snapshot":
-    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; KAGGLE_API_TOKEN="$token" kaggle datasets version -p kaggle -m "{{ message }}" -q -t -r zip
+    @token="${KAGGLE_API_TOKEN:-$(kaggle auth print-access-token 2>/dev/null || true)}"; if [ -z "$token" ]; then echo "Kaggle OAuth credentials missing; run 'kaggle auth login' first or set KAGGLE_API_TOKEN." >&2; exit 1; fi; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; KAGGLE_API_TOKEN="$token" kaggle datasets version -p "$upload_dir" -m "{{ message }}" -q -t -r zip
 
 # Push the connected OpenOppsDB manager notebook to Kaggle.
 kaggle-notebook-push timeout="3600":

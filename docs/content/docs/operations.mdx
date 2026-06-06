@@ -189,7 +189,7 @@ OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested
 
 ## OpenOppsDB Kaggle
 
-The generated Kaggle upload root lives in `kaggle/`. It contains `dataset-metadata.json`, `datapackage.json`, `kernel-metadata.json`, the connected `openoppsdb-manager.ipynb` notebook, and generated SQLite/CSV/Parquet artifacts when a data DB is supplied. Full snapshot bundles also include `sync_metrics.json`, `status.json`, `coverage.json`, and `snapshot-quality.json`. Kaggle may reserve the root `datapackage.json` filename internally, so the generator also publishes the same data dictionary as `metadata/datapackage.json` for live dataset downloads.
+The generated Kaggle bundle lives in `kaggle/`. It contains `dataset-metadata.json`, `kernel-metadata.json`, the connected `openoppsdb-manager.ipynb` notebook, and generated SQLite/CSV/Parquet artifacts when a data DB is supplied. `dataset-metadata.json` is the Kaggle UI source of truth for public file descriptions and field-level descriptors for every CSV and Parquet export. Full snapshot runs write private `sync_metrics.json`, `status.json`, `coverage.json`, and `snapshot-quality.json` evidence while validating the bundle, then prune those files before publishing. The live dataset recipes stage a temporary upload directory containing only Kaggle dataset control files plus `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`.
 
 Run the local non-live generation and validation path from the repository root:
 
@@ -198,7 +198,7 @@ just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, runs the unfiltered `openopps sync --metrics-json` workflow, writes status and coverage evidence, regenerates metadata, exports every SQLite table to CSV and Parquet, writes `snapshot-quality.json`, and versions the dataset only when the quality gate passes. The notebook seeds bounded Kaggle runtime defaults for source freshness, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
+The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, runs the unfiltered `openopps sync --metrics-json` workflow, writes private status and coverage evidence, regenerates metadata, exports every SQLite table to CSV and Parquet, writes a private `snapshot-quality.json`, prunes private evidence from the upload directory, and versions the dataset only when the quality gate passes. The notebook seeds bounded Kaggle runtime defaults for source freshness, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
 
 The scheduled Kaggle notebook environment must expose Kaggle API credentials before the manager starts. Configure `KAGGLE_USERNAME` and `KAGGLE_KEY`, or `KAGGLE_API_TOKEN`, as Kaggle notebook secrets/environment variables; otherwise the manager fails fast before running the expensive sync.
 
@@ -211,7 +211,7 @@ just kaggle-notebook-push
 just kaggle-live-verify
 ```
 
-Use `just kaggle-dataset-create` only for the first public upload; use `just kaggle-dataset-version` after the dataset exists. The live write recipes wrap the Kaggle CLI with `KAGGLE_API_TOKEN` from `kaggle auth print-access-token`, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when OAuth credentials are unavailable and are intentionally outside CI.
+Use `just kaggle-dataset-create` only for the first public upload; use `just kaggle-dataset-version` after the dataset exists. The live write recipes stage a data-only upload directory and wrap the Kaggle CLI with `KAGGLE_API_TOKEN` from `kaggle auth print-access-token`, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when OAuth credentials are unavailable and are intentionally outside CI.
 `just kaggle-notebook-push` also passes a one-hour Kaggle kernel timeout by default; override it with `just kaggle-notebook-push timeout=5400` only for a deliberate longer maintenance run.
 
 ## CI/CD

@@ -1,1 +1,148 @@
-{"decision":"submitted","stage":"facts","result":{"stage":"facts","title":"OpenOppsDB Kaggle Dataset","goalSlug":"openoppsdb-kaggle-dataset","facts":[{"id":"fact-1","text":"The Kaggle dataset id is `wyattowalsh/openoppsdb` and the connected manager notebook id is `wyattowalsh/openoppsdb-manager`.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-2","text":"The dataset update target is one full daily snapshot of active public job postings across all enabled OpenOpps sources and boards.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-3","text":"The manager notebook installs OpenOpps with `pip install --upgrade git+https://github.com/wyattowalsh/openopps.git@main` by default, with a documented override only for controlled testing.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-4","text":"Each manager run copies the newest prior `openoppsdb.sqlite` dataset input into the Kaggle working directory before syncing, so job identities, versions, observations, and lifecycle state accumulate instead of starting over.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-5","text":"Each manager run initializes the database if needed and then runs the default full CLI workflow `openopps sync --metrics-json` with no source, board, provider, or limit filters.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-6","text":"The snapshot database excludes transient HTTP cache tables from published artifacts while preserving normalized sources, boards, provider routes, jobs, job versions, raw payload snapshots, sync runs, sync observations, and generated metadata tables.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-7","text":"Every published SQLite table is exported to both `exports/csv/<table>.csv` and `exports/parquet/<table>.parquet`.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-8","text":"`dataset-metadata.json` describes every published file and includes concise, useful Kaggle resource and column descriptions for every CSV and Parquet table export.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-9","text":"`datapackage.json` provides a richer generated data dictionary covering every resource, table, field, logical type, JSON schema type, examples, defaults, required flags, and table descriptions.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-10","text":"The published SQLite database includes `openopps_tables` and `openopps_columns` metadata tables with table and column descriptions that match the generated data dictionary.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-11","text":"Publishing blocks when the database initialization, default sync command, artifact generation, schema validation, required-file validation, Kaggle dataset create/version command, manager notebook push, or post-upload status/version check fails.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-12","text":"Publishing blocks when the resulting snapshot is structurally unusable, including missing enabled source evidence, missing board data, missing executable route evidence, or missing current/persisted job evidence without a documented first-run or upstream-outage explanation.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-13","text":"Provider or source failures from public upstream systems do not automatically block publishing when the run completes, the dataset is internally consistent, and the failures are classified in `providerErrors` and `providerErrorDetails`.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-14","text":"Provider or source failures do block publishing when they are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without a defensible full-dataset snapshot.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-15","text":"The deployment flow uses Kaggle CLI credentials to create or version the public dataset and push the connected manager notebook.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-16","text":"Post-deploy verification confirms the live Kaggle dataset version is complete and current, including `openoppsdb.sqlite`, CSV exports, Parquet exports, `datapackage.json`, `dataset-metadata.json`, dataset status/version, and manager notebook availability.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true},{"id":"fact-17","text":"The repo validation path includes generated artifact parity, focused Kaggle metadata/export tests, full `just ci` parity when feasible, live deployment verification, and manual inspection of the final dataset surfaces.","accepted":true,"removed":false,"automatedVerification":true,"recommendedAutomatedVerification":true}],"factsMarkdown":"# Facts\n\n- The Kaggle dataset id is `wyattowalsh/openoppsdb` and the connected manager notebook id is `wyattowalsh/openoppsdb-manager`.\n- The dataset update target is one full daily snapshot of active public job postings across all enabled OpenOpps sources and boards.\n- The manager notebook installs OpenOpps with `pip install --upgrade git+https://github.com/wyattowalsh/openopps.git@main` by default, with a documented override only for controlled testing.\n- Each manager run copies the newest prior `openoppsdb.sqlite` dataset input into the Kaggle working directory before syncing, so job identities, versions, observations, and lifecycle state accumulate instead of starting over.\n- Each manager run initializes the database if needed and then runs the default full CLI workflow `openopps sync --metrics-json` with no source, board, provider, or limit filters.\n- The snapshot database excludes transient HTTP cache tables from published artifacts while preserving normalized sources, boards, provider routes, jobs, job versions, raw payload snapshots, sync runs, sync observations, and generated metadata tables.\n- Every published SQLite table is exported to both `exports/csv/<table>.csv` and `exports/parquet/<table>.parquet`.\n- `dataset-metadata.json` describes every published file and includes concise, useful Kaggle resource and column descriptions for every CSV and Parquet table export.\n- `datapackage.json` provides a richer generated data dictionary covering every resource, table, field, logical type, JSON schema type, examples, defaults, required flags, and table descriptions.\n- The published SQLite database includes `openopps_tables` and `openopps_columns` metadata tables with table and column descriptions that match the generated data dictionary.\n- Publishing blocks when the database initialization, default sync command, artifact generation, schema validation, required-file validation, Kaggle dataset create/version command, manager notebook push, or post-upload status/version check fails.\n- Publishing blocks when the resulting snapshot is structurally unusable, including missing enabled source evidence, missing board data, missing executable route evidence, or missing current/persisted job evidence without a documented first-run or upstream-outage explanation.\n- Provider or source failures from public upstream systems do not automatically block publishing when the run completes, the dataset is internally consistent, and the failures are classified in `providerErrors` and `providerErrorDetails`.\n- Provider or source failures do block publishing when they are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without a defensible full-dataset snapshot.\n- The deployment flow uses Kaggle CLI credentials to create or version the public dataset and push the connected manager notebook.\n- Post-deploy verification confirms the live Kaggle dataset version is complete and current, including `openoppsdb.sqlite`, CSV exports, Parquet exports, `datapackage.json`, `dataset-metadata.json`, dataset status/version, and manager notebook availability.\n- The repo validation path includes generated artifact parity, focused Kaggle metadata/export tests, full `just ci` parity when feasible, live deployment verification, and manual inspection of the final dataset surfaces."}}
+{
+  "decision": "submitted",
+  "stage": "facts",
+  "result": {
+    "stage": "facts",
+    "title": "OpenOppsDB Kaggle Dataset",
+    "goalSlug": "openoppsdb-kaggle-dataset",
+    "facts": [
+      {
+        "id": "fact-1",
+        "text": "The Kaggle dataset id is `wyattowalsh/openoppsdb` and the connected manager notebook id is `wyattowalsh/openoppsdb-manager`.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-2",
+        "text": "The dataset update target is one full daily snapshot of active public job postings across all enabled OpenOpps sources and boards.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-3",
+        "text": "The manager notebook installs OpenOpps with `pip install --upgrade git+https://github.com/wyattowalsh/openopps.git@main` by default, with a documented override only for controlled testing.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-4",
+        "text": "Each manager run copies the newest prior `openoppsdb.sqlite` dataset input into the Kaggle working directory before syncing, so job identities, versions, observations, and lifecycle state accumulate instead of starting over.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-5",
+        "text": "Each manager run initializes the database if needed and then runs the default full CLI workflow `openopps sync --metrics-json` with no source, board, provider, or limit filters.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-6",
+        "text": "The snapshot database excludes transient HTTP cache tables from published artifacts while preserving normalized sources, boards, provider routes, jobs, job versions, raw payload snapshots, sync runs, sync observations, and generated metadata tables.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-7",
+        "text": "Every published SQLite table is exported to both `exports/csv/<table>.csv` and `exports/parquet/<table>.parquet`.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-8",
+        "text": "`dataset-metadata.json` describes every published SQLite, CSV, and Parquet data file and includes concise, useful Kaggle resource and field descriptions for every CSV and Parquet table export.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-9",
+        "text": "Manager-run evidence files such as `sync_metrics.json`, `status.json`, `coverage.json`, `snapshot-quality.json`, `sync_stderr.txt`, and generated datapackage metadata are private quality-gate artifacts and must be pruned before dataset publication.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-10",
+        "text": "The published SQLite database includes `openopps_tables` and `openopps_columns` metadata tables with table and column descriptions that match the generated Kaggle field metadata.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-11",
+        "text": "Publishing blocks when the database initialization, default sync command, artifact generation, schema validation, required-file validation, Kaggle dataset create/version command, manager notebook push, or post-upload status/version check fails.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-12",
+        "text": "Publishing blocks when the resulting snapshot is structurally unusable, including missing enabled source evidence, missing board data, missing executable route evidence, or missing current/persisted job evidence without a documented first-run or upstream-outage explanation.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-13",
+        "text": "Provider or source failures from public upstream systems do not automatically block publishing when the run completes, the dataset is internally consistent, and the failures are classified in `providerErrors` and `providerErrorDetails`.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-14",
+        "text": "Provider or source failures do block publishing when they are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without a defensible full-dataset snapshot.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-15",
+        "text": "The deployment flow uses Kaggle CLI credentials to create or version the public dataset and push the connected manager notebook.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-16",
+        "text": "Post-deploy verification confirms the live Kaggle dataset version is complete and current, including `openoppsdb.sqlite`, CSV exports, Parquet exports, generated field-level Kaggle metadata, dataset status/version, and manager notebook availability, while excluding private evidence and datapackage files from the public file list.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      },
+      {
+        "id": "fact-17",
+        "text": "The repo validation path includes generated artifact parity, focused Kaggle metadata/export tests, full `just ci` parity when feasible, live deployment verification, and manual inspection of the final dataset surfaces.",
+        "accepted": true,
+        "removed": false,
+        "automatedVerification": true,
+        "recommendedAutomatedVerification": true
+      }
+    ],
+    "factsMarkdown": "# Facts\n\n- The Kaggle dataset id is `wyattowalsh/openoppsdb` and the connected manager notebook id is `wyattowalsh/openoppsdb-manager`.\n- The dataset update target is one full daily snapshot of active public job postings across all enabled OpenOpps sources and boards.\n- The manager notebook installs OpenOpps with `pip install --upgrade git+https://github.com/wyattowalsh/openopps.git@main` by default, with a documented override only for controlled testing.\n- Each manager run copies the newest prior `openoppsdb.sqlite` dataset input into the Kaggle working directory before syncing, so job identities, versions, observations, and lifecycle state accumulate instead of starting over.\n- Each manager run initializes the database if needed and then runs the default full CLI workflow `openopps sync --metrics-json` with no source, board, provider, or limit filters.\n- The snapshot database excludes transient HTTP cache tables from published artifacts while preserving normalized sources, boards, provider routes, jobs, job versions, raw payload snapshots, sync runs, sync observations, and generated metadata tables.\n- Every published SQLite table is exported to both `exports/csv/<table>.csv` and `exports/parquet/<table>.parquet`.\n- `dataset-metadata.json` describes every published SQLite, CSV, and Parquet data file and includes concise, useful Kaggle resource and column descriptions for every CSV and Parquet table export.\n- Manager-run evidence files such as `sync_metrics.json`, `status.json`, `coverage.json`, `snapshot-quality.json`, `sync_stderr.txt`, and generated datapackage metadata are private quality-gate artifacts and must be pruned before dataset publication.\n- The published SQLite database includes `openopps_tables` and `openopps_columns` metadata tables with table and column descriptions that match the generated Kaggle field metadata.\n- Publishing blocks when the database initialization, default sync command, artifact generation, schema validation, required-file validation, Kaggle dataset create/version command, manager notebook push, or post-upload status/version check fails.\n- Publishing blocks when the resulting snapshot is structurally unusable, including missing enabled source evidence, missing board data, missing executable route evidence, or missing current/persisted job evidence without a documented first-run or upstream-outage explanation.\n- Provider or source failures from public upstream systems do not automatically block publishing when the run completes, the dataset is internally consistent, and the failures are classified in `providerErrors` and `providerErrorDetails`.\n- Provider or source failures do block publishing when they are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without a defensible full-dataset snapshot.\n- The deployment flow uses Kaggle CLI credentials to create or version the public dataset and push the connected manager notebook.\n- Post-deploy verification confirms the live Kaggle dataset version is complete and current, including `openoppsdb.sqlite`, CSV exports, Parquet exports, generated field-level Kaggle metadata, dataset status/version, and manager notebook availability, while excluding private evidence and datapackage files from the public file list.\n- The repo validation path includes generated artifact parity, focused Kaggle metadata/export tests, full `just ci` parity when feasible, live deployment verification, and manual inspection of the final dataset surfaces."
+  }
+}

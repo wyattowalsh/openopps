@@ -32,23 +32,23 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert metadata["expectedUpdateFrequency"] == "daily"
     assert metadata["userSpecifiedSources"]
     assert metadata["keywords"]
-    assert "datapackage.json" in metadata["description"]
-    assert gen.EXPOSED_DATAPACKAGE_FILE in metadata["description"]
-    assert "snapshot-quality.json" in metadata["description"]
+    assert "datapackage.json" not in metadata["description"]
+    assert "snapshot-quality.json" not in metadata["description"]
+    assert "public file surface is intentionally limited" in metadata["description"]
     assert "openoppsdb-manager" in metadata["description"]
     assert "Quick start" in metadata["description"]
     assert gen.DB_FILE in metadata["description"]
     assert "Parquet" in metadata["description"]
-    assert set(resources) == {resource.path for resource in gen.RESOURCES} | {
-        gen.DATAPACKAGE_FILE,
-        gen.EXPOSED_DATAPACKAGE_FILE,
-    }
+    assert set(resources) == {resource.path for resource in gen.RESOURCES}
+    assert set(resources) == {resource.path for resource in gen.DATA_RESOURCES}
     assert resources[gen.DB_FILE]["description"]
     assert "schema" not in resources[gen.DB_FILE]
-    for resource in gen.EVIDENCE_RESOURCES:
-        assert resources[resource.path]["description"]
-    assert resources[gen.DATAPACKAGE_FILE]["description"]
-    assert resources[gen.EXPOSED_DATAPACKAGE_FILE]["description"]
+    assert gen.SYNC_METRICS_FILE not in resources
+    assert gen.STATUS_FILE not in resources
+    assert gen.COVERAGE_FILE not in resources
+    assert gen.SNAPSHOT_QUALITY_FILE not in resources
+    assert gen.DATAPACKAGE_FILE not in resources
+    assert gen.EXPOSED_DATAPACKAGE_FILE not in resources
 
 
 def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
@@ -76,7 +76,7 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
             for field in fields:
                 assert field["title"]
                 assert field["description"], field["name"]
-                assert field["title"] == field["description"]
+                assert field["title"] == gen._title_from_name(field["name"])
                 assert field["type"] in supported_types
                 assert field["type"] != "str"
                 assert field["type"] != "bool"
@@ -85,6 +85,13 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
                 assert "Annotated" not in field["type"]
                 assert "typing." not in field["type"]
                 assert "| null" not in field["type"]
+    jobs_fields = {
+        field["name"]: field
+        for field in resources[f"{gen.CSV_DIR}/jobs.csv"]["schema"]["fields"]
+    }
+    assert jobs_fields["board_key"]["title"] == "Board Key"
+    assert jobs_fields["board_key"]["description"] == "Board key this job belongs to."
+    assert jobs_fields["board_key"]["type"] == "id"
 
 
 def test_kaggle_datapackage_annotates_all_resource_fields() -> None:
@@ -179,6 +186,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "status.json" in source
     assert "coverage.json" in source
     assert "snapshot-quality.json" in source
+    assert "--prune-private-upload-files" in source
     assert '"providers", "coverage", "--json"' in source
     assert "--quality-report" in source
     assert "OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION" in source
@@ -217,12 +225,6 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
     generated_dataset = json.loads(
         (kaggle_dir / "dataset-metadata.json").read_text(encoding="utf-8")
     )
-    generated_datapackage = json.loads(
-        (kaggle_dir / gen.DATAPACKAGE_FILE).read_text(encoding="utf-8")
-    )
-    generated_exposed_datapackage = json.loads(
-        (kaggle_dir / gen.EXPOSED_DATAPACKAGE_FILE).read_text(encoding="utf-8")
-    )
     generated_kernel = json.loads(
         (kaggle_dir / "kernel-metadata.json").read_text(encoding="utf-8")
     )
@@ -231,10 +233,10 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
     )
 
     assert generated_dataset == gen.dataset_metadata()
-    assert generated_datapackage == gen.datapackage()
-    assert generated_exposed_datapackage == gen.datapackage()
     assert generated_kernel == gen.kernel_metadata()
     assert generated_notebook == gen.notebook()
+    assert not (kaggle_dir / gen.DATAPACKAGE_FILE).exists()
+    assert not (kaggle_dir / gen.EXPOSED_DATAPACKAGE_FILE).exists()
     assert not any((repo_root / "kaggle-manager").glob("*"))
     assert not (kaggle_dir / "notebooks").exists()
     assert (kaggle_dir / gen.DATASET_IMAGE_FILE).is_file()
@@ -306,14 +308,91 @@ def test_generated_data_files_are_all_described_when_present() -> None:
     if sqlite_path.exists():
         data_files.append(gen.DB_FILE)
 
-    datapackage_paths = {
-        resource["path"] for resource in gen.datapackage()["resources"]
-    }
     dataset_paths = {
         resource["path"] for resource in gen.dataset_metadata()["resources"]
     }
-    assert set(data_files) <= datapackage_paths
     assert set(data_files) <= dataset_paths
+
+
+def test_generated_kaggle_upload_root_has_only_public_data_files() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    kaggle_dir = repo_root / "kaggle"
+    allowed_public_files = {
+        "dataset-cover-image.png",
+        "dataset-metadata.json",
+        "kernel-metadata.json",
+        gen.NB_FILE,
+        gen.DB_FILE,
+        *{f"{gen.CSV_DIR}/{table.name}.csv" for table in gen.TABLES},
+        *{f"{gen.PARQUET_DIR}/{table.name}.parquet" for table in gen.TABLES},
+    }
+    if not (kaggle_dir / gen.DB_FILE).exists():
+        allowed_public_files.remove(gen.DB_FILE)
+
+    actual_files = {
+        path.relative_to(kaggle_dir).as_posix()
+        for path in kaggle_dir.rglob("*")
+        if path.is_file()
+    }
+
+    assert actual_files <= allowed_public_files
+    assert not (actual_files & set(gen.PRIVATE_EVIDENCE_FILES))
+    assert not (actual_files & set(gen.PRIVATE_METADATA_FILES))
+
+
+def test_public_upload_stage_excludes_private_and_manager_files(tmp_path: Path) -> None:
+    bundle_dir = tmp_path / "bundle"
+    csv_dir = bundle_dir / gen.CSV_DIR
+    parquet_dir = bundle_dir / gen.PARQUET_DIR
+    csv_dir.mkdir(parents=True)
+    parquet_dir.mkdir(parents=True)
+    (bundle_dir / "dataset-metadata.json").write_text("{}\n", encoding="utf-8")
+    (bundle_dir / gen.DATASET_IMAGE_FILE).write_bytes(b"image")
+    (bundle_dir / gen.DB_FILE).write_bytes(b"SQLite format 3\x00")
+    for table in gen.TABLES:
+        (csv_dir / f"{table.name}.csv").write_text("id\njob-1\n", encoding="utf-8")
+        (parquet_dir / f"{table.name}.parquet").write_bytes(b"PAR1")
+    (csv_dir / "stray.csv").write_text("should_not_upload\n", encoding="utf-8")
+    (parquet_dir / "stray.parquet").write_bytes(b"PAR1")
+
+    for relative_path in gen.PRIVATE_EVIDENCE_FILES + gen.PRIVATE_METADATA_FILES:
+        path = bundle_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+    (bundle_dir / "kernel-metadata.json").write_text("{}\n", encoding="utf-8")
+    (bundle_dir / gen.NB_FILE).write_text("{}\n", encoding="utf-8")
+
+    upload_dir = tmp_path / "upload"
+    gen._stage_public_upload_dir(bundle_dir, upload_dir)
+
+    actual_files = {
+        path.relative_to(upload_dir).as_posix()
+        for path in upload_dir.rglob("*")
+        if path.is_file()
+    }
+
+    assert actual_files == {
+        "dataset-metadata.json",
+        gen.DATASET_IMAGE_FILE,
+        *gen.PUBLIC_UPLOAD_DATA_FILES,
+    }
+    assert f"{gen.CSV_DIR}/stray.csv" not in actual_files
+    assert f"{gen.PARQUET_DIR}/stray.parquet" not in actual_files
+    assert "kernel-metadata.json" not in actual_files
+    assert gen.NB_FILE not in actual_files
+    assert not (actual_files & set(gen.PRIVATE_EVIDENCE_FILES))
+    assert not (actual_files & set(gen.PRIVATE_METADATA_FILES))
+
+
+def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    justfile = (repo_root / "Justfile").read_text(encoding="utf-8")
+
+    assert "--stage-public-upload-dir" in justfile
+    assert 'kaggle datasets create -p "$upload_dir"' in justfile
+    assert 'kaggle datasets version -p "$upload_dir"' in justfile
+    assert "kaggle datasets create -p kaggle" not in justfile
+    assert "kaggle datasets version -p kaggle" not in justfile
 
 
 def test_sqlite_metadata_tables_store_table_and_column_descriptions(
@@ -533,8 +612,6 @@ def _write_quality_bundle(
 def _write_required_quality_files(output_dir: Path) -> None:
     paths = [
         "dataset-metadata.json",
-        gen.DATAPACKAGE_FILE,
-        gen.EXPOSED_DATAPACKAGE_FILE,
         gen.DATASET_IMAGE_FILE,
         gen.SYNC_METRICS_FILE,
         gen.STATUS_FILE,
