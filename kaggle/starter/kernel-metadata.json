@@ -1,0 +1,20 @@
+{
+  "code_file": "openoppsdb-starter.ipynb",
+  "competition_sources": [],
+  "dataset_sources": [
+    "wyattowalsh/openoppsdb"
+  ],
+  "docker_image": "",
+  "enable_gpu": false,
+  "enable_internet": false,
+  "enable_tpu": false,
+  "id": "wyattowalsh/openoppsdb-starter-notebook",
+  "is_private": false,
+  "kernel_sources": [],
+  "kernel_type": "notebook",
+  "keywords": [],
+  "language": "python",
+  "machine_shape": "None",
+  "model_sources": [],
+  "title": "OpenOppsDB starter notebook"
+}

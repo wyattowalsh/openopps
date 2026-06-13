@@ -87,6 +87,7 @@ class OpenOppsColumnRow(BaseModel):
 
 
 DATASET_ID = "wyattowalsh/openoppsdb"
+DATASET_LICENSE = "CC0-1.0"
 DB_FILE = "openoppsdb.sqlite"
 CSV_DIR = "exports/csv"
 PARQUET_DIR = "exports/parquet"
@@ -99,10 +100,13 @@ DATAPACKAGE_FILE = "datapackage.json"
 EXPOSED_DATAPACKAGE_FILE = "metadata/datapackage.json"
 NB_FILE = "openoppsdb-manager.ipynb"
 NB_ID = "wyattowalsh/openoppsdb-manager"
+STARTER_NB_FILE = "openoppsdb-starter.ipynb"
+STARTER_NB_ID = "wyattowalsh/openoppsdb-starter-notebook"
 DATASET_IMAGE_FILE = "dataset-cover-image.png"
 DATASET_IMAGE_SOURCE = Path("docs/public/social/openoppsdb.png")
 DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[1] / "kaggle"
 DEFAULT_MANAGER_DIR = DEFAULT_DATASET_DIR
+DEFAULT_STARTER_DIR = DEFAULT_DATASET_DIR / "starter"
 GENERATOR_SCRIPT_URL = (
     "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
     "scripts/generate_kaggle_metadata.py"
@@ -327,6 +331,12 @@ def main() -> None:
         help="Directory to receive the connected Kaggle manager notebook.",
     )
     parser.add_argument(
+        "--starter-dir",
+        type=Path,
+        default=DEFAULT_STARTER_DIR,
+        help="Directory to receive the public Kaggle starter notebook.",
+    )
+    parser.add_argument(
         "--data-db",
         type=Path,
         default=None,
@@ -378,6 +388,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--update-live-file-metadata",
+        action="store_true",
+        help=(
+            "Update Kaggle's live per-file descriptions and column metadata "
+            "from generated dataset-metadata.json. Requires the kaggle package "
+            "and Kaggle API credentials."
+        ),
+    )
+    parser.add_argument(
         "--empty-snapshot-explanation",
         default=None,
         help=(
@@ -415,9 +434,13 @@ def main() -> None:
 
     manager_dir: Path = args.manager_dir
     _write_manager_notebook(manager_dir)
+    starter_dir: Path = args.starter_dir
+    _write_starter_notebook(starter_dir)
 
     if args.stage_public_upload_dir is not None:
         _stage_public_upload_dir(output_dir, args.stage_public_upload_dir)
+    if args.update_live_file_metadata:
+        _update_live_file_metadata(output_dir / "dataset-metadata.json")
 
 
 def dataset_metadata() -> dict[str, Any]:
@@ -426,7 +449,7 @@ def dataset_metadata() -> dict[str, Any]:
         "title": "openoppsdb",
         "subtitle": "Daily SQLite, CSV, and Parquet public startup hiring-board ledger.",
         "description": _dataset_description(),
-        "licenses": [{"name": "unknown"}],
+        "licenses": [{"name": DATASET_LICENSE}],
         "keywords": ["business", "internet", "software", "tabular"],
         "expectedUpdateFrequency": "daily",
         "userSpecifiedSources": (
@@ -476,6 +499,12 @@ def dataset_resources() -> list[dict[str, Any]]:
     return [_kaggle_resource_metadata(resource) for resource in RESOURCES]
 
 
+def dataset_file_metadata(base_dir: Path | None = None) -> list[dict[str, Any]]:
+    return [
+        _kaggle_file_metadata(resource, base_dir=base_dir) for resource in RESOURCES
+    ]
+
+
 def kernel_metadata() -> dict[str, Any]:
     return {
         "id": NB_ID,
@@ -487,6 +516,27 @@ def kernel_metadata() -> dict[str, Any]:
         "enable_gpu": False,
         "enable_tpu": False,
         "enable_internet": True,
+        "keywords": [],
+        "dataset_sources": [DATASET_ID],
+        "competition_sources": [],
+        "kernel_sources": [],
+        "model_sources": [],
+        "docker_image": "",
+        "machine_shape": "None",
+    }
+
+
+def starter_kernel_metadata() -> dict[str, Any]:
+    return {
+        "id": STARTER_NB_ID,
+        "title": "OpenOppsDB starter notebook",
+        "code_file": STARTER_NB_FILE,
+        "language": "python",
+        "kernel_type": "notebook",
+        "is_private": False,
+        "enable_gpu": False,
+        "enable_tpu": False,
+        "enable_internet": False,
         "keywords": [],
         "dataset_sources": [DATASET_ID],
         "competition_sources": [],
@@ -518,6 +568,112 @@ def notebook() -> dict[str, Any]:
             _code_cell("sync-openopps", _notebook_sync_source()),
             _code_cell("export-artifacts", _notebook_export_source()),
             _code_cell("publish-dataset", _notebook_publish_source()),
+        ],
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "codemirror_mode": {"name": "ipython", "version": 3},
+                "file_extension": ".py",
+                "mimetype": "text/x-python",
+                "name": "python",
+                "nbconvert_exporter": "python",
+                "pygments_lexer": "ipython3",
+                "version": "3.12",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+
+
+def starter_notebook() -> dict[str, Any]:
+    return {
+        "cells": [
+            _markdown_cell(
+                "overview",
+                "# OpenOppsDB starter notebook\n\n"
+                "This public example reads the OpenOppsDB Kaggle dataset from "
+                "the attached input files. It is read-only, does not need "
+                "internet access, and does not use credentials.",
+            ),
+            _code_cell(
+                "load",
+                """from pathlib import Path
+import sqlite3
+
+import pandas as pd
+
+db_candidates = sorted(Path("/kaggle/input").glob("**/openoppsdb.sqlite"))
+if not db_candidates:
+    raise FileNotFoundError("No openoppsdb.sqlite input found under /kaggle/input")
+DB_PATH = db_candidates[0]
+DATASET_DIR = DB_PATH.parent
+print(f"Reading OpenOppsDB snapshot from {DB_PATH}")
+DB_URI = f"file:{DB_PATH}?mode=ro&immutable=1"
+
+with sqlite3.connect(DB_URI, uri=True) as conn:
+    tables = pd.read_sql_query(
+        "select table_name, table_title, table_description "
+        "from openopps_tables order by table_name",
+        conn,
+    )
+    counts = {
+        table: conn.execute(f'select count(*) from "{table}"').fetchone()[0]
+        for table in tables["table_name"].tolist()
+    }
+    recent_jobs = pd.read_sql_query(
+        \"\"\"
+        select
+            job_id,
+            title,
+            company,
+            locations,
+            employment_type,
+            first_seen_at,
+            last_seen_at,
+            posting_url
+        from job_versions
+        order by last_seen_at desc
+        limit 20
+        \"\"\",
+        conn,
+    )
+
+summary = pd.DataFrame(
+    {
+        "metric": [
+            "tables",
+            "jobs",
+            "job_versions",
+            "job_sync_runs",
+            "sources",
+        ],
+        "value": [
+            counts["openopps_tables"],
+            counts["jobs"],
+            counts["job_versions"],
+            counts["job_sync_runs"],
+            counts["sources"],
+        ],
+    }
+)
+summary
+""",
+            ),
+            _code_cell(
+                "tables",
+                """tables
+""",
+            ),
+            _code_cell(
+                "recent_jobs",
+                """recent_jobs
+""",
+            ),
         ],
         "metadata": {
             "kernelspec": {
@@ -574,6 +730,15 @@ def _write_manager_notebook(manager_dir: Path) -> None:
     _clean_notebooks(manager_dir)
     _write_json(manager_dir / "kernel-metadata.json", kernel_metadata())
     _write_json(manager_dir / NB_FILE, notebook())
+
+
+def _write_starter_notebook(starter_dir: Path) -> None:
+    starter_dir.mkdir(parents=True, exist_ok=True)
+    for path in starter_dir.glob("*.ipynb"):
+        if path.name != STARTER_NB_FILE:
+            path.unlink()
+    _write_json(starter_dir / "kernel-metadata.json", starter_kernel_metadata())
+    _write_json(starter_dir / STARTER_NB_FILE, starter_notebook())
 
 
 def _remove_dataset_notebooks(output_dir: Path) -> None:
@@ -638,9 +803,7 @@ def _write_full_table_exports(output_dir: Path, db_path: Path) -> None:
             frame.write_parquet(parquet_dir / f"{table.name}.parquet")
 
 
-def _table_export_frame(
-    table: Table, rows: list[dict[str, object]]
-) -> pl.DataFrame:
+def _table_export_frame(table: Table, rows: list[dict[str, object]]) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame({field: [] for field in table.model.model_fields})
     return pl.DataFrame(rows, infer_schema_length=None)
@@ -719,7 +882,9 @@ def snapshot_quality_report(
     sqlite_counts = sqlite_report["counts"]
 
     enabled_sources = _int_count(sqlite_counts.get("enabledSources"))
-    source_count = _int_count(status_counts.get("sources"), sqlite_counts.get("sources"))
+    source_count = _int_count(
+        status_counts.get("sources"), sqlite_counts.get("sources")
+    )
     board_count = _int_count(status_counts.get("boards"), sqlite_counts.get("boards"))
     route_count = _int_count(
         status_counts.get("boardProviders"), sqlite_counts.get("boardProviders")
@@ -891,7 +1056,9 @@ def _sqlite_snapshot_report(db_path: Path) -> dict[str, Any]:
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 )
             }
-            missing_tables = [table.name for table in TABLES if table.name not in tables]
+            missing_tables = [
+                table.name for table in TABLES if table.name not in tables
+            ]
             report["missingTables"] = missing_tables
             counts = {
                 table.name: _sqlite_count(conn, table.name)
@@ -1110,9 +1277,7 @@ def _cell_lines(source: str) -> list[str]:
 
 
 def _notebook_setup_source() -> str:
-    sync_env_defaults = json.dumps(
-        NOTEBOOK_SYNC_ENV_DEFAULTS, indent=4, sort_keys=True
-    )
+    sync_env_defaults = json.dumps(NOTEBOOK_SYNC_ENV_DEFAULTS, indent=4, sort_keys=True)
     return """#@title Initialize
 from __future__ import annotations
 
@@ -1162,32 +1327,9 @@ KAGGLE_SYNC_TIMEOUT_SECONDS = float(
 )
 KAGGLE_CREDENTIALS_ERROR = (
     "Kaggle API credentials are required to publish openoppsdb. "
-    "Configure KAGGLE_USERNAME/KAGGLE_KEY or KAGGLE_API_TOKEN as Kaggle "
-    "notebook secrets before running the manager."
+    "Configure KAGGLE_USERNAME and KAGGLE_KEY as Kaggle notebook secrets "
+    "before running the manager."
 )
-KAGGLE_SECRET_ALIASES = {
-    "KAGGLE_USERNAME": (
-        "KAGGLE_USERNAME",
-        "Kaggle Username",
-        "kaggle_username",
-        "kaggle username",
-        "kaggle-username",
-    ),
-    "KAGGLE_KEY": (
-        "KAGGLE_KEY",
-        "Kaggle Key",
-        "kaggle_key",
-        "kaggle key",
-        "kaggle-key",
-    ),
-    "KAGGLE_API_TOKEN": (
-        "KAGGLE_API_TOKEN",
-        "Kaggle API Token",
-        "kaggle_api_token",
-        "kaggle api token",
-        "kaggle-api-token",
-    ),
-}
 KAGGLE_SECRET_LOOKUP_ERRORS: dict[str, str] = {}
 
 if OUTPUT_DIR.exists():
@@ -1203,29 +1345,42 @@ def load_kaggle_notebook_secrets() -> None:
         return
 
     client = UserSecretsClient()
-    for env_name, secret_names in KAGGLE_SECRET_ALIASES.items():
-        if os.environ.get(env_name):
-            print(f"{env_name} already present in environment.")
-            continue
-        loaded = False
-        for secret_name in secret_names:
-            try:
-                value = client.get_secret(secret_name)
-            except Exception as exc:
-                KAGGLE_SECRET_LOOKUP_ERRORS[env_name] = type(exc).__name__
-                if secret_name == secret_names[0]:
-                    print(
-                        f"{env_name} notebook secret lookup failed: "
-                        f"{type(exc).__name__}"
-                    )
-                continue
-            if isinstance(value, str) and value.strip():
-                os.environ[env_name] = value.strip()
-                loaded = True
-                print(f"{env_name} loaded from Kaggle notebook secrets.")
-                break
-        if not loaded:
-            print(f"{env_name} not found in Kaggle notebook secrets.")
+
+    if os.environ.get("KAGGLE_USERNAME"):
+        print("KAGGLE_USERNAME already present in environment.")
+    else:
+        try:
+            username = client.get_secret("KAGGLE_USERNAME")
+        except Exception as exc:
+            KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_USERNAME"] = type(exc).__name__
+            print(
+                "KAGGLE_USERNAME notebook secret lookup failed: "
+                f"{type(exc).__name__}"
+            )
+        else:
+            if isinstance(username, str) and username.strip():
+                os.environ["KAGGLE_USERNAME"] = username.strip()
+                print("KAGGLE_USERNAME loaded from Kaggle notebook secrets.")
+            else:
+                print("KAGGLE_USERNAME not found in Kaggle notebook secrets.")
+
+    if os.environ.get("KAGGLE_KEY"):
+        print("KAGGLE_KEY already present in environment.")
+    else:
+        try:
+            key = client.get_secret("KAGGLE_KEY")
+        except Exception as exc:
+            KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_KEY"] = type(exc).__name__
+            print(
+                "KAGGLE_KEY notebook secret lookup failed: "
+                f"{type(exc).__name__}"
+            )
+        else:
+            if isinstance(key, str) and key.strip():
+                os.environ["KAGGLE_KEY"] = key.strip()
+                print("KAGGLE_KEY loaded from Kaggle notebook secrets.")
+            else:
+                print("KAGGLE_KEY not found in Kaggle notebook secrets.")
 
 def has_kaggle_credentials() -> bool:
     load_kaggle_notebook_secrets()
@@ -1306,6 +1461,88 @@ def copy_latest_input_db() -> None:
 def download_dataset_assets() -> None:
     urllib.request.urlretrieve(GENERATOR_SCRIPT_URL, GENERATOR_SCRIPT)
     urllib.request.urlretrieve(DATASET_IMAGE_URL, OUTPUT_DIR / "dataset-cover-image.png")
+
+def update_kaggle_dataset_file_metadata() -> None:
+    from kaggle.api.kaggle_api_extended import KaggleApi
+    from kagglesdk.datasets.types.dataset_api_service import (
+        ApiUpdateDatasetMetadataRequest,
+    )
+    from kagglesdk.datasets.types.dataset_types import (
+        DatasetSettings,
+        DatasetSettingsFile,
+        DatasetSettingsFileColumn,
+    )
+
+    metadata_path = OUTPUT_DIR / "dataset-metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    resources = metadata.get("resources") or []
+    if not resources:
+        raise RuntimeError(f"No Kaggle resources found in {metadata_path}")
+
+    api = KaggleApi()
+    api.authenticate()
+
+    settings = DatasetSettings()
+    settings.title = str(metadata.get("title") or "")
+    settings.subtitle = str(metadata.get("subtitle") or "")
+    settings.description = str(metadata.get("description") or "")
+    settings.is_private = bool(metadata.get("isPrivate", False))
+    settings.licenses = [
+        api._new_license(str(license_data["name"]))
+        for license_data in metadata.get("licenses", [])
+        if license_data.get("name")
+    ]
+    settings.keywords = [str(keyword) for keyword in metadata.get("keywords", [])]
+    settings.expected_update_frequency = str(
+        metadata.get("expectedUpdateFrequency") or "not specified"
+    )
+    settings.user_specified_sources = str(metadata.get("userSpecifiedSources") or "")
+    settings.data = [
+        _dataset_settings_file(
+            resource,
+            DatasetSettingsFile,
+            DatasetSettingsFileColumn,
+            base_dir=OUTPUT_DIR,
+        )
+        for resource in resources
+    ]
+
+    owner_slug, dataset_slug = str(metadata.get("id") or DATASET_ID).split("/", 1)
+    request = ApiUpdateDatasetMetadataRequest()
+    request.owner_slug = owner_slug
+    request.dataset_slug = dataset_slug
+    request.settings = settings
+
+    with api.build_kaggle_client() as kaggle:
+        response = kaggle.datasets.dataset_api_client.update_dataset_metadata(request)
+    errors = getattr(response, "errors", None) or []
+    if errors:
+        raise RuntimeError(f"Kaggle dataset metadata update failed: {errors}")
+    print(f"Updated Kaggle file metadata for {len(settings.data or [])} public files.")
+
+def _dataset_settings_file(
+    resource,
+    dataset_settings_file_cls,
+    dataset_settings_file_column_cls,
+    *,
+    base_dir=None,
+):
+    file_metadata = dataset_settings_file_cls()
+    file_metadata.name = str(resource["path"])
+    file_metadata.description = str(resource.get("description") or "")
+    if base_dir is not None:
+        file_path = Path(base_dir) / str(resource["path"])
+        if file_path.exists():
+            file_metadata.total_bytes = file_path.stat().st_size
+    columns = []
+    for field in resource.get("schema", {}).get("fields", []):
+        column = dataset_settings_file_column_cls()
+        column.name = str(field["name"])
+        column.description = str(field.get("description") or "")
+        column.type = str(field.get("type") or "")
+        columns.append(column)
+    file_metadata.columns = columns
+    return file_metadata
 
 require_kaggle_credentials()
 install_openopps()
@@ -1399,6 +1636,7 @@ run([
     "-r",
     "zip",
 ])
+update_kaggle_dataset_file_metadata()
 run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"])
 run(["kaggle", "datasets", "files", DATASET_ID, "--page-size", "200"])
 """
@@ -1436,6 +1674,120 @@ def _kaggle_resource_metadata(resource: Resource) -> dict[str, Any]:
             ]
         }
     return metadata
+
+
+def _kaggle_file_metadata(
+    resource: Resource, *, base_dir: Path | None = None
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "name": resource.path,
+        "description": resource.description,
+        "columns": [],
+    }
+    if base_dir is not None:
+        file_path = base_dir / resource.path
+        if file_path.exists():
+            metadata["totalBytes"] = file_path.stat().st_size
+    if resource.model is not None:
+        metadata["columns"] = [
+            {
+                "name": field["name"],
+                "description": str(field["description"]),
+                "type": _kaggle_field_type(field),
+            }
+            for field in _model_schema_metadata(resource.model)["fields"]
+        ]
+    return metadata
+
+
+def _update_live_file_metadata(metadata_path: Path) -> None:
+    try:
+        from kaggle.api.kaggle_api_extended import KaggleApi
+        from kagglesdk.datasets.types.dataset_api_service import (
+            ApiUpdateDatasetMetadataRequest,
+        )
+        from kagglesdk.datasets.types.dataset_types import (
+            DatasetSettings,
+            DatasetSettingsFile,
+            DatasetSettingsFileColumn,
+        )
+    except Exception as exc:  # pragma: no cover - exercised in Kaggle runtime.
+        raise RuntimeError(
+            "Updating live Kaggle file metadata requires the kaggle package. "
+            "Run with `uv run --with kaggle python scripts/generate_kaggle_metadata.py "
+            "--update-live-file-metadata` or from the Kaggle manager notebook."
+        ) from exc
+
+    metadata = _read_json(metadata_path)
+    resources = metadata.get("resources") or []
+    if not resources:
+        raise ValueError(f"No resources found in {metadata_path}")
+
+    api = KaggleApi()
+    api.authenticate()
+
+    settings = DatasetSettings()
+    settings.title = str(metadata.get("title") or "")
+    settings.subtitle = str(metadata.get("subtitle") or "")
+    settings.description = str(metadata.get("description") or "")
+    settings.is_private = bool(metadata.get("isPrivate", False))
+    settings.licenses = [
+        api._new_license(str(license_data["name"]))  # noqa: SLF001
+        for license_data in metadata.get("licenses", [])
+        if license_data.get("name")
+    ]
+    settings.keywords = [str(keyword) for keyword in metadata.get("keywords", [])]
+    settings.expected_update_frequency = str(
+        metadata.get("expectedUpdateFrequency") or "not specified"
+    )
+    settings.user_specified_sources = str(metadata.get("userSpecifiedSources") or "")
+    settings.data = [
+        _dataset_settings_file(
+            resource,
+            DatasetSettingsFile,
+            DatasetSettingsFileColumn,
+            base_dir=metadata_path.parent,
+        )
+        for resource in resources
+    ]
+
+    owner_slug, dataset_slug = str(metadata.get("id") or DATASET_ID).split("/", 1)
+    request = ApiUpdateDatasetMetadataRequest()
+    request.owner_slug = owner_slug
+    request.dataset_slug = dataset_slug
+    request.settings = settings
+
+    with api.build_kaggle_client() as kaggle:
+        response = kaggle.datasets.dataset_api_client.update_dataset_metadata(request)
+    errors = getattr(response, "errors", None) or []
+    if errors:
+        raise RuntimeError(f"Kaggle dataset metadata update failed: {errors}")
+    print(f"Updated Kaggle file metadata for {len(settings.data or [])} public files.")
+
+
+def _dataset_settings_file(
+    resource: dict[str, Any],
+    dataset_settings_file_cls: type,
+    dataset_settings_file_column_cls: type,
+    *,
+    base_dir: Path | None = None,
+) -> Any:
+    file_metadata = dataset_settings_file_cls()
+    file_metadata.name = str(resource["path"])
+    file_metadata.description = str(resource.get("description") or "")
+    if base_dir is not None:
+        file_path = base_dir / str(resource["path"])
+        if file_path.exists():
+            file_metadata.total_bytes = file_path.stat().st_size
+    columns = []
+    for field in resource.get("schema", {}).get("fields", []):
+        column = dataset_settings_file_column_cls()
+        column.name = str(field["name"])
+        column.description = str(field.get("description") or "")
+        column.type = str(field.get("type") or "")
+        columns.append(column)
+    file_metadata.columns = columns
+    return file_metadata
 
 
 def _kaggle_field_metadata(field: dict[str, Any]) -> dict[str, Any]:
