@@ -1525,3 +1525,119 @@ VALTRUIS_SOURCE = SourceRecord(
     enabled=True,
     raw_metadata={"board": "valtruis"},
 )
+
+GET2KNOWNOKE_SOURCE = SourceRecord(
+    key="get2knownoke",
+    url="https://jobs.get2knownoke.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "get2knownoke"},
+)
+
+
+WHITEBOARDADVISORS_SOURCE = SourceRecord(
+    key="whiteboardadvisors",
+    url="https://jobs.whiteboardadvisors.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "whiteboardadvisors"},
+)
+
+
+FIRSTROUNDCAPITAL_SOURCE = SourceRecord(
+    key="firstroundcapital",
+    url="https://consider.com/boards/vc/first-round-capital/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "firstroundcapital"},
+)
+
+
+IMPACTSOURCE_SOURCE = SourceRecord(
+    key="impactsource",
+    url="https://www.impactsource.ai/jobs",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "impactsource"},
+)
+
+
+PROSPECT_SOURCE = SourceRecord(
+    key="prospect",
+    url="https://consider.com/boards/vc/prospect/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "prospect"},
+)
+
+
+RIVERSIDE_SOURCE = SourceRecord(
+    key="riverside",
+    url="https://consider.com/boards/vc/riverside/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "riverside"},
+)
+
+
+OWLVC_SOURCE = SourceRecord(
+    key="owlvc",
+    url="https://careers.owlvc.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "owlvc"},
+)
+
+
+EDBI_SOURCE = SourceRecord(
+    key="edbi",
+    url="https://consider.com/boards/vc/edbi/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "edbi"},
+)
+
+
+MUUS_SOURCE = SourceRecord(
+    key="muus",
+    url="https://consider.com/boards/vc/muus/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "muus"},
+)
+
+
+ANTHOSCAPITAL_SOURCE = SourceRecord(
+    key="anthoscapital",
+    url="https://consider.com/boards/vc/anthos-capital/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "anthoscapital"},
+)
+
+
+PROPTECH1_SOURCE = SourceRecord(
+    key="proptech1",
+    url="https://consider.com/boards/vc/proptech1/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "proptech1"},
+)
+
+
+JVPVC_SOURCE = SourceRecord(
+    key="jvpvc",
+    url="https://jobs.jvpvc.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "jvpvc"},
+)
+
+
+PSL_SOURCE = SourceRecord(
+    key="psl",
+    url="https://jobs.psl.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "psl"},
+)

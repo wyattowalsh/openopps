@@ -664,6 +664,13 @@
     },
     {
       "enabled": true,
+      "key": "amazingcolumbusga",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://work.amazingcolumbusga.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "americanunderground",
       "providerId": "getro",
       "taxonomy": {},
@@ -724,6 +731,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.anthemis.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "anthoscapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/anthos-capital/companies"
     },
     {
       "enabled": true,
@@ -822,6 +836,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.atxventurepartners.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "avax",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.avax.network/companies"
     },
     {
       "enabled": true,
@@ -1061,6 +1082,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.blacktalentdatabase.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "blackwellnow",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.blackwellnow.org/companies"
     },
     {
       "enabled": true,
@@ -1890,6 +1918,13 @@
     },
     {
       "enabled": true,
+      "key": "developmilledgeville",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.developmilledgeville.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "dfdf",
       "providerId": "consider",
       "taxonomy": {},
@@ -1915,6 +1950,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.digitalfuelcapital.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "dlcda",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.dlcda.com/companies"
     },
     {
       "enabled": false,
@@ -2013,6 +2055,20 @@
     },
     {
       "enabled": true,
+      "key": "economicdevelopmentjobs",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://economicdevelopmentjobs.getro.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "edbi",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/edbi/companies"
+    },
+    {
+      "enabled": true,
       "key": "edisonpartners",
       "providerId": "getro",
       "taxonomy": {},
@@ -2091,6 +2147,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.elsewhere.partners/companies"
+    },
+    {
+      "enabled": true,
+      "key": "emanuelchamber",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.emanuelchamber.org/companies"
     },
     {
       "enabled": true,
@@ -2268,6 +2331,13 @@
     },
     {
       "enabled": true,
+      "key": "fannindevelopment",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.fannindevelopment.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "fayettechamber",
       "providerId": "getro",
       "taxonomy": {},
@@ -2368,10 +2438,24 @@
     },
     {
       "enabled": true,
+      "key": "firstmilevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.firstmilevc.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "firstminute",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.firstminute.capital/companies"
+    },
+    {
+      "enabled": true,
+      "key": "firstmomentum",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.firstmomentum.vc/companies"
     },
     {
       "enabled": true,
@@ -2395,6 +2479,13 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.firstround.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "firstroundcapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/first-round-capital/companies"
     },
     {
       "enabled": true,
@@ -2678,6 +2769,13 @@
     },
     {
       "enabled": true,
+      "key": "fulcrumep",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.fulcrumep.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "fusevc",
       "providerId": "getro",
       "taxonomy": {},
@@ -2792,6 +2890,13 @@
     },
     {
       "enabled": true,
+      "key": "get2knownoke",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.get2knownoke.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "getrocommunity",
       "providerId": "getro",
       "taxonomy": {},
@@ -2810,6 +2915,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/gigascale/companies"
+    },
+    {
+      "enabled": true,
+      "key": "glasswing",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.glasswing.vc/companies"
     },
     {
       "enabled": false,
@@ -2957,6 +3069,13 @@
     },
     {
       "enabled": true,
+      "key": "growenid",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.growenid.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "growingreenvillenc",
       "providerId": "getro",
       "taxonomy": {},
@@ -2982,6 +3101,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.gv.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "hannahgrey",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://hannahgrey.getro.com/companies"
     },
     {
       "enabled": true,
@@ -3056,6 +3182,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.hellokoru.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "hellowestmichigan",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.hellowestmichigan.com/companies"
     },
     {
       "enabled": true,
@@ -3264,6 +3397,13 @@
     },
     {
       "enabled": true,
+      "key": "impactsource",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://www.impactsource.ai/jobs"
+    },
+    {
+      "enabled": true,
       "key": "indexventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -3392,6 +3532,13 @@
     },
     {
       "enabled": true,
+      "key": "investnebraska",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.investnebraska.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "investottawa",
       "providerId": "getro",
       "taxonomy": {},
@@ -3476,6 +3623,13 @@
     },
     {
       "enabled": true,
+      "key": "joplincc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.joplincc.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "jumpcap",
       "providerId": "getro",
       "taxonomy": {},
@@ -3510,6 +3664,13 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.jungle.vc/portfolio"
+    },
+    {
+      "enabled": true,
+      "key": "jvpvc",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.jvpvc.com/companies"
     },
     {
       "enabled": true,
@@ -3632,6 +3793,13 @@
     },
     {
       "enabled": true,
+      "key": "leadershiptriangle",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.leadershiptriangle.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "leadoutcapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -3699,6 +3867,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/lightrock/companies"
+    },
+    {
+      "enabled": true,
+      "key": "limitlessdecatur",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.limitlessdecatur.com/companies"
     },
     {
       "enabled": true,
@@ -3984,6 +4159,13 @@
     },
     {
       "enabled": true,
+      "key": "merantixaicampus",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.merantix-aicampus.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "meridianstreetcapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -4132,6 +4314,13 @@
     },
     {
       "enabled": true,
+      "key": "motherventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.mother-ventures.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "motion",
       "providerId": "getro",
       "taxonomy": {},
@@ -4171,6 +4360,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://portfoliojobs.munichreventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "muus",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/muus/companies"
     },
     {
       "enabled": true,
@@ -4481,6 +4677,13 @@
     },
     {
       "enabled": true,
+      "key": "omnivorevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.omnivore.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "onepeak",
       "providerId": "consider",
       "taxonomy": {},
@@ -4569,6 +4772,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.overture.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "owlvc",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://careers.owlvc.com/companies"
     },
     {
       "enabled": true,
@@ -4671,6 +4881,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.peoplefunction.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "peoria",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.peoria.org/companies"
     },
     {
       "enabled": true,
@@ -4843,10 +5060,31 @@
     },
     {
       "enabled": true,
+      "key": "portageinvestvc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.portageinvest.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "portmuskogee",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.portmuskogee.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "powerhouseventures",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.powerhouse-ventures.co/companies"
+    },
+    {
+      "enabled": true,
+      "key": "powerlines",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.powerlines.org/companies"
     },
     {
       "enabled": true,
@@ -4887,6 +5125,20 @@
     },
     {
       "enabled": true,
+      "key": "proptech1",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/proptech1/companies"
+    },
+    {
+      "enabled": true,
+      "key": "prospect",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/prospect/companies"
+    },
+    {
+      "enabled": true,
       "key": "protagonist",
       "providerId": "consider",
       "taxonomy": {},
@@ -4898,6 +5150,20 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.protocol.ai/companies"
+    },
+    {
+      "enabled": true,
+      "key": "prudence",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.prudence.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "psl",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.psl.com/companies"
     },
     {
       "enabled": true,
@@ -5117,10 +5383,24 @@
     },
     {
       "enabled": true,
+      "key": "ridgeline",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.ridgeline.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "riverparkvc",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.riverparkvc.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "riverside",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/riverside/companies"
     },
     {
       "enabled": true,
@@ -5197,6 +5477,13 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.s2ginvestments.com/team/careers/open-positions"
+    },
+    {
+      "enabled": true,
+      "key": "s32",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://s32.getro.com/companies"
     },
     {
       "enabled": true,
@@ -5432,6 +5719,13 @@
     },
     {
       "enabled": true,
+      "key": "silversmith",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.silversmith.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "silvertonpartners",
       "providerId": "getro",
       "taxonomy": {},
@@ -5615,6 +5909,13 @@
     },
     {
       "enabled": true,
+      "key": "spectrumequity",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.spectrumequity.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "speedinvest",
       "providerId": "getro",
       "taxonomy": {},
@@ -5738,6 +6039,13 @@
     },
     {
       "enabled": true,
+      "key": "story",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.story.foundation/companies"
+    },
+    {
+      "enabled": true,
       "key": "stripes",
       "providerId": "getro",
       "taxonomy": {},
@@ -5812,6 +6120,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.susaventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "swanandlegend",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.swanandlegend.com/companies"
     },
     {
       "enabled": true,
@@ -5915,6 +6230,13 @@
     },
     {
       "enabled": true,
+      "key": "techsquareventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.techsquareventures.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "techstars",
       "providerId": "getro",
       "taxonomy": {},
@@ -5954,6 +6276,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.theblockchainassociation.org/companies"
+    },
+    {
+      "enabled": true,
+      "key": "thecentermemphis",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.thecentermemphis.org/companies"
     },
     {
       "enabled": true,
@@ -6103,6 +6432,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.toledoregion.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "ton",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.ton.org/companies"
     },
     {
       "enabled": true,
@@ -6554,6 +6890,13 @@
     },
     {
       "enabled": true,
+      "key": "whiteboardadvisors",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.whiteboardadvisors.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "wing",
       "providerId": "getro",
       "taxonomy": {},
@@ -6579,6 +6922,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://www.workinseguin.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "workupcoweta",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.workupcoweta.com/companies"
     },
     {
       "enabled": true,
@@ -6657,6 +7007,6 @@
     "exportFormatCount": 3,
     "jobProviderCount": 9,
     "sourceAdapterCount": 14,
-    "sourceRecordCount": 804
+    "sourceRecordCount": 854
   }
 }
