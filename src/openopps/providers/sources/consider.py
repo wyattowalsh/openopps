@@ -15,11 +15,10 @@ from openopps.models import (
     SourceRecord,
     normalize_public_website_url,
     utc_now,
+    validate_public_https_url,
 )
 from openopps.settings import OpenOppsSettings
-from openopps.models import validate_public_https_url
 from openopps.utils import slugify, source_board_key, stable_id
-
 
 A16Z_SOURCE = SourceRecord(
     key="a16z",
@@ -28,6 +27,40 @@ A16Z_SOURCE = SourceRecord(
     enabled=True,
     raw_metadata={"board": "andreessen-horowitz"},
 )
+
+INDIEBIO_SOURCE = SourceRecord(
+    key="indiebio",
+    url="https://indiebio.board.staging.consider.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "indiebio"},
+)
+
+
+VALTRUIS_SOURCE = SourceRecord(
+    key="valtruis",
+    url="https://careers.valtruis.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "valtruis"},
+)
+
+SELECTPRIORINVESTMENTS_SOURCE = SourceRecord(
+    key="selectpriorinvestments",
+    url="https://consider.com/boards/vc/select-prior-investments/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "selectpriorinvestments"},
+)
+
+VISTRIA_SOURCE = SourceRecord(
+    key="vistria",
+    url="https://consider.com/boards/vc/vistria/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "vistria"},
+)
+
 
 CONSIDER_SOURCE_CATALOG = {
     "a16z": A16Z_SOURCE,
@@ -1116,8 +1149,203 @@ CONSIDER_SOURCE_CATALOG = {
         enabled=True,
         raw_metadata={"board": "digital-east"},
     ),
+    "techchange": SourceRecord(
+        key="techchange",
+        url="https://consider.com/boards/vc/techchange/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "techchange"},
+    ),
+    "orbitstartups": SourceRecord(
+        key="orbitstartups",
+        url="https://consider.com/boards/vc/orbit-startups/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "orbit-startups"},
+    ),
+    "monkshillventures": SourceRecord(
+        key="monkshillventures",
+        url="https://consider.com/boards/vc/monks-hill-ventures/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "monks-hill-ventures"},
+    ),
+    "skydeck": SourceRecord(
+        key="skydeck",
+        url="https://jobs.skydeck.berkeley.edu/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "berkeley-skydeck"},
+    ),
+    "highalpha": SourceRecord(
+        key="highalpha",
+        url="https://consider.com/boards/vc/high-alpha/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "high-alpha"},
+    ),
+    "gigascale": SourceRecord(
+        key="gigascale",
+        url="https://consider.com/boards/vc/gigascale/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "gigascale"},
+    ),
+    "hunterpointcapital": SourceRecord(
+        key="hunterpointcapital",
+        url="https://consider.com/boards/vc/hunter-point-capital/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "hunter-point-capital"},
+    ),
+    "mbaexchange": SourceRecord(
+        key="mbaexchange",
+        url="https://consider.com/boards/vc/mba-exchange/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "mba-exchange"},
+    ),
+    "hashed": SourceRecord(
+        key="hashed",
+        url="https://consider.com/boards/vc/hashed/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "hashed"},
+    ),
+    "hummingbirdventures": SourceRecord(
+        key="hummingbirdventures",
+        url="https://consider.com/boards/vc/hummingbird-ventures/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "hummingbird-ventures"},
+    ),
+    "remotely": SourceRecord(
+        key="remotely",
+        url="https://consider.com/boards/vc/remotely/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "remotely"},
+    ),
+    "datapowerventures": SourceRecord(
+        key="datapowerventures",
+        url="https://consider.com/boards/vc/datapower-ventures/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "datapower-ventures"},
+    ),
+    "lightrock": SourceRecord(
+        key="lightrock",
+        url="https://consider.com/boards/vc/lightrock/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "lightrock"},
+    ),
+    "foxmontcapital": SourceRecord(
+        key="foxmontcapital",
+        url="https://consider.com/boards/vc/foxmont-capital/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "foxmont-capital"},
+    ),
+    "adgm": SourceRecord(
+        key="adgm",
+        url="https://consider.com/boards/vc/adgm/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "adgm"},
+    ),
+    "hcvc": SourceRecord(
+        key="hcvc",
+        url="https://jobs.hcvc.co/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "hcvc"},
+    ),
+    "onepeak": SourceRecord(
+        key="onepeak",
+        url="https://jobs.onepeak.tech/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "one-peak"},
+    ),
+    "sprints": SourceRecord(
+        key="sprints",
+        url="https://jobs.sprints.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "sprints"},
+    ),
+    "foresitecapital": SourceRecord(
+        key="foresitecapital",
+        url="https://consider.com/boards/vc/foresite-capital/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "foresite-capital"},
+    ),
+    "paradigmxyz": SourceRecord(
+        key="paradigmxyz",
+        url="https://consider.com/boards/vc/paradigm-xyz/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "paradigm-xyz"},
+    ),
+    "griffingp": SourceRecord(
+        key="griffingp",
+        url="https://careers.griffingp.com/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "griffin-gaming"},
+    ),
+    "allinmilwaukee": SourceRecord(
+        key="allinmilwaukee",
+        url="https://consider.com/boards/vc/all-in-milwaukee/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "all-in-milwaukee"},
+    ),
+    "struckcapital": SourceRecord(
+        key="struckcapital",
+        url="https://consider.com/boards/vc/struck-capital/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "struck-capital"},
+    ),
+    "seventyseven": SourceRecord(
+        key="seventyseven",
+        url="https://consider.com/boards/vc/seventy-seven/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "seventy-seven"},
+    ),
+    "nv": SourceRecord(
+        key="nv",
+        url="https://consider.com/boards/vc/nv/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "nv"},
+    ),
+    "tcgcrypto": SourceRecord(
+        key="tcgcrypto",
+        url="https://consider.com/boards/vc/tcg-crypto/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "tcg-crypto"},
+    ),
+    "longgame": SourceRecord(
+        key="longgame",
+        url="https://consider.com/boards/vc/longgame/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "longgame"},
+    ),
+    "baincrypto": SourceRecord(
+        key="baincrypto",
+        url="https://consider.com/boards/vc/bain-crypto/companies",
+        provider_id="consider",
+        enabled=True,
+        raw_metadata={"board": "bain-crypto"},
+    ),
 }
-
 SOURCE_RECORDS: tuple[SourceRecord, ...] = tuple(CONSIDER_SOURCE_CATALOG.values())
 
 
@@ -1239,9 +1467,61 @@ class ConsiderSourceAdapter:
         return boards, providers
 
 
+SOUTHPARKCOMMONSVC_SOURCE = SourceRecord(
+    key="southparkcommonsvc",
+    url="https://consider.com/boards/vc/south-park-commons/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "southparkcommonsvc"},
+)
+
+
+LCATTERTONVC_SOURCE = SourceRecord(
+    key="lcattertonvc",
+    url="https://consider.com/boards/vc/l-catterton/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "lcattertonvc"},
+)
+
+
+EVPVC_SOURCE = SourceRecord(
+    key="evpvc",
+    url="https://consider.com/boards/vc/evp/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "evpvc"},
+)
+
+
 class ConsiderA16zSourceAdapter(ConsiderSourceAdapter):
     provider_id = "consider_a16z"
     provider_label = "Consider/a16z"
     provider_description = (
         "Aggregate a16z source adapter that discovers boards and provider hints."
     )
+
+
+INDIEBIO_SOURCE = SourceRecord(
+    key="indiebio",
+    url="https://indiebio.board.staging.consider.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "indiebio"},
+)
+
+VISTRIA_SOURCE = SourceRecord(
+    key="vistria",
+    url="https://consider.com/boards/vc/vistria/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "vistria"},
+)
+
+VALTRUIS_SOURCE = SourceRecord(
+    key="valtruis",
+    url="https://careers.valtruis.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "valtruis"},
+)

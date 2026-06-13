@@ -1165,12 +1165,70 @@ KAGGLE_CREDENTIALS_ERROR = (
     "Configure KAGGLE_USERNAME/KAGGLE_KEY or KAGGLE_API_TOKEN as Kaggle "
     "notebook secrets before running the manager."
 )
+KAGGLE_SECRET_ALIASES = {
+    "KAGGLE_USERNAME": (
+        "KAGGLE_USERNAME",
+        "Kaggle Username",
+        "kaggle_username",
+        "kaggle username",
+        "kaggle-username",
+    ),
+    "KAGGLE_KEY": (
+        "KAGGLE_KEY",
+        "Kaggle Key",
+        "kaggle_key",
+        "kaggle key",
+        "kaggle-key",
+    ),
+    "KAGGLE_API_TOKEN": (
+        "KAGGLE_API_TOKEN",
+        "Kaggle API Token",
+        "kaggle_api_token",
+        "kaggle api token",
+        "kaggle-api-token",
+    ),
+}
+KAGGLE_SECRET_LOOKUP_ERRORS: dict[str, str] = {}
 
 if OUTPUT_DIR.exists():
     shutil.rmtree(OUTPUT_DIR)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+def load_kaggle_notebook_secrets() -> None:
+    try:
+        from kaggle_secrets import UserSecretsClient
+    except Exception as exc:
+        KAGGLE_SECRET_LOOKUP_ERRORS["kaggle_secrets"] = type(exc).__name__
+        print(f"Kaggle notebook secrets client unavailable: {type(exc).__name__}")
+        return
+
+    client = UserSecretsClient()
+    for env_name, secret_names in KAGGLE_SECRET_ALIASES.items():
+        if os.environ.get(env_name):
+            print(f"{env_name} already present in environment.")
+            continue
+        loaded = False
+        for secret_name in secret_names:
+            try:
+                value = client.get_secret(secret_name)
+            except Exception as exc:
+                KAGGLE_SECRET_LOOKUP_ERRORS[env_name] = type(exc).__name__
+                if secret_name == secret_names[0]:
+                    print(
+                        f"{env_name} notebook secret lookup failed: "
+                        f"{type(exc).__name__}"
+                    )
+                continue
+            if isinstance(value, str) and value.strip():
+                os.environ[env_name] = value.strip()
+                loaded = True
+                print(f"{env_name} loaded from Kaggle notebook secrets.")
+                break
+        if not loaded:
+            print(f"{env_name} not found in Kaggle notebook secrets.")
+
 def has_kaggle_credentials() -> bool:
+    load_kaggle_notebook_secrets()
     kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
     token_path = os.environ.get("KAGGLE_API_V1_TOKEN_PATH")
     return bool(
@@ -1182,6 +1240,12 @@ def has_kaggle_credentials() -> bool:
 
 def require_kaggle_credentials() -> None:
     if not has_kaggle_credentials():
+        if KAGGLE_SECRET_LOOKUP_ERRORS:
+            details = ", ".join(
+                f"{key}={value}"
+                for key, value in sorted(KAGGLE_SECRET_LOOKUP_ERRORS.items())
+            )
+            raise RuntimeError(f"{KAGGLE_CREDENTIALS_ERROR} Lookup diagnostics: {details}")
         raise RuntimeError(KAGGLE_CREDENTIALS_ERROR)
 
 def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
@@ -1202,11 +1266,14 @@ def run_json(
             env=env,
             text=True,
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
         if exc.stdout:
             print(exc.stdout)
+        if exc.stderr:
+            print(exc.stderr, file=sys.stderr)
         timeout_label = (
             f"{timeout_seconds:g}" if timeout_seconds is not None else "unknown"
         )
@@ -1216,6 +1283,8 @@ def run_json(
     if completed.returncode:
         if completed.stdout:
             print(completed.stdout)
+        if completed.stderr:
+            print(completed.stderr, file=sys.stderr)
         completed.check_returncode()
     data = json.loads(completed.stdout)
     output_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")

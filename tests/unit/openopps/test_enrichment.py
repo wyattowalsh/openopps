@@ -101,3 +101,36 @@ def test_enrich_metadata_apply_promotes_payload_fields(tmp_path: Path):
     assert route.label == "SmartRecruiters"
     assert route.count_hint == 3
     assert route.board_url == "https://jobs.smartrecruiters.com/Acme"
+
+
+def test_enrich_metadata_ignores_invalid_payload_website(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="getro", url="https://jobs.example.com", provider_id="getro")
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="getro:media-co",
+                source_key="getro",
+                remote_id="media-co",
+                name="Media Co",
+                raw_payload={
+                    "domain": '[\n\t"Entertainment",\n\t"Broadcast Media"\n]',
+                    "website": {
+                        "url": '[\n\t"Entertainment",\n\t"Broadcast Media"\n]'
+                    },
+                },
+            )
+        ]
+    )
+
+    summary = enrich_metadata(store, apply=True).as_dict()
+    board = store.get_board("getro:media-co")
+
+    assert summary["applied"] is True
+    assert summary["boardChangeCount"] == 0
+    assert board is not None
+    assert board.domain is None
+    assert board.website_url is None

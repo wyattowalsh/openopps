@@ -178,6 +178,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "timeout_seconds=KAGGLE_SYNC_TIMEOUT_SECONDS" in source
     assert "Command exceeded" in source
     assert "stdout=subprocess.PIPE" in source
+    assert "stderr=subprocess.PIPE" in source
     assert "capture_output=True" not in source
     for key, value in gen.NOTEBOOK_SYNC_ENV_DEFAULTS.items():
         assert f'"{key}": "{value}"' in source
@@ -198,6 +199,8 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "zip" in source
     assert "KAGGLE_API_TOKEN" in source
     assert "KAGGLE_API_V1_TOKEN_PATH" in source
+    assert "UserSecretsClient" in source
+    assert "def load_kaggle_notebook_secrets()" in source
     assert "Kaggle API credentials are required" in source
     assert "KAGGLE_USERNAME" in source
     assert "KAGGLE_KEY" in source

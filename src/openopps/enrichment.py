@@ -5,7 +5,13 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
-from openopps.models import BoardProviderRecord, BoardRecord, JobRecord, utc_now
+from openopps.models import (
+    BoardProviderRecord,
+    BoardRecord,
+    JobRecord,
+    normalize_public_website_url,
+    utc_now,
+)
 from openopps.storage import OpenOppsStore
 
 
@@ -113,13 +119,16 @@ def _board_updates(
     updates: dict[str, Any] = {}
     sources: list[str] = []
 
-    website_url = _first_string(payload, "website_url", "websiteUrl", "url")
-    website_url = website_url or _nested_string(payload, "website", "url")
+    website_url = normalize_public_website_url(
+        _first_string(payload, "website_url", "websiteUrl", "url")
+        or _nested_string(payload, "website", "url")
+    )
     if not board.website_url and website_url:
         updates["website_url"] = website_url
         sources.append("board.raw_payload.website")
 
-    domain = _first_string(payload, "domain", "websiteDomain")
+    raw_domain = _first_string(payload, "domain", "websiteDomain")
+    domain = _domain_from_url(normalize_public_website_url(raw_domain))
     domain = domain or _domain_from_url(updates.get("website_url") or board.website_url)
     if not board.domain and domain:
         updates["domain"] = domain

@@ -13,15 +13,18 @@ from openopps.providers.sources.consider import (
 )
 from openopps.providers.sources.getro import GETRO_SOURCE_CATALOG, GetroSourceAdapter
 from openopps.providers.sources.special import (
-    AshbySourceAdapter,
     PEAR_VC_SOURCE,
     SOUTHPARKCOMMONS_SOURCE,
-    SouthParkCommonsSourceAdapter,
     VENTURE_CAPITAL_CAREERS_SOURCE,
     VENTURE_LOOP_SOURCE,
+    WORKABLE_1871_SOURCE,
+    YCOMBINATOR_SOURCE,
+    AshbySourceAdapter,
+    PublicPageSourceAdapter,
+    SouthParkCommonsSourceAdapter,
     VentureCapitalCareersSourceAdapter,
     VentureLoopSourceAdapter,
-    YCOMBINATOR_SOURCE,
+    WorkableSourceAdapter,
     YCombinatorSourceAdapter,
 )
 from openopps.settings import OpenOppsSettings
@@ -81,7 +84,7 @@ async def test_getro_normalizes_company_boards():
             200,
             json={
                 "results": {
-                    "count": 1,
+                    "count": 2,
                     "companies": [
                         {
                             "id": 202755,
@@ -96,6 +99,17 @@ async def test_getro_normalizes_company_boards():
                             ],
                             "visibleIndustryTags": ["Software"],
                             "description": "Live video infrastructure.",
+                        },
+                        {
+                            "id": 202756,
+                            "slug": "media-co",
+                            "name": "Media Co",
+                            "domain": '[\n\t"Entertainment",\n\t"Broadcast Media"\n]',
+                            "activeJobsCount": 2,
+                            "visibleIndustryTags": [
+                                "Entertainment",
+                                "Broadcast Media",
+                            ],
                         }
                     ],
                 }
@@ -114,10 +128,16 @@ async def test_getro_normalizes_company_boards():
     boards, providers, meta = pages[0]
     assert boards[0].key == "accel:100ms-2"
     assert boards[0].name == "100ms"
+    assert boards[0].domain == "100ms.live"
+    assert boards[0].website_url == "https://100ms.live"
     assert boards[0].num_jobs_hint == 10
     assert boards[0].markets == ["Software"]
+    assert boards[1].key == "accel:media-co"
+    assert boards[1].domain is None
+    assert boards[1].website_url is None
+    assert boards[1].markets == ["Entertainment", "Broadcast Media"]
     assert providers == []
-    assert meta["total"] == 1
+    assert meta["total"] == 2
 
 
 @pytest.mark.asyncio
@@ -3296,6 +3316,1546 @@ def test_source_catalog_includes_requested_portfolio_boards():
             "board",
             "union-square-ventures",
         ),
+        "marsdd": (
+            "getro",
+            "https://techjobs.marsdd.com/companies",
+            "collectionId",
+            "383",
+        ),
+        "jumpstartinc": (
+            "getro",
+            "https://talent.jumpstartinc.org/companies",
+            "collectionId",
+            "1012",
+        ),
+        "massdigitalhealth": (
+            "getro",
+            "https://jobs.massdigitalhealth.org/companies",
+            "collectionId",
+            "218",
+        ),
+        "ohiox": ("getro", "https://jobs.ohiox.org/companies", "collectionId", "785"),
+        "xrcventures": (
+            "getro",
+            "https://careers.xrcventures.com/companies",
+            "collectionId",
+            "1211",
+        ),
+        "mmc": ("getro", "https://jobs.mmc.vc/companies", "collectionId", "2303"),
+        "theventurecity": (
+            "getro",
+            "https://careers.theventure.city/companies",
+            "collectionId",
+            "4646",
+        ),
+        "tandeminvest": (
+            "getro",
+            "https://jobs.tandeminvest.com/companies",
+            "collectionId",
+            "13193",
+        ),
+        "decisivepoint": (
+            "getro",
+            "https://jobs.decisivepoint.com/companies",
+            "collectionId",
+            "1074",
+        ),
+        "aqpsearch": (
+            "getro",
+            "https://jobs.aqpsearch.com/companies",
+            "collectionId",
+            "761",
+        ),
+        "midweststartups": (
+            "getro",
+            "https://jobs.midweststartups.com/companies",
+            "collectionId",
+            "768",
+        ),
+        "techchange": (
+            "consider",
+            "https://consider.com/boards/vc/techchange/companies",
+            "board",
+            "techchange",
+        ),
+        "orbitstartups": (
+            "consider",
+            "https://consider.com/boards/vc/orbit-startups/companies",
+            "board",
+            "orbit-startups",
+        ),
+        "monkshillventures": (
+            "consider",
+            "https://consider.com/boards/vc/monks-hill-ventures/companies",
+            "board",
+            "monks-hill-ventures",
+        ),
+        "skydeck": (
+            "consider",
+            "https://jobs.skydeck.berkeley.edu/companies",
+            "board",
+            "berkeley-skydeck",
+        ),
+        "highalpha": (
+            "consider",
+            "https://consider.com/boards/vc/high-alpha/companies",
+            "board",
+            "high-alpha",
+        ),
+        "gigascale": (
+            "consider",
+            "https://consider.com/boards/vc/gigascale/companies",
+            "board",
+            "gigascale",
+        ),
+        "hunterpointcapital": (
+            "consider",
+            "https://consider.com/boards/vc/hunter-point-capital/companies",
+            "board",
+            "hunter-point-capital",
+        ),
+        "mbaexchange": (
+            "consider",
+            "https://consider.com/boards/vc/mba-exchange/companies",
+            "board",
+            "mba-exchange",
+        ),
+        "1871": (
+            "workable_source",
+            "https://apply.workable.com/1871/",
+            "token",
+            "1871",
+        ),
+        "aihubmasstech": (
+            "getro",
+            "https://jobs.aihub.masstech.org/companies",
+            "collectionId",
+            "39725",
+        ),
+        "icehouseventures": (
+            "getro",
+            "https://jobs.icehouseventures.co.nz/companies",
+            "collectionId",
+            "943",
+        ),
+        "hub71": ("getro", "https://jobs.hub71.com/companies", "collectionId", "9266"),
+        "safary": (
+            "getro",
+            "https://jobs.safary.club/companies",
+            "collectionId",
+            "36128",
+        ),
+        "lhh": ("getro", "https://jobs.lhh.co.il/companies", "collectionId", "1200"),
+        "coinbase": (
+            "getro",
+            "https://coinbase.getro.com/companies",
+            "collectionId",
+            "1625",
+        ),
+        "theblockchainassociation": (
+            "getro",
+            "https://jobs.theblockchainassociation.org/companies",
+            "collectionId",
+            "869",
+        ),
+        "valorcapitalgroup": (
+            "getro",
+            "https://jobs.valorcapitalgroup.com/companies",
+            "collectionId",
+            "299",
+        ),
+        "allhands": (
+            "getro",
+            "https://jobs.all-hands.us/companies",
+            "collectionId",
+            "634",
+        ),
+        "thepeoplepeoplegroup": (
+            "getro",
+            "https://jobs.thepeoplepeoplegroup.com/companies",
+            "collectionId",
+            "42266",
+        ),
+        "sandscapitalventures": (
+            "getro",
+            "https://jobs.sandscapitalventures.com/companies",
+            "collectionId",
+            "1638",
+        ),
+        "vcet": ("getro", "https://jobs.vcet.co/companies", "collectionId", "15470"),
+        "nzero": ("getro", "https://nzero.getro.com/companies", "collectionId", "4218"),
+        "quona": ("getro", "https://jobs.quona.com/companies", "collectionId", "313"),
+        "obvious": (
+            "getro",
+            "https://jobs.obvious.com/companies",
+            "collectionId",
+            "69",
+        ),
+        "4dxventures": (
+            "getro",
+            "https://careers.4dxventures.com/companies",
+            "collectionId",
+            "11906",
+        ),
+        "outlierventures": (
+            "getro",
+            "https://jobs.outlierventures.io/companies",
+            "collectionId",
+            "1524",
+        ),
+        "morpheus": (
+            "getro",
+            "https://jobs.morpheus.com/companies",
+            "collectionId",
+            "10916",
+        ),
+        "byfounders": (
+            "getro",
+            "https://jobs.byfounders.vc/companies",
+            "collectionId",
+            "248",
+        ),
+        "ibexinvestors": (
+            "getro",
+            "https://jobs.ibexinvestors.com/companies",
+            "collectionId",
+            "1081",
+        ),
+        "outsidersfund": (
+            "getro",
+            "https://jobs.outsidersfund.com/companies",
+            "collectionId",
+            "6956",
+        ),
+        "sogalventures": (
+            "getro",
+            "https://jobs.sogalventures.com/companies",
+            "collectionId",
+            "136",
+        ),
+        "fabervc": (
+            "getro",
+            "https://talent.faber.vc/companies",
+            "collectionId",
+            "2601",
+        ),
+        "jumpcrypto": (
+            "getro",
+            "https://jobs.jumpcrypto.com/companies",
+            "collectionId",
+            "20916",
+        ),
+        "superseed": (
+            "getro",
+            "https://careers.superseed.com/companies",
+            "collectionId",
+            "7088",
+        ),
+        "socialleverage": (
+            "getro",
+            "https://jobs.socialleverage.com/companies",
+            "collectionId",
+            "1371",
+        ),
+        "intudovc": (
+            "getro",
+            "https://careers.intudovc.com/companies",
+            "collectionId",
+            "1177",
+        ),
+        "polkadot": (
+            "getro",
+            "https://jobs.polkadot.com/companies",
+            "collectionId",
+            "11180",
+        ),
+        "traveltechessentialist": (
+            "getro",
+            "https://jobs.traveltechessentialist.com/companies",
+            "collectionId",
+            "7682",
+        ),
+        "folklorevc": (
+            "getro",
+            "https://roles.folklore.vc/companies",
+            "collectionId",
+            "1730",
+        ),
+        "alphapartners": (
+            "getro",
+            "https://jobs.alphapartners.com/companies",
+            "collectionId",
+            "1541",
+        ),
+        "emeraldmanagers": (
+            "getro",
+            "https://careers.emeraldmanagers.com/companies",
+            "collectionId",
+            "1448",
+        ),
+        "syndicateone": (
+            "getro",
+            "https://syndicate-one.getro.com/companies",
+            "collectionId",
+            "15503",
+        ),
+        "dukecapitalpartners": (
+            "getro",
+            "https://jobs.dukecapitalpartners.duke.edu/companies",
+            "collectionId",
+            "2734",
+        ),
+        "inuplands": (
+            "getro",
+            "https://jobs.inuplands.org/companies",
+            "collectionId",
+            "8606",
+        ),
+        "bnbchain": (
+            "getro",
+            "https://jobs.bnbchain.org/companies",
+            "collectionId",
+            "3788",
+        ),
+        "endicottgp": (
+            "getro",
+            "https://jobs.endicottgp.com/companies",
+            "collectionId",
+            "7352",
+        ),
+        "arborview": (
+            "getro",
+            "https://arborview.getro.com/companies",
+            "collectionId",
+            "1492",
+        ),
+        "hashed": (
+            "consider",
+            "https://consider.com/boards/vc/hashed/companies",
+            "board",
+            "hashed",
+        ),
+        "hummingbirdventures": (
+            "consider",
+            "https://consider.com/boards/vc/hummingbird-ventures/companies",
+            "board",
+            "hummingbird-ventures",
+        ),
+        "remotely": (
+            "consider",
+            "https://consider.com/boards/vc/remotely/companies",
+            "board",
+            "remotely",
+        ),
+        "datapowerventures": (
+            "consider",
+            "https://consider.com/boards/vc/datapower-ventures/companies",
+            "board",
+            "datapower-ventures",
+        ),
+        "lightrock": (
+            "consider",
+            "https://consider.com/boards/vc/lightrock/companies",
+            "board",
+            "lightrock",
+        ),
+        "foxmontcapital": (
+            "consider",
+            "https://consider.com/boards/vc/foxmont-capital/companies",
+            "board",
+            "foxmont-capital",
+        ),
+        "adgm": (
+            "consider",
+            "https://consider.com/boards/vc/adgm/companies",
+            "board",
+            "adgm",
+        ),
+        "hcvc": ("consider", "https://jobs.hcvc.co/companies", "board", "hcvc"),
+        "onepeak": (
+            "consider",
+            "https://jobs.onepeak.tech/companies",
+            "board",
+            "one-peak",
+        ),
+        "sprints": (
+            "consider",
+            "https://jobs.sprints.com/companies",
+            "board",
+            "sprints",
+        ),
+        "bfnjobs": (
+            "public_page",
+            "https://bfn-jobs.entrepreneurs.utoronto.ca/companies",
+            "observedStatus",
+            "not_found",
+        ),
+        "closedlooppartners": (
+            "public_page",
+            "https://jobs.closedlooppartners.com/companies",
+            "observedStatus",
+            "not_found",
+        ),
+        "terae": ("getro", "https://terae.getro.com/companies", "collectionId", "871"),
+        "schmidtmarine": (
+            "getro",
+            "https://jobs.schmidtmarine.org/companies",
+            "collectionId",
+            "110",
+        ),
+        "concorde": (
+            "getro",
+            "https://talent.concorde.network/companies",
+            "collectionId",
+            "9695",
+        ),
+        "fireup": (
+            "getro",
+            "https://jobs.fire-up.net/companies",
+            "collectionId",
+            "9893",
+        ),
+        "dragonfly": (
+            "getro",
+            "https://jobs.dragonfly.xyz/companies",
+            "collectionId",
+            "1118",
+        ),
+        "delphiventures": (
+            "getro",
+            "https://jobs.delphiventures.io/companies",
+            "collectionId",
+            "1440",
+        ),
+        "levelequity": (
+            "getro",
+            "https://portfoliocareers.levelequity.com/companies",
+            "collectionId",
+            "1729",
+        ),
+        "floridafunders": (
+            "getro",
+            "https://jobs.floridafunders.com/companies",
+            "collectionId",
+            "781",
+        ),
+        "electriccapital": (
+            "getro",
+            "https://jobs.electriccapital.com/companies",
+            "collectionId",
+            "1640",
+        ),
+        "launchcapital": (
+            "getro",
+            "https://jobs.launchcapital.com/companies",
+            "collectionId",
+            "109",
+        ),
+        "flashpointvc": (
+            "getro",
+            "https://jobs.flashpointvc.com/companies",
+            "collectionId",
+            "11513",
+        ),
+        "suffolktech": (
+            "getro",
+            "https://careers.suffolktech.com/companies",
+            "collectionId",
+            "9596",
+        ),
+        "blackhornvc": (
+            "getro",
+            "https://careers.blackhornvc.com/companies",
+            "collectionId",
+            "2733",
+        ),
+        "nascent": (
+            "getro",
+            "https://jobs.nascent.xyz/companies",
+            "collectionId",
+            "5372",
+        ),
+        "uvcpartners": (
+            "getro",
+            "https://talent.uvcpartners.com/companies",
+            "collectionId",
+            "3062",
+        ),
+        "blueventurefund": (
+            "getro",
+            "https://jobs.blueventurefund.com/companies",
+            "collectionId",
+            "145",
+        ),
+        "liveoakvp": (
+            "getro",
+            "https://jobs.liveoakvp.com/companies",
+            "collectionId",
+            "946",
+        ),
+        "tlvpartners": (
+            "getro",
+            "https://jobs.tlv.partners/companies",
+            "collectionId",
+            "190",
+        ),
+        "atxventurepartners": (
+            "getro",
+            "https://jobs.atxventurepartners.com/companies",
+            "collectionId",
+            "325",
+        ),
+        "moneta": ("getro", "https://jobs.moneta.vc/companies", "collectionId", "1015"),
+        "cedarparktexasedc": (
+            "getro",
+            "https://jobs.cedarparktexasedc.com/companies",
+            "collectionId",
+            "803",
+        ),
+        "petersonventures": (
+            "getro",
+            "https://jobs.petersonventures.com/companies",
+            "collectionId",
+            "395",
+        ),
+        "beliade": (
+            "getro",
+            "https://jobs.beliade.co/companies",
+            "collectionId",
+            "191",
+        ),
+        "oifvc": ("getro", "https://oifvc.getro.com/companies", "collectionId", "1265"),
+        "updata": (
+            "getro",
+            "https://jobs.updata.com/companies",
+            "collectionId",
+            "3128",
+        ),
+        "uphonestcapital": (
+            "getro",
+            "https://uphonestcapital.getro.com/companies",
+            "collectionId",
+            "1733",
+        ),
+        "nebraskaangels": (
+            "getro",
+            "https://careers.nebraskaangels.org/companies",
+            "collectionId",
+            "7286",
+        ),
+        "trailheadcap": (
+            "getro",
+            "https://trailheadcap.getro.com/companies",
+            "collectionId",
+            "1493",
+        ),
+        "ballisticventures": (
+            "getro",
+            "https://careers.ballisticventures.com/companies",
+            "collectionId",
+            "8441",
+        ),
+        "thehelm": (
+            "getro",
+            "https://jobs.thehelm.co/companies",
+            "collectionId",
+            "1519",
+        ),
+        "supercellinvestments": (
+            "getro",
+            "https://supercellinvestments.getro.com/companies",
+            "collectionId",
+            "12500",
+        ),
+        "revelpartners": (
+            "getro",
+            "https://jobs.revelpartners.com/companies",
+            "collectionId",
+            "683",
+        ),
+        "sandboxindustries": (
+            "getro",
+            "https://jobs.sandboxindustries.com/companies",
+            "collectionId",
+            "877",
+        ),
+        "eoventures": (
+            "getro",
+            "https://jobs.eoventures.com/companies",
+            "collectionId",
+            "14018",
+        ),
+        "blindspot": (
+            "getro",
+            "https://blindspot.getro.com/companies",
+            "collectionId",
+            "1497",
+        ),
+        "placeholder": (
+            "getro",
+            "https://jobs.placeholder.vc/companies",
+            "collectionId",
+            "922",
+        ),
+        "blacktalentdatabase": (
+            "getro",
+            "https://jobs.blacktalentdatabase.com/companies",
+            "collectionId",
+            "10982",
+        ),
+        "foresitecapital": (
+            "consider",
+            "https://consider.com/boards/vc/foresite-capital/companies",
+            "board",
+            "foresite-capital",
+        ),
+        "paradigmxyz": (
+            "consider",
+            "https://consider.com/boards/vc/paradigm-xyz/companies",
+            "board",
+            "paradigm-xyz",
+        ),
+        "griffingp": (
+            "consider",
+            "https://careers.griffingp.com/companies",
+            "board",
+            "griffin-gaming",
+        ),
+        "allinmilwaukee": (
+            "consider",
+            "https://consider.com/boards/vc/all-in-milwaukee/companies",
+            "board",
+            "all-in-milwaukee",
+        ),
+        "struckcapital": (
+            "consider",
+            "https://consider.com/boards/vc/struck-capital/companies",
+            "board",
+            "struck-capital",
+        ),
+        "seventyseven": (
+            "consider",
+            "https://consider.com/boards/vc/seventy-seven/companies",
+            "board",
+            "seventy-seven",
+        ),
+        "nv": (
+            "consider",
+            "https://consider.com/boards/vc/nv/companies",
+            "board",
+            "nv",
+        ),
+        "tcgcrypto": (
+            "consider",
+            "https://consider.com/boards/vc/tcg-crypto/companies",
+            "board",
+            "tcg-crypto",
+        ),
+        "longgame": (
+            "consider",
+            "https://consider.com/boards/vc/longgame/companies",
+            "board",
+            "longgame",
+        ),
+        "baincrypto": (
+            "consider",
+            "https://consider.com/boards/vc/bain-crypto/companies",
+            "board",
+            "bain-crypto",
+        ),
+        "2048vc": (
+            "public_page",
+            "https://www.2048.vc/companies",
+            "observedStatus",
+            "verified_public_page",
+        ),
+        "defy": (
+            "public_page",
+            "https://defy.vc/companies/",
+            "observedStatus",
+            "verified_public_page",
+        ),
+        "unshackledvc": (
+            "public_page",
+            "https://www.unshackledvc.com/portfolio",
+            "observedStatus",
+            "verified_public_page",
+        ),
+        "clevelandtalent": (
+            "getro",
+            "https://jobs.clevelandtalent.org/companies",
+            "collectionId",
+            "clevelandtalent",
+        ),
+        "highfivepartners": (
+            "getro",
+            "https://jobs.highfivepartners.com/companies",
+            "collectionId",
+            "highfivepartners",
+        ),
+        "indiebio": (
+            "consider",
+            "https://indiebio.board.staging.consider.com/companies",
+            "board",
+            "indiebio",
+        ),
+        "entrepreneurs": (
+            "getro",
+            "https://jobs.entrepreneurs.utoronto.ca/companies",
+            "collectionId",
+            "entrepreneurs",
+        ),
+        "morestartshere": (
+            "getro",
+            "https://careers.morestartshere.com/companies",
+            "collectionId",
+            "morestartshere",
+        ),
+        "makeitcu": (
+            "getro",
+            "https://jobs.makeitcu.com/companies",
+            "collectionId",
+            "makeitcu",
+        ),
+        "innovationworks": (
+            "getro",
+            "https://jobs.innovationworks.org/companies",
+            "collectionId",
+            "innovationworks",
+        ),
+        "charlestonorg": (
+            "getro",
+            "https://jobs.charlestoncareers.org/companies",
+            "collectionId",
+            "charlestonorg",
+        ),
+        "greatersatx": (
+            "getro",
+            "https://careers.greatersatx.com/companies",
+            "collectionId",
+            "greatersatx",
+        ),
+        "inwomenshealth": (
+            "getro",
+            "https://jobs.inwomenshealth.com/companies",
+            "collectionId",
+            "inwomenshealth",
+        ),
+        "skagit": (
+            "getro",
+            "https://jobs.skagit.org/companies",
+            "collectionId",
+            "skagit",
+        ),
+        "workforceinnovationcenter": (
+            "getro",
+            "https://careers.workforceinnovationcenter.com/companies",
+            "collectionId",
+            "workforceinnovationcenter",
+        ),
+        "jobswithnoboss": (
+            "getro",
+            "https://jobs.jobswithnoboss.com/companies",
+            "collectionId",
+            "jobswithnoboss",
+        ),
+        "grandforksiscooler": (
+            "getro",
+            "https://jobs.grandforksiscooler.com/companies",
+            "collectionId",
+            "grandforksiscooler",
+        ),
+        "spirittechcollective": (
+            "getro",
+            "https://jobs.spirit-tech-collective.com/companies",
+            "collectionId",
+            "spirittechcollective",
+        ),
+        "imecistart": (
+            "getro",
+            "https://jobs.imecistart.com/companies",
+            "collectionId",
+            "imecistart",
+        ),
+        "abundancenetwork": (
+            "getro",
+            "https://jobs.abundancenetwork.com/companies",
+            "collectionId",
+            "abundancenetwork",
+        ),
+        "ablepartners": (
+            "getro",
+            "https://careers.ablepartners.nyc/companies",
+            "collectionId",
+            "ablepartners",
+        ),
+        "sierraventures": (
+            "getro",
+            "https://careers.sierraventures.com/companies",
+            "collectionId",
+            "sierraventures",
+        ),
+        "alkeon": (
+            "getro",
+            "https://jobs.alkeon.com/companies",
+            "collectionId",
+            "alkeon",
+        ),
+        "vertexventures": (
+            "getro",
+            "https://jobs.vertexventures.co.il/companies",
+            "collectionId",
+            "vertexventures",
+        ),
+        "kdtvc": ("getro", "https://jobs.kdtvc.com/companies", "collectionId", "kdtvc"),
+        "boxgroup": (
+            "public_page",
+            "https://www.boxgroup.com/portfolio",
+            "label",
+            "BoxGroup",
+        ),
+        "flybridge": (
+            "public_page",
+            "https://www.flybridge.com/portfolio",
+            "label",
+            "Flybridge",
+        ),
+        "s2ginvestments": (
+            "public_page",
+            "https://www.s2ginvestments.com/team/careers/open-positions",
+            "label",
+            "S2G Investments",
+        ),
+        "moberlyedc": (
+            "getro",
+            "https://jobs.moberly-edc.com/companies",
+            "collectionId",
+            "moberlyedc",
+        ),
+        "weareadamarie": (
+            "getro",
+            "https://jobs.weareadamarie.com/companies",
+            "collectionId",
+            "weareadamarie",
+        ),
+        "arbitrum": (
+            "getro",
+            "https://jobs.arbitrum.io/companies",
+            "collectionId",
+            "arbitrum",
+        ),
+        "oneventures": (
+            "getro",
+            "https://jobs.one-ventures.com.au/companies",
+            "collectionId",
+            "oneventures",
+        ),
+        "choosemketech": (
+            "getro",
+            "https://jobs.choosemketech.org/companies",
+            "collectionId",
+            "choosemketech",
+        ),
+        "vistria": (
+            "consider",
+            "https://consider.com/boards/vc/vistria/companies",
+            "board",
+            "vistria",
+        ),
+        "healthxventures": (
+            "getro",
+            "https://jobs.healthxventures.com/companies",
+            "collectionId",
+            "healthxventures",
+        ),
+        "watershed": (
+            "getro",
+            "https://portfolio.watershed.vc/companies",
+            "collectionId",
+            "watershed",
+        ),
+        "13bookscapital": (
+            "getro",
+            "https://careers.13bookscapital.com/companies",
+            "collectionId",
+            "13bookscapital",
+        ),
+        "future": (
+            "getro",
+            "https://jobs.future.ventures/companies",
+            "collectionId",
+            "future",
+        ),
+        "vamosventures": (
+            "getro",
+            "https://jobs.vamosventures.com/companies",
+            "collectionId",
+            "vamosventures",
+        ),
+        "peoplefunction": (
+            "getro",
+            "https://jobs.peoplefunction.com/companies",
+            "collectionId",
+            "peoplefunction",
+        ),
+        "ironspring": (
+            "getro",
+            "https://jobs.ironspring.com/companies",
+            "collectionId",
+            "ironspring",
+        ),
+        "forward": (
+            "getro",
+            "https://careers.forward.one/companies",
+            "collectionId",
+            "forward",
+        ),
+        "noromoseley": (
+            "getro",
+            "https://careers.noromoseley.com/companies",
+            "collectionId",
+            "noromoseley",
+        ),
+        "hopelab": (
+            "getro",
+            "https://hopelab.getro.com/companies",
+            "collectionId",
+            "hopelab",
+        ),
+        "seaeventures": (
+            "getro",
+            "https://careers.seaeventures.com/companies",
+            "collectionId",
+            "seaeventures",
+        ),
+        "stventureslab": (
+            "getro",
+            "https://careers.stventureslab.com/companies",
+            "collectionId",
+            "stventureslab",
+        ),
+        "buoyant": (
+            "getro",
+            "https://careers.buoyant.vc/companies",
+            "collectionId",
+            "buoyant",
+        ),
+        "sixty8": (
+            "getro",
+            "https://jobs.sixty8.capital/companies",
+            "collectionId",
+            "sixty8",
+        ),
+        "valtruis": (
+            "consider",
+            "https://careers.valtruis.com/companies",
+            "board",
+            "valtruis",
+        ),
+        "dcedc": (
+            "getro",
+            "https://careers.dcedc.org/companies",
+            "collectionId",
+            "dcedc",
+        ),
+        "workinseguin": (
+            "getro",
+            "https://www.workinseguin.com/companies",
+            "collectionId",
+            "workinseguin",
+        ),
+        "whatsupstateny": (
+            "getro",
+            "https://jobs.whatsupstateny.com/companies",
+            "collectionId",
+            "whatsupstateny",
+        ),
+        "myjonesborocom": (
+            "getro",
+            "https://jobs.myjonesborojobs.com/companies",
+            "collectionId",
+            "myjonesborocom",
+        ),
+        "uprotterdam": (
+            "getro",
+            "https://jobs.uprotterdam.com/companies",
+            "collectionId",
+            "uprotterdam",
+        ),
+        "masscybercenter": (
+            "getro",
+            "https://jobs.masscybercenter.org/companies",
+            "collectionId",
+            "masscybercenter",
+        ),
+        "toledoregion": (
+            "getro",
+            "https://jobs.toledoregion.com/companies",
+            "collectionId",
+            "toledoregion",
+        ),
+        "workinba": (
+            "getro",
+            "https://careers.workinba.com/companies",
+            "collectionId",
+            "workinba",
+        ),
+        "onewagonercounty": (
+            "getro",
+            "https://jobs.onewagonercounty.com/companies",
+            "collectionId",
+            "onewagonercounty",
+        ),
+        "rockfordchamber": (
+            "getro",
+            "https://jobs.rockfordchamber.com/companies",
+            "collectionId",
+            "rockfordchamber",
+        ),
+        "placetobelnk": (
+            "getro",
+            "https://jobs.placetobelnk.com/companies",
+            "collectionId",
+            "placetobelnk",
+        ),
+        "maip": (
+            "getro",
+            "https://jobs.maip.com/companies",
+            "collectionId",
+            "maip",
+        ),
+        "inovait": (
+            "getro",
+            "https://jobs.inovait.ca/companies",
+            "collectionId",
+            "inovait",
+        ),
+        "mehi": (
+            "getro",
+            "https://jobs.mehi.masstech.org/companies",
+            "collectionId",
+            "mehi",
+        ),
+        "peak": (
+            "getro",
+            "https://jobs.peak.capital/companies",
+            "collectionId",
+            "peak",
+        ),
+        "vmgpartners": (
+            "getro",
+            "https://jobs.vmgpartners.com/companies",
+            "collectionId",
+            "vmgpartners",
+        ),
+        "nucleuscapital": (
+            "getro",
+            "https://careers.nucleus-capital.com/companies",
+            "collectionId",
+            "nucleuscapital",
+        ),
+        "swayvc": (
+            "getro",
+            "https://talent.swayvc.com/companies",
+            "collectionId",
+            "swayvc",
+        ),
+        "fayettechamber": (
+            "getro",
+            "https://careers.fayettechamber.org/companies",
+            "collectionId",
+            "fayettechamber",
+        ),
+        "smartfinvc": (
+            "getro",
+            "https://jobs.smartfinvc.com/companies",
+            "collectionId",
+            "smartfinvc",
+        ),
+        "saintjoseph": (
+            "getro",
+            "https://jobs.saintjoseph.com/companies",
+            "collectionId",
+            "saintjoseph",
+        ),
+        "nbchamber": (
+            "getro",
+            "https://jobs.nbchamber.com/companies",
+            "collectionId",
+            "nbchamber",
+        ),
+        "ssedc": (
+            "getro",
+            "https://jobs.ss-edc.com/companies",
+            "collectionId",
+            "ssedc",
+        ),
+        "innovate": (
+            "getro",
+            "https://jobs.innovate.ms/companies",
+            "collectionId",
+            "innovate",
+        ),
+        "kayyakventures": (
+            "getro",
+            "https://jobs.kayyakventures.com/companies",
+            "collectionId",
+            "kayyakventures",
+        ),
+        "hetz": (
+            "getro",
+            "https://careers.hetz.vc/companies",
+            "collectionId",
+            "hetz",
+        ),
+        "connexacapital": (
+            "getro",
+            "https://careers.connexacapital.com/companies",
+            "collectionId",
+            "connexacapital",
+        ),
+        "skale": (
+            "getro",
+            "https://jobs.skale.space/companies",
+            "collectionId",
+            "skale",
+        ),
+        "georgetown": (
+            "getro",
+            "https://georgetown.getro.com/companies",
+            "collectionId",
+            "georgetown",
+        ),
+        "alpinesg": (
+            "getro",
+            "https://jobs.alpinesg.com/companies",
+            "collectionId",
+            "alpinesg",
+        ),
+        "lumoscapitalgroup": (
+            "getro",
+            "https://lumoscapitalgroup.getro.com/companies",
+            "collectionId",
+            "lumoscapitalgroup",
+        ),
+        "southparkcommonsvc": (
+            "consider",
+            "https://consider.com/boards/vc/south-park-commons/companies",
+            "board",
+            "southparkcommonsvc",
+        ),
+        "lcattertonvc": (
+            "consider",
+            "https://consider.com/boards/vc/l-catterton/companies",
+            "board",
+            "lcattertonvc",
+        ),
+        "evpvc": (
+            "consider",
+            "https://consider.com/boards/vc/evp/companies",
+            "board",
+            "evpvc",
+        ),
+        "firstround": (
+            "public_page",
+            "https://www.firstround.com/companies",
+            "label",
+            "First Round",
+        ),
+        "foundersfund": (
+            "public_page",
+            "https://foundersfund.com/portfolio/",
+            "label",
+            "Founders Fund",
+        ),
+        "slow": (
+            "public_page",
+            "https://slow.co/portfolio/",
+            "label",
+            "Slow Ventures",
+        ),
+        "gpv": (
+            "public_page",
+            "https://www.gpv.com/companies",
+            "label",
+            "GPV",
+        ),
+        "villageglobal": (
+            "public_page",
+            "https://www.villageglobal.com/portfolio",
+            "label",
+            "Village Global",
+        ),
+        "foundercollective": (
+            "public_page",
+            "https://foundercollective.com/portfolio/",
+            "label",
+            "Founder Collective",
+        ),
+        "bowerycap": (
+            "public_page",
+            "https://bowerycap.com/portfolio",
+            "label",
+            "Bowery Capital",
+        ),
+        "pillar": (
+            "public_page",
+            "https://www.pillar.vc/companies/",
+            "label",
+            "Pillar",
+        ),
+        "spero": (
+            "public_page",
+            "https://spero.vc/portfolio/",
+            "label",
+            "Spero Ventures",
+        ),
+        "felixcap": (
+            "public_page",
+            "https://www.felixcap.com/portfolio",
+            "label",
+            "Felix Capital",
+        ),
+        "blume": (
+            "public_page",
+            "https://blume.vc/startups",
+            "label",
+            "Blume Ventures",
+        ),
+        "elevationcapital": (
+            "public_page",
+            "https://www.elevationcapital.com/portfolio",
+            "label",
+            "Elevation Capital",
+        ),
+        "chiratae": (
+            "public_page",
+            "https://www.chiratae.com/companies/",
+            "label",
+            "Chiratae Ventures",
+        ),
+        "endiya": (
+            "public_page",
+            "https://www.endiya.com/portfolio",
+            "label",
+            "Endiya Partners",
+        ),
+        "eqtgroup": (
+            "public_page",
+            "https://eqtgroup.com/about/current-portfolio",
+            "label",
+            "EQT",
+        ),
+        "heartcore": (
+            "public_page",
+            "https://www.heartcore.com/companies",
+            "label",
+            "Heartcore",
+        ),
+        "hofcapital": (
+            "public_page",
+            "https://hofcapital.com/portfolio/",
+            "label",
+            "Hof Capital",
+        ),
+        "plus": (
+            "public_page",
+            "https://plus.vc/investments-portfolio",
+            "label",
+            "Plus VC",
+        ),
+        "venturesouq": (
+            "public_page",
+            "https://www.venturesouq.com/portfolio",
+            "label",
+            "Venturesouq",
+        ),
+        "saviu": (
+            "public_page",
+            "https://www.saviu.vc/portfolio",
+            "label",
+            "Saviu Ventures",
+        ),
+        "phxfwd": (
+            "getro",
+            "https://jobs.phxfwd.org/companies",
+            "collectionId",
+            "phxfwd",
+        ),
+        "foodtechscout": (
+            "getro",
+            "https://jobs.foodtechscout.com/companies",
+            "collectionId",
+            "foodtechscout",
+        ),
+        "i2bf": ("getro", "https://talent.i2bf.com/companies", "collectionId", "i2bf"),
+        "narreach": (
+            "getro",
+            "https://careers.narreach.com/companies",
+            "collectionId",
+            "narreach",
+        ),
+        "coinfund": (
+            "getro",
+            "https://jobs.coinfund.io/companies",
+            "collectionId",
+            "coinfund",
+        ),
+        "matchstickventures": (
+            "getro",
+            "https://jobs.matchstickventures.com/companies",
+            "collectionId",
+            "matchstickventures",
+        ),
+        "plugandplayfoundation": (
+            "getro",
+            "https://accessopportunities.plugandplayfoundation.org/companies",
+            "collectionId",
+            "plugandplayfoundation",
+        ),
+        "castleisland": (
+            "getro",
+            "https://jobs.castleisland.vc/companies",
+            "collectionId",
+            "castleisland",
+        ),
+        "togethxr": (
+            "getro",
+            "https://jobs.togethxr.com/companies",
+            "collectionId",
+            "togethxr",
+        ),
+        "edomarketplace": (
+            "getro",
+            "https://edomarketplace.getro.com/companies",
+            "collectionId",
+            "edomarketplace",
+        ),
+        "cantos": (
+            "getro",
+            "https://jobs.cantos.vc/companies",
+            "collectionId",
+            "cantos",
+        ),
+        "silvertonpartners": (
+            "getro",
+            "https://jobs.silvertonpartners.com/companies",
+            "collectionId",
+            "silvertonpartners",
+        ),
+        "gfrfund": (
+            "getro",
+            "https://jobs.gfrfund.com/companies",
+            "collectionId",
+            "gfrfund",
+        ),
+        "fortinocapital": (
+            "getro",
+            "https://talent.fortinocapital.com/companies",
+            "collectionId",
+            "fortinocapital",
+        ),
+        "ziggtalent": (
+            "getro",
+            "https://jobs.ziggtalent.com/companies",
+            "collectionId",
+            "ziggtalent",
+        ),
+        "drivetlv": (
+            "getro",
+            "https://jobs.drivetlv.com/companies",
+            "collectionId",
+            "drivetlv",
+        ),
+        "startmunich": (
+            "getro",
+            "https://jobs.startmunich.de/companies",
+            "collectionId",
+            "startmunich",
+        ),
+        "definitioncap": (
+            "getro",
+            "https://jobs.definitioncap.com/companies",
+            "collectionId",
+            "definitioncap",
+        ),
+        "almazcapital": (
+            "getro",
+            "https://jobs.almazcapital.com/companies",
+            "collectionId",
+            "almazcapital",
+        ),
+        "spartangroup": (
+            "getro",
+            "https://jobs.spartangroup.io/companies",
+            "collectionId",
+            "spartangroup",
+        ),
+        "jdssports": (
+            "getro",
+            "https://jobs.jdssports.co/companies",
+            "collectionId",
+            "jdssports",
+        ),
+        "lyragrowth": (
+            "getro",
+            "https://jobs.lyragrowth.com/companies",
+            "collectionId",
+            "lyragrowth",
+        ),
+        "theadclub": (
+            "getro",
+            "https://careers.theadclub.org/companies",
+            "collectionId",
+            "theadclub",
+        ),
+        "tnentertainment": (
+            "getro",
+            "https://jobs.tnentertainment.com/companies",
+            "collectionId",
+            "tnentertainment",
+        ),
+        "rowanedc": (
+            "getro",
+            "https://jobs.rowanedc.com/companies",
+            "collectionId",
+            "rowanedc",
+        ),
+        "clarksvilleishiring": (
+            "getro",
+            "https://jobs.clarksvilleishiring.com/companies",
+            "collectionId",
+            "clarksvilleishiring",
+        ),
+        "flintandgenesee": (
+            "getro",
+            "https://jobs.flintandgenesee.org/companies",
+            "collectionId",
+            "flintandgenesee",
+        ),
+        "growingreenvillenc": (
+            "getro",
+            "https://jobs.growingreenvillenc.com/companies",
+            "collectionId",
+            "growingreenvillenc",
+        ),
+        "selectpriorinvestments": (
+            "consider",
+            "https://consider.com/boards/vc/select-prior-investments/companies",
+            "board",
+            "selectpriorinvestments",
+        ),
+        "fjlabs": ("public_page", "https://fjlabs.com/portfolio", "label", "FJ Labs"),
+        "climatecapital": (
+            "public_page",
+            "https://www.climatecapital.co/portfolio",
+            "label",
+            "Climate Capital",
+        ),
+        "shorooq": (
+            "public_page",
+            "https://www.shorooq.com/portfolio",
+            "label",
+            "Shorooq",
+        ),
+        "picuscap": (
+            "public_page",
+            "https://www.picuscap.com/portfolio/",
+            "label",
+            "Picus Capital",
+        ),
+        "portageinvest": (
+            "public_page",
+            "https://portageinvest.com/portfolio/",
+            "label",
+            "Portage",
+        ),
+        "canary": (
+            "public_page",
+            "https://www.canary.com.br/portfolio/",
+            "label",
+            "Canary",
+        ),
+        "raed": ("public_page", "https://raed.vc/portfolio/", "label", "Raed"),
+        "tlcomcapital": (
+            "public_page",
+            "https://tlcomcapital.com/portfolio",
+            "label",
+            "TLcom Capital",
+        ),
+        "omnivore": (
+            "public_page",
+            "https://omnivore.vc/portfolio",
+            "label",
+            "Omnivore",
+        ),
+        "3one4capital": (
+            "public_page",
+            "https://www.3one4capital.com/portfolio",
+            "label",
+            "3one4 Capital",
+        ),
+        "jungle": (
+            "public_page",
+            "https://www.jungle.vc/portfolio",
+            "label",
+            "Jungle Ventures",
+        ),
+        "qualgro": (
+            "public_page",
+            "https://qualgro.com/portfolio/",
+            "label",
+            "Qualgro",
+        ),
+        "earthshot": (
+            "public_page",
+            "https://www.earthshot.vc/companies",
+            "label",
+            "Earthshot",
+        ),
+        "daphni": (
+            "public_page",
+            "https://www.daphni.com/portfolio",
+            "label",
+            "Daphni",
+        ),
+        "elaia": ("public_page", "https://www.elaia.com/companies/", "label", "Elaia"),
+        "carbonthirteen": (
+            "public_page",
+            "https://carbonthirteen.com/our-portfolio/",
+            "label",
+            "Carbon Thirteen",
+        ),
+        "regeneration": (
+            "public_page",
+            "https://regeneration.vc/portfolio",
+            "label",
+            "Regeneration",
+        ),
+        "boldstart": (
+            "public_page",
+            "https://boldstart.vc/companies/",
+            "label",
+            "Boldstart",
+        ),
+        "bedrockcap": (
+            "public_page",
+            "https://bedrockcap.com/investments",
+            "label",
+            "Bedrock Capital",
+        ),
+        "passioncapital": (
+            "public_page",
+            "https://passioncapital.com/fund-portfolio/",
+            "label",
+            "Passion Capital",
+        ),
+        "alignedclimatecapital": (
+            "public_page",
+            "https://alignedclimatecapital.com/portfolio/",
+            "label",
+            "Aligned Climate Capital",
+        ),
     }
 
     for key, (provider_id, url, metadata_key, metadata_value) in expected.items():
@@ -3307,3 +4867,62 @@ def test_source_catalog_includes_requested_portfolio_boards():
     southparkcommons = BOARD_SOURCE_CATALOG["southparkcommons"]
     assert southparkcommons.provider_id == "southparkcommons"
     assert southparkcommons.url == "https://www.southparkcommons.com/jobs"
+
+    assert "1871" in BOARD_SOURCE_CATALOG
+    workable1871 = BOARD_SOURCE_CATALOG["1871"]
+    assert workable1871.provider_id == "workable_source"
+    assert workable1871.raw_metadata.get("token") == "1871"
+
+    twobear = BOARD_SOURCE_CATALOG["twobearcapital"]
+    assert twobear.provider_id == "public_page"
+    assert twobear.enabled is False
+    assert twobear.raw_metadata.get("label") == "Two Bear Capital"
+
+    bioct = BOARD_SOURCE_CATALOG["bioct"]
+    assert bioct.provider_id == "public_page"
+    assert bioct.raw_metadata.get("observedStatus") == "cloudflare_challenge"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_workable_source_adapter_normalizes_board():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.post("https://apply.workable.com/api/v3/accounts/1871/jobs").mock(
+        return_value=httpx.Response(200, json={"results": [], "total": 0})
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in WorkableSourceAdapter(settings).iter_boards(
+                client, WORKABLE_1871_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert len(boards) == 1
+    assert boards[0].name == "1871"
+    assert boards[0].num_jobs_hint == 0
+    assert providers[0].provider_id == "workable"
+    assert meta["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_public_page_source_adapter_yields_empty_with_note():
+    settings = OpenOppsSettings(cache_enabled=False)
+    # use a representative from catalog (twobearcapital is public_page, disabled)
+    src = BOARD_SOURCE_CATALOG["twobearcapital"]
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in PublicPageSourceAdapter(settings).iter_boards(
+                client, src, page_size=50
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert boards == []
+    assert providers == []
+    assert "Metadata-only public page" in meta["note"]
+    assert meta["sourceUrl"].endswith("twobearcapital.com/companies")

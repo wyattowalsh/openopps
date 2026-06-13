@@ -16,12 +16,12 @@ from openopps.models import (
     GetroCompaniesResponse,
     GetroCompany,
     SourceRecord,
+    normalize_public_website_url,
     utc_now,
+    validate_public_https_url,
 )
 from openopps.settings import OpenOppsSettings
-from openopps.models import validate_public_https_url
 from openopps.utils import slugify, source_board_key
-
 
 _COLLECTION_RE = re.compile(r'"id":"(?P<id>\d+)".{0,120}?"label":"(?P<label>[^"]+)"')
 _NEXT_DATA_RE = re.compile(
@@ -2389,9 +2389,1446 @@ GETRO_SOURCE_CATALOG = {
         enabled=True,
         raw_metadata={"collectionId": "5801"},
     ),
+    "marsdd": SourceRecord(
+        key="marsdd",
+        url="https://techjobs.marsdd.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "383"},
+    ),
+    "jumpstartinc": SourceRecord(
+        key="jumpstartinc",
+        url="https://talent.jumpstartinc.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1012"},
+    ),
+    "massdigitalhealth": SourceRecord(
+        key="massdigitalhealth",
+        url="https://jobs.massdigitalhealth.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "218"},
+    ),
+    "ohiox": SourceRecord(
+        key="ohiox",
+        url="https://jobs.ohiox.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "785"},
+    ),
+    "xrcventures": SourceRecord(
+        key="xrcventures",
+        url="https://careers.xrcventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1211"},
+    ),
+    "mmc": SourceRecord(
+        key="mmc",
+        url="https://jobs.mmc.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "2303"},
+    ),
+    "theventurecity": SourceRecord(
+        key="theventurecity",
+        url="https://careers.theventure.city/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "4646"},
+    ),
+    "tandeminvest": SourceRecord(
+        key="tandeminvest",
+        url="https://jobs.tandeminvest.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "13193"},
+    ),
+    "decisivepoint": SourceRecord(
+        key="decisivepoint",
+        url="https://jobs.decisivepoint.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1074"},
+    ),
+    "aqpsearch": SourceRecord(
+        key="aqpsearch",
+        url="https://jobs.aqpsearch.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "761"},
+    ),
+    "midweststartups": SourceRecord(
+        key="midweststartups",
+        url="https://jobs.midweststartups.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "768"},
+    ),
+    "aihubmasstech": SourceRecord(
+        key="aihubmasstech",
+        url="https://jobs.aihub.masstech.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "39725"},
+    ),
+    "icehouseventures": SourceRecord(
+        key="icehouseventures",
+        url="https://jobs.icehouseventures.co.nz/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "943"},
+    ),
+    "hub71": SourceRecord(
+        key="hub71",
+        url="https://jobs.hub71.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "9266"},
+    ),
+    "safary": SourceRecord(
+        key="safary",
+        url="https://jobs.safary.club/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "36128"},
+    ),
+    "lhh": SourceRecord(
+        key="lhh",
+        url="https://jobs.lhh.co.il/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1200"},
+    ),
+    "coinbase": SourceRecord(
+        key="coinbase",
+        url="https://coinbase.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1625"},
+    ),
+    "theblockchainassociation": SourceRecord(
+        key="theblockchainassociation",
+        url="https://jobs.theblockchainassociation.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "869"},
+    ),
+    "valorcapitalgroup": SourceRecord(
+        key="valorcapitalgroup",
+        url="https://jobs.valorcapitalgroup.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "299"},
+    ),
+    "allhands": SourceRecord(
+        key="allhands",
+        url="https://jobs.all-hands.us/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "634"},
+    ),
+    "thepeoplepeoplegroup": SourceRecord(
+        key="thepeoplepeoplegroup",
+        url="https://jobs.thepeoplepeoplegroup.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "42266"},
+    ),
+    "sandscapitalventures": SourceRecord(
+        key="sandscapitalventures",
+        url="https://jobs.sandscapitalventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1638"},
+    ),
+    "vcet": SourceRecord(
+        key="vcet",
+        url="https://jobs.vcet.co/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "15470"},
+    ),
+    "nzero": SourceRecord(
+        key="nzero",
+        url="https://nzero.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "4218"},
+    ),
+    "quona": SourceRecord(
+        key="quona",
+        url="https://jobs.quona.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "313"},
+    ),
+    "obvious": SourceRecord(
+        key="obvious",
+        url="https://jobs.obvious.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "69"},
+    ),
+    "4dxventures": SourceRecord(
+        key="4dxventures",
+        url="https://careers.4dxventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "11906"},
+    ),
+    "outlierventures": SourceRecord(
+        key="outlierventures",
+        url="https://jobs.outlierventures.io/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1524"},
+    ),
+    "morpheus": SourceRecord(
+        key="morpheus",
+        url="https://jobs.morpheus.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "10916"},
+    ),
+    "byfounders": SourceRecord(
+        key="byfounders",
+        url="https://jobs.byfounders.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "248"},
+    ),
+    "ibexinvestors": SourceRecord(
+        key="ibexinvestors",
+        url="https://jobs.ibexinvestors.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1081"},
+    ),
+    "outsidersfund": SourceRecord(
+        key="outsidersfund",
+        url="https://jobs.outsidersfund.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "6956"},
+    ),
+    "sogalventures": SourceRecord(
+        key="sogalventures",
+        url="https://jobs.sogalventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "136"},
+    ),
+    "fabervc": SourceRecord(
+        key="fabervc",
+        url="https://talent.faber.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "2601"},
+    ),
+    "jumpcrypto": SourceRecord(
+        key="jumpcrypto",
+        url="https://jobs.jumpcrypto.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "20916"},
+    ),
+    "superseed": SourceRecord(
+        key="superseed",
+        url="https://careers.superseed.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "7088"},
+    ),
+    "socialleverage": SourceRecord(
+        key="socialleverage",
+        url="https://jobs.socialleverage.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1371"},
+    ),
+    "intudovc": SourceRecord(
+        key="intudovc",
+        url="https://careers.intudovc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1177"},
+    ),
+    "polkadot": SourceRecord(
+        key="polkadot",
+        url="https://jobs.polkadot.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "11180"},
+    ),
+    "traveltechessentialist": SourceRecord(
+        key="traveltechessentialist",
+        url="https://jobs.traveltechessentialist.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "7682"},
+    ),
+    "folklorevc": SourceRecord(
+        key="folklorevc",
+        url="https://roles.folklore.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1730"},
+    ),
+    "alphapartners": SourceRecord(
+        key="alphapartners",
+        url="https://jobs.alphapartners.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1541"},
+    ),
+    "emeraldmanagers": SourceRecord(
+        key="emeraldmanagers",
+        url="https://careers.emeraldmanagers.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1448"},
+    ),
+    "syndicateone": SourceRecord(
+        key="syndicateone",
+        url="https://syndicate-one.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "15503"},
+    ),
+    "dukecapitalpartners": SourceRecord(
+        key="dukecapitalpartners",
+        url="https://jobs.dukecapitalpartners.duke.edu/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "2734"},
+    ),
+    "inuplands": SourceRecord(
+        key="inuplands",
+        url="https://jobs.inuplands.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "8606"},
+    ),
+    "bnbchain": SourceRecord(
+        key="bnbchain",
+        url="https://jobs.bnbchain.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "3788"},
+    ),
+    "endicottgp": SourceRecord(
+        key="endicottgp",
+        url="https://jobs.endicottgp.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "7352"},
+    ),
+    "arborview": SourceRecord(
+        key="arborview",
+        url="https://arborview.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1492"},
+    ),
+    "terae": SourceRecord(
+        key="terae",
+        url="https://terae.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "871"},
+    ),
+    "schmidtmarine": SourceRecord(
+        key="schmidtmarine",
+        url="https://jobs.schmidtmarine.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "110"},
+    ),
+    "concorde": SourceRecord(
+        key="concorde",
+        url="https://talent.concorde.network/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "9695"},
+    ),
+    "fireup": SourceRecord(
+        key="fireup",
+        url="https://jobs.fire-up.net/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "9893"},
+    ),
+    "dragonfly": SourceRecord(
+        key="dragonfly",
+        url="https://jobs.dragonfly.xyz/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1118"},
+    ),
+    "delphiventures": SourceRecord(
+        key="delphiventures",
+        url="https://jobs.delphiventures.io/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1440"},
+    ),
+    "levelequity": SourceRecord(
+        key="levelequity",
+        url="https://portfoliocareers.levelequity.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1729"},
+    ),
+    "floridafunders": SourceRecord(
+        key="floridafunders",
+        url="https://jobs.floridafunders.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "781"},
+    ),
+    "electriccapital": SourceRecord(
+        key="electriccapital",
+        url="https://jobs.electriccapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1640"},
+    ),
+    "launchcapital": SourceRecord(
+        key="launchcapital",
+        url="https://jobs.launchcapital.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "109"},
+    ),
+    "flashpointvc": SourceRecord(
+        key="flashpointvc",
+        url="https://jobs.flashpointvc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "11513"},
+    ),
+    "suffolktech": SourceRecord(
+        key="suffolktech",
+        url="https://careers.suffolktech.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "9596"},
+    ),
+    "blackhornvc": SourceRecord(
+        key="blackhornvc",
+        url="https://careers.blackhornvc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "2733"},
+    ),
+    "nascent": SourceRecord(
+        key="nascent",
+        url="https://jobs.nascent.xyz/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "5372"},
+    ),
+    "uvcpartners": SourceRecord(
+        key="uvcpartners",
+        url="https://talent.uvcpartners.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "3062"},
+    ),
+    "blueventurefund": SourceRecord(
+        key="blueventurefund",
+        url="https://jobs.blueventurefund.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "145"},
+    ),
+    "liveoakvp": SourceRecord(
+        key="liveoakvp",
+        url="https://jobs.liveoakvp.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "946"},
+    ),
+    "tlvpartners": SourceRecord(
+        key="tlvpartners",
+        url="https://jobs.tlv.partners/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "190"},
+    ),
+    "atxventurepartners": SourceRecord(
+        key="atxventurepartners",
+        url="https://jobs.atxventurepartners.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "325"},
+    ),
+    "moneta": SourceRecord(
+        key="moneta",
+        url="https://jobs.moneta.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1015"},
+    ),
+    "cedarparktexasedc": SourceRecord(
+        key="cedarparktexasedc",
+        url="https://jobs.cedarparktexasedc.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "803"},
+    ),
+    "petersonventures": SourceRecord(
+        key="petersonventures",
+        url="https://jobs.petersonventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "395"},
+    ),
+    "beliade": SourceRecord(
+        key="beliade",
+        url="https://jobs.beliade.co/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "191"},
+    ),
+    "oifvc": SourceRecord(
+        key="oifvc",
+        url="https://oifvc.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1265"},
+    ),
+    "updata": SourceRecord(
+        key="updata",
+        url="https://jobs.updata.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "3128"},
+    ),
+    "uphonestcapital": SourceRecord(
+        key="uphonestcapital",
+        url="https://uphonestcapital.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1733"},
+    ),
+    "nebraskaangels": SourceRecord(
+        key="nebraskaangels",
+        url="https://careers.nebraskaangels.org/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "7286"},
+    ),
+    "trailheadcap": SourceRecord(
+        key="trailheadcap",
+        url="https://trailheadcap.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1493"},
+    ),
+    "ballisticventures": SourceRecord(
+        key="ballisticventures",
+        url="https://careers.ballisticventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "8441"},
+    ),
+    "thehelm": SourceRecord(
+        key="thehelm",
+        url="https://jobs.thehelm.co/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1519"},
+    ),
+    "supercellinvestments": SourceRecord(
+        key="supercellinvestments",
+        url="https://supercellinvestments.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "12500"},
+    ),
+    "revelpartners": SourceRecord(
+        key="revelpartners",
+        url="https://jobs.revelpartners.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "683"},
+    ),
+    "sandboxindustries": SourceRecord(
+        key="sandboxindustries",
+        url="https://jobs.sandboxindustries.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "877"},
+    ),
+    "eoventures": SourceRecord(
+        key="eoventures",
+        url="https://jobs.eoventures.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "14018"},
+    ),
+    "blindspot": SourceRecord(
+        key="blindspot",
+        url="https://blindspot.getro.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "1497"},
+    ),
+    "placeholder": SourceRecord(
+        key="placeholder",
+        url="https://jobs.placeholder.vc/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "922"},
+    ),
+    "blacktalentdatabase": SourceRecord(
+        key="blacktalentdatabase",
+        url="https://jobs.blacktalentdatabase.com/companies",
+        provider_id="getro",
+        enabled=True,
+        raw_metadata={"collectionId": "10982"},
+    ),
 }
 
 SOURCE_RECORDS: tuple[SourceRecord, ...] = tuple(GETRO_SOURCE_CATALOG.values())
+
+
+ABLEPARTNERS_SOURCE = SourceRecord(
+    key="ablepartners",
+    url="https://careers.ablepartners.nyc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ABUNDANCENETWORK_SOURCE = SourceRecord(
+    key="abundancenetwork",
+    url="https://jobs.abundancenetwork.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ALKEON_SOURCE = SourceRecord(
+    key="alkeon",
+    url="https://jobs.alkeon.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ARBITRUM_SOURCE = SourceRecord(
+    key="arbitrum",
+    url="https://jobs.arbitrum.io/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+BOOKSCAPITAL13_SOURCE = SourceRecord(
+    key="13bookscapital",
+    url="https://careers.13bookscapital.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+BUOYANT_SOURCE = SourceRecord(
+    key="buoyant",
+    url="https://careers.buoyant.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+CHARLESTONORG_SOURCE = SourceRecord(
+    key="charlestonorg",
+    url="https://jobs.charlestoncareers.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+CHOOSEMKETECH_SOURCE = SourceRecord(
+    key="choosemketech",
+    url="https://jobs.choosemketech.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+CLEVELANDTALENT_SOURCE = SourceRecord(
+    key="clevelandtalent",
+    url="https://jobs.clevelandtalent.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+DCEDC_SOURCE = SourceRecord(
+    key="dcedc",
+    url="https://careers.dcedc.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ENTREPRENEURS_SOURCE = SourceRecord(
+    key="entrepreneurs",
+    url="https://jobs.entrepreneurs.utoronto.ca/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+FORWARD_SOURCE = SourceRecord(
+    key="forward",
+    url="https://careers.forward.one/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+FUTURE_SOURCE = SourceRecord(
+    key="future",
+    url="https://jobs.future.ventures/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+GRANDFORKSISCOOLER_SOURCE = SourceRecord(
+    key="grandforksiscooler",
+    url="https://jobs.grandforksiscooler.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+GREATERSATX_SOURCE = SourceRecord(
+    key="greatersatx",
+    url="https://careers.greatersatx.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+HEALTHXVENTURES_SOURCE = SourceRecord(
+    key="healthxventures",
+    url="https://jobs.healthxventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+HIGHFIVEPARTNERS_SOURCE = SourceRecord(
+    key="highfivepartners",
+    url="https://jobs.highfivepartners.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+HOPELAB_SOURCE = SourceRecord(
+    key="hopelab",
+    url="https://hopelab.getro.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+IMECISTART_SOURCE = SourceRecord(
+    key="imecistart",
+    url="https://jobs.imecistart.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+INNOVATIONWORKS_SOURCE = SourceRecord(
+    key="innovationworks",
+    url="https://jobs.innovationworks.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+INWOMENSHEALTH_SOURCE = SourceRecord(
+    key="inwomenshealth",
+    url="https://jobs.inwomenshealth.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+IRONSPRING_SOURCE = SourceRecord(
+    key="ironspring",
+    url="https://jobs.ironspring.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+JOBSWITHNOBOSS_SOURCE = SourceRecord(
+    key="jobswithnoboss",
+    url="https://jobs.jobswithnoboss.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+KDTVC_SOURCE = SourceRecord(
+    key="kdtvc",
+    url="https://jobs.kdtvc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MAKEITCU_SOURCE = SourceRecord(
+    key="makeitcu",
+    url="https://jobs.makeitcu.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MOBERLYEDC_SOURCE = SourceRecord(
+    key="moberlyedc",
+    url="https://jobs.moberly-edc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MORESTARTSHERE_SOURCE = SourceRecord(
+    key="morestartshere",
+    url="https://careers.morestartshere.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MYJONESBOROCOM_SOURCE = SourceRecord(
+    key="myjonesborocom",
+    url="https://jobs.myjonesborojobs.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+PHXFWD_SOURCE = SourceRecord(
+    key="phxfwd",
+    url="https://jobs.phxfwd.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+FOODTECHSCOUT_SOURCE = SourceRecord(
+    key="foodtechscout",
+    url="https://jobs.foodtechscout.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+I2BF_SOURCE = SourceRecord(
+    key="i2bf",
+    url="https://talent.i2bf.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+NARREACH_SOURCE = SourceRecord(
+    key="narreach",
+    url="https://careers.narreach.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+COINFUND_SOURCE = SourceRecord(
+    key="coinfund",
+    url="https://jobs.coinfund.io/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+MATCHSTICKVENTURES_SOURCE = SourceRecord(
+    key="matchstickventures",
+    url="https://jobs.matchstickventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+PLUGANDPLAYFOUNDATION_SOURCE = SourceRecord(
+    key="plugandplayfoundation",
+    url="https://accessopportunities.plugandplayfoundation.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+CASTLEISLAND_SOURCE = SourceRecord(
+    key="castleisland",
+    url="https://jobs.castleisland.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+TOGETHXR_SOURCE = SourceRecord(
+    key="togethxr",
+    url="https://jobs.togethxr.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+EDOMARKETPLACE_SOURCE = SourceRecord(
+    key="edomarketplace",
+    url="https://edomarketplace.getro.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+CANTOS_SOURCE = SourceRecord(
+    key="cantos",
+    url="https://jobs.cantos.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+SILVERTONPARTNERS_SOURCE = SourceRecord(
+    key="silvertonpartners",
+    url="https://jobs.silvertonpartners.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+GFRFUND_SOURCE = SourceRecord(
+    key="gfrfund",
+    url="https://jobs.gfrfund.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+FORTINOCAPITAL_SOURCE = SourceRecord(
+    key="fortinocapital",
+    url="https://talent.fortinocapital.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+ZIGGTALENT_SOURCE = SourceRecord(
+    key="ziggtalent",
+    url="https://jobs.ziggtalent.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+DRIVETLV_SOURCE = SourceRecord(
+    key="drivetlv",
+    url="https://jobs.drivetlv.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+STARTMUNICH_SOURCE = SourceRecord(
+    key="startmunich",
+    url="https://jobs.startmunich.de/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+DEFINITIONCAP_SOURCE = SourceRecord(
+    key="definitioncap",
+    url="https://jobs.definitioncap.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+ALMAZCAPITAL_SOURCE = SourceRecord(
+    key="almazcapital",
+    url="https://jobs.almazcapital.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+SPARTANGROUP_SOURCE = SourceRecord(
+    key="spartangroup",
+    url="https://jobs.spartangroup.io/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+JDSSPORTS_SOURCE = SourceRecord(
+    key="jdssports",
+    url="https://jobs.jdssports.co/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+LYRAGROWTH_SOURCE = SourceRecord(
+    key="lyragrowth",
+    url="https://jobs.lyragrowth.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+THEADCLUB_SOURCE = SourceRecord(
+    key="theadclub",
+    url="https://careers.theadclub.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+TNENTERTAINMENT_SOURCE = SourceRecord(
+    key="tnentertainment",
+    url="https://jobs.tnentertainment.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+ROWANEDC_SOURCE = SourceRecord(
+    key="rowanedc",
+    url="https://jobs.rowanedc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+CLARKSVILLEISHIRING_SOURCE = SourceRecord(
+    key="clarksvilleishiring",
+    url="https://jobs.clarksvilleishiring.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+FLINTANDGENESEE_SOURCE = SourceRecord(
+    key="flintandgenesee",
+    url="https://jobs.flintandgenesee.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+GROWINGREENVILLENC_SOURCE = SourceRecord(
+    key="growingreenvillenc",
+    url="https://jobs.growingreenvillenc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+NOROMOSELEY_SOURCE = SourceRecord(
+    key="noromoseley",
+    url="https://careers.noromoseley.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ONEVENTURES_SOURCE = SourceRecord(
+    key="oneventures",
+    url="https://jobs.one-ventures.com.au/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+PEOPLEFUNCTION_SOURCE = SourceRecord(
+    key="peoplefunction",
+    url="https://jobs.peoplefunction.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SEAEVENTURES_SOURCE = SourceRecord(
+    key="seaeventures",
+    url="https://careers.seaeventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SIERRAVENTURES_SOURCE = SourceRecord(
+    key="sierraventures",
+    url="https://careers.sierraventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SIXTY8_SOURCE = SourceRecord(
+    key="sixty8",
+    url="https://jobs.sixty8.capital/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SKAGIT_SOURCE = SourceRecord(
+    key="skagit",
+    url="https://jobs.skagit.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SPIRITTECHCOLLECTIVE_SOURCE = SourceRecord(
+    key="spirittechcollective",
+    url="https://jobs.spirit-tech-collective.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+STVENTURESLAB_SOURCE = SourceRecord(
+    key="stventureslab",
+    url="https://careers.stventureslab.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+VAMOSVENTURES_SOURCE = SourceRecord(
+    key="vamosventures",
+    url="https://jobs.vamosventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+VERTEXVENTURES_SOURCE = SourceRecord(
+    key="vertexventures",
+    url="https://jobs.vertexventures.co.il/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+WATERSHED_SOURCE = SourceRecord(
+    key="watershed",
+    url="https://portfolio.watershed.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+WEAREADAMARIE_SOURCE = SourceRecord(
+    key="weareadamarie",
+    url="https://jobs.weareadamarie.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+WHATSUPSTATENY_SOURCE = SourceRecord(
+    key="whatsupstateny",
+    url="https://jobs.whatsupstateny.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+WORKFORCEINNOVATIONCENTER_SOURCE = SourceRecord(
+    key="workforceinnovationcenter",
+    url="https://careers.workforceinnovationcenter.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+WORKINSEGUIN_SOURCE = SourceRecord(
+    key="workinseguin",
+    url="https://www.workinseguin.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+UPROTTERDAM_SOURCE = SourceRecord(
+    key="uprotterdam",
+    url="https://jobs.uprotterdam.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MASSCYBERCENTER_SOURCE = SourceRecord(
+    key="masscybercenter",
+    url="https://jobs.masscybercenter.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+TOLEDOREGION_SOURCE = SourceRecord(
+    key="toledoregion",
+    url="https://jobs.toledoregion.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+WORKINBA_SOURCE = SourceRecord(
+    key="workinba",
+    url="https://careers.workinba.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ONEWAGONERCOUNTY_SOURCE = SourceRecord(
+    key="onewagonercounty",
+    url="https://jobs.onewagonercounty.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ROCKFORDCHAMBER_SOURCE = SourceRecord(
+    key="rockfordchamber",
+    url="https://jobs.rockfordchamber.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+PLACETOBELNK_SOURCE = SourceRecord(
+    key="placetobelnk",
+    url="https://jobs.placetobelnk.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MAIP_SOURCE = SourceRecord(
+    key="maip",
+    url="https://jobs.maip.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+INOVAIT_SOURCE = SourceRecord(
+    key="inovait",
+    url="https://jobs.inovait.ca/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+MEHI_SOURCE = SourceRecord(
+    key="mehi",
+    url="https://jobs.mehi.masstech.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+PEAK_SOURCE = SourceRecord(
+    key="peak",
+    url="https://jobs.peak.capital/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+VMGPARTNERS_SOURCE = SourceRecord(
+    key="vmgpartners",
+    url="https://jobs.vmgpartners.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+NUCLEUSCAPITAL_SOURCE = SourceRecord(
+    key="nucleuscapital",
+    url="https://careers.nucleus-capital.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SWAYVC_SOURCE = SourceRecord(
+    key="swayvc",
+    url="https://talent.swayvc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+FAYETTECHAMBER_SOURCE = SourceRecord(
+    key="fayettechamber",
+    url="https://careers.fayettechamber.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SMARTFINVC_SOURCE = SourceRecord(
+    key="smartfinvc",
+    url="https://jobs.smartfinvc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SAINTJOSEPH_SOURCE = SourceRecord(
+    key="saintjoseph",
+    url="https://jobs.saintjoseph.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+NBCHAMBER_SOURCE = SourceRecord(
+    key="nbchamber",
+    url="https://jobs.nbchamber.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SSEDC_SOURCE = SourceRecord(
+    key="ssedc",
+    url="https://jobs.ss-edc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+INNOVATE_SOURCE = SourceRecord(
+    key="innovate",
+    url="https://jobs.innovate.ms/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+KAYYAKVENTURES_SOURCE = SourceRecord(
+    key="kayyakventures",
+    url="https://jobs.kayyakventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+HETZ_SOURCE = SourceRecord(
+    key="hetz",
+    url="https://careers.hetz.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+CONNEXACAPITAL_SOURCE = SourceRecord(
+    key="connexacapital",
+    url="https://careers.connexacapital.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+SKALE_SOURCE = SourceRecord(
+    key="skale",
+    url="https://jobs.skale.space/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+GEORGETOWN_SOURCE = SourceRecord(
+    key="georgetown",
+    url="https://georgetown.getro.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+ALPINESG_SOURCE = SourceRecord(
+    key="alpinesg",
+    url="https://jobs.alpinesg.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+
+LUMOSCAPITALGROUP_SOURCE = SourceRecord(
+    key="lumoscapitalgroup",
+    url="https://lumoscapitalgroup.getro.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
 
 
 class GetroSourceAdapter:
@@ -2512,7 +3949,8 @@ class GetroSourceAdapter:
                 company.id or company.object_id or company.slug or company.name
             )
             remote_slug = str(company.slug or slugify(str(company.name or remote_id)))
-            domain = company.domain
+            website_url = self._website_url(company.domain)
+            domain = self._domain_from_url(website_url)
             board = BoardRecord(
                 key=source_board_key(source_key, remote_slug),
                 source_key=source_key,
@@ -2520,7 +3958,7 @@ class GetroSourceAdapter:
                 remote_slug=remote_slug,
                 name=company.name or remote_id,
                 domain=domain,
-                website_url=f"https://{domain}" if domain else None,
+                website_url=website_url,
                 description=company.description,
                 markets=company.visible_industry_tags or company.industry_tags,
                 locations=company.locations,
@@ -2531,3 +3969,364 @@ class GetroSourceAdapter:
             )
             boards.append(board)
         return boards
+
+    def _website_url(self, domain: str | None) -> str | None:
+        return normalize_public_website_url(domain)
+
+    def _domain_from_url(self, url: str | None) -> str | None:
+        if not url:
+            return None
+        return urlparse(url).netloc.lower() or None
+
+
+CLEVELANDTALENT_SOURCE = SourceRecord(
+    key="clevelandtalent",
+    url="https://jobs.clevelandtalent.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+HIGHFIVEPARTNERS_SOURCE = SourceRecord(
+    key="highfivepartners",
+    url="https://jobs.highfivepartners.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+ENTREPRENEURS_SOURCE = SourceRecord(
+    key="entrepreneurs",
+    url="https://jobs.entrepreneurs.utoronto.ca/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+MORESTARTSHERE_SOURCE = SourceRecord(
+    key="morestartshere",
+    url="https://careers.morestartshere.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+MAKEITCU_SOURCE = SourceRecord(
+    key="makeitcu",
+    url="https://jobs.makeitcu.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+INNOVATIONWORKS_SOURCE = SourceRecord(
+    key="innovationworks",
+    url="https://jobs.innovationworks.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+CHARLESTONORG_SOURCE = SourceRecord(
+    key="charlestonorg",
+    url="https://jobs.charlestoncareers.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+GREATERSATX_SOURCE = SourceRecord(
+    key="greatersatx",
+    url="https://careers.greatersatx.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+INWOMENSHEALTH_SOURCE = SourceRecord(
+    key="inwomenshealth",
+    url="https://jobs.inwomenshealth.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+SKAGIT_SOURCE = SourceRecord(
+    key="skagit",
+    url="https://jobs.skagit.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+WORKFORCEINNOVATIONCENTER_SOURCE = SourceRecord(
+    key="workforceinnovationcenter",
+    url="https://careers.workforceinnovationcenter.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+JOBSWITHNOBOSS_SOURCE = SourceRecord(
+    key="jobswithnoboss",
+    url="https://jobs.jobswithnoboss.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+GRANDFORKSISCOOLER_SOURCE = SourceRecord(
+    key="grandforksiscooler",
+    url="https://jobs.grandforksiscooler.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+SPIRITTECHCOLLECTIVE_SOURCE = SourceRecord(
+    key="spirittechcollective",
+    url="https://jobs.spirit-tech-collective.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+IMECISTART_SOURCE = SourceRecord(
+    key="imecistart",
+    url="https://jobs.imecistart.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+ABUNDANCENETWORK_SOURCE = SourceRecord(
+    key="abundancenetwork",
+    url="https://jobs.abundancenetwork.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+ABLEPARTNERS_SOURCE = SourceRecord(
+    key="ablepartners",
+    url="https://careers.ablepartners.nyc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+SIERRAVENTURES_SOURCE = SourceRecord(
+    key="sierraventures",
+    url="https://careers.sierraventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+ALKEON_SOURCE = SourceRecord(
+    key="alkeon",
+    url="https://jobs.alkeon.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+VERTEXVENTURES_SOURCE = SourceRecord(
+    key="vertexventures",
+    url="https://jobs.vertexventures.co.il/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+KDTVC_SOURCE = SourceRecord(
+    key="kdtvc",
+    url="https://jobs.kdtvc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+MOBERLYEDC_SOURCE = SourceRecord(
+    key="moberlyedc",
+    url="https://jobs.moberly-edc.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+WEAREADAMARIE_SOURCE = SourceRecord(
+    key="weareadamarie",
+    url="https://jobs.weareadamarie.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+ARBITRUM_SOURCE = SourceRecord(
+    key="arbitrum",
+    url="https://jobs.arbitrum.io/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+ONEVENTURES_SOURCE = SourceRecord(
+    key="oneventures",
+    url="https://jobs.one-ventures.com.au/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+CHOOSEMKETECH_SOURCE = SourceRecord(
+    key="choosemketech",
+    url="https://jobs.choosemketech.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+HEALTHXVENTURES_SOURCE = SourceRecord(
+    key="healthxventures",
+    url="https://jobs.healthxventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+WATERSHED_SOURCE = SourceRecord(
+    key="watershed",
+    url="https://portfolio.watershed.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+BOOKSCAPITAL13_SOURCE = SourceRecord(
+    key="13bookscapital",
+    url="https://careers.13bookscapital.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+FUTURE_SOURCE = SourceRecord(
+    key="future",
+    url="https://jobs.future.ventures/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+VAMOSVENTURES_SOURCE = SourceRecord(
+    key="vamosventures",
+    url="https://jobs.vamosventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+PEOPLEFUNCTION_SOURCE = SourceRecord(
+    key="peoplefunction",
+    url="https://jobs.peoplefunction.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+IRONSPRING_SOURCE = SourceRecord(
+    key="ironspring",
+    url="https://jobs.ironspring.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+FORWARD_SOURCE = SourceRecord(
+    key="forward",
+    url="https://careers.forward.one/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+NOROMOSELEY_SOURCE = SourceRecord(
+    key="noromoseley",
+    url="https://careers.noromoseley.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+HOPELAB_SOURCE = SourceRecord(
+    key="hopelab",
+    url="https://hopelab.getro.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+SEAEVENTURES_SOURCE = SourceRecord(
+    key="seaeventures",
+    url="https://careers.seaeventures.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+STVENTURESLAB_SOURCE = SourceRecord(
+    key="stventureslab",
+    url="https://careers.stventureslab.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+BUOYANT_SOURCE = SourceRecord(
+    key="buoyant",
+    url="https://careers.buoyant.vc/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+SIXTY8_SOURCE = SourceRecord(
+    key="sixty8",
+    url="https://jobs.sixty8.capital/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+DCEDC_SOURCE = SourceRecord(
+    key="dcedc",
+    url="https://careers.dcedc.org/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+WORKINSEGUIN_SOURCE = SourceRecord(
+    key="workinseguin",
+    url="https://www.workinseguin.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+WHATSUPSTATENY_SOURCE = SourceRecord(
+    key="whatsupstateny",
+    url="https://jobs.whatsupstateny.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
+
+MYJONESBOROCOM_SOURCE = SourceRecord(
+    key="myjonesborocom",
+    url="https://jobs.myjonesborojobs.com/companies",
+    provider_id="getro",
+    enabled=True,
+    raw_metadata={},
+)
