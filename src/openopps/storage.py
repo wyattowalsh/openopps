@@ -40,7 +40,7 @@ from openopps.models import (
     source_to_row,
     utc_now,
 )
-from openopps.migrations import upgrade_sqlite_database
+from openopps.migrations import sqlite_database_lock, upgrade_sqlite_database
 from openopps.settings import OpenOppsSettings
 from openopps.utils import stable_id
 
@@ -111,10 +111,12 @@ class OpenOppsStore:
             return
         if self.settings.db_url.startswith("sqlite"):
             upgrade_sqlite_database(self.settings)
-            with self.engine.connect() as conn:
-                conn.execute(text("PRAGMA journal_mode=WAL"))
-                conn.execute(text("PRAGMA synchronous=NORMAL"))
-                conn.commit()
+            lock_target = self.settings.sqlite_path or self.settings.db_url
+            with sqlite_database_lock(lock_target):
+                with self.engine.connect() as conn:
+                    conn.execute(text("PRAGMA journal_mode=WAL"))
+                    conn.execute(text("PRAGMA synchronous=NORMAL"))
+                    conn.commit()
         else:
             SQLModel.metadata.create_all(self.engine)
         self._initialized = True
@@ -538,7 +540,9 @@ class OpenOppsStore:
                     session, filters, _present_text(JobVersionRow.apply_url)
                 ),
                 "locations": _coverage_job_count(
-                    session, filters, func.json_array_length(JobVersionRow.locations) > 0
+                    session,
+                    filters,
+                    func.json_array_length(JobVersionRow.locations) > 0,
                 ),
                 "department": _coverage_job_count(
                     session, filters, _present_text(JobVersionRow.department)
@@ -701,9 +705,7 @@ def _merge_board(session: Session, board: BoardRecord) -> None:
     session.merge(_merged_board_row(existing, incoming))
 
 
-def _merge_board_provider(
-    session: Session, provider: BoardProviderRecord
-) -> None:
+def _merge_board_provider(session: Session, provider: BoardProviderRecord) -> None:
     incoming = board_provider_to_row(provider)
     existing = session.get(BoardProviderRow, incoming.id)
     if existing is None:
