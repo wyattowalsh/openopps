@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import StrEnum
+from functools import lru_cache
 import hashlib
 from html import unescape
 from ipaddress import ip_address
@@ -471,6 +472,330 @@ def build_job_description(record: JobRecord) -> JobDescriptionRecord:
     )
 
 
+_SKILL_CATALOG: tuple[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], ...] = (
+    (
+        "Programming Languages",
+        (
+            ("Python", ("python",)),
+            ("JavaScript", ("javascript", "java script", "js")),
+            ("TypeScript", ("typescript", "type script", "ts")),
+            ("Java", ("java",)),
+            ("C++", ("c++", "cplusplus")),
+            ("C#", ("c#", "csharp")),
+            ("Ruby", ("ruby",)),
+            ("PHP", ("php",)),
+            ("Swift", ("swift",)),
+            ("Kotlin", ("kotlin",)),
+            ("Rust", ("rust",)),
+            ("Scala", ("scala",)),
+            ("Golang", ("golang",)),
+            ("HTML", ("html",)),
+            ("CSS", ("css",)),
+        ),
+    ),
+    (
+        "Frontend",
+        (
+            ("React", ("react", "reactjs", "react.js")),
+            ("React Native", ("react native",)),
+            ("Angular", ("angular",)),
+            ("Vue", ("vue", "vuejs", "vue.js")),
+            ("Svelte", ("svelte",)),
+            ("Next.js", ("next.js", "nextjs")),
+            ("Tailwind CSS", ("tailwind", "tailwind css")),
+            ("Web Components", ("web components",)),
+        ),
+    ),
+    (
+        "Backend",
+        (
+            ("Node.js", ("node.js", "nodejs")),
+            ("Django", ("django",)),
+            ("Flask", ("flask",)),
+            ("FastAPI", ("fastapi", "fast api")),
+            ("Ruby on Rails", ("ruby on rails", "rails")),
+            ("Spring", ("spring boot", "spring framework")),
+            ("GraphQL", ("graphql",)),
+            ("REST APIs", ("rest api", "rest apis", "restful api", "restful apis")),
+            ("Microservices", ("microservices", "micro-services")),
+        ),
+    ),
+    (
+        "Data and AI",
+        (
+            ("Machine Learning", ("machine learning",)),
+            ("Deep Learning", ("deep learning",)),
+            ("Generative AI", ("generative ai", "genai", "gen ai")),
+            ("LLM", ("llm", "large language model", "large language models")),
+            ("NLP", ("nlp", "natural language processing")),
+            ("Computer Vision", ("computer vision",)),
+            ("PyTorch", ("pytorch",)),
+            ("TensorFlow", ("tensorflow",)),
+            ("scikit-learn", ("scikit-learn", "sklearn")),
+            ("Pandas", ("pandas",)),
+            ("NumPy", ("numpy",)),
+            ("Spark", ("apache spark", "spark")),
+            ("Airflow", ("airflow", "apache airflow")),
+            ("dbt", ("dbt",)),
+            ("Analytics", ("analytics",)),
+            ("Experimentation", ("experimentation", "a/b testing", "ab testing")),
+        ),
+    ),
+    (
+        "Cloud and Infrastructure",
+        (
+            ("AWS", ("aws", "amazon web services")),
+            ("Azure", ("azure", "microsoft azure")),
+            ("Google Cloud", ("google cloud", "gcp")),
+            ("Kubernetes", ("kubernetes", "k8s")),
+            ("Docker", ("docker",)),
+            ("Terraform", ("terraform",)),
+            ("Helm", ("helm",)),
+            ("Linux", ("linux",)),
+            ("DevOps", ("devops",)),
+            ("SRE", ("sre", "site reliability")),
+            ("CI/CD", ("ci/cd", "cicd", "continuous integration")),
+            ("GitHub Actions", ("github actions",)),
+            ("Jenkins", ("jenkins",)),
+            ("Observability", ("observability",)),
+            ("Prometheus", ("prometheus",)),
+            ("Grafana", ("grafana",)),
+        ),
+    ),
+    (
+        "Databases",
+        (
+            ("SQL", ("sql",)),
+            ("PostgreSQL", ("postgresql", "postgres")),
+            ("MySQL", ("mysql",)),
+            ("SQLite", ("sqlite",)),
+            ("MongoDB", ("mongodb", "mongo")),
+            ("Redis", ("redis",)),
+            ("Elasticsearch", ("elasticsearch", "elastic search")),
+            ("Kafka", ("kafka", "apache kafka")),
+            ("DynamoDB", ("dynamodb", "dynamo db")),
+            ("Snowflake", ("snowflake",)),
+            ("BigQuery", ("bigquery", "big query")),
+            ("Databricks", ("databricks",)),
+        ),
+    ),
+    (
+        "Security and Compliance",
+        (
+            ("Security", ("security", "cybersecurity", "cyber security")),
+            ("SOC 2", ("soc 2", "soc2")),
+            ("HIPAA", ("hipaa",)),
+            ("GDPR", ("gdpr",)),
+            ("IAM", ("iam", "identity and access management")),
+            ("OAuth", ("oauth", "oauth2")),
+            ("SAML", ("saml",)),
+            ("Incident Response", ("incident response",)),
+            ("Vulnerability Management", ("vulnerability management",)),
+            ("Penetration Testing", ("penetration testing", "pentesting")),
+        ),
+    ),
+    (
+        "Product and Design",
+        (
+            ("Product Management", ("product management", "product manager")),
+            ("Roadmapping", ("roadmap", "roadmapping")),
+            ("User Research", ("user research", "ux research")),
+            ("UX", ("ux", "user experience")),
+            ("UI", ("ui", "user interface")),
+            ("Figma", ("figma",)),
+            ("Design Systems", ("design system", "design systems")),
+            ("Prototyping", ("prototype", "prototyping")),
+            ("Growth", ("growth",)),
+        ),
+    ),
+    (
+        "GTM and Customer",
+        (
+            ("Sales", ("sales",)),
+            ("Marketing", ("marketing",)),
+            ("Account Executive", ("account executive",)),
+            ("Customer Success", ("customer success",)),
+            ("CRM", ("crm",)),
+            ("Salesforce", ("salesforce",)),
+            ("HubSpot", ("hubspot",)),
+            ("Demand Generation", ("demand generation",)),
+            ("Partnerships", ("partnerships",)),
+            ("Support", ("customer support", "technical support")),
+        ),
+    ),
+    (
+        "Operations and Finance",
+        (
+            ("Finance", ("finance",)),
+            ("Accounting", ("accounting",)),
+            ("FP&A", ("fp&a", "fpa")),
+            ("Payroll", ("payroll",)),
+            ("Recruiting", ("recruiting", "talent acquisition")),
+            ("People Operations", ("people operations", "people ops")),
+            ("Legal", ("legal",)),
+            ("Procurement", ("procurement",)),
+            ("Supply Chain", ("supply chain",)),
+            ("RevOps", ("revops", "revenue operations")),
+        ),
+    ),
+    (
+        "Healthcare and Science",
+        (
+            ("Clinical", ("clinical",)),
+            ("Healthcare", ("healthcare", "health care")),
+            ("Biotech", ("biotech", "biotechnology")),
+            ("Pharma", ("pharma", "pharmaceutical")),
+            ("FDA", ("fda",)),
+            ("Laboratory", ("laboratory", "lab operations")),
+            ("Genomics", ("genomics",)),
+        ),
+    ),
+)
+_SKILL_TEXT_VALUE_LIMIT = 4000
+_SKILL_LEVEL_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Executive", ("chief", "c-level", "c suite", "vp", "vice president")),
+    ("Principal", ("principal", "staff")),
+    ("Senior", ("senior", "sr", "lead")),
+    ("Manager", ("manager", "director", "head of")),
+    ("Junior", ("junior", "jr", "entry level", "intern", "associate")),
+)
+
+
+def extract_job_skills(record: JobRecord) -> list[JobDescriptionSkill]:
+    """Derive deterministic skill groups from normalized public job text."""
+
+    description_text = record.description or record.description_html
+    text = _normalized_skill_text(
+        [
+            record.title,
+            record.department,
+            record.team,
+            record.employment_type,
+            description_text,
+            *record.responsibilities,
+            *record.qualifications,
+        ]
+    )
+    if not text.strip():
+        return []
+
+    level = _skill_level(record)
+    text_tokens = frozenset(text.split())
+    skills: list[JobDescriptionSkill] = []
+    for group_name, keywords in _compiled_skill_catalog():
+        matched = [
+            keyword
+            for keyword, single_tokens, phrases in keywords
+            if _has_compiled_skill_alias(text, text_tokens, single_tokens, phrases)
+        ]
+        if matched:
+            skills.append(
+                JobDescriptionSkill(
+                    name=group_name,
+                    level=level,
+                    keywords=matched[:12],
+                )
+            )
+    return skills
+
+
+def _normalized_skill_text(values: list[object]) -> str:
+    raw = " ".join(str(value)[:_SKILL_TEXT_VALUE_LIMIT] for value in values if value)
+    raw = strip_html(raw) or raw
+    normalized = re.sub(r"[^a-z0-9+#]+", " ", raw.casefold())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return f" {normalized} "
+
+
+@lru_cache(maxsize=1)
+def _compiled_skill_catalog() -> tuple[
+    tuple[str, tuple[tuple[str, frozenset[str], tuple[str, ...]], ...]], ...
+]:
+    return tuple(
+        (
+            group_name,
+            tuple(
+                (
+                    keyword,
+                    *_compile_skill_aliases(aliases),
+                )
+                for keyword, aliases in keywords
+            ),
+        )
+        for group_name, keywords in _SKILL_CATALOG
+    )
+
+
+@lru_cache(maxsize=1)
+def _compiled_level_aliases() -> tuple[
+    tuple[str, frozenset[str], tuple[str, ...]], ...
+]:
+    return tuple(
+        (label, *_compile_skill_aliases(aliases))
+        for label, aliases in _SKILL_LEVEL_ALIASES
+    )
+
+
+@lru_cache(maxsize=256)
+def _compile_skill_aliases(
+    aliases: tuple[str, ...],
+) -> tuple[frozenset[str], tuple[str, ...]]:
+    normalized_aliases = tuple(
+        sorted(
+            {
+                normalized_alias
+                for alias in aliases
+                if (normalized_alias := _normalized_skill_text([alias]).strip())
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    if not normalized_aliases:
+        return frozenset(), ()
+    single_tokens = frozenset(
+        normalized_alias
+        for normalized_alias in normalized_aliases
+        if " " not in normalized_alias
+    )
+    phrases = tuple(
+        normalized_alias
+        for normalized_alias in normalized_aliases
+        if " " in normalized_alias
+    )
+    return single_tokens, phrases
+
+
+def _has_compiled_skill_alias(
+    normalized_text: str,
+    text_tokens: frozenset[str],
+    single_tokens: frozenset[str],
+    phrases: tuple[str, ...],
+) -> bool:
+    return (not text_tokens.isdisjoint(single_tokens)) or any(
+        phrase in normalized_text for phrase in phrases
+    )
+
+
+def _has_skill_alias(normalized_text: str, alias: str) -> bool:
+    single_tokens, phrases = _compile_skill_aliases((alias,))
+    return _has_compiled_skill_alias(
+        normalized_text,
+        frozenset(normalized_text.split()),
+        single_tokens,
+        phrases,
+    )
+
+
+def _skill_level(record: JobRecord) -> str | None:
+    text = _normalized_skill_text([record.experience, record.title])
+    text_tokens = frozenset(text.split())
+    for label, single_tokens, phrases in _compiled_level_aliases():
+        if _has_compiled_skill_alias(text, text_tokens, single_tokens, phrases):
+            return label
+    return record.experience
+
+
 class SourceRecord(OpenOppsRecord):
     """A configured source of opportunity-board companies."""
 
@@ -852,7 +1177,12 @@ class JobRecord(OpenOppsRecord):
     )
 
     @model_validator(mode="after")
-    def _populate_job_description(self) -> Self:
+    def _populate_enriched_fields(self) -> Self:
+        if not self.skills:
+            if self.job_description and self.job_description.skills:
+                object.__setattr__(self, "skills", list(self.job_description.skills))
+            else:
+                object.__setattr__(self, "skills", extract_job_skills(self))
         if self.job_description is None:
             object.__setattr__(self, "job_description", build_job_description(self))
         return self

@@ -435,6 +435,40 @@ def test_combined_sync_metrics_span_stage_timings():
     assert combined.as_dict()["jobsDeduped"] == 1
 
 
+def test_jobs_sync_passes_route_limit_and_freshness(monkeypatch, tmp_path: Path):
+    calls = {}
+
+    async def fake_sync_jobs(**kwargs):
+        calls.update(kwargs)
+        return SyncMetrics(name="jobs.sync", job_sync_runs=2).finish()
+
+    def fake_run_sync_with_progress(label, run, *, enabled, verbose=False):
+        calls["progress"] = (label, enabled, verbose)
+        return run(lambda _message: None)
+
+    monkeypatch.setattr(cli_module, "sync_jobs", fake_sync_jobs)
+    monkeypatch.setattr(
+        cli_module, "_run_sync_with_progress", fake_run_sync_with_progress
+    )
+
+    result = invoke(
+        tmp_path,
+        "jobs",
+        "sync",
+        "--metrics-json",
+        "--limit",
+        "2",
+        "--freshness-seconds",
+        "3600",
+    )
+
+    assert result.exit_code == 0
+    assert calls["progress"] == ("Syncing jobs", False, False)
+    assert calls["limit"] == 2
+    assert calls["freshness_seconds"] == 3600.0
+    assert json.loads(result.output)["jobSyncRuns"] == 2
+
+
 def test_run_sync_with_progress_renders_update_message(monkeypatch):
     calls = []
     columns = []

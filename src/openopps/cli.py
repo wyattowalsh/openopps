@@ -732,6 +732,8 @@ def sync_all(
                 board_key=board,
                 provider_id=provider_filter,
                 output=output,
+                freshness_seconds=settings.job_route_freshness_seconds,
+                limit=settings.job_route_limit,
                 verbose=verbose,
                 report=report,
             )
@@ -1908,6 +1910,27 @@ def jobs_sync(
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            *LIMIT_OPTION_FLAGS,
+            min=1,
+            help="Maximum stale or never-synced provider routes to refresh.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    freshness_seconds: Annotated[
+        float | None,
+        typer.Option(
+            "--freshness-seconds",
+            min=0,
+            help=(
+                "Skip routes with a successful job sync newer than this many seconds; "
+                "0 refreshes every selected route."
+            ),
+            rich_help_panel=PANEL_SYNC,
+        ),
+    ] = None,
     metrics_json: Annotated[
         bool,
         typer.Option(
@@ -1951,6 +1974,8 @@ def jobs_sync(
                 board_key=board,
                 provider_id=normalize_provider_filter(provider),
                 output=output,
+                freshness_seconds=freshness_seconds,
+                limit=limit,
                 verbose=verbose,
                 report=report,
             )

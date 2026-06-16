@@ -186,6 +186,79 @@ async def test_sync_jobs_reports_persisted_runs_and_deduped_jobs(tmp_path: Path)
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_sync_jobs_refreshes_stale_routes_before_fresh_with_limit(
+    tmp_path: Path,
+):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(key="fresh", source_key="manual", remote_id="Fresh", name="Fresh"),
+            BoardRecord(key="never", source_key="manual", remote_id="Never", name="Never"),
+            BoardRecord(key="stale", source_key="manual", remote_id="Stale", name="Stale"),
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id=f"manual:{key}:greenhouse",
+                source_key="manual",
+                board_key=key,
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token=key,
+            )
+            for key in ("fresh", "never", "stale")
+        ]
+    )
+    now = utc_now()
+    store.sync_jobs_for_route("fresh", "greenhouse", [], synced_at=now)
+    store.sync_jobs_for_route(
+        "stale", "greenhouse", [], synced_at=now - timedelta(hours=2)
+    )
+    fresh_route = _mock_greenhouse_jobs("fresh", [])
+    never_route = _mock_greenhouse_jobs(
+        "never",
+        [
+            {
+                "id": 1,
+                "title": "Never Synced Engineer",
+                "absolute_url": "https://boards.greenhouse.io/never/jobs/1",
+            }
+        ],
+    )
+    stale_route = _mock_greenhouse_jobs(
+        "stale",
+        [
+            {
+                "id": 1,
+                "title": "Stale Engineer",
+                "absolute_url": "https://boards.greenhouse.io/stale/jobs/1",
+            }
+        ],
+    )
+
+    metrics = await sync_jobs(
+        settings=settings,
+        store=store,
+        provider_id="greenhouse",
+        freshness_seconds=3600,
+        limit=2,
+    )
+
+    assert fresh_route.call_count == 0
+    assert never_route.call_count == 1
+    assert stale_route.call_count == 1
+    assert metrics.skipped == 1
+    assert metrics.job_sync_runs == 2
+    assert metrics.jobs_persisted == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_sync_jobs_excludes_route_hints_without_executable_metadata(
     tmp_path: Path,
 ):

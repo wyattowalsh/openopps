@@ -1641,3 +1641,117 @@ PSL_SOURCE = SourceRecord(
     enabled=True,
     raw_metadata={"board": "psl"},
 )
+
+HAX_SOURCE = SourceRecord(
+    key="hax",
+    url="https://jobs.hax.co/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "hax"},
+)
+
+
+LOCALGLOBEALL_SOURCE = SourceRecord(
+    key="localglobeall",
+    url="https://consider.com/boards/vc/localglobe-all/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "localglobeall"},
+)
+
+
+CHIRATAEVC_SOURCE = SourceRecord(
+    key="chirataevc",
+    url="https://careers.chiratae.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "chirataevc"},
+)
+
+
+DUTCHTECH_SOURCE = SourceRecord(
+    key="dutchtech",
+    url="https://consider.com/boards/vc/dutchtech/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "dutchtech"},
+)
+
+
+MITALUMNISTARTUPS_SOURCE = SourceRecord(
+    key="mitalumnistartups",
+    url="https://consider.com/boards/vc/mit-alumni-startups/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "mitalumnistartups"},
+)
+
+BAINPE_SOURCE = SourceRecord(
+    key="bainpe",
+    url="https://consider.com/boards/vc/bain-pe/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "bainpe"},
+)
+
+
+COLLERCAPITAL_SOURCE = SourceRecord(
+    key="collercapital",
+    url="https://consider.com/boards/vc/coller-capital/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "collercapital"},
+)
+
+HIGHLANDEUROPE_SOURCE = SourceRecord(
+    key="highlandeurope",
+    url="https://careers.highlandeurope.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "highlandeurope"},
+)
+
+
+MOC_SOURCE = SourceRecord(
+    key="moc",
+    url="https://jobs.moc.vc/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "moc"},
+)
+
+
+AIRBUSVENTURES_SOURCE = SourceRecord(
+    key="airbusventures",
+    url="https://consider.com/boards/vc/airbus-ventures/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "airbusventures"},
+)
+
+
+NIGHTCREATOR_SOURCE = SourceRecord(
+    key="nightcreator",
+    url="https://consider.com/boards/vc/night-creator/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "nightcreator"},
+)
+
+
+VOYAGERVC_SOURCE = SourceRecord(
+    key="voyagervc",
+    url="https://careers.voyagervc.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "voyagervc"},
+)
+
+
+CLIMACTIC_SOURCE = SourceRecord(
+    key="climactic",
+    url="https://jobs.climactic.vc/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "climactic"},
+)

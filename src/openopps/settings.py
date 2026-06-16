@@ -117,6 +117,23 @@ class OpenOppsSettings(BaseSettings):
         ),
         examples=[180.0],
     )
+    job_route_freshness_seconds: NonNegativeFloatSetting = Field(
+        default=0.0,
+        description=(
+            "Freshness window, in seconds, for skipping recently synced provider "
+            "routes during job sync. A value of 0 disables the skip and refreshes "
+            "every selected route."
+        ),
+        examples=[0.0, 86400.0],
+    )
+    job_route_limit: PositiveIntSetting | None = Field(
+        default=None,
+        description=(
+            "Maximum number of stale or never-synced provider routes to process "
+            "during one job sync. Unset means every selected stale route is processed."
+        ),
+        examples=[500],
+    )
     provider_concurrency: PositiveIntSetting = Field(
         default=12,
         description=(

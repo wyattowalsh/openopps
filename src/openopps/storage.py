@@ -412,6 +412,29 @@ class OpenOppsStore:
             rows = session.exec(statement).all()
             return [board_provider_from_row(row) for row in rows]
 
+    def latest_job_syncs(
+        self, *, success_only: bool = True
+    ) -> dict[tuple[str, str], datetime]:
+        self.init_db()
+        with Session(self.engine) as session:
+            statement = (
+                select(
+                    JobSyncRunRow.board_key,
+                    JobSyncRunRow.provider_id,
+                    func.max(JobSyncRunRow.synced_at),
+                )
+                .group_by(JobSyncRunRow.board_key, JobSyncRunRow.provider_id)
+            )
+            if success_only:
+                statement = statement.where(JobSyncRunRow.success == True)  # noqa: E712
+            rows = session.exec(statement).all()
+            latest: dict[tuple[str, str], datetime] = {}
+            for board_key, provider_id, synced_at in rows:
+                aware_synced_at = _ensure_aware(synced_at)
+                if aware_synced_at is not None:
+                    latest[(board_key, provider_id)] = aware_synced_at
+            return latest
+
     def list_jobs(
         self,
         *,

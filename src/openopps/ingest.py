@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -382,6 +382,8 @@ async def sync_jobs(
     board_key: str | None = None,
     provider_id: str | None = None,
     output: Path | None = None,
+    freshness_seconds: float | None = None,
+    limit: int | None = None,
     verbose: bool = False,
     report: ProgressReporter | None = None,
 ) -> SyncMetrics:
@@ -393,11 +395,29 @@ async def sync_jobs(
         provider_id=provider_filter,
         ready_only=True,
     )
+    effective_freshness_seconds = (
+        settings.job_route_freshness_seconds
+        if freshness_seconds is None
+        else freshness_seconds
+    )
+    effective_limit = settings.job_route_limit if limit is None else limit
+    latest_syncs = (
+        store.latest_job_syncs()
+        if effective_freshness_seconds > 0 or effective_limit
+        else {}
+    )
+    route_entries, fresh_routes_skipped, deferred_routes = _select_job_route_entries(
+        route_selection.entries,
+        latest_syncs=latest_syncs,
+        freshness_seconds=effective_freshness_seconds,
+        limit=effective_limit,
+    )
     duplicate_routes_by_request_key = _duplicate_routes_by_request_key(
         store, route_selection.duplicate_routes
     )
     metrics.duplicate_routes_skipped += len(route_selection.duplicate_routes)
-    route_total = len(route_selection.entries)
+    metrics.skipped += fresh_routes_skipped + deferred_routes
+    route_total = len(route_entries)
     completed_routes = 0
     progress_lock = asyncio.Lock()
     _report(
@@ -412,7 +432,9 @@ async def sync_jobs(
                 (
                     f"{_format_count(route_total)} routes, "
                     f"{_format_count(len(route_selection.duplicate_routes))} dupes, "
-                    f"{_format_count(len(route_selection.missing_route_metadata))} no-meta"
+                    f"{_format_count(len(route_selection.missing_route_metadata))} no-meta, "
+                    f"{_format_count(fresh_routes_skipped)} fresh, "
+                    f"{_format_count(deferred_routes)} deferred"
                 ),
             ),
         ),
@@ -421,7 +443,7 @@ async def sync_jobs(
     )
     logger.trace(
         "Starting jobs sync executable_routes={} missing_route_metadata_skipped={} duplicates_skipped={} source={} board={} provider={}",
-        len(route_selection.entries),
+        len(route_entries),
         len(route_selection.missing_route_metadata),
         len(route_selection.duplicate_routes),
         source_key or "all",
@@ -594,10 +616,60 @@ async def sync_jobs(
         await asyncio.gather(
             *(
                 run_route(entry.route, entry.board, entry.request_key)
-                for entry in route_selection.entries
+                for entry in route_entries
             )
         )
     return metrics.finish()
+
+
+def _select_job_route_entries(
+    entries: Sequence,
+    *,
+    latest_syncs: dict[tuple[str, str], datetime],
+    freshness_seconds: float,
+    limit: int | None,
+):
+    cutoff = (
+        utc_now() - timedelta(seconds=freshness_seconds)
+        if freshness_seconds > 0
+        else None
+    )
+    stale_entries = []
+    fresh_routes_skipped = 0
+    for index, entry in enumerate(entries):
+        synced_at = latest_syncs.get(_job_route_sync_key(entry))
+        if synced_at and synced_at.tzinfo is None:
+            synced_at = synced_at.replace(tzinfo=timezone.utc)
+        if cutoff and synced_at and synced_at >= cutoff:
+            fresh_routes_skipped += 1
+            continue
+        stale_entries.append((index, entry, synced_at))
+
+    if latest_syncs:
+        stale_entries.sort(key=_job_route_priority)
+
+    selected = stale_entries
+    if limit is not None:
+        selected = stale_entries[:limit]
+    deferred_routes = max(0, len(stale_entries) - len(selected))
+    return [entry for _, entry, _ in selected], fresh_routes_skipped, deferred_routes
+
+
+def _job_route_sync_key(entry) -> tuple[str, str]:
+    return (entry.route.board_key, entry.route.provider_id)
+
+
+def _job_route_priority(item):
+    index, entry, synced_at = item
+    never_synced = synced_at is None
+    earliest = datetime.min.replace(tzinfo=timezone.utc)
+    return (
+        0 if never_synced else 1,
+        synced_at or earliest,
+        entry.route.provider_id,
+        entry.board.key,
+        index,
+    )
 
 
 def _duplicate_routes_by_request_key(

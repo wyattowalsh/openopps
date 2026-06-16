@@ -220,6 +220,22 @@
       "url": "https://jobs.1011vc.com/companies"
     },
     {
+      "enabled": false,
+      "key": "1011vcportfolio",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "10-11 Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.1011vc.com/portfolio"
+    },
+    {
       "enabled": true,
       "key": "13bookscapital",
       "providerId": "getro",
@@ -258,6 +274,22 @@
     },
     {
       "enabled": false,
+      "key": "1kx",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "1kx public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://1kx.network/portfolio"
+    },
+    {
+      "enabled": false,
       "key": "2048vc",
       "providerId": "public_page",
       "taxonomy": {
@@ -285,6 +317,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.25madison.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "2amvc",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "2am VC public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.2am.vc/portfolio"
     },
     {
       "enabled": true,
@@ -418,6 +466,13 @@
     },
     {
       "enabled": true,
+      "key": "acgpartners",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.acgpartners.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "acme",
       "providerId": "getro",
       "taxonomy": {},
@@ -527,6 +582,29 @@
     },
     {
       "enabled": true,
+      "key": "airbusventures",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/airbus-ventures/companies"
+    },
+    {
+      "enabled": false,
+      "key": "airstreet",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Air Street Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.airstreet.com/portfolio"
+    },
+    {
+      "enabled": true,
       "key": "airtree",
       "providerId": "getro",
       "taxonomy": {},
@@ -538,6 +616,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.aixventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "akmazocapital",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.akmazocapital.com/companies"
     },
     {
       "enabled": true,
@@ -670,6 +755,22 @@
       "url": "https://work.amazingcolumbusga.com/companies"
     },
     {
+      "enabled": false,
+      "key": "amdventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "AMD Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.amd.com/en/ventures/portfolio.html"
+    },
+    {
       "enabled": true,
       "key": "americanunderground",
       "providerId": "getro",
@@ -712,6 +813,29 @@
       "url": "https://careers.angelesinvestors.com/companies"
     },
     {
+      "enabled": false,
+      "key": "angelpad",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "AngelPad public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.angelpad.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "animocabrands",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.animocabrands.com/companies"
+    },
+    {
       "enabled": true,
       "key": "anitab",
       "providerId": "getro",
@@ -748,6 +872,13 @@
     },
     {
       "enabled": true,
+      "key": "apeiron",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.apeiron.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "aqpsearch",
       "providerId": "getro",
       "taxonomy": {},
@@ -769,10 +900,33 @@
     },
     {
       "enabled": true,
+      "key": "arca",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.ar.ca/companies"
+    },
+    {
+      "enabled": true,
       "key": "archetype",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.archetype.fund/companies"
+    },
+    {
+      "enabled": false,
+      "key": "archventure",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "ARCH Venture Partners public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.archventure.com/portfolio/"
     },
     {
       "enabled": true,
@@ -780,6 +934,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.arcternventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "arena",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.arena.run/companies"
     },
     {
       "enabled": true,
@@ -892,6 +1053,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/bain-crypto/companies"
+    },
+    {
+      "enabled": true,
+      "key": "bainpe",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/bain-pe/companies"
     },
     {
       "enabled": true,
@@ -1057,6 +1225,13 @@
     },
     {
       "enabled": true,
+      "key": "bitkraft",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.bitkraft.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "blackbird",
       "providerId": "getro",
       "taxonomy": {},
@@ -1105,6 +1280,22 @@
       "url": "https://blindspot.getro.com/companies"
     },
     {
+      "enabled": false,
+      "key": "blingcapital",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Bling Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.blingcapital.com/portfolio"
+    },
+    {
       "enabled": true,
       "key": "blockchaincapital",
       "providerId": "getro",
@@ -1131,6 +1322,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.blueventurefund.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "bluewing",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.bluewing.vc/companies"
     },
     {
       "enabled": true,
@@ -1164,6 +1362,13 @@
     },
     {
       "enabled": true,
+      "key": "blumevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.blume.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "bnbchain",
       "providerId": "getro",
       "taxonomy": {},
@@ -1191,6 +1396,45 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.bonfirevc.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "boomtownaccelerators",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.boomtownaccelerators.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "boozallenventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Booz Allen Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.boozallen.com/expertise/tech-ecosystem/ventures.html"
+    },
+    {
+      "enabled": false,
+      "key": "borderless",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Borderless Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://borderless.xyz/portfolio"
     },
     {
       "enabled": false,
@@ -1223,6 +1467,20 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.boxgroup.com/portfolio"
+    },
+    {
+      "enabled": true,
+      "key": "boydinnovationcenter",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://talent.boydinnovationcenter.org/companies"
+    },
+    {
+      "enabled": true,
+      "key": "bpc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.bpc.com/companies"
     },
     {
       "enabled": true,
@@ -1267,6 +1525,22 @@
       "url": "https://jobs.btv.vc/companies"
     },
     {
+      "enabled": false,
+      "key": "btvvc",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Bullpen Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.btv.vc/portfolio"
+    },
+    {
       "enabled": true,
       "key": "buildingventures",
       "providerId": "getro",
@@ -1286,6 +1560,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.bvp.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "bwam",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.bwam.network/companies"
     },
     {
       "enabled": true,
@@ -1358,6 +1639,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.capitalg.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "capitaloneventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Capital One Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://capitaloneventures.com/portfolio"
     },
     {
       "enabled": false,
@@ -1465,6 +1762,13 @@
     },
     {
       "enabled": true,
+      "key": "chirataevc",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://careers.chiratae.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "choosemketech",
       "providerId": "getro",
       "taxonomy": {},
@@ -1478,11 +1782,43 @@
       "url": "https://jobs.circadian.vc/companies"
     },
     {
+      "enabled": false,
+      "key": "ciscoinvestments",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Cisco Investments public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.ciscoinvestments.com/portfolio"
+    },
+    {
       "enabled": true,
       "key": "citylight",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.citylight.vc/companies"
+    },
+    {
+      "enabled": false,
+      "key": "civilizationventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Civilization Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.civilizationventures.com/portfolio"
     },
     {
       "enabled": true,
@@ -1518,6 +1854,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.clevelandtalent.org/companies"
+    },
+    {
+      "enabled": true,
+      "key": "climactic",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.climactic.vc/companies"
     },
     {
       "enabled": false,
@@ -1596,6 +1939,36 @@
       "url": "https://raw.githubusercontent.com/cncf/landscape/master/landscape.yml"
     },
     {
+      "enabled": false,
+      "key": "coatue",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Coatue public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.coatue.com/privates-portfolio"
+    },
+    {
+      "enabled": true,
+      "key": "cobalt",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.cobalt.la/companies"
+    },
+    {
+      "enabled": true,
+      "key": "coefficientcap",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.coefficientcap.com/companies"
+    },
+    {
       "enabled": true,
       "key": "coinbase",
       "providerId": "getro",
@@ -1611,6 +1984,13 @@
     },
     {
       "enabled": true,
+      "key": "collab",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.collab.capital/companies"
+    },
+    {
+      "enabled": true,
       "key": "collaborativefund",
       "providerId": "getro",
       "taxonomy": {},
@@ -1618,10 +1998,24 @@
     },
     {
       "enabled": true,
+      "key": "collercapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/coller-capital/companies"
+    },
+    {
+      "enabled": true,
       "key": "collidecap",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.collidecap.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "colorintech",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.colorintech.org/companies"
     },
     {
       "enabled": true,
@@ -1636,6 +2030,20 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://www1.communitech.ca/companies"
+    },
+    {
+      "enabled": true,
+      "key": "communitiesinschools",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://networkjobs.communitiesinschools.org/companies"
+    },
+    {
+      "enabled": true,
+      "key": "compa",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://communityjobs.compa.ai/companies"
     },
     {
       "enabled": true,
@@ -1678,6 +2086,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.conversioncapital.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "conviction",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Conviction public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.conviction.com/"
     },
     {
       "enabled": true,
@@ -1803,6 +2227,22 @@
       "url": "https://www.daphni.com/portfolio"
     },
     {
+      "enabled": false,
+      "key": "databricksventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Databricks Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.databricks.com/databricks-ventures"
+    },
+    {
       "enabled": true,
       "key": "datapowerventures",
       "providerId": "consider",
@@ -1896,11 +2336,34 @@
       "url": "https://defy.vc/companies/"
     },
     {
+      "enabled": false,
+      "key": "delltechnologiescapital",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Dell Technologies Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.delltechnologiescapital.com/companies"
+    },
+    {
       "enabled": true,
       "key": "delphiventures",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.delphiventures.io/companies"
+    },
+    {
+      "enabled": true,
+      "key": "democracyfund",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://network-jobs.democracyfund.org/companies"
     },
     {
       "enabled": true,
@@ -2004,10 +2467,24 @@
     },
     {
       "enabled": true,
+      "key": "dutchtech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/dutchtech/companies"
+    },
+    {
+      "enabled": true,
       "key": "dynamovc",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.dynamo.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "dyrdekmachine",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.dyrdekmachine.com/companies"
     },
     {
       "enabled": true,
@@ -2069,6 +2546,13 @@
     },
     {
       "enabled": true,
+      "key": "edencp",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.edencp.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "edisonpartners",
       "providerId": "getro",
       "taxonomy": {},
@@ -2110,6 +2594,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.electriccapital.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "elefund",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Elefund public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.elefund.com/portfolio"
     },
     {
       "enabled": true,
@@ -2194,6 +2694,13 @@
     },
     {
       "enabled": true,
+      "key": "endeit",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.endeit.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "endicottgp",
       "providerId": "getro",
       "taxonomy": {},
@@ -2245,6 +2752,13 @@
     },
     {
       "enabled": true,
+      "key": "entradaventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.entradaventures.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "entrepreneurs",
       "providerId": "getro",
       "taxonomy": {},
@@ -2279,6 +2793,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/ethereal-ventures/companies"
+    },
+    {
+      "enabled": true,
+      "key": "evanwalden",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://evanwalden.com/companies"
     },
     {
       "enabled": true,
@@ -2424,6 +2945,13 @@
     },
     {
       "enabled": true,
+      "key": "fintechaustralia",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.fintechaustralia.org.au/companies"
+    },
+    {
+      "enabled": true,
       "key": "fireup",
       "providerId": "getro",
       "taxonomy": {},
@@ -2509,6 +3037,22 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://fjlabs.com/portfolio"
+    },
+    {
+      "enabled": false,
+      "key": "flagshippioneering",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Flagship Pioneering public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.flagshippioneering.com/companies"
     },
     {
       "enabled": true,
@@ -2727,6 +3271,13 @@
     },
     {
       "enabled": true,
+      "key": "fov",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.fov.ventures/companies"
+    },
+    {
+      "enabled": true,
       "key": "foxmontcapital",
       "providerId": "consider",
       "taxonomy": {},
@@ -2859,6 +3410,22 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.gener8tor.com/career-seekers"
+    },
+    {
+      "enabled": false,
+      "key": "generalcatalyst",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "General Catalyst public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.generalcatalyst.com/portfolio"
     },
     {
       "enabled": true,
@@ -3104,6 +3671,29 @@
     },
     {
       "enabled": true,
+      "key": "haass",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.haass.network/companies"
+    },
+    {
+      "enabled": false,
+      "key": "hackvc",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Hack VC public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://hack.vc/portfolio"
+    },
+    {
+      "enabled": true,
       "key": "hannahgrey",
       "providerId": "getro",
       "taxonomy": {},
@@ -3122,6 +3712,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/hashed/companies"
+    },
+    {
+      "enabled": true,
+      "key": "hax",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.hax.co/companies"
     },
     {
       "enabled": false,
@@ -3217,6 +3814,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.highfivepartners.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "highlandeurope",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://careers.highlandeurope.com/companies"
     },
     {
       "enabled": true,
@@ -3347,11 +3951,43 @@
       "url": "https://jobs.ibexinvestors.com/companies"
     },
     {
+      "enabled": false,
+      "key": "ibmventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "IBM Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.ibm.com/ventures"
+    },
+    {
       "enabled": true,
       "key": "icehouseventures",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.icehouseventures.co.nz/companies"
+    },
+    {
+      "enabled": false,
+      "key": "iconiqgrowth",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "ICONIQ Growth public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.iconiq.com/growth/companies"
     },
     {
       "enabled": true,
@@ -3410,6 +4046,22 @@
       "url": "https://indexventures.getro.com/companies"
     },
     {
+      "enabled": false,
+      "key": "indiaquotient",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "India Quotient public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.indiaquotient.in/portfolio"
+    },
+    {
       "enabled": true,
       "key": "indiebio",
       "providerId": "consider",
@@ -3418,10 +4070,24 @@
     },
     {
       "enabled": true,
+      "key": "industrialinnovationfund",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.industrialinnovationfund.amazon/companies"
+    },
+    {
+      "enabled": true,
       "key": "industriousvc",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.industrious.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "inflection",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.inflection.fund/companies"
     },
     {
       "enabled": true,
@@ -3573,6 +4239,22 @@
       "url": "https://careers.istari-global.com/companies"
     },
     {
+      "enabled": false,
+      "key": "iterative",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Iterative public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.iterative.vc/companies"
+    },
+    {
       "enabled": true,
       "key": "ivp",
       "providerId": "consider",
@@ -3585,6 +4267,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.jamjarinvestments.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "japanenergyfundventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Japan Energy Fund Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.japanenergyfund-ventures.com/"
     },
     {
       "enabled": true,
@@ -3602,6 +4300,20 @@
     },
     {
       "enabled": true,
+      "key": "jibevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.jibevc.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "jlive",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.jlive.app/companies"
+    },
+    {
+      "enabled": true,
       "key": "jobsinvc",
       "providerId": "getro",
       "taxonomy": {},
@@ -3616,6 +4328,13 @@
     },
     {
       "enabled": true,
+      "key": "johotalent",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.johotalent.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "joinef",
       "providerId": "getro",
       "taxonomy": {},
@@ -3623,10 +4342,24 @@
     },
     {
       "enabled": true,
+      "key": "joinwoven",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.joinwoven.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "joplincc",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.joplincc.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "joulevc",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.joulevc.com/companies"
     },
     {
       "enabled": true,
@@ -3680,11 +4413,34 @@
       "url": "https://portfoliocareers.k1.com/companies"
     },
     {
+      "enabled": false,
+      "key": "k9ventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "K9 Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.k9ventures.com/portfolio"
+    },
+    {
       "enabled": true,
       "key": "kaporcapital",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.kaporcapital.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "karmijnkapitaal",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.karmijnkapitaal.nl/companies"
     },
     {
       "enabled": true,
@@ -3729,6 +4485,22 @@
       "url": "https://jobs.kickstart.com/companies"
     },
     {
+      "enabled": false,
+      "key": "kikocapital",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Kiko Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.kikocapital.com/portfolio"
+    },
+    {
       "enabled": true,
       "key": "kindredcapital",
       "providerId": "getro",
@@ -3748,6 +4520,13 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.kleinerperkins.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "kompas",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.kompas.vc/companies"
     },
     {
       "enabled": true,
@@ -3814,6 +4593,13 @@
     },
     {
       "enabled": true,
+      "key": "leedsilluminate",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.leedsilluminate.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "leftlanecap",
       "providerId": "getro",
       "taxonomy": {},
@@ -3855,6 +4641,29 @@
       "url": "https://jobs.lhh.co.il/companies"
     },
     {
+      "enabled": false,
+      "key": "lifeforcecapital",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "LifeForce Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.lifeforcecapital.com/portfolio"
+    },
+    {
+      "enabled": true,
+      "key": "lifemultiplied",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.lifemultiplied.org/companies"
+    },
+    {
       "enabled": true,
       "key": "lightbank",
       "providerId": "getro",
@@ -3891,10 +4700,24 @@
     },
     {
       "enabled": true,
+      "key": "localglobeall",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/localglobe-all/companies"
+    },
+    {
+      "enabled": true,
       "key": "loeb",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.loeb.nyc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "logoslabs",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.logoslabs.com/companies"
     },
     {
       "enabled": true,
@@ -3967,6 +4790,22 @@
       "url": "https://jobs.lyragrowth.com/companies"
     },
     {
+      "enabled": false,
+      "key": "m12",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "M12 public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://m12.vc/portfolio/"
+    },
+    {
       "enabled": true,
       "key": "m13",
       "providerId": "getro",
@@ -3979,6 +4818,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.m1c.vc/companies"
+    },
+    {
+      "enabled": false,
+      "key": "mach37",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Mach37 public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.mach37.com/portfolio"
     },
     {
       "enabled": true,
@@ -4196,6 +5051,13 @@
     },
     {
       "enabled": true,
+      "key": "merylbreidbart",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://network.merylbreidbart.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "metaprop",
       "providerId": "getro",
       "taxonomy": {},
@@ -4217,6 +5079,13 @@
     },
     {
       "enabled": true,
+      "key": "mitalumnistartups",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/mit-alumni-startups/companies"
+    },
+    {
+      "enabled": true,
       "key": "mmc",
       "providerId": "getro",
       "taxonomy": {},
@@ -4228,6 +5097,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.moberly-edc.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "moc",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://jobs.moc.vc/companies"
     },
     {
       "enabled": true,
@@ -4335,10 +5211,40 @@
     },
     {
       "enabled": true,
+      "key": "movementlabs",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://ecosystem.movementlabs.xyz/companies"
+    },
+    {
+      "enabled": true,
       "key": "moxxie",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.moxxie.vc/companies"
+    },
+    {
+      "enabled": false,
+      "key": "moxxievc",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Moxxie Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.moxxie.vc/portfolio"
+    },
+    {
+      "enabled": true,
+      "key": "msivfund",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.msivfund.com/companies"
     },
     {
       "enabled": true,
@@ -4505,6 +5411,13 @@
     },
     {
       "enabled": true,
+      "key": "nightcreator",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/vc/night-creator/companies"
+    },
+    {
+      "enabled": true,
       "key": "nightdragon",
       "providerId": "getro",
       "taxonomy": {},
@@ -4574,6 +5487,22 @@
       "url": "https://consider.com/boards/vc/nv/companies"
     },
     {
+      "enabled": false,
+      "key": "nvidiastartups",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "NVIDIA Inception public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.nvidia.com/en-us/startups/showcase/"
+    },
+    {
       "enabled": true,
       "key": "nvp",
       "providerId": "consider",
@@ -4607,6 +5536,20 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.obvious.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "ocaventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.ocaventures.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "octopusenergygeneration",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://portfoliojobs.octopusenergygeneration.com/companies"
     },
     {
       "enabled": true,
@@ -4725,6 +5668,22 @@
       "url": "https://jobs.openocean.vc/companies"
     },
     {
+      "enabled": false,
+      "key": "operatorcollective",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Operator Collective public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.operatorcollective.com/portfolio"
+    },
+    {
       "enabled": true,
       "key": "orbitmit",
       "providerId": "getro",
@@ -4768,6 +5727,13 @@
     },
     {
       "enabled": true,
+      "key": "ovalpark",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.ovalpark.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "overturevc",
       "providerId": "getro",
       "taxonomy": {},
@@ -4779,6 +5745,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.owlvc.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "paleblue",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Pale Blue Dot public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.pale.blue/portfolio"
     },
     {
       "enabled": true,
@@ -4978,6 +5960,22 @@
       "url": "https://jobs.planet-a.com/companies"
     },
     {
+      "enabled": false,
+      "key": "planetary",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Planetary public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.planetary.vc/portfolio"
+    },
+    {
       "enabled": true,
       "key": "playground",
       "providerId": "consider",
@@ -4997,6 +5995,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://accessopportunities.plugandplayfoundation.org/companies"
+    },
+    {
+      "enabled": false,
+      "key": "plugandplaytechcenter",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Plug and Play Tech Center public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.plugandplaytechcenter.com/startups"
     },
     {
       "enabled": false,
@@ -5092,6 +6106,20 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.praxis.co/companies"
+    },
+    {
+      "enabled": true,
+      "key": "prelude",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://talent.prelude.xyz/companies"
+    },
+    {
+      "enabled": true,
+      "key": "preludegrowth",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://talent.preludegrowth.com/companies"
     },
     {
       "enabled": true,
@@ -5269,6 +6297,13 @@
     },
     {
       "enabled": true,
+      "key": "rallydaypartners",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.rallydaypartners.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "rallyventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -5287,6 +6322,36 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.realventures.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "rebelfund",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Rebel Fund public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.rebel-fund.com/portfolio"
+    },
+    {
+      "enabled": true,
+      "key": "reddogcap",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.reddogcap.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "reddot",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.red-dot.capital/companies"
     },
     {
       "enabled": true,
@@ -5457,6 +6522,13 @@
     },
     {
       "enabled": true,
+      "key": "rubiconfounders",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.rubiconfounders.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "rubio",
       "providerId": "getro",
       "taxonomy": {},
@@ -5531,6 +6603,13 @@
     },
     {
       "enabled": true,
+      "key": "samaipata",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://samaipata.getro.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "sandboxindustries",
       "providerId": "getro",
       "taxonomy": {},
@@ -5542,6 +6621,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.sandscapitalventures.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "sante",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Sante Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.sante.com/portfolio"
     },
     {
       "enabled": true,
@@ -5633,6 +6728,13 @@
     },
     {
       "enabled": true,
+      "key": "senovo",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.senovo.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "sequoia",
       "providerId": "consider",
       "taxonomy": {},
@@ -5644,6 +6746,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.serena.vc/companies"
+    },
+    {
+      "enabled": false,
+      "key": "servicenowventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "ServiceNow Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.servicenow.com/company/ventures.html"
     },
     {
       "enabled": true,
@@ -5675,6 +6793,13 @@
     },
     {
       "enabled": true,
+      "key": "sharpalphaadvisors",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.sharpalphaadvisors.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "shieldcap",
       "providerId": "getro",
       "taxonomy": {},
@@ -5702,6 +6827,22 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.shorooq.com/portfolio"
+    },
+    {
+      "enabled": false,
+      "key": "shrug",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Shrug Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.shrug.vc/portfolio"
     },
     {
       "enabled": true,
@@ -5804,11 +6945,41 @@
       "url": "https://jobs.smartfinvc.com/companies"
     },
     {
+      "enabled": false,
+      "key": "snowflakeventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Snowflake Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.snowflake.com/en/why-snowflake/startup-program/snowflake-ventures/"
+    },
+    {
+      "enabled": true,
+      "key": "soarky",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.soar-ky.org/companies"
+    },
+    {
       "enabled": true,
       "key": "socialleverage",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.socialleverage.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "sofindev",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://sofindev.getro.com/companies"
     },
     {
       "enabled": true,
@@ -5946,6 +7117,13 @@
     },
     {
       "enabled": true,
+      "key": "springtide",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.springtide.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "springtimeventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -5994,6 +7172,22 @@
       "url": "https://jobs.stanfordclimateventures.org/companies"
     },
     {
+      "enabled": false,
+      "key": "starburstaero",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Starburst Aerospace public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://starburst.aero/portfolio/"
+    },
+    {
       "enabled": true,
       "key": "startmunich",
       "providerId": "getro",
@@ -6029,6 +7223,22 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.startx.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "stationf",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Station F public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://stationf.co/startups"
     },
     {
       "enabled": true,
@@ -6074,6 +7284,13 @@
     },
     {
       "enabled": true,
+      "key": "sui",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.sui.io/companies"
+    },
+    {
+      "enabled": true,
       "key": "summitpartners",
       "providerId": "getro",
       "taxonomy": {},
@@ -6106,6 +7323,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.superseed.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "superset",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.superset.com/companies"
     },
     {
       "enabled": true,
@@ -6265,6 +7489,20 @@
     },
     {
       "enabled": true,
+      "key": "terratalent",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://terratalent.getro.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "tezos",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.tezos.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "theadclub",
       "providerId": "getro",
       "taxonomy": {},
@@ -6276,6 +7514,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.theblockchainassociation.org/companies"
+    },
+    {
+      "enabled": true,
+      "key": "thecenterbham",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.thecenterbham.org/companies"
     },
     {
       "enabled": true,
@@ -6318,6 +7563,13 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.thepeoplepeoplegroup.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "theproductionboard",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.theproductionboard.com/companies"
     },
     {
       "enabled": true,
@@ -6448,6 +7700,29 @@
       "url": "https://jobs.toyota.ventures/companies"
     },
     {
+      "enabled": false,
+      "key": "tpb",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "The Production Board public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.tpb.co/businesses"
+    },
+    {
+      "enabled": true,
+      "key": "tpycapital",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.tpycapital.com/companies"
+    },
+    {
       "enabled": true,
       "key": "trailheadcap",
       "providerId": "getro",
@@ -6463,10 +7738,33 @@
     },
     {
       "enabled": true,
+      "key": "transtech",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.trans-tech.net/companies"
+    },
+    {
+      "enabled": true,
       "key": "traveltechessentialist",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.traveltechessentialist.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "tribecapital",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Tribe Capital public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.tribe.capital/portfolio"
     },
     {
       "enabled": true,
@@ -6502,6 +7800,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.tusk.vc/companies"
+    },
+    {
+      "enabled": false,
+      "key": "tuskvc",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Tusk Venture Partners public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://tusk.vc/portfolio"
     },
     {
       "enabled": false,
@@ -6686,10 +8000,33 @@
     },
     {
       "enabled": true,
+      "key": "varsity",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.varsity.vc/companies"
+    },
+    {
+      "enabled": true,
       "key": "vcet",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.vcet.co/companies"
+    },
+    {
+      "enabled": false,
+      "key": "venbio",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "VenBio public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.venbio.com/portfolio"
     },
     {
       "enabled": true,
@@ -6806,6 +8143,29 @@
     },
     {
       "enabled": true,
+      "key": "vimian",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.vimian.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "visionfund",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Vision Fund public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://visionfund.com/portfolio"
+    },
+    {
+      "enabled": true,
       "key": "vistria",
       "providerId": "consider",
       "taxonomy": {},
@@ -6827,6 +8187,20 @@
     },
     {
       "enabled": true,
+      "key": "voltaventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.voltaventures.eu/companies"
+    },
+    {
+      "enabled": true,
+      "key": "voyagervc",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://careers.voyagervc.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "vuventurepartners",
       "providerId": "consider",
       "taxonomy": {},
@@ -6841,10 +8215,33 @@
     },
     {
       "enabled": true,
+      "key": "wallstreetfriends",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.wallstreetfriends.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "wassonenterprise",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.wassonenterprise.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "waterbridge",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "WaterBridge Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.waterbridge.vc/portfolio"
     },
     {
       "enabled": true,
@@ -6855,10 +8252,40 @@
     },
     {
       "enabled": true,
+      "key": "wctfct",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.wct-fct.com/companies"
+    },
+    {
+      "enabled": true,
       "key": "weareadamarie",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.weareadamarie.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "wellingtonprivateinvesting",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Wellington Private Investing public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.wellington.com/en-us/institutional/capabilities/private-investing/our-investments"
+    },
+    {
+      "enabled": true,
+      "key": "wesleyclover",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://careers.wesleyclover.com/companies"
     },
     {
       "enabled": true,
@@ -6883,6 +8310,13 @@
     },
     {
       "enabled": true,
+      "key": "westportyouthcommission",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobbank.westportyouthcommission.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "whatsupstateny",
       "providerId": "getro",
       "taxonomy": {},
@@ -6903,6 +8337,22 @@
       "url": "https://careers.wing.vc/companies"
     },
     {
+      "enabled": false,
+      "key": "workdayventures",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Workday Ventures public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://ventures.workday.com/en-us/partner-companies.html"
+    },
+    {
       "enabled": true,
       "key": "workforceinnovationcenter",
       "providerId": "getro",
@@ -6915,6 +8365,22 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.workinba.com/companies"
+    },
+    {
+      "enabled": false,
+      "key": "workinbiotech",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Work in Biotech public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://workinbiotech.com/"
     },
     {
       "enabled": true,
@@ -6931,11 +8397,34 @@
       "url": "https://careers.workupcoweta.com/companies"
     },
     {
+      "enabled": false,
+      "key": "worldfund",
+      "providerId": "public_page",
+      "taxonomy": {
+        "accessType": "public_page_html",
+        "coverageMode": "portfolio",
+        "defaultEnabledReason": "Disabled by default because OpenOpps does not yet have a structured adapter for this public page.",
+        "licenseStatus": "needs_review",
+        "providerType": "venture_firm",
+        "refreshCadence": "manual",
+        "sourceAttribution": "World Fund public portfolio or jobs page.",
+        "sourceCategory": "startup_ecosystem"
+      },
+      "url": "https://www.worldfund.vc/portfolio"
+    },
+    {
       "enabled": true,
       "key": "woven",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://portfoliojobs.woven.vc/companies"
+    },
+    {
+      "enabled": true,
+      "key": "wyvcjobs",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://wyvc-jobs.wyomingbusiness.org/companies"
     },
     {
       "enabled": true,
@@ -6960,6 +8449,13 @@
     },
     {
       "enabled": true,
+      "key": "xrpl",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.xrpl.org/companies"
+    },
+    {
+      "enabled": true,
       "key": "xyz",
       "providerId": "getro",
       "taxonomy": {},
@@ -6980,6 +8476,13 @@
         "sourceCategory": "startup_directory"
       },
       "url": "https://www.ycombinator.com/companies"
+    },
+    {
+      "enabled": true,
+      "key": "z2sixtyventures",
+      "providerId": "getro",
+      "taxonomy": {},
+      "url": "https://jobs.z2sixtyventures.com/companies"
     },
     {
       "enabled": true,
@@ -7007,6 +8510,6 @@
     "exportFormatCount": 3,
     "jobProviderCount": 9,
     "sourceAdapterCount": 14,
-    "sourceRecordCount": 854
+    "sourceRecordCount": 998
   }
 }

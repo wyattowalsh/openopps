@@ -1,6 +1,7 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 openspec := env_var_or_default("OPENOPPS_OPENSPEC", "npx -y @fission-ai/openspec@latest")
+kaggle := "uv run --with kaggle kaggle"
 
 default:
     @just --list
@@ -51,60 +52,63 @@ kaggle-meta:
 
 # Generate Kaggle metadata and table exports from an existing SQLite DB.
 kaggle-bundle db="kaggle/openoppsdb.sqlite":
-    uv run python scripts/generate_kaggle_metadata.py --data-db "{{ db }}"
+    @db="{{ db }}"; uv run python scripts/generate_kaggle_metadata.py --data-db "${db#db=}"
 
 # Validate generated Kaggle metadata and optional SQLite/CSV/Parquet bundle surfaces locally.
 kaggle-bundle-check db="kaggle/openoppsdb.sqlite":
-    @if [ -f "{{ db }}" ]; then uv run python scripts/generate_kaggle_metadata.py --data-db "{{ db }}"; else echo "No SQLite DB at {{ db }}; validating metadata-only Kaggle bundle."; uv run python scripts/generate_kaggle_metadata.py; fi
+    @db="{{ db }}"; db="${db#db=}"; if [ -f "$db" ]; then uv run python scripts/generate_kaggle_metadata.py --data-db "$db"; else echo "No SQLite DB at $db; validating metadata-only Kaggle bundle."; uv run python scripts/generate_kaggle_metadata.py; fi
     uv run pytest tests/unit/openopps/test_kaggle_metadata.py -q
 
 # Create the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-create:
-    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; kaggle datasets create -p "$upload_dir" --public -q -t -r zip
+    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" --public -q -t -r zip
 
 # Version the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-version message="OpenOppsDB snapshot":
-    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; kaggle datasets version -p "$upload_dir" -m "{{ message }}" -q -t -r zip; uv run --with kaggle python scripts/generate_kaggle_metadata.py --update-live-file-metadata
+    @message="{{ message }}"; message="${message#message=}"; current_version="$({{ kaggle }} datasets status wyattowalsh/openoppsdb --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["current_version_number"])')"; next_version="$((current_version + 1))"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip; uv run --with kaggle --with browser-cookie3 --with requests python scripts/generate_kaggle_metadata.py --wait-live-dataset-ready --wait-live-dataset-min-version "$next_version" --update-live-file-metadata --live-file-metadata-browser-cookies
 
 # Update live OpenOppsDB file descriptions and column metadata on Kaggle.
 kaggle-live-file-metadata:
-    uv run --with kaggle python scripts/generate_kaggle_metadata.py --update-live-file-metadata
+    uv run --with kaggle --with browser-cookie3 --with requests python scripts/generate_kaggle_metadata.py --update-live-file-metadata --live-file-metadata-browser-cookies
 
 # Push the connected OpenOppsDB manager notebook to Kaggle.
 kaggle-notebook-push timeout="3600":
-    kaggle kernels push -p kaggle --timeout "{{ timeout }}"
+    @timeout="{{ timeout }}"; {{ kaggle }} kernels push -p kaggle --timeout "${timeout#timeout=}"
 
 # Push the public OpenOppsDB starter notebook to Kaggle.
 kaggle-starter-notebook-push timeout="3600":
-    kaggle kernels push -p kaggle/starter --timeout "{{ timeout }}"
+    @timeout="{{ timeout }}"; {{ kaggle }} kernels push -p kaggle/starter --timeout "${timeout#timeout=}"
 
 # Show live OpenOppsDB dataset status from Kaggle.
 kaggle-live-status:
-    kaggle datasets status wyattowalsh/openoppsdb --format json
+    {{ kaggle }} datasets status wyattowalsh/openoppsdb --format json
 
 # List live OpenOppsDB dataset files from Kaggle.
 kaggle-live-files page_size="200":
-    kaggle datasets files wyattowalsh/openoppsdb --page-size "{{ page_size }}"
+    @page_size="{{ page_size }}"; {{ kaggle }} datasets files wyattowalsh/openoppsdb --page-size "${page_size#page_size=}"
+
+# Verify live OpenOppsDB readback through KaggleHub adapters.
+kagglehub-live-readback dataset="wyattowalsh/openoppsdb" version="":
+    @dataset="{{ dataset }}"; version="{{ version }}"; if [[ "$dataset" == dataset=* ]]; then dataset="${dataset#dataset=}"; fi; if [[ "$dataset" == version=* ]]; then version="${dataset#version=}"; dataset="wyattowalsh/openoppsdb"; fi; if [[ "$version" == version=* ]]; then version="${version#version=}"; fi; version_arg=""; if [ -n "$version" ]; then version_arg="--version $version"; fi; uv run --with 'kagglehub[polars-datasets]' python scripts/verify_kagglehub_readback.py --dataset "$dataset" $version_arg
 
 # Download live OpenOppsDB dataset metadata from Kaggle.
 kaggle-live-metadata output="/tmp/openoppsdb-kaggle-metadata":
-    @mkdir -p "{{ output }}"
-    kaggle datasets metadata wyattowalsh/openoppsdb -p "{{ output }}"
+    @output="{{ output }}"; output="${output#output=}"; mkdir -p "$output"; {{ kaggle }} datasets metadata wyattowalsh/openoppsdb -p "$output"
 
 # Show live OpenOppsDB manager notebook availability from Kaggle.
 kaggle-notebook-status:
-    @status="$(kaggle kernels status wyattowalsh/openoppsdb-manager)"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'
+    @status="$({{ kaggle }} kernels status wyattowalsh/openoppsdb-manager)"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'
 
 # List live OpenOppsDB manager notebook files from Kaggle.
 kaggle-notebook-files page_size="200":
-    kaggle kernels files wyattowalsh/openoppsdb-manager --page-size "{{ page_size }}"
+    @page_size="{{ page_size }}"; {{ kaggle }} kernels files wyattowalsh/openoppsdb-manager --page-size "${page_size#page_size=}"
 
 # Show live OpenOppsDB starter notebook status from Kaggle.
 kaggle-starter-notebook-status:
-    @status="$(kaggle kernels status wyattowalsh/openoppsdb-starter-notebook)"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'
+    @status="$({{ kaggle }} kernels status wyattowalsh/openoppsdb-starter-notebook)"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'
 
 # Run the live non-destructive Kaggle status/file verification commands.
-kaggle-live-verify: kaggle-live-status kaggle-live-files kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files kaggle-starter-notebook-status
+kaggle-live-verify: kaggle-live-status kaggle-live-files kagglehub-live-readback kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files kaggle-starter-notebook-status
 
 # List OpenSpec changes as agent-readable JSON.
 openspec-list:
