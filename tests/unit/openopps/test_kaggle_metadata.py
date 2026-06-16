@@ -49,10 +49,11 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert set(resources) == {resource.path for resource in gen.RESOURCES}
     assert set(resources) == {resource.path for resource in gen.DATA_RESOURCES}
     assert resources[gen.DB_FILE]["description"]
+    assert set(resources[gen.DB_FILE]) == {"path", "description"}
     assert "schema" not in resources[gen.DB_FILE]
-    assert {table["name"] for table in resources[gen.DB_FILE]["tables"]} == {
-        table.name for table in gen.TABLES
-    }
+    assert "tables" not in resources[gen.DB_FILE]
+    assert "name" not in resources[gen.DB_FILE]
+    assert "title" not in resources[gen.DB_FILE]
     assert gen.SYNC_METRICS_FILE not in resources
     assert gen.STATUS_FILE not in resources
     assert gen.COVERAGE_FILE not in resources
@@ -75,16 +76,13 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
     }
 
     sqlite_resource = resources[gen.DB_FILE]
-    sqlite_tables = {
-        table_metadata["name"]: table_metadata
-        for table_metadata in sqlite_resource["tables"]
-    }
-    assert set(sqlite_tables) == {table.name for table in gen.TABLES}
+    assert set(sqlite_resource) == {"path", "description"}
     assert "schema" not in sqlite_resource
+    assert "tables" not in sqlite_resource
 
     for table in gen.TABLES:
         expected_fields = list(table.model.model_fields)
-        sqlite_table = sqlite_tables[table.name]
+        sqlite_table = gen._kaggle_table_metadata(table)
         assert sqlite_table["description"] == table.description
         sqlite_fields = sqlite_table["schema"]["fields"]
         assert [field["name"] for field in sqlite_fields] == expected_fields
@@ -93,6 +91,7 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
             f"{gen.PARQUET_DIR}/{table.name}.parquet",
         ):
             resource = resources[path]
+            assert set(resource) == {"path", "description", "schema"}
             fields = resource["schema"]["fields"]
             assert [field["name"] for field in fields] == expected_fields
             assert fields == sqlite_fields
@@ -115,6 +114,27 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
     assert "title" not in jobs_fields["board_key"]
     assert jobs_fields["board_key"]["description"] == "Board key this job belongs to."
     assert jobs_fields["board_key"]["type"] == "id"
+
+
+def test_kaggle_upload_resources_use_documented_subset() -> None:
+    metadata = gen.dataset_metadata()
+    allowed_resource_keys = {"path", "description", "schema"}
+    allowed_schema_keys = {"fields"}
+    allowed_field_keys = {"name", "description", "type"}
+
+    assert len(metadata["resources"]) == len(gen.DATA_RESOURCES)
+    for resource in metadata["resources"]:
+        assert set(resource) <= allowed_resource_keys, resource["path"]
+        assert resource["path"]
+        assert resource["description"]
+        assert "name" not in resource
+        assert "title" not in resource
+        assert "tables" not in resource
+        if "schema" in resource:
+            assert set(resource["schema"]) == allowed_schema_keys
+            assert resource["schema"]["fields"]
+            for field in resource["schema"]["fields"]:
+                assert set(field) == allowed_field_keys
 
 
 def test_kaggle_file_metadata_covers_public_files_for_live_update() -> None:
@@ -300,8 +320,11 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "Waiting for Kaggle SQLite indexer metadata" in source
     assert "kaggle_databundle_files(session, headers, basics)" in source
     assert "def project_sqlite_for_kaggle_indexer" in source
+    assert "def truncate_sqlite_text_for_kaggle_indexer" in source
     assert "def normalize_sqlite_schema_for_kaggle_indexer" in source
     assert "def rebuild_sqlite_tables_for_kaggle_indexer" in source
+    assert "SQLITE_PREVIEW_TEXT_MAX_CHARS" in source
+    assert "Bounded SQLite upload text cells for Kaggle indexer" in source
     assert '("job_versions", "description_html")' in source
     assert '("job_versions", "description")' in source
     assert '("boards", "raw_payload")' in source
@@ -511,6 +534,9 @@ def test_data_artifact_writer_adds_metadata_before_exports() -> None:
         "_project_sqlite_for_kaggle_indexer(build_db)"
     )
     assert source.index("_project_sqlite_for_kaggle_indexer(build_db)") < source.index(
+        "_truncate_sqlite_text_for_kaggle_indexer(build_db)"
+    )
+    assert source.index("_truncate_sqlite_text_for_kaggle_indexer(build_db)") < source.index(
         "_normalize_sqlite_schema_for_kaggle_indexer(build_db)"
     )
     assert source.index("_normalize_sqlite_schema_for_kaggle_indexer(build_db)") < source.index(
@@ -588,6 +614,46 @@ def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
         ("version-2", None, None, None),
     ]
     assert payload_rows == [("payload-1", None)]
+
+
+def test_sqlite_upload_truncates_residual_long_text_cells(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "preview.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE sample (
+                id TEXT PRIMARY KEY,
+                short_text TEXT,
+                long_text TEXT,
+                payload JSON,
+                score REAL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO sample VALUES (?, ?, ?, ?, ?)",
+            ("one", "short", "abcdef", '{"abcdef": true}', 1.5),
+        )
+
+    result = gen._truncate_sqlite_text_for_kaggle_indexer(
+        db_path,
+        max_chars=5,
+        columns=(
+            ("sample", "short_text"),
+            ("sample", "long_text"),
+            ("sample", "payload"),
+        ),
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT short_text, long_text, payload, score FROM sample"
+        ).fetchone()
+
+    assert result == {"truncated_rows": 2, "estimated_bytes_removed": 12}
+    assert row == ("short", "abcde", '{"abc', 1.5)
 
 
 def test_local_data_artifact_writer_restores_projected_columns_from_parquet(

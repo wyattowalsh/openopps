@@ -127,6 +127,17 @@ DATASET_IMAGE_URL = (
     "docs/public/social/openoppsdb.png"
 )
 SQLITE_SIDECAR_SUFFIXES = ("-journal", "-shm", "-wal")
+SQLITE_PREVIEW_TEXT_MAX_CHARS = 512
+SQLITE_PREVIEW_TEXT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("boards", "description"),
+    ("boards", "locations"),
+    ("boards", "markets"),
+    ("boards", "source_board_keys"),
+    ("job_version_bullets", "text"),
+    ("job_version_locations", "label"),
+    ("job_versions", "locations"),
+    ("sources", "raw_metadata"),
+)
 MAX_COLUMN_DESCRIPTION_LENGTH = 160
 NOTEBOOK_SYNC_ENV_DEFAULTS: dict[str, str] = {
     "OPENOPPS_SOURCE_FRESHNESS_SECONDS": "86400",
@@ -578,7 +589,7 @@ OpenOpps only uses public endpoints and public pages. Provider payloads are pres
 
 
 def dataset_resources() -> list[dict[str, Any]]:
-    return [_kaggle_resource_metadata(resource) for resource in RESOURCES]
+    return [_kaggle_upload_resource_metadata(resource) for resource in RESOURCES]
 
 
 def dataset_file_metadata(base_dir: Path | None = None) -> list[dict[str, Any]]:
@@ -857,6 +868,7 @@ def _write_data_artifacts(output_dir: Path, data_db: Path) -> None:
 
         _write_full_table_exports(output_dir, build_db)
         _project_sqlite_for_kaggle_indexer(build_db)
+        _truncate_sqlite_text_for_kaggle_indexer(build_db)
         _normalize_sqlite_schema_for_kaggle_indexer(build_db)
         _rebuild_sqlite_tables_for_kaggle_indexer(build_db)
         _finalize_sqlite_for_upload(build_db)
@@ -966,6 +978,75 @@ def _project_sqlite_for_kaggle_indexer(db_path: Path) -> dict[str, int]:
             flush=True,
         )
     return {"projected_rows": total_rows, "estimated_bytes_removed": total_bytes}
+
+
+def _truncate_sqlite_text_for_kaggle_indexer(
+    db_path: Path,
+    *,
+    max_chars: int = SQLITE_PREVIEW_TEXT_MAX_CHARS,
+    columns: tuple[tuple[str, str], ...] = SQLITE_PREVIEW_TEXT_COLUMNS,
+) -> dict[str, int]:
+    """Bound residual SQLite text cells so Kaggle can sample table previews."""
+    truncated_rows = 0
+    estimated_bytes_removed = 0
+    truncated_columns = []
+    with sqlite3.connect(db_path) as conn:
+        for table_name, column_name in columns:
+            table_columns = {
+                str(row[1])
+                for row in conn.execute(
+                    f"PRAGMA table_info({_sqlite_identifier(table_name)})"
+                ).fetchall()
+            }
+            if column_name not in table_columns:
+                continue
+            row = conn.execute(
+                f"""
+                SELECT
+                    COUNT(*),
+                    COALESCE(
+                        SUM(length(CAST("{column_name}" AS blob)) - ?),
+                        0
+                    )
+                FROM "{table_name}"
+                WHERE "{column_name}" IS NOT NULL
+                  AND length(CAST("{column_name}" AS text)) > ?
+                """,
+                (max_chars, max_chars),
+            ).fetchone()
+            rows = int(row[0] or 0)
+            bytes_removed = int(row[1] or 0)
+            if not rows:
+                continue
+            conn.execute(
+                f'UPDATE "{table_name}" '
+                f'SET "{column_name}" = substr(CAST("{column_name}" AS text), 1, ?) '
+                f'WHERE "{column_name}" IS NOT NULL '
+                f'AND length(CAST("{column_name}" AS text)) > ?',
+                (max_chars, max_chars),
+            )
+            truncated_rows += rows
+            estimated_bytes_removed += max(bytes_removed, 0)
+            truncated_columns.append(f"{table_name}.{column_name}")
+        conn.commit()
+    if truncated_columns:
+        print(
+            "Bounded SQLite upload text cells for Kaggle indexer: "
+            + json.dumps(
+                {
+                    "maxChars": max_chars,
+                    "truncatedColumns": truncated_columns,
+                    "rows": truncated_rows,
+                    "estimatedBytesRemoved": estimated_bytes_removed,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+    return {
+        "truncated_rows": truncated_rows,
+        "estimated_bytes_removed": estimated_bytes_removed,
+    }
 
 
 def _restore_projected_sqlite_columns_from_export_dir(
@@ -2084,6 +2165,11 @@ def _notebook_setup_source() -> str:
         sort_dicts=True,
         width=100,
     )
+    sqlite_preview_text_columns = pformat(
+        SQLITE_PREVIEW_TEXT_COLUMNS,
+        sort_dicts=True,
+        width=100,
+    )
     return """#@title Initialize
 from __future__ import annotations
 
@@ -2142,6 +2228,8 @@ SQLITE_TABLE_METADATA = __SQLITE_TABLE_METADATA__
 OPENOPPS_TABLE_ROWS = __OPENOPPS_TABLE_ROWS__
 OPENOPPS_COLUMN_ROWS = __OPENOPPS_COLUMN_ROWS__
 PUBLIC_UPLOAD_DATA_FILES = __PUBLIC_UPLOAD_DATA_FILES__
+SQLITE_PREVIEW_TEXT_MAX_CHARS = __SQLITE_PREVIEW_TEXT_MAX_CHARS__
+SQLITE_PREVIEW_TEXT_COLUMNS = __SQLITE_PREVIEW_TEXT_COLUMNS__
 SKILL_TEXT_VALUE_LIMIT = 4000
 SKILL_LEVEL_ALIASES = (
     ("Executive", ("chief", "c-level", "c suite", "vp", "vice president")),
@@ -3347,6 +3435,73 @@ def project_sqlite_for_kaggle_indexer(db_path: Path) -> dict:
         )
     return {"projected_rows": total_rows, "estimated_bytes_removed": total_bytes}
 
+def truncate_sqlite_text_for_kaggle_indexer(
+    db_path: Path,
+    *,
+    max_chars: int = SQLITE_PREVIEW_TEXT_MAX_CHARS,
+    columns: tuple[tuple[str, str], ...] = SQLITE_PREVIEW_TEXT_COLUMNS,
+) -> dict:
+    truncated_rows = 0
+    estimated_bytes_removed = 0
+    truncated_columns = []
+    with sqlite3.connect(db_path) as conn:
+        for table_name, column_name in columns:
+            table_columns = {
+                str(row[1])
+                for row in conn.execute(
+                    f"PRAGMA table_info({quote_identifier(table_name)})"
+                ).fetchall()
+            }
+            if column_name not in table_columns:
+                continue
+            row = conn.execute(
+                f\"\"\"
+                SELECT
+                    COUNT(*),
+                    COALESCE(
+                        SUM(length(CAST("{column_name}" AS blob)) - ?),
+                        0
+                    )
+                FROM "{table_name}"
+                WHERE "{column_name}" IS NOT NULL
+                  AND length(CAST("{column_name}" AS text)) > ?
+                \"\"\",
+                (max_chars, max_chars),
+            ).fetchone()
+            rows = int(row[0] or 0)
+            bytes_removed = int(row[1] or 0)
+            if not rows:
+                continue
+            conn.execute(
+                f'UPDATE "{table_name}" '
+                f'SET "{column_name}" = substr(CAST("{column_name}" AS text), 1, ?) '
+                f'WHERE "{column_name}" IS NOT NULL '
+                f'AND length(CAST("{column_name}" AS text)) > ?',
+                (max_chars, max_chars),
+            )
+            truncated_rows += rows
+            estimated_bytes_removed += max(bytes_removed, 0)
+            truncated_columns.append(f"{table_name}.{column_name}")
+        conn.commit()
+    if truncated_columns:
+        print(
+            "Bounded SQLite upload text cells for Kaggle indexer:",
+            json.dumps(
+                {
+                    "maxChars": max_chars,
+                    "truncatedColumns": truncated_columns,
+                    "rows": truncated_rows,
+                    "estimatedBytesRemoved": estimated_bytes_removed,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+    return {
+        "truncated_rows": truncated_rows,
+        "estimated_bytes_removed": estimated_bytes_removed,
+    }
+
 def normalize_sqlite_schema_for_kaggle_indexer(db_path: Path) -> int:
     replacements = (
         (re.compile(r"\\bVARCHAR(?:\\(\\d+\\))?\\b"), "TEXT"),
@@ -3534,6 +3689,7 @@ def prune_private_upload_files() -> None:
     shutil.rmtree(OUTPUT_DIR / "_manager-unused", ignore_errors=True)
     drop_private_sqlite_tables(DB_PATH)
     project_sqlite_for_kaggle_indexer(DB_PATH)
+    truncate_sqlite_text_for_kaggle_indexer(DB_PATH)
     normalize_sqlite_schema_for_kaggle_indexer(DB_PATH)
     rebuild_sqlite_tables_for_kaggle_indexer(DB_PATH)
     finalize_sqlite_for_upload(DB_PATH)
@@ -3545,6 +3701,7 @@ def write_public_bundle() -> dict:
     checkpoint_sqlite(DB_PATH)
     write_full_table_exports(DB_PATH)
     project_sqlite_for_kaggle_indexer(DB_PATH)
+    truncate_sqlite_text_for_kaggle_indexer(DB_PATH)
     normalize_sqlite_schema_for_kaggle_indexer(DB_PATH)
     rebuild_sqlite_tables_for_kaggle_indexer(DB_PATH)
     finalize_sqlite_for_upload(DB_PATH)
@@ -4097,6 +4254,12 @@ download_dataset_assets()
         "__PUBLIC_UPLOAD_DATA_FILES__",
         public_upload_data_files,
     ).replace(
+        "__SQLITE_PREVIEW_TEXT_MAX_CHARS__",
+        str(SQLITE_PREVIEW_TEXT_MAX_CHARS),
+    ).replace(
+        "__SQLITE_PREVIEW_TEXT_COLUMNS__",
+        sqlite_preview_text_columns,
+    ).replace(
         "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
         str(NOTEBOOK_SYNC_TIMEOUT_SECONDS),
     ).replace(
@@ -4248,11 +4411,10 @@ def _resource_metadata(resource: Resource) -> dict[str, Any]:
     return metadata
 
 
-def _kaggle_resource_metadata(resource: Resource) -> dict[str, Any]:
+def _kaggle_upload_resource_metadata(resource: Resource) -> dict[str, Any]:
+    """Return only Kaggle CLI-documented upload-facing resource metadata."""
     metadata: dict[str, Any] = {
-        "name": resource.name,
         "path": resource.path,
-        "title": _title_from_name(resource.name),
         "description": resource.description,
     }
     if resource.model is not None:
@@ -4262,8 +4424,6 @@ def _kaggle_resource_metadata(resource: Resource) -> dict[str, Any]:
                 for field in _model_schema_metadata(resource.model)["fields"]
             ]
         }
-    if resource.tables:
-        metadata["tables"] = [_kaggle_table_metadata(table) for table in resource.tables]
     return metadata
 
 
