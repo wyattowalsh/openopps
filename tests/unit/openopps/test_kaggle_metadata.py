@@ -302,12 +302,18 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "def project_sqlite_for_kaggle_indexer" in source
     assert "def normalize_sqlite_schema_for_kaggle_indexer" in source
     assert "def rebuild_sqlite_tables_for_kaggle_indexer" in source
-    assert "job_versions.description_html" in source
+    assert '("job_versions", "description_html")' in source
+    assert '("job_versions", "description")' in source
+    assert '("boards", "raw_payload")' in source
+    assert "INPUT_BOARDS_PARQUET_GLOB" in source
     assert "INPUT_JOB_VERSIONS_PARQUET_GLOB" in source
     assert "INPUT_JOB_PAYLOAD_SNAPSHOTS_PARQUET_GLOB" in source
     assert "def restore_projected_sqlite_columns_from_input_exports()" in source
     assert "restore_projected_sqlite_columns_from_input_exports()" in source
-    assert 'column_names=["description_html", "job_description"]' in source
+    assert '"description_html",' in source
+    assert '"job_description",' in source
+    assert '"responsibilities",' in source
+    assert 'key_column="key"' in source
     assert 'column_names=["payload"]' in source
     assert "csv.field_size_limit(sys.maxsize)" in source
     assert "KAGGLE_USERNAME" in source
@@ -568,18 +574,90 @@ def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
         ).fetchall()
 
     assert result == {
-        "projected_rows": 3,
+        "projected_rows": 5,
         "estimated_bytes_removed": (
-            len("<p>plain text</p>")
+            len("plain text")
+            + len("already compact")
+            + len("<p>plain text</p>")
             + len('{"title":"Engineer"}')
             + len('{"raw":true}')
         ),
     }
     assert rows == [
-        ("version-1", "plain text", None, None),
-        ("version-2", "already compact", None, None),
+        ("version-1", None, None, None),
+        ("version-2", None, None, None),
     ]
     assert payload_rows == [("payload-1", None)]
+
+
+def test_local_data_artifact_writer_restores_projected_columns_from_parquet(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / gen.DB_FILE
+    parquet_dir = tmp_path / gen.PARQUET_DIR
+    parquet_dir.mkdir(parents=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('CREATE TABLE boards ("key" TEXT PRIMARY KEY, raw_payload TEXT)')
+        conn.execute(
+            """
+            CREATE TABLE job_versions (
+                id TEXT PRIMARY KEY,
+                description TEXT,
+                description_html TEXT,
+                job_description TEXT,
+                responsibilities TEXT,
+                qualifications TEXT,
+                skills TEXT,
+                compensation TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE TABLE job_payload_snapshots (id TEXT PRIMARY KEY, payload TEXT)"
+        )
+        conn.execute("INSERT INTO boards VALUES ('board-1', NULL)")
+        conn.execute(
+            "INSERT INTO job_versions VALUES ('version-1', NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
+        )
+        conn.execute("INSERT INTO job_payload_snapshots VALUES ('payload-1', NULL)")
+    gen.pl.DataFrame(
+        {"key": ["board-1"], "raw_payload": ['{"board": true}']}
+    ).write_parquet(parquet_dir / "boards.parquet")
+    gen.pl.DataFrame(
+        {
+            "id": ["version-1"],
+            "description": ["plain"],
+            "description_html": ["<p>plain</p>"],
+            "job_description": ['{"plain": true}'],
+            "responsibilities": ["[]"],
+            "qualifications": ["[]"],
+            "skills": ["[]"],
+            "compensation": ["salary"],
+        }
+    ).write_parquet(parquet_dir / "job_versions.parquet")
+    gen.pl.DataFrame(
+        {"id": ["payload-1"], "payload": ['{"raw": true}']}
+    ).write_parquet(parquet_dir / "job_payload_snapshots.parquet")
+
+    result = gen._restore_projected_sqlite_columns_from_export_dir(
+        db_path,
+        parquet_dir,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        board_payload = conn.execute("SELECT raw_payload FROM boards").fetchone()[0]
+        version = conn.execute(
+            "SELECT description, description_html, job_description, compensation "
+            "FROM job_versions"
+        ).fetchone()
+        payload = conn.execute(
+            "SELECT payload FROM job_payload_snapshots"
+        ).fetchone()[0]
+
+    assert result == {"tables": 3, "rows": 3}
+    assert board_payload == '{"board": true}'
+    assert version == ("plain", "<p>plain</p>", '{"plain": true}', "salary")
+    assert payload == '{"raw": true}'
 
 
 def test_sqlite_schema_normalization_uses_basic_sqlite_affinities(
