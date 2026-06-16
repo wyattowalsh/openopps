@@ -2076,6 +2076,18 @@ def run_json(
     print(f"Wrote {output_path}")
     return data
 
+def kaggle_dataset_status() -> dict:
+    completed = subprocess.run(
+        ["kaggle", "datasets", "status", DATASET_ID, "--format", "json"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.stderr:
+        print(completed.stderr, file=sys.stderr)
+    return json.loads(completed.stdout)
+
 EMBEDDED_BOUNDED_JOB_SYNC_CODE = r'''
 from __future__ import annotations
 
@@ -3241,6 +3253,19 @@ def update_kaggle_dataset_file_metadata(dataset_basics: dict | None = None) -> N
         dataset_basics = kaggle_dataset_basics(session, headers)
     update_kaggle_databundle_metadata_external(metadata, dataset_basics)
 
+def try_update_kaggle_dataset_file_metadata(dataset_basics: dict | None = None) -> bool:
+    try:
+        update_kaggle_dataset_file_metadata(dataset_basics)
+    except Exception as exc:
+        print(
+            "Kaggle live metadata repair failed after successful dataset publish; "
+            "continuing so the scheduled snapshot run completes. "
+            "Run `just kaggle-live-file-metadata` from a browser-authenticated local "
+            f"environment to retry databundle repair. Error: {type(exc).__name__}: {exc}"
+        )
+        return False
+    return True
+
 def _dataset_settings_file(
     resource,
     dataset_settings_file_cls,
@@ -3373,6 +3398,7 @@ def wait_for_new_live_dataset_version(previous_version: int | None) -> dict:
                 data.get("firestorePath")
                 and data.get("versionId")
                 and (previous_version is None or current_version > previous_version)
+                and (expected_version is None or current_version >= expected_version)
             ):
                 last_details = details
                 continue
@@ -3797,9 +3823,12 @@ for path in sorted(OUTPUT_DIR.iterdir()):
 def _notebook_publish_source() -> str:
     return """message = f"Scheduled OpenOpps active-job snapshot {datetime.now(UTC).isoformat()}"
 require_kaggle_credentials()
-metadata_session, metadata_headers = kaggle_internal_metadata_session()
-previous_basics = kaggle_dataset_basics(metadata_session, metadata_headers)
-previous_version = int(previous_basics.get("datasetVersionNumber") or 0)
+previous_status = kaggle_dataset_status()
+previous_version = int(previous_status.get("current_version_number") or 0)
+print(
+    "OpenOpps live dataset version before publish:",
+    json.dumps(previous_status, sort_keys=True),
+)
 
 run([
     "kaggle",
@@ -3815,7 +3844,11 @@ run([
     "zip",
 ])
 published_basics = wait_for_new_live_dataset_version(previous_version)
-update_kaggle_dataset_file_metadata(published_basics)
+metadata_repair_ok = try_update_kaggle_dataset_file_metadata(published_basics)
+print(
+    "OpenOpps live metadata repair:",
+    json.dumps({"ok": metadata_repair_ok}, sort_keys=True),
+)
 run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"])
 run(["kaggle", "datasets", "files", DATASET_ID, "--page-size", "200"])
 """

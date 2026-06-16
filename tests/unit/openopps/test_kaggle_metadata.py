@@ -321,13 +321,18 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
         "download_dataset_assets()"
     ) in compact_source
     assert "def update_kaggle_dataset_file_metadata(" in source
+    assert "def try_update_kaggle_dataset_file_metadata(" in source
+    assert "def kaggle_dataset_status()" in source
+    assert "previous_status = kaggle_dataset_status()" in source
+    assert "current_version_number" in source
     assert "published_basics = wait_for_new_live_dataset_version(previous_version)" in source
     assert "expected_version = previous_version + 1" in source
+    assert "current_version >= expected_version" in source
     assert "dataset_version_number=expected_version" in source
     assert "path for path in PUBLIC_UPLOAD_DATA_FILES if path not in live_files" in source
-    assert "update_kaggle_dataset_file_metadata(published_basics)" in source
+    assert "try_update_kaggle_dataset_file_metadata(published_basics)" in source
     metadata_update_call = source.rindex(
-        "update_kaggle_dataset_file_metadata(published_basics)"
+        "try_update_kaggle_dataset_file_metadata(published_basics)"
     )
     assert source.index('"zip"', source.index('"datasets"')) < metadata_update_call
     assert metadata_update_call < source.index(
@@ -347,6 +352,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "kaggle_basic_auth_header()" in source
     assert "X-XSRF-TOKEN" in source
     assert "Kaggle live dataset version ready for metadata repair" in source
+    assert "OpenOpps live metadata repair:" in source
     assert "def backfill_openopps_skill_tables" in source
     assert "OpenOpps skill backfill:" in source
     assert "def run_sync_metrics(" in source
@@ -396,7 +402,8 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     ) < source.index(
         "quality = write_public_bundle()"
     )
-    assert source.index("quality = write_public_bundle()") < source.index('"datasets"')
+    quality_call = source.index("quality = write_public_bundle()")
+    assert quality_call < source.index('"datasets"', quality_call)
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
 
 
