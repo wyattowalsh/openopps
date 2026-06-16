@@ -301,6 +301,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "kaggle_databundle_files(session, headers, basics)" in source
     assert "def project_sqlite_for_kaggle_indexer" in source
     assert "def normalize_sqlite_schema_for_kaggle_indexer" in source
+    assert "def rebuild_sqlite_tables_for_kaggle_indexer" in source
     assert "job_versions.description_html" in source
     assert "INPUT_JOB_VERSIONS_PARQUET_GLOB" in source
     assert "INPUT_JOB_PAYLOAD_SNAPSHOTS_PARQUET_GLOB" in source
@@ -507,6 +508,9 @@ def test_data_artifact_writer_adds_metadata_before_exports() -> None:
         "_normalize_sqlite_schema_for_kaggle_indexer(build_db)"
     )
     assert source.index("_normalize_sqlite_schema_for_kaggle_indexer(build_db)") < source.index(
+        "_rebuild_sqlite_tables_for_kaggle_indexer(build_db)"
+    )
+    assert source.index("_rebuild_sqlite_tables_for_kaggle_indexer(build_db)") < source.index(
         "_finalize_sqlite_for_upload(build_db)"
     )
 
@@ -612,6 +616,60 @@ def test_sqlite_schema_normalization_uses_basic_sqlite_affinities(
     assert "TEXT" in ddl
     assert "INTEGER" in ddl
     assert "REAL" in ddl
+
+
+def test_sqlite_upload_rebuilds_plain_tables_for_kaggle_indexer(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "plain.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            CREATE TABLE parent (
+                id TEXT PRIMARY KEY,
+                label VARCHAR(32) NOT NULL UNIQUE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE child (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT NOT NULL,
+                score FLOAT,
+                payload JSON,
+                FOREIGN KEY (parent_id) REFERENCES parent(id)
+            )
+            """
+        )
+        conn.execute("INSERT INTO parent VALUES ('p1', 'Parent')")
+        conn.execute(
+            "INSERT INTO child VALUES ('c1', 'p1', 3.5, ?)",
+            (json.dumps({"ok": True}),),
+        )
+
+    result = gen._rebuild_sqlite_tables_for_kaggle_indexer(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        ddl = {
+            row[0]: row[1]
+            for row in conn.execute(
+                "SELECT name, sql FROM sqlite_schema WHERE type = 'table'"
+            )
+        }
+        child = conn.execute("SELECT * FROM child").fetchone()
+
+    assert result == {"tables": 2, "rows": 2}
+    assert child == ("c1", "p1", 3.5, json.dumps({"ok": True}))
+    assert "PRIMARY KEY" not in ddl["parent"]
+    assert "UNIQUE" not in ddl["parent"]
+    assert "FOREIGN KEY" not in ddl["child"]
+    assert "NOT NULL" not in ddl["child"]
+    assert "FLOAT" not in ddl["child"]
+    assert "JSON" not in ddl["child"]
+    assert "REAL" in ddl["child"]
+    assert "TEXT" in ddl["child"]
 
 
 def test_skill_backfill_uses_batched_keyset_pagination() -> None:
