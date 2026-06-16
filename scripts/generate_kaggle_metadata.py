@@ -844,7 +844,7 @@ def _write_data_artifacts(output_dir: Path, data_db: Path) -> None:
     _checkpoint_sqlite(source_db)
     shutil.copy2(source_db, build_db)
     try:
-        _drop_cache_tables(build_db)
+        _drop_private_sqlite_tables(build_db)
         _backfill_sqlite_skill_tables(build_db)
         _write_sqlite_metadata(build_db)
         _checkpoint_sqlite(build_db)
@@ -1606,9 +1606,10 @@ def _coverage_excerpt(coverage: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
-def _drop_cache_tables(db_path: Path) -> None:
+def _drop_private_sqlite_tables(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute("DROP TABLE IF EXISTS http_cache")
+        conn.execute("DROP TABLE IF EXISTS alembic_version")
 
 
 def _write_sqlite_metadata(db_path: Path) -> None:
@@ -2872,6 +2873,11 @@ def finalize_sqlite_for_upload(db_path: Path) -> None:
 def write_dataset_metadata() -> None:
     write_json(OUTPUT_DIR / "dataset-metadata.json", DATASET_METADATA)
 
+def drop_private_sqlite_tables(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE IF EXISTS http_cache")
+        conn.execute("DROP TABLE IF EXISTS alembic_version")
+
 def write_sqlite_metadata(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -3144,12 +3150,14 @@ def prune_private_upload_files() -> None:
         if path.exists():
             path.unlink()
     shutil.rmtree(OUTPUT_DIR / "_manager-unused", ignore_errors=True)
+    drop_private_sqlite_tables(DB_PATH)
     project_sqlite_for_kaggle_indexer(DB_PATH)
     normalize_sqlite_schema_for_kaggle_indexer(DB_PATH)
     finalize_sqlite_for_upload(DB_PATH)
 
 def write_public_bundle() -> dict:
     write_dataset_metadata()
+    drop_private_sqlite_tables(DB_PATH)
     write_sqlite_metadata(DB_PATH)
     checkpoint_sqlite(DB_PATH)
     write_full_table_exports(DB_PATH)
@@ -3331,22 +3339,66 @@ def kaggle_dataset_basics(
 def wait_for_new_live_dataset_version(previous_version: int | None) -> dict:
     session, headers = kaggle_internal_metadata_session()
     deadline = time.time() + float(os.environ.get("OPENOPPS_KAGGLE_METADATA_WAIT_SECONDS", "900"))
+    expected_version = previous_version + 1 if previous_version is not None else None
+    last_details = {}
     while True:
-        basics = kaggle_dataset_basics(session, headers)
-        current_version = int(basics.get("datasetVersionNumber") or 0)
-        data = basics.get("data") or {}
-        if (
-            data.get("firestorePath")
-            and data.get("versionId")
-            and (previous_version is None or current_version > previous_version)
-        ):
+        candidates = []
+        default_basics = kaggle_dataset_basics(session, headers)
+        candidates.append(("default", default_basics))
+        if expected_version is not None:
+            try:
+                expected_basics = kaggle_dataset_basics(
+                    session,
+                    headers,
+                    dataset_version_number=expected_version,
+                )
+                candidates.append(("expected", expected_basics))
+            except Exception as exc:
+                last_details = {
+                    "expectedVersionNumber": expected_version,
+                    "expectedVersionError": type(exc).__name__,
+                }
+        for source, basics in candidates:
+            current_version = int(basics.get("datasetVersionNumber") or 0)
+            data = basics.get("data") or {}
+            details = {
+                "source": source,
+                "previousVersionNumber": previous_version,
+                "expectedVersionNumber": expected_version,
+                "currentVersionNumber": current_version,
+                "hasFirestorePath": bool(data.get("firestorePath")),
+                "hasDatabundleVersionId": bool(data.get("versionId")),
+            }
+            if not (
+                data.get("firestorePath")
+                and data.get("versionId")
+                and (previous_version is None or current_version > previous_version)
+            ):
+                last_details = details
+                continue
+            try:
+                live_files = kaggle_databundle_files(session, headers, basics)
+            except Exception as exc:
+                details["filesError"] = type(exc).__name__
+                last_details = details
+                continue
+            missing_files = sorted(
+                path for path in PUBLIC_UPLOAD_DATA_FILES if path not in live_files
+            )
+            details["liveFileCount"] = len(live_files)
+            details["missingPublicFiles"] = missing_files[:10]
+            if missing_files:
+                last_details = details
+                continue
             print(
                 "Kaggle live dataset version ready for metadata repair:",
                 json.dumps(
                     {
+                        "source": source,
                         "datasetVersionNumber": current_version,
                         "datasetVersionId": basics.get("datasetVersionId"),
                         "databundleVersionId": data.get("versionId"),
+                        "liveFileCount": len(live_files),
                     },
                     sort_keys=True,
                 ),
@@ -3354,17 +3406,13 @@ def wait_for_new_live_dataset_version(previous_version: int | None) -> dict:
             return basics
         if time.time() >= deadline:
             raise TimeoutError(
-                "Timed out waiting for Kaggle to expose the newly published dataset version."
+                "Timed out waiting for Kaggle to expose the newly published dataset "
+                "version and public file surface: "
+                + json.dumps(last_details, sort_keys=True)
             )
         print(
             "Waiting for new Kaggle dataset version before metadata repair:",
-            json.dumps(
-                {
-                    "previousVersionNumber": previous_version,
-                    "currentVersionNumber": current_version,
-                },
-                sort_keys=True,
-            ),
+            json.dumps(last_details, sort_keys=True),
         )
         time.sleep(15)
 

@@ -322,6 +322,9 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     ) in compact_source
     assert "def update_kaggle_dataset_file_metadata(" in source
     assert "published_basics = wait_for_new_live_dataset_version(previous_version)" in source
+    assert "expected_version = previous_version + 1" in source
+    assert "dataset_version_number=expected_version" in source
+    assert "path for path in PUBLIC_UPLOAD_DATA_FILES if path not in live_files" in source
     assert "update_kaggle_dataset_file_metadata(published_basics)" in source
     metadata_update_call = source.rindex(
         "update_kaggle_dataset_file_metadata(published_basics)"
@@ -481,7 +484,7 @@ def test_generated_kaggle_dataset_image_matches_metadata_contract() -> None:
 def test_data_artifact_writer_adds_metadata_before_exports() -> None:
     source = SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert source.index("_drop_cache_tables(build_db)") < source.index(
+    assert source.index("_drop_private_sqlite_tables(build_db)") < source.index(
         "_backfill_sqlite_skill_tables(build_db)"
     )
     assert source.index("_backfill_sqlite_skill_tables(build_db)") < source.index(
@@ -630,19 +633,25 @@ def test_table_export_frame_infers_full_sqlite_table_schema() -> None:
     assert frame["remote"].to_list() == [None, None, "REMOTE"]
 
 
-def test_kaggle_artifact_cleanup_drops_http_cache_table(tmp_path: Path) -> None:
+def test_kaggle_artifact_cleanup_drops_private_sqlite_tables(tmp_path: Path) -> None:
     db_path = tmp_path / gen.DB_FILE
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE http_cache (key TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO http_cache VALUES ('cached')")
+        conn.execute("CREATE TABLE alembic_version (version_num TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO alembic_version VALUES ('0001')")
 
-    gen._drop_cache_tables(db_path)
+    gen._drop_private_sqlite_tables(db_path)
 
     with sqlite3.connect(db_path) as conn:
-        table = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'http_cache'"
-        ).fetchone()
-    assert table is None
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    assert "http_cache" not in tables
+    assert "alembic_version" not in tables
 
 
 def test_skill_backfill_populates_legacy_sqlite_skill_tables(tmp_path: Path) -> None:
