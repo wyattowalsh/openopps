@@ -388,6 +388,9 @@ def test_job_sync_dedupes_duplicate_jobs_in_one_route_run(tmp_path: Path):
     settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
     store = OpenOppsStore(settings)
     store.init_db()
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
     store.upsert_boards(
         [
             BoardRecord(

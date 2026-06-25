@@ -1,21 +1,20 @@
 {
-  "code_file": "openoppsdb-manager.ipynb",
+  "code_file": "openoppsdb-skills-radar.ipynb",
   "competition_sources": [],
   "dataset_sources": [
-    "wyattowalsh/openoppsdb",
-    "wyattowalsh/openoppsdb-manager-runtime"
+    "wyattowalsh/openoppsdb"
   ],
   "docker_image": "",
   "enable_gpu": false,
-  "enable_internet": true,
+  "enable_internet": false,
   "enable_tpu": false,
-  "id": "wyattowalsh/openoppsdb-manager",
-  "is_private": true,
+  "id": "wyattowalsh/openoppsdb-skills-radar",
+  "is_private": false,
   "kernel_sources": [],
   "kernel_type": "notebook",
   "keywords": [],
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
-  "title": "openoppsdb manager"
+  "title": "OpenOppsDB skills radar"
 }

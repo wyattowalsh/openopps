@@ -40,7 +40,11 @@ from openopps.models import (
     source_to_row,
     utc_now,
 )
-from openopps.migrations import sqlite_database_lock, upgrade_sqlite_database
+from openopps.migrations import (
+    enable_sqlite_foreign_keys,
+    sqlite_database_lock,
+    upgrade_sqlite_database,
+)
 from openopps.settings import OpenOppsSettings
 from openopps.utils import stable_id
 
@@ -104,6 +108,7 @@ class OpenOppsStore:
             {"check_same_thread": False} if settings.db_url.startswith("sqlite") else {}
         )
         self.engine = create_engine(settings.db_url, connect_args=connect_args)
+        enable_sqlite_foreign_keys(self.engine)
         self._initialized = False
 
     def init_db(self) -> None:
@@ -158,10 +163,11 @@ class OpenOppsStore:
         providers: Sequence[BoardProviderRecord],
         *,
         boards: Sequence[BoardRecord] | None = None,
-    ) -> None:
+    ) -> set[str]:
         self.init_db()
         if not providers:
-            return
+            return set()
+        route_ids: set[str] = set()
         batch_size = self.settings.db_batch_size
         with Session(self.engine) as session:
             board_key_aliases = (
@@ -184,8 +190,28 @@ class OpenOppsStore:
                             "board_key": canonical_board_key,
                         }
                     )
+                    route_ids.add(record.id)
                     _merge_board_provider(session, record)
                 session.commit()
+        return route_ids
+
+    def reconcile_source_board_provider_routes(
+        self, source_key: str, active_route_ids: set[str]
+    ) -> int:
+        self.init_db()
+        with Session(self.engine) as session:
+            statement = select(BoardProviderRow).where(
+                BoardProviderRow.source_key == source_key
+            )
+            if active_route_ids:
+                statement = statement.where(
+                    col(BoardProviderRow.id).not_in(active_route_ids)
+                )
+            rows = session.exec(statement).all()
+            for row in rows:
+                session.delete(row)
+            session.commit()
+            return len(rows)
 
     def deactivate_board_provider_route(
         self, route: BoardProviderRecord, *, status: str
@@ -417,14 +443,11 @@ class OpenOppsStore:
     ) -> dict[tuple[str, str], datetime]:
         self.init_db()
         with Session(self.engine) as session:
-            statement = (
-                select(
-                    JobSyncRunRow.board_key,
-                    JobSyncRunRow.provider_id,
-                    func.max(JobSyncRunRow.synced_at),
-                )
-                .group_by(JobSyncRunRow.board_key, JobSyncRunRow.provider_id)
-            )
+            statement = select(
+                JobSyncRunRow.board_key,
+                JobSyncRunRow.provider_id,
+                func.max(JobSyncRunRow.synced_at),
+            ).group_by(JobSyncRunRow.board_key, JobSyncRunRow.provider_id)
             if success_only:
                 statement = statement.where(JobSyncRunRow.success == True)  # noqa: E712
             rows = session.exec(statement).all()
@@ -906,6 +929,8 @@ def _sync_job_record(
             last_seen_at=observed_at,
             synced_at=observed_at,
         )
+        session.add(existing)
+        session.flush()
 
     _add_payload_snapshot(session, job.id, "listing", job.raw_listing, observed_at)
     _add_payload_snapshot(session, job.id, "detail", job.raw_detail, observed_at)
@@ -1073,15 +1098,15 @@ def _add_job_version_children(
             )
     for ordinal, skill in enumerate(job.skills):
         skill_id = stable_id(version_id, "skill", str(ordinal))
-        session.add(
-            JobVersionSkillRow(
-                id=skill_id,
-                job_version_id=version_id,
-                ordinal=ordinal,
-                name=skill.name,
-                level=skill.level,
-            )
+        skill_row = JobVersionSkillRow(
+            id=skill_id,
+            job_version_id=version_id,
+            ordinal=ordinal,
+            name=skill.name,
+            level=skill.level,
         )
+        session.add(skill_row)
+        session.flush()
         for keyword_ordinal, keyword in enumerate(skill.keywords):
             session.add(
                 JobVersionSkillKeywordRow(

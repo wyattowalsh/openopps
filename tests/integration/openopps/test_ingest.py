@@ -196,9 +196,15 @@ async def test_sync_jobs_refreshes_stale_routes_before_fresh_with_limit(
     )
     store.upsert_boards(
         [
-            BoardRecord(key="fresh", source_key="manual", remote_id="Fresh", name="Fresh"),
-            BoardRecord(key="never", source_key="manual", remote_id="Never", name="Never"),
-            BoardRecord(key="stale", source_key="manual", remote_id="Stale", name="Stale"),
+            BoardRecord(
+                key="fresh", source_key="manual", remote_id="Fresh", name="Fresh"
+            ),
+            BoardRecord(
+                key="never", source_key="manual", remote_id="Never", name="Never"
+            ),
+            BoardRecord(
+                key="stale", source_key="manual", remote_id="Stale", name="Stale"
+            ),
         ]
     )
     store.upsert_board_providers(
@@ -672,6 +678,223 @@ async def test_sync_sources_progress_reports_unique_canonical_board_count(
     assert len(store.list_boards()) == 1
     assert any("[dim]boards[/] [green]1[/]" in message for message in reports)
     assert not any("[dim]boards[/] [green]2[/]" in message for message in reports)
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_reconciles_stale_provider_routes_after_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    snapshots = [
+        (
+            [
+                BoardRecord(
+                    key="source-a:old-board",
+                    source_key="source-a",
+                    remote_id="old-board",
+                    name="Old Board",
+                    domain="old.example",
+                )
+            ],
+            [
+                BoardProviderRecord(
+                    id="source-a:old-board:greenhouse",
+                    source_key="source-a",
+                    board_key="source-a:old-board",
+                    provider_id="greenhouse",
+                    support_level=ProviderSupport.JOBS,
+                    token="old-board",
+                )
+            ],
+        ),
+        (
+            [
+                BoardRecord(
+                    key="source-a:new-board",
+                    source_key="source-a",
+                    remote_id="new-board",
+                    name="New Board",
+                    domain="new.example",
+                )
+            ],
+            [
+                BoardProviderRecord(
+                    id="source-a:new-board:greenhouse",
+                    source_key="source-a",
+                    board_key="source-a:new-board",
+                    provider_id="greenhouse",
+                    support_level=ProviderSupport.JOBS,
+                    token="new-board",
+                )
+            ],
+        ),
+    ]
+
+    class SnapshotAdapter:
+        async def iter_boards(self, _client, _source, *, page_size: int):
+            boards, providers = snapshots.pop(0)
+            yield boards, providers, {"version": {"pageSize": page_size}}
+
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="source-a", url="source-a://source", provider_id="fake")
+    )
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: SnapshotAdapter(),
+    )
+
+    await sync_sources(
+        settings=settings, store=store, source_key="source-a", page_size=10
+    )
+    assert [route.board_key for route in store.list_board_providers()] == [
+        "source-a:old-board"
+    ]
+
+    await sync_sources(
+        settings=settings, store=store, source_key="source-a", page_size=10
+    )
+
+    routes = store.list_board_providers(source_key="source-a")
+    assert [(route.board_key, route.token) for route in routes] == [
+        ("source-a:new-board", "new-board")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_preserves_existing_routes_for_boards_only_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    class BoardsOnlyAdapter:
+        async def iter_boards(self, _client, _source, *, page_size: int):
+            yield (
+                [
+                    BoardRecord(
+                        key="source-a:old-board",
+                        source_key="source-a",
+                        remote_id="old-board",
+                        name="Old Board",
+                        domain="old.example",
+                    )
+                ],
+                [],
+                {"version": {"pageSize": page_size}},
+            )
+
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="source-a", url="source-a://source", provider_id="fake")
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="source-a:old-board",
+                source_key="source-a",
+                remote_id="old-board",
+                name="Old Board",
+                domain="old.example",
+            )
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="source-a:old-board:greenhouse",
+                source_key="source-a",
+                board_key="source-a:old-board",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="old-board",
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: BoardsOnlyAdapter(),
+    )
+
+    metrics = await sync_sources(
+        settings=settings, store=store, source_key="source-a", page_size=10
+    )
+
+    assert metrics.board_providers == 0
+    routes = store.list_board_providers(source_key="source-a")
+    assert [(route.board_key, route.token) for route in routes] == [
+        ("source-a:old-board", "old-board")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_preserves_routes_after_failed_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    class SuccessfulAdapter:
+        async def iter_boards(self, _client, _source, *, page_size: int):
+            yield (
+                [
+                    BoardRecord(
+                        key="source-a:old-board",
+                        source_key="source-a",
+                        remote_id="old-board",
+                        name="Old Board",
+                    )
+                ],
+                [
+                    BoardProviderRecord(
+                        id="source-a:old-board:greenhouse",
+                        source_key="source-a",
+                        board_key="source-a:old-board",
+                        provider_id="greenhouse",
+                        support_level=ProviderSupport.JOBS,
+                        token="old-board",
+                    )
+                ],
+                {"version": {"pageSize": page_size}},
+            )
+
+    class FailingAdapter:
+        async def iter_boards(self, _client, _source, *, page_size: int):
+            raise RuntimeError("source failed before a complete snapshot")
+            yield [], [], {"version": {"pageSize": page_size}}
+
+    adapters = [SuccessfulAdapter(), FailingAdapter()]
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="source-a", url="source-a://source", provider_id="fake")
+    )
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: adapters.pop(0),
+    )
+
+    await sync_sources(
+        settings=settings, store=store, source_key="source-a", page_size=10
+    )
+    await sync_sources(
+        settings=settings, store=store, source_key="source-a", page_size=10
+    )
+
+    routes = store.list_board_providers(source_key="source-a")
+    assert [(route.board_key, route.token) for route in routes] == [
+        ("source-a:old-board", "old-board")
+    ]
 
 
 @pytest.mark.asyncio

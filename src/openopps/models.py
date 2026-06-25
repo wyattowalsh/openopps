@@ -177,7 +177,9 @@ def _job_description_hash_payload(record: JobRecord) -> dict[str, object] | None
     payload = record.job_description.model_dump(mode="python", exclude_none=True)
     meta = payload.get("meta")
     if isinstance(meta, dict):
-        stable_meta = {key: value for key, value in meta.items() if key != "lastModified"}
+        stable_meta = {
+            key: value for key, value in meta.items() if key != "lastModified"
+        }
         if stable_meta:
             payload["meta"] = stable_meta
         else:
@@ -1998,7 +2000,10 @@ class BoardRow(SQLModel, table=True):
         description="Stable normalized board key.",
     )
     source_key: str = SQLField(
-        index=True, min_length=1, description="Source key that emitted this board."
+        foreign_key="sources.key",
+        index=True,
+        min_length=1,
+        description="Source key that emitted this board.",
     )
     source_keys: list[str] = SQLField(
         default_factory=list,
@@ -2071,10 +2076,16 @@ class BoardProviderRow(SQLModel, table=True):
         primary_key=True, min_length=1, description="Stable route primary key."
     )
     source_key: str = SQLField(
-        index=True, min_length=1, description="Source key that reported this route."
+        foreign_key="sources.key",
+        index=True,
+        min_length=1,
+        description="Source key that reported this route.",
     )
     board_key: str = SQLField(
-        index=True, min_length=1, description="Board key this route belongs to."
+        foreign_key="boards.key",
+        index=True,
+        min_length=1,
+        description="Board key this route belongs to.",
     )
     provider_id: str = SQLField(
         index=True, min_length=1, description="Provider adapter identifier."
@@ -2129,7 +2140,10 @@ class JobRow(SQLModel, table=True):
         primary_key=True, min_length=1, description="Stable normalized job identity."
     )
     board_key: str = SQLField(
-        index=True, min_length=1, description="Board key this job belongs to."
+        foreign_key="boards.key",
+        index=True,
+        min_length=1,
+        description="Board key this job belongs to.",
     )
     provider_id: str = SQLField(
         index=True, min_length=1, description="Provider adapter identifier."
@@ -2187,7 +2201,9 @@ class JobVersionRow(SQLModel, table=True):
     )
 
     id: str = SQLField(primary_key=True, min_length=1, description="Job version id.")
-    job_id: str = SQLField(index=True, min_length=1, description="Stable job id.")
+    job_id: str = SQLField(
+        foreign_key="jobs.id", index=True, min_length=1, description="Stable job id."
+    )
     version: int = SQLField(index=True, ge=1, description="Monotonic version number.")
     content_hash: str = SQLField(
         index=True, min_length=1, description="Normalized user-visible content hash."
@@ -2320,7 +2336,10 @@ class JobVersionLocationRow(SQLModel, table=True):
         description="Stable job-version location row id.",
     )
     job_version_id: str = SQLField(
-        index=True, min_length=1, description="Job version this location belongs to."
+        foreign_key="job_versions.id",
+        index=True,
+        min_length=1,
+        description="Job version this location belongs to.",
     )
     ordinal: int = SQLField(
         index=True,
@@ -2332,12 +2351,18 @@ class JobVersionLocationRow(SQLModel, table=True):
 
 class JobVersionSkillRow(SQLModel, table=True):
     __tablename__ = "job_version_skills"
+    __table_args__ = (
+        UniqueConstraint("job_version_id", "ordinal", name="uq_job_version_skill"),
+    )
 
     id: str = SQLField(
         primary_key=True, min_length=1, description="Stable job-version skill row id."
     )
     job_version_id: str = SQLField(
-        index=True, min_length=1, description="Job version this skill group belongs to."
+        foreign_key="job_versions.id",
+        index=True,
+        min_length=1,
+        description="Job version this skill group belongs to.",
     )
     ordinal: int = SQLField(
         index=True, ge=0, description="Zero-based skill order within the job version."
@@ -2362,7 +2387,10 @@ class JobVersionSkillKeywordRow(SQLModel, table=True):
         description="Stable job-version skill keyword row id.",
     )
     skill_id: str = SQLField(
-        index=True, min_length=1, description="Skill group this keyword belongs to."
+        foreign_key="job_version_skills.id",
+        index=True,
+        min_length=1,
+        description="Skill group this keyword belongs to.",
     )
     ordinal: int = SQLField(
         index=True, ge=0, description="Zero-based keyword order within the skill group."
@@ -2382,7 +2410,10 @@ class JobVersionBulletRow(SQLModel, table=True):
         primary_key=True, min_length=1, description="Stable job-version bullet row id."
     )
     job_version_id: str = SQLField(
-        index=True, min_length=1, description="Job version this bullet belongs to."
+        foreign_key="job_versions.id",
+        index=True,
+        min_length=1,
+        description="Job version this bullet belongs to.",
     )
     kind: str = SQLField(
         index=True,
@@ -2409,6 +2440,7 @@ class JobPayloadSnapshotRow(SQLModel, table=True):
         description="Stable raw payload snapshot row id.",
     )
     job_id: str = SQLField(
+        foreign_key="jobs.id",
         index=True,
         min_length=1,
         description="Stable job identity this raw payload belongs to.",
@@ -2444,6 +2476,7 @@ class JobSyncRunRow(SQLModel, table=True):
         description="Stable provider route sync run id.",
     )
     board_key: str = SQLField(
+        foreign_key="boards.key",
         index=True,
         min_length=1,
         description="Board key synced during this provider route run.",
@@ -2493,17 +2526,20 @@ class JobSyncObservationRow(SQLModel, table=True):
         primary_key=True, min_length=1, description="Stable sync observation row id."
     )
     sync_run_id: str = SQLField(
+        foreign_key="job_sync_runs.id",
         index=True,
         min_length=1,
         description="Route sync run that recorded this observation.",
     )
     job_id: str = SQLField(
+        foreign_key="jobs.id",
         index=True,
         min_length=1,
         description="Stable job identity observed during sync.",
     )
     job_version_id: str | None = SQLField(
         default=None,
+        foreign_key="job_versions.id",
         index=True,
         description="Normalized job version associated with this observation.",
     )

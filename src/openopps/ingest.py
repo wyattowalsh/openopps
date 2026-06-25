@@ -111,6 +111,8 @@ async def sync_sources(
                     source.key,
                     source.provider_id,
                 )
+                source_route_ids: set[str] = set()
+                saw_provider_route_hints = False
                 try:
                     async with asyncio.timeout(settings.source_timeout_seconds):
                         async for boards, providers, page_meta in adapter.iter_boards(
@@ -140,8 +142,12 @@ async def sync_sources(
                                     if store:
                                         store.upsert_source(updated_source)
                                         store.upsert_boards(boards)
-                                        store.upsert_board_providers(
-                                            providers, boards=boards
+                                        if providers:
+                                            saw_provider_route_hints = True
+                                        source_route_ids.update(
+                                            store.upsert_board_providers(
+                                                providers, boards=boards
+                                            )
                                         )
                                         unique_count = store.count_boards(
                                             source_key=source_key
@@ -164,6 +170,11 @@ async def sync_sources(
                                             ),
                                         ),
                                     )
+                    if store and saw_provider_route_hints:
+                        async with write_lock:
+                            store.reconcile_source_board_provider_routes(
+                                source.key, source_route_ids
+                            )
                     async with progress_lock:
                         completed_sources += 1
                         _report_source_progress(

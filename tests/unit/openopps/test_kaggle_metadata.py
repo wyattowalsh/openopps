@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import csv
 import json
 from pathlib import Path
 import sqlite3
 import struct
 import sys
+import types
 
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
@@ -14,12 +16,23 @@ from openopps.storage import OpenOppsStore
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[3] / "scripts/generate_kaggle_metadata.py"
 )
+PULLBACK_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[3] / "scripts/verify_kaggle_notebook_pullback.py"
+)
 SPEC = importlib.util.spec_from_file_location("generate_kaggle_metadata", SCRIPT_PATH)
 assert SPEC is not None
 assert SPEC.loader is not None
 gen = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = gen
 SPEC.loader.exec_module(gen)
+PULLBACK_SPEC = importlib.util.spec_from_file_location(
+    "verify_kaggle_notebook_pullback", PULLBACK_SCRIPT_PATH
+)
+assert PULLBACK_SPEC is not None
+assert PULLBACK_SPEC.loader is not None
+pullback = importlib.util.module_from_spec(PULLBACK_SPEC)
+sys.modules[PULLBACK_SPEC.name] = pullback
+PULLBACK_SPEC.loader.exec_module(pullback)
 
 
 def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
@@ -43,16 +56,21 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert "snapshot-quality.json" not in metadata["description"]
     assert "public file surface is intentionally limited" in metadata["description"]
     assert "openoppsdb-manager" in metadata["description"]
+    assert "bounded `openopps jobs sync" in metadata["description"]
+    assert "openopps sync --metrics-json" not in metadata["description"]
     assert "Quick start" in metadata["description"]
     assert gen.DB_FILE in metadata["description"]
     assert "Parquet" in metadata["description"]
+    assert "Kaggle renders CSV and Parquet exports" in metadata["description"]
+    assert "sqliteInfo" not in metadata["description"]
     assert set(resources) == {resource.path for resource in gen.RESOURCES}
     assert set(resources) == {resource.path for resource in gen.DATA_RESOURCES}
     assert resources[gen.DB_FILE]["description"]
-    assert set(resources[gen.DB_FILE]) == {"path", "description"}
+    assert resources[gen.DB_FILE]["name"] == "SQLite Database"
+    assert "CSV and Parquet exports" in resources[gen.DB_FILE]["description"]
+    assert set(resources[gen.DB_FILE]) == {"path", "name", "description"}
     assert "schema" not in resources[gen.DB_FILE]
     assert "tables" not in resources[gen.DB_FILE]
-    assert "name" not in resources[gen.DB_FILE]
     assert "title" not in resources[gen.DB_FILE]
     assert gen.SYNC_METRICS_FILE not in resources
     assert gen.STATUS_FILE not in resources
@@ -76,7 +94,8 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
     }
 
     sqlite_resource = resources[gen.DB_FILE]
-    assert set(sqlite_resource) == {"path", "description"}
+    assert set(sqlite_resource) == {"path", "name", "description"}
+    assert sqlite_resource["name"] == "SQLite Database"
     assert "schema" not in sqlite_resource
     assert "tables" not in sqlite_resource
 
@@ -116,9 +135,9 @@ def test_kaggle_dataset_metadata_has_supported_resource_schemas() -> None:
     assert jobs_fields["board_key"]["type"] == "id"
 
 
-def test_kaggle_upload_resources_use_documented_subset() -> None:
+def test_kaggle_upload_resources_use_nbadb_style_subset() -> None:
     metadata = gen.dataset_metadata()
-    allowed_resource_keys = {"path", "description", "schema"}
+    allowed_resource_keys = {"path", "name", "description", "schema"}
     allowed_schema_keys = {"fields"}
     allowed_field_keys = {"name", "description", "type"}
 
@@ -127,7 +146,10 @@ def test_kaggle_upload_resources_use_documented_subset() -> None:
         assert set(resource) <= allowed_resource_keys, resource["path"]
         assert resource["path"]
         assert resource["description"]
-        assert "name" not in resource
+        if resource["path"] == gen.DB_FILE:
+            assert resource["name"] == "SQLite Database"
+        else:
+            assert "name" not in resource
         assert "title" not in resource
         assert "tables" not in resource
         if "schema" in resource:
@@ -135,6 +157,32 @@ def test_kaggle_upload_resources_use_documented_subset() -> None:
             assert resource["schema"]["fields"]
             for field in resource["schema"]["fields"]:
                 assert set(field) == allowed_field_keys
+
+
+def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+    operations = (repo_root / "docs/content/docs/operations.mdx").read_text(
+        encoding="utf-8"
+    )
+    spec = (
+        repo_root
+        / "openspec/changes/prepare-v0-1-release/specs/release-workflows/spec.md"
+    ).read_text(encoding="utf-8")
+
+    assert "openopps sync --metrics-json --refresh-cache" in readme
+    assert "openopps sync --metrics-json --refresh-cache" in operations
+    assert (
+        "openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120"
+        not in readme
+    )
+    assert "just kaggle-runtime-generator-version" in readme
+    assert "just kaggle-runtime-generator-version" in operations
+    assert "kaggle-runtime-generator-create" in readme
+    assert "kaggle-runtime-generator-create" in operations
+    assert "kaggle auth print-access-token" not in spec
+    assert "kaggle auth login" in spec
+    assert "runtime generator create/version recipe" in spec
 
 
 def test_kaggle_file_metadata_covers_public_files_for_live_update() -> None:
@@ -254,10 +302,14 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert metadata["id"] == gen.NB_ID
     assert "id_no" not in metadata
     assert metadata["title"] == "openoppsdb manager"
-    assert metadata["dataset_sources"] == [gen.DATASET_ID]
+    assert metadata["dataset_sources"] == [
+        gen.DATASET_ID,
+        gen.RUNTIME_GENERATOR_DATASET_ID,
+    ]
     assert metadata["code_file"] == gen.NB_FILE
     assert metadata["code_file"] == "openoppsdb-manager.ipynb"
     assert metadata["code_file"].endswith(".ipynb")
+
     assert "0 6 * * *" in source
     assert "0 */6 * * *" not in source
     assert gen.DATASET_ID in source
@@ -268,11 +320,16 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "/kaggle/working/openoppsdb" in source
     assert "Copied prior OpenOpps DB snapshot" in source
     assert "OPENOPPS_GENERATOR_SCRIPT_URL" in source
+    assert "OPENOPPS_GENERATOR_SCRIPT_SHA256" in source
+    assert gen.GENERATOR_SCRIPT_URL in source
     assert "generate_kaggle_metadata.py" in source
+    assert 'compile(source, str(GENERATOR_SCRIPT), "exec")' in source
+    assert "Downloaded OpenOpps Kaggle metadata generator is incompatible" in source
     assert "openopps.kaggle_metadata" not in source
-    assert "openopps" in source
-    assert "sync" in source
-    assert "--metrics-json" in source
+    assert "rehydrates the plain public SQLite snapshot" in source
+    assert "bounded `openopps jobs sync" in source
+    assert "runs `openopps sync --metrics-json`" not in source
+
     assert "OPENOPPS_SYNC_ENV_DEFAULTS" in source
     assert "openopps_env.setdefault(key, value)" in source
     assert "OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS" in source
@@ -284,6 +341,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "capture_output=True" not in source
     for key, value in gen.NOTEBOOK_SYNC_ENV_DEFAULTS.items():
         assert f'"{key}": "{value}"' in source
+
     assert "run_json" in source
     assert "sync_metrics.json" in source
     assert "status.json" in source
@@ -291,19 +349,6 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "snapshot-quality.json" in source
     assert '"providers", "coverage", "--json"' in source
     assert "OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION" in source
-    assert "DATASET_METADATA = {" in source
-    assert "SQLITE_TABLE_METADATA = [" in source
-    assert "OPENOPPS_TABLE_ROWS = [" in source
-    assert "OPENOPPS_COLUMN_ROWS = [" in source
-    assert "def write_public_bundle()" in source
-    assert "def write_full_table_exports" in source
-    assert "pl.scan_csv" in source
-    assert "kaggle" in source
-    assert "datasets" in source
-    assert "version" in source
-    assert '"status", DATASET_ID, "--format", "json"' in source
-    assert '"files", DATASET_ID, "--page-size", "200"' in source
-    assert "zip" in source
     assert "KAGGLE_API_TOKEN" in source
     assert "KAGGLE_API_V1_TOKEN_PATH" in source
     assert "UserSecretsClient" in source
@@ -314,127 +359,336 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "def load_kaggle_notebook_secrets()" in source
     assert "def read_kaggle_notebook_secrets" in source
     assert "OPENOPPS_KAGGLE_SECRET_RETRIES" in source
+    assert "OPENOPPS_KAGGLE_SECRET_URL_BASE" in source
+    assert '"https://www.kaggle.com"' in source
+    assert 'os.environ["KAGGLE_URL_BASE"] = KAGGLE_SECRET_URL_BASE' in source
+    assert 'os.environ["KAGGLE_URL_BASE"] = runtime_url_base' in source
     assert "time.sleep(KAGGLE_SECRET_RETRY_SECONDS)" in source
     assert "Kaggle API credentials are required" in source
+    assert "KAGGLE_SQLITE_INDEX_WAIT_SECONDS" in source
     assert "OPENOPPS_KAGGLE_SQLITE_INDEX_WAIT_SECONDS" in source
-    assert "Waiting for Kaggle SQLite indexer metadata" in source
-    assert "kaggle_databundle_files(session, headers, basics)" in source
-    assert "def project_sqlite_for_kaggle_indexer" in source
-    assert "def truncate_sqlite_text_for_kaggle_indexer" in source
-    assert "def normalize_sqlite_schema_for_kaggle_indexer" in source
-    assert "def rebuild_sqlite_tables_for_kaggle_indexer" in source
-    assert "SQLITE_PREVIEW_TEXT_MAX_CHARS" in source
-    assert "Bounded SQLite upload text cells for Kaggle indexer" in source
-    assert '("job_versions", "description_html")' in source
-    assert '("job_versions", "description")' in source
-    assert '("boards", "raw_payload")' in source
+
     assert "INPUT_BOARDS_PARQUET_GLOB" in source
     assert "INPUT_JOB_VERSIONS_PARQUET_GLOB" in source
     assert "INPUT_JOB_PAYLOAD_SNAPSHOTS_PARQUET_GLOB" in source
     assert "def restore_projected_sqlite_columns_from_input_exports()" in source
     assert "restore_projected_sqlite_columns_from_input_exports()" in source
+    assert "def rehydrate_public_snapshot_for_openopps(" in source
+    assert "Rehydrating public OpenOppsDB snapshot" in source
+    assert "Rehydrated public OpenOppsDB snapshot:" in source
+    assert "PUBLIC_SNAPSHOT_JSON_DEFAULTS" in source
+    assert "sanitize_public_snapshot_json_columns(snapshot_path)" in source
+    assert "Sanitized invalid public snapshot JSON before rehydrate" in source
+    assert "PUBLIC_METADATA_TABLES" in source
+    assert "APP_TABLE_NAMES" in source
     assert '"description_html",' in source
     assert '"job_description",' in source
     assert '"responsibilities",' in source
     assert 'key_column="key"' in source
     assert 'column_names=["payload"]' in source
     assert "csv.field_size_limit(sys.maxsize)" in source
+    assert "INPUT_SOURCES_PARQUET_GLOB" in source
+    assert "restore_invalid_json=True" in source
+    assert "json_valid" in source
+    assert "--mutate-data-db-for-upload" in source
     assert "KAGGLE_USERNAME" in source
     assert "KAGGLE_KEY" in source
+
+    assert "def download_generator_script()" in source
+    assert "def run_generator(" in source
+    assert "def try_run_generator(" in source
+    assert "PUBLIC_UPLOAD_DIR" in source
+    for flag in (
+        "--data-db",
+        "--sync-metrics",
+        "--status-json",
+        "--coverage-json",
+        "--quality-report",
+        "--prune-private-upload-files",
+        "--stage-public-upload-dir",
+        "--skip-notebooks",
+        "--wait-live-dataset-ready",
+        "--wait-live-dataset-min-version",
+        "--update-live-file-metadata",
+        "--live-file-metadata-kaggle-auth",
+        "--live-file-metadata-sqlite-timeout-seconds",
+    ):
+        assert flag in source
+
+    for removed in (
+        "DATASET_METADATA =",
+        "SQLITE_TABLE_METADATA =",
+        "OPENOPPS_TABLE_ROWS =",
+        "OPENOPPS_COLUMN_ROWS =",
+        "PUBLIC_UPLOAD_DATA_FILES =",
+        "SQLITE_PREVIEW_TEXT_MAX_CHARS",
+        "SQLITE_PREVIEW_TEXT_COLUMNS",
+        "def write_public_bundle()",
+        "def write_full_table_exports",
+        "def project_sqlite_for_public_upload",
+        "def truncate_sqlite_text_for_public_upload",
+        "def normalize_sqlite_schema_for_public_upload",
+        "def rebuild_sqlite_tables_for_public_upload",
+        "def update_kaggle_dataset_file_metadata(",
+        "def try_update_kaggle_dataset_file_metadata(",
+        "ApiUpdateDatasetMetadataRequest",
+        "DatasetSettingsFile",
+        "datasets.databundles.DatabundleService/UpdateDatabundleMetadataExternal",
+        "def update_sqlite_table_metadata_external(",
+        "def backfill_openopps_skill_tables",
+        "OpenOpps skill backfill:",
+        "EMBEDDED_BOUNDED_JOB_SYNC_CODE",
+        "sqlite-derived-after-plain-sync",
+        "bounded openopps jobs sync --metrics-json failed",
+        "VACUUM INTO",
+        "X-XSRF-TOKEN",
+    ):
+        assert removed not in source
+
     compact_source = "\n".join(
         line.strip() for line in source.splitlines() if line.strip()
     )
     assert (
         "require_kaggle_credentials()\n"
         "install_openopps()\n"
-        "copy_latest_input_db()\n"
-        "download_dataset_assets()"
+        "download_generator_script()\n"
+        "copy_latest_input_db()"
     ) in compact_source
-    assert "def update_kaggle_dataset_file_metadata(" in source
-    assert "def try_update_kaggle_dataset_file_metadata(" in source
     assert "def kaggle_dataset_status()" in source
     assert "previous_status = kaggle_dataset_status()" in source
     assert "current_version_number" in source
-    assert "published_basics = wait_for_new_live_dataset_version(previous_version)" in source
     assert "expected_version = previous_version + 1" in source
-    assert "current_version >= expected_version" in source
-    assert "dataset_version_number=expected_version" in source
-    assert "path for path in PUBLIC_UPLOAD_DATA_FILES if path not in live_files" in source
-    assert "try_update_kaggle_dataset_file_metadata(published_basics)" in source
-    metadata_update_call = source.rindex(
-        "try_update_kaggle_dataset_file_metadata(published_basics)"
-    )
-    assert source.index('"zip"', source.index('"datasets"')) < metadata_update_call
-    assert metadata_update_call < source.index(
-        'run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"]'
-    )
-    assert "ApiUpdateDatasetMetadataRequest" in source
-    assert "DatasetSettingsFile" in source
-    assert "datasets.databundles.DatabundleService/UpdateDatabundleMetadataExternal" in source
-    assert "datasets.databundles.DatabundleService/GetDatabundleExternalColumns" in source
-    assert "def update_sqlite_table_metadata_external(" in source
-    assert "Kaggle SQLite indexer did not index openoppsdb.sqlite" in source
-    assert "sqliteTables" in source
-    assert "def finalize_sqlite_for_upload(" in source
-    assert "VACUUM INTO" in source
-    assert "PRAGMA journal_mode=DELETE" in source
-    assert "header read/write versions" in source
-    assert "kaggle_basic_auth_header()" in source
-    assert "X-XSRF-TOKEN" in source
-    assert "Kaggle live dataset version ready for metadata repair" in source
-    assert "OpenOpps live metadata repair:" in source
-    assert "def backfill_openopps_skill_tables" in source
-    assert "OpenOpps skill backfill:" in source
-    assert "def run_sync_metrics(" in source
-    assert "sqlite-derived-after-plain-sync" in source
     assert '"jobs",' in source
     assert '"sync",' in source
     assert '"--freshness-seconds",' in source
     assert '"--limit",' in source
     assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" in source
-    assert "bounded openopps jobs sync --metrics-json failed" in source
-    embedded_sync = source[
-        source.index("EMBEDDED_BOUNDED_JOB_SYNC_CODE")
-        : source.index("def openopps_cli_supports_bounded_jobs_sync")
-    ]
-    assert (
-        'output_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")'
-        in embedded_sync
-    )
-    assert "def compiled_skill_catalog" in source
-    assert "compile_skill_aliases(tuple(aliases))" in source
-    assert "LIMIT ? OFFSET ?" not in source
-    assert source.index("run_sync_metrics(") < source.index(
-        "backfill_openopps_skill_tables(DB_PATH)"
-    )
     assert "def require_kaggle_credentials()" in source
     assert gen.DB_FILE in source
-    setup_db_init = compact_source.index('run(["openopps", "admin", "db", "init"]')
+
+    setup_db_init = compact_source.rindex('run(["openopps", "admin", "db", "init"]')
     setup_calls = compact_source[
-        compact_source.index("require_kaggle_credentials()\ninstall_openopps()") :
-        setup_db_init
+        compact_source.index(
+            "require_kaggle_credentials()\ninstall_openopps()"
+        ) : setup_db_init
     ]
     assert setup_calls.index("require_kaggle_credentials()") < setup_calls.index(
         "install_openopps()"
     )
     assert setup_calls.index("install_openopps()") < setup_calls.index(
+        "download_generator_script()"
+    )
+    assert setup_calls.index("download_generator_script()") < setup_calls.index(
         "copy_latest_input_db()"
     )
-    assert setup_calls.index("copy_latest_input_db()") < setup_calls.index(
-        "download_dataset_assets()"
+    assert (
+        compact_source.rindex("rehydrate_public_snapshot_for_openopps(openopps_env)")
+        < setup_db_init
     )
-    assert compact_source.index("download_dataset_assets()") < setup_db_init
-    assert source.index('"jobs",') < source.index(
-        "backfill_openopps_skill_tables(DB_PATH)"
+    generator_call = source.index("run_generator(generator_args)")
+    publish_call = source.index('"datasets"', generator_call)
+    assert generator_call < publish_call
+    assert '"-p",\nstr(PUBLIC_UPLOAD_DIR)' in compact_source
+    metadata_repair_call = source.rindex("metadata_repair_ok = try_run_generator([")
+    assert source.index('"zip"', source.index('"datasets"')) < metadata_repair_call
+    assert metadata_repair_call < source.index(
+        'run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"]'
     )
-    assert source.index(
-        "skill_backfill = backfill_openopps_skill_tables(DB_PATH)"
-    ) < source.index(
-        "quality = write_public_bundle()"
-    )
-    quality_call = source.index("quality = write_public_bundle()")
-    assert quality_call < source.index('"datasets"', quality_call)
+    assert "OpenOpps live metadata repair:" in source
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
+
+
+def test_manager_notebook_rehydrates_public_sqlite_snapshot(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    assert namespace["APP_TABLE_NAMES"] == tuple(
+        table.name for table in gen.DATA_TABLES
+    )
+    schema_db = tmp_path / "operational-schema.sqlite"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{schema_db}"))
+    store.init_db()
+    _insert_representative_app_rows(schema_db)
+    _copy_plain_public_snapshot(
+        schema_db,
+        db_path,
+        app_table_names=namespace["APP_TABLE_NAMES"],
+    )
+    with sqlite3.connect(db_path) as conn:
+        for table_name in namespace["PARQUET_RESTORE_TABLES"]:
+            conn.execute(f"DELETE FROM {_quote_identifier(table_name)}")
+        conn.commit()
+    input_dir = tmp_path / "input"
+    parquet_dir = input_dir / "dataset" / "exports" / "parquet"
+    parquet_dir.mkdir(parents=True)
+    gen.pl.DataFrame(
+        {
+            "key": ["source-1"],
+            "raw_metadata": ['{"catalog":"fixture","restored":true}'],
+        }
+    ).write_parquet(parquet_dir / "sources.parquet")
+    gen.pl.DataFrame(
+        {
+            "key": ["board-1"],
+            "source_board_keys": ['{"source-1":"source-1:board-1"}'],
+            "markets": ['["SaaS","AI"]'],
+            "locations": ['["New York","Remote"]'],
+            "raw_payload": ['{"board":true}'],
+        }
+    ).write_parquet(parquet_dir / "boards.parquet")
+    gen.pl.DataFrame(
+        {
+            "id": ["version-1"],
+            "locations": ['["New York","Remote"]'],
+            "description": ["Build products."],
+            "description_html": ["<p>Build products.</p>"],
+            "job_description": ['{"title":"Software Engineer"}'],
+            "responsibilities": ['["Build"]'],
+            "qualifications": ['["Python"]'],
+            "skills": ['[{"name":"Python"}]'],
+            "compensation": ['{"currency":"USD"}'],
+        }
+    ).write_parquet(parquet_dir / "job_versions.parquet")
+    gen.pl.DataFrame({"id": ["payload-1"], "payload": ['{"raw":true}']}).write_parquet(
+        parquet_dir / "job_payload_snapshots.parquet"
+    )
+    gen.pl.DataFrame(
+        {
+            "id": ["location-1"],
+            "job_version_id": ["version-1"],
+            "ordinal": [0],
+            "label": ["New York"],
+        }
+    ).write_parquet(parquet_dir / "job_version_locations.parquet")
+    gen.pl.DataFrame(
+        {
+            "id": ["skill-1"],
+            "job_version_id": ["version-1"],
+            "ordinal": [0],
+            "name": ["Python"],
+            "level": ["mid"],
+        }
+    ).write_parquet(parquet_dir / "job_version_skills.parquet")
+    gen.pl.DataFrame(
+        {
+            "id": ["keyword-1"],
+            "skill_id": ["skill-1"],
+            "ordinal": [0],
+            "keyword": ["python"],
+        }
+    ).write_parquet(parquet_dir / "job_version_skill_keywords.parquet")
+    gen.pl.DataFrame(
+        {
+            "id": ["bullet-1"],
+            "job_version_id": ["version-1"],
+            "kind": ["responsibility"],
+            "ordinal": [0],
+            "text": ["Build products."],
+        }
+    ).write_parquet(parquet_dir / "job_version_bullets.parquet")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE sources SET raw_metadata = ? WHERE key = ?", ('{"bad":', "source-1")
+        )
+        conn.execute(
+            """
+            UPDATE boards
+            SET source_board_keys = ?, markets = ?, locations = ?, raw_payload = NULL
+            WHERE key = ?
+            """,
+            ('{"bad":', '["AI"', '["Remote"', "board-1"),
+        )
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET locations = ?, description = NULL, description_html = NULL,
+                job_description = NULL, responsibilities = NULL,
+                qualifications = NULL, skills = NULL, compensation = NULL
+            WHERE id = ?
+            """,
+            ('["Remote"', "version-1"),
+        )
+        conn.execute(
+            "UPDATE job_payload_snapshots SET payload = NULL WHERE id = ?",
+            ("payload-1",),
+        )
+        conn.commit()
+    namespace["KAGGLE_INPUT_DIR"] = input_dir
+    namespace["restore_projected_sqlite_columns_from_input_exports"]()
+
+    assert namespace["is_public_snapshot_db"](db_path) is True
+
+    def run_locally(command, *, env=None, timeout_seconds=None) -> None:
+        del timeout_seconds
+        if command == ["openopps", "admin", "db", "init"]:
+            assert env is not None
+            OpenOppsStore(OpenOppsSettings(db_url=env["OPENOPPS_DB_URL"])).init_db()
+            return
+        raise AssertionError(f"Unexpected command during rehydrate test: {command}")
+
+    namespace["run"] = run_locally
+    env = {
+        "OPENOPPS_DB_URL": f"sqlite:///{db_path}",
+        "OPENOPPS_CACHE_ENABLED": "false",
+    }
+
+    assert namespace["rehydrate_public_snapshot_for_openopps"](env) is True
+    assert namespace["rehydrate_public_snapshot_for_openopps"](env) is False
+
+    snapshot_path = db_path.with_name("openoppsdb-public-snapshot.sqlite")
+    assert snapshot_path.exists()
+    with sqlite3.connect(db_path) as conn:
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        counts = {
+            table_name: conn.execute(
+                f"SELECT count(*) FROM {_quote_identifier(table_name)}"
+            ).fetchone()[0]
+            for table_name in namespace["APP_TABLE_NAMES"]
+        }
+
+        assert version == ("0002_data_model_integrity",)
+        assert "openopps_tables" not in tables
+        assert "openopps_columns" not in tables
+        assert all(count == 1 for count in counts.values())
+        assert _has_sqlite_index(
+            conn, "boards", ("source_key", "remote_id"), unique=True
+        )
+        assert _has_sqlite_index(
+            conn, "jobs", ("board_key", "provider_id", "remote_id"), unique=True
+        )
+        assert _has_sqlite_index(
+            conn, "job_version_skills", ("job_version_id", "ordinal"), unique=True
+        )
+        assert conn.execute(
+            "SELECT json_valid(raw_metadata) FROM sources WHERE key = 'source-1'"
+        ).fetchone() == (1,)
+        assert conn.execute(
+            "SELECT json_valid(source_board_keys), json_valid(markets), "
+            "json_valid(locations), json_valid(raw_payload) "
+            "FROM boards WHERE key = 'board-1'"
+        ).fetchone() == (1, 1, 1, 1)
+        assert conn.execute(
+            "SELECT json_valid(locations), json_valid(job_description), "
+            "json_valid(responsibilities), json_valid(qualifications), "
+            "json_valid(skills), json_valid(compensation) "
+            "FROM job_versions WHERE id = 'version-1'"
+        ).fetchone() == (1, 1, 1, 1, 1, 1)
+
+    assert OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).status() == {
+        "sources": 1,
+        "boards": 1,
+        "boardProviders": 1,
+        "jobs": 1,
+    }
 
 
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
@@ -463,6 +717,197 @@ def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
     assert "kaggle datasets version" not in source
 
 
+def test_public_example_notebooks_are_read_only_and_compile() -> None:
+    expected = {
+        gen.ADVANCED_NB_ID: {
+            "title": "OpenOppsDB advanced usage",
+            "code_file": gen.ADVANCED_NB_FILE,
+            "required_terms": (
+                "job_sync_observations",
+                "pd.read_parquet",
+                "mode=ro&immutable=1",
+            ),
+        },
+        gen.HIRING_MARKET_NB_ID: {
+            "title": "OpenOppsDB hiring market map",
+            "code_file": gen.HIRING_MARKET_NB_FILE,
+            "required_terms": (
+                "job_version_locations",
+                "provider_mix",
+                "plt.subplots",
+            ),
+        },
+        gen.SKILLS_RADAR_NB_ID: {
+            "title": "OpenOppsDB skills radar",
+            "code_file": gen.SKILLS_RADAR_NB_FILE,
+            "required_terms": (
+                "job_version_skills",
+                "job_version_skill_keywords",
+                "skill_pairs",
+            ),
+        },
+    }
+
+    assert {spec.notebook_id for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS} == set(expected)
+
+    for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
+        metadata = gen.public_notebook_kernel_metadata(
+            notebook_id=spec.notebook_id,
+            title=spec.title,
+            code_file=spec.code_file,
+        )
+        data = spec.notebook_factory()
+        source = "\n".join(
+            line for cell in data["cells"] for line in cell.get("source", [])
+        )
+        for index, cell in enumerate(data["cells"]):
+            if cell.get("cell_type") == "code":
+                compile("".join(cell.get("source", [])), f"{spec.slug}-{index}", "exec")
+
+        assert metadata["kernel_type"] == "notebook"
+        assert metadata["enable_internet"] is False
+        assert metadata["is_private"] is False
+        assert metadata["id"] == spec.notebook_id
+        assert metadata["title"] == expected[spec.notebook_id]["title"]
+        assert metadata["dataset_sources"] == [gen.DATASET_ID]
+        assert metadata["code_file"] == expected[spec.notebook_id]["code_file"]
+        assert metadata["code_file"].endswith(".ipynb")
+        assert "/kaggle/input" in source
+        assert "**/openoppsdb.sqlite" in source
+        assert "mode=ro&immutable=1" in source
+        assert "KAGGLE_KEY" not in source
+        assert "KAGGLE_USERNAME" not in source
+        assert "kaggle datasets version" not in source
+        assert "pip install" not in source
+        for term in expected[spec.notebook_id]["required_terms"]:
+            assert term in source
+
+
+def test_kaggle_notebook_pullback_verifier_accepts_expected_bundles(
+    tmp_path: Path,
+) -> None:
+    _write_pullback_expected_bundles(
+        tmp_path,
+        starter_alias=True,
+        kaggle_pull_metadata=True,
+    )
+
+    assert pullback.main([str(tmp_path)]) == 0
+
+
+def test_kaggle_notebook_pullback_verifier_rejects_stale_source(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    def mutate(expected, metadata, notebook):
+        if expected.kernel_id == gen.ADVANCED_NB_ID:
+            notebook["cells"][0]["source"][0] = "# stale notebook\n"
+
+    _write_pullback_expected_bundles(tmp_path, mutate=mutate)
+
+    assert pullback.main([str(tmp_path)]) == 1
+    assert "notebook does not match generated source" in capsys.readouterr().err
+
+
+def test_kaggle_notebook_pullback_verifier_rejects_missing_generated_cell(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    def mutate(expected, metadata, notebook):
+        if expected.kernel_id == gen.SKILLS_RADAR_NB_ID:
+            notebook["cells"].pop()
+
+    _write_pullback_expected_bundles(tmp_path, mutate=mutate)
+
+    assert pullback.main([str(tmp_path)]) == 1
+    assert "notebook does not match generated source" in capsys.readouterr().err
+
+
+def test_kaggle_notebook_pullback_verifier_rejects_metadata_drift(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    def mutate(expected, metadata, notebook):
+        if expected.kernel_id == gen.HIRING_MARKET_NB_ID:
+            metadata["enable_internet"] = True
+
+    _write_pullback_expected_bundles(tmp_path, mutate=mutate)
+
+    assert pullback.main([str(tmp_path)]) == 1
+    assert (
+        "kernel-metadata.json does not match generated metadata"
+        in capsys.readouterr().err
+    )
+
+
+def test_kaggle_notebook_pullback_verifier_rejects_wrong_dataset_source(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    def mutate(expected, metadata, notebook):
+        if expected.kernel_id == gen.ADVANCED_NB_ID:
+            metadata["dataset_sources"] = ["wyattowalsh/not-openoppsdb"]
+
+    _write_pullback_expected_bundles(tmp_path, mutate=mutate)
+
+    assert pullback.main([str(tmp_path)]) == 1
+    assert "dataset_sources" in capsys.readouterr().err
+
+
+def test_kaggle_notebook_pullback_verifier_rejects_credential_terms(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    def mutate(expected, metadata, notebook):
+        if expected.kernel_id == gen.SKILLS_RADAR_NB_ID:
+            notebook["cells"][1]["source"].append('print("KAGGLE_API_TOKEN")\n')
+
+    _write_pullback_expected_bundles(tmp_path, mutate=mutate)
+
+    assert pullback.main([str(tmp_path)]) == 1
+    assert "notebook source contains 'KAGGLE_API_TOKEN'" in capsys.readouterr().err
+
+
+def _write_pullback_expected_bundles(
+    root: Path,
+    *,
+    starter_alias: bool = False,
+    kaggle_pull_metadata: bool = False,
+    mutate=None,
+) -> None:
+    for expected in pullback.expected_kernels():
+        metadata = _json_clone(expected.metadata)
+        notebook = _json_clone(expected.notebook)
+        if starter_alias and expected.kernel_id == gen.STARTER_NB_ID:
+            metadata["code_file"] = pullback.STARTER_PULL_CODE_FILE_ALIAS
+        if kaggle_pull_metadata:
+            metadata["docker_image"] = (
+                "gcr.io/kaggle-images/python@sha256:"
+                "e5452ce6268c2e8345cfe5141f31ca7ff47032aca46a7ea532bbb87481281d0c"
+            )
+            metadata["id_no"] = 123456
+            if expected.kernel_id == gen.STARTER_NB_ID:
+                metadata["keywords"] = ["jobs and career"]
+        if mutate is not None:
+            mutate(expected, metadata, notebook)
+
+        kernel_dir = root / expected.slug
+        kernel_dir.mkdir()
+        code_file = metadata["code_file"]
+        (kernel_dir / "kernel-metadata.json").write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (kernel_dir / code_file).write_text(
+            json.dumps(notebook, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+
+def _json_clone(data):
+    return json.loads(json.dumps(data))
+
+
 def test_generated_kaggle_metadata_artifacts_are_current() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     kaggle_dir = repo_root / "kaggle"
@@ -483,12 +928,34 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
     generated_starter_notebook = json.loads(
         (starter_dir / gen.STARTER_NB_FILE).read_text(encoding="utf-8")
     )
+    examples_dir = kaggle_dir / "examples"
+    generated_examples = {}
+    for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
+        notebook_dir = examples_dir / spec.slug
+        generated_examples[spec.slug] = {
+            "kernel": json.loads(
+                (notebook_dir / "kernel-metadata.json").read_text(encoding="utf-8")
+            ),
+            "notebook": json.loads(
+                (notebook_dir / spec.code_file).read_text(encoding="utf-8")
+            ),
+        }
 
     assert generated_dataset == gen.dataset_metadata()
     assert generated_kernel == gen.kernel_metadata()
     assert generated_notebook == gen.notebook()
     assert generated_starter_kernel == gen.starter_kernel_metadata()
     assert generated_starter_notebook == gen.starter_notebook()
+    assert sorted(path.name for path in examples_dir.iterdir()) == sorted(
+        spec.slug for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS
+    )
+    for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
+        assert generated_examples[spec.slug]["kernel"] == gen.public_notebook_kernel_metadata(
+            notebook_id=spec.notebook_id,
+            title=spec.title,
+            code_file=spec.code_file,
+        )
+        assert generated_examples[spec.slug]["notebook"] == spec.notebook_factory()
     assert not (kaggle_dir / gen.DATAPACKAGE_FILE).exists()
     assert not (kaggle_dir / gen.EXPOSED_DATAPACKAGE_FILE).exists()
     assert not any((repo_root / "kaggle-manager").glob("*"))
@@ -521,6 +988,9 @@ def test_generated_kaggle_dataset_image_matches_metadata_contract() -> None:
 def test_data_artifact_writer_adds_metadata_before_exports() -> None:
     source = SCRIPT_PATH.read_text(encoding="utf-8")
 
+    assert source.index(
+        "_restore_projected_sqlite_columns_from_export_dir("
+    ) < source.index("_clean_data_artifacts(output_dir, preserve=source_db)")
     assert source.index("_drop_private_sqlite_tables(build_db)") < source.index(
         "_backfill_sqlite_skill_tables(build_db)"
     )
@@ -530,21 +1000,44 @@ def test_data_artifact_writer_adds_metadata_before_exports() -> None:
     assert source.index("_write_sqlite_metadata(build_db)") < source.index(
         "_write_full_table_exports(output_dir, build_db)"
     )
-    assert source.index("_write_full_table_exports(output_dir, build_db)") < source.index(
-        "_project_sqlite_for_kaggle_indexer(build_db)"
+    assert source.index(
+        "_write_full_table_exports(output_dir, build_db)"
+    ) < source.index("_project_sqlite_for_public_upload(build_db)")
+    assert source.index("_project_sqlite_for_public_upload(build_db)") < source.index(
+        "_truncate_sqlite_text_for_public_upload(build_db)"
     )
-    assert source.index("_project_sqlite_for_kaggle_indexer(build_db)") < source.index(
-        "_truncate_sqlite_text_for_kaggle_indexer(build_db)"
-    )
-    assert source.index("_truncate_sqlite_text_for_kaggle_indexer(build_db)") < source.index(
-        "_normalize_sqlite_schema_for_kaggle_indexer(build_db)"
-    )
-    assert source.index("_normalize_sqlite_schema_for_kaggle_indexer(build_db)") < source.index(
-        "_rebuild_sqlite_tables_for_kaggle_indexer(build_db)"
-    )
-    assert source.index("_rebuild_sqlite_tables_for_kaggle_indexer(build_db)") < source.index(
-        "_finalize_sqlite_for_upload(build_db)"
-    )
+    assert "_empty_sqlite_tables_for_public_upload(build_db)" not in source
+    assert source.index(
+        "_truncate_sqlite_text_for_public_upload(build_db)"
+    ) < source.index("_normalize_sqlite_schema_for_public_upload(build_db)")
+    assert source.index(
+        "_normalize_sqlite_schema_for_public_upload(build_db)"
+    ) < source.index("_rebuild_sqlite_tables_for_public_upload(build_db)")
+    assert source.index(
+        "_rebuild_sqlite_tables_for_public_upload(build_db)"
+    ) < source.index("_finalize_sqlite_for_upload(build_db)")
+
+
+def test_table_csv_export_serializes_sqlite_booleans_for_polars(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+    csv_path = tmp_path / "sources.csv"
+    sources_table = next(table for table in gen.TABLES if table.name == "sources")
+
+    with sqlite3.connect(db_path) as conn:
+        gen._write_table_csv(conn, sources_table, csv_path)
+
+    rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+
+    assert rows[0]["enabled"] == "true"
+    gen.pl.scan_csv(
+        csv_path,
+        schema_overrides=gen._polars_schema_overrides(sources_table),
+        infer_schema_length=0,
+        low_memory=True,
+        try_parse_dates=True,
+    ).sink_parquet(tmp_path / "sources.parquet")
 
 
 def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
@@ -588,7 +1081,7 @@ def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
             ("payload-1", '{"raw":true}'),
         )
 
-    result = gen._project_sqlite_for_kaggle_indexer(db_path)
+    result = gen._project_sqlite_for_public_upload(db_path)
 
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
@@ -599,21 +1092,30 @@ def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
             "SELECT id, payload FROM job_payload_snapshots ORDER BY id"
         ).fetchall()
 
-    assert result == {
-        "projected_rows": 5,
-        "estimated_bytes_removed": (
-            len("plain text")
-            + len("already compact")
-            + len("<p>plain text</p>")
-            + len('{"title":"Engineer"}')
-            + len('{"raw":true}')
-        ),
-    }
+    assert result == {"projected_columns": 4, "projected_rows": 3}
     assert rows == [
         ("version-1", None, None, None),
         ("version-2", None, None, None),
     ]
     assert payload_rows == [("payload-1", None)]
+
+    rebuild_result = gen._rebuild_sqlite_tables_for_public_upload(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        rebuilt_rows = conn.execute(
+            "SELECT id, description, description_html, job_description "
+            "FROM job_versions ORDER BY id"
+        ).fetchall()
+        rebuilt_payload_rows = conn.execute(
+            "SELECT id, payload FROM job_payload_snapshots ORDER BY id"
+        ).fetchall()
+
+    assert rebuild_result == {"tables": 2, "rows": 3}
+    assert rebuilt_rows == [
+        ("version-1", None, None, None),
+        ("version-2", None, None, None),
+    ]
+    assert rebuilt_payload_rows == [("payload-1", None)]
 
 
 def test_sqlite_upload_truncates_residual_long_text_cells(
@@ -637,7 +1139,7 @@ def test_sqlite_upload_truncates_residual_long_text_cells(
             ("one", "short", "abcdef", '{"abcdef": true}', 1.5),
         )
 
-    result = gen._truncate_sqlite_text_for_kaggle_indexer(
+    result = gen._truncate_sqlite_text_for_public_upload(
         db_path,
         max_chars=5,
         columns=(
@@ -656,6 +1158,148 @@ def test_sqlite_upload_truncates_residual_long_text_cells(
     assert row == ("short", "abcde", '{"abc', 1.5)
 
 
+def test_data_artifact_writer_restores_derived_child_tables_from_parquet(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "preview.sqlite"
+    parquet_dir = tmp_path / gen.PARQUET_DIR
+    parquet_dir.mkdir(parents=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE job_version_bullets (
+                id TEXT,
+                job_version_id TEXT,
+                kind TEXT,
+                ordinal INTEGER,
+                text TEXT
+            )
+            """
+        )
+    gen.pl.DataFrame(
+        {
+            "id": ["bullet-1"],
+            "job_version_id": ["version-1"],
+            "kind": ["responsibility"],
+            "ordinal": [0],
+            "text": ["Build products."],
+        }
+    ).write_parquet(parquet_dir / "job_version_bullets.parquet")
+
+    result = gen._restore_derived_sqlite_tables_from_export_dir(
+        db_path,
+        parquet_dir,
+        table_names=("job_version_bullets",),
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT * FROM job_version_bullets").fetchall()
+
+    assert result == {"job_version_bullets": 1}
+    assert rows == [("bullet-1", "version-1", "responsibility", 0, "Build products.")]
+
+
+def test_data_artifact_writer_backfills_version_child_tables_from_json(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "preview.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE job_versions (
+                id TEXT PRIMARY KEY,
+                locations TEXT,
+                responsibilities TEXT,
+                qualifications TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE job_version_locations (
+                id TEXT,
+                job_version_id TEXT,
+                ordinal INTEGER,
+                label TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE job_version_bullets (
+                id TEXT,
+                job_version_id TEXT,
+                kind TEXT,
+                ordinal INTEGER,
+                text TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO job_versions VALUES (?, ?, ?, ?)",
+            (
+                "version-1",
+                '["New York","Remote"]',
+                '["Build products."]',
+                '["Write Python."]',
+            ),
+        )
+
+    result = gen._backfill_sqlite_version_child_tables(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        locations = conn.execute(
+            """
+            SELECT id, job_version_id, ordinal, label
+            FROM job_version_locations
+            ORDER BY ordinal
+            """
+        ).fetchall()
+        bullets = conn.execute(
+            """
+            SELECT id, job_version_id, kind, ordinal, text
+            FROM job_version_bullets
+            ORDER BY kind, ordinal
+            """
+        ).fetchall()
+
+    assert result == {
+        "versionsExamined": 1,
+        "locationsInserted": 2,
+        "bulletsInserted": 2,
+    }
+    assert locations == [
+        (
+            gen.stable_id("version-1", "location", "0", "New York"),
+            "version-1",
+            0,
+            "New York",
+        ),
+        (
+            gen.stable_id("version-1", "location", "1", "Remote"),
+            "version-1",
+            1,
+            "Remote",
+        ),
+    ]
+    assert bullets == [
+        (
+            gen.stable_id("version-1", "qualification", "0", "Write Python."),
+            "version-1",
+            "qualification",
+            0,
+            "Write Python.",
+        ),
+        (
+            gen.stable_id("version-1", "responsibility", "0", "Build products."),
+            "version-1",
+            "responsibility",
+            0,
+            "Build products.",
+        ),
+    ]
+
+
 def test_local_data_artifact_writer_restores_projected_columns_from_parquet(
     tmp_path: Path,
 ) -> None:
@@ -663,11 +1307,30 @@ def test_local_data_artifact_writer_restores_projected_columns_from_parquet(
     parquet_dir = tmp_path / gen.PARQUET_DIR
     parquet_dir.mkdir(parents=True)
     with sqlite3.connect(db_path) as conn:
-        conn.execute('CREATE TABLE boards ("key" TEXT PRIMARY KEY, raw_payload TEXT)')
+        conn.execute(
+            """
+            CREATE TABLE sources (
+                "key" TEXT PRIMARY KEY,
+                raw_metadata TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE boards (
+                "key" TEXT PRIMARY KEY,
+                source_board_keys TEXT,
+                markets TEXT,
+                locations TEXT,
+                raw_payload TEXT
+            )
+            """
+        )
         conn.execute(
             """
             CREATE TABLE job_versions (
                 id TEXT PRIMARY KEY,
+                locations TEXT,
                 description TEXT,
                 description_html TEXT,
                 job_description TEXT,
@@ -681,17 +1344,35 @@ def test_local_data_artifact_writer_restores_projected_columns_from_parquet(
         conn.execute(
             "CREATE TABLE job_payload_snapshots (id TEXT PRIMARY KEY, payload TEXT)"
         )
-        conn.execute("INSERT INTO boards VALUES ('board-1', NULL)")
+        conn.execute("INSERT INTO sources VALUES ('source-1', ?)", ('{"bad":',))
         conn.execute(
-            "INSERT INTO job_versions VALUES ('version-1', NULL, NULL, NULL, NULL, NULL, NULL, NULL)"
+            "INSERT INTO boards VALUES ('board-1', ?, ?, ?, NULL)",
+            ('{"bad":', '["AI"', '["Remote"'),
+        )
+        conn.execute(
+            "INSERT INTO job_versions VALUES ('version-1', ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL)",
+            ('["Remote"',),
         )
         conn.execute("INSERT INTO job_payload_snapshots VALUES ('payload-1', NULL)")
     gen.pl.DataFrame(
-        {"key": ["board-1"], "raw_payload": ['{"board": true}']}
+        {
+            "key": ["source-1"],
+            "raw_metadata": ['{"restored": true}'],
+        }
+    ).write_parquet(parquet_dir / "sources.parquet")
+    gen.pl.DataFrame(
+        {
+            "key": ["board-1"],
+            "source_board_keys": ['{"source-1": "source-1:board-1"}'],
+            "markets": ['["AI", "SaaS"]'],
+            "locations": ['["Remote", "New York"]'],
+            "raw_payload": ['{"board": true}'],
+        }
     ).write_parquet(parquet_dir / "boards.parquet")
     gen.pl.DataFrame(
         {
             "id": ["version-1"],
+            "locations": ['["Remote", "New York"]'],
             "description": ["plain"],
             "description_html": ["<p>plain</p>"],
             "job_description": ['{"plain": true}'],
@@ -701,9 +1382,9 @@ def test_local_data_artifact_writer_restores_projected_columns_from_parquet(
             "compensation": ["salary"],
         }
     ).write_parquet(parquet_dir / "job_versions.parquet")
-    gen.pl.DataFrame(
-        {"id": ["payload-1"], "payload": ['{"raw": true}']}
-    ).write_parquet(parquet_dir / "job_payload_snapshots.parquet")
+    gen.pl.DataFrame({"id": ["payload-1"], "payload": ['{"raw": true}']}).write_parquet(
+        parquet_dir / "job_payload_snapshots.parquet"
+    )
 
     result = gen._restore_projected_sqlite_columns_from_export_dir(
         db_path,
@@ -711,18 +1392,33 @@ def test_local_data_artifact_writer_restores_projected_columns_from_parquet(
     )
 
     with sqlite3.connect(db_path) as conn:
-        board_payload = conn.execute("SELECT raw_payload FROM boards").fetchone()[0]
+        source_metadata = conn.execute("SELECT raw_metadata FROM sources").fetchone()[0]
+        board = conn.execute(
+            "SELECT source_board_keys, markets, locations, raw_payload FROM boards"
+        ).fetchone()
         version = conn.execute(
-            "SELECT description, description_html, job_description, compensation "
+            "SELECT locations, description, description_html, job_description, compensation "
             "FROM job_versions"
         ).fetchone()
-        payload = conn.execute(
-            "SELECT payload FROM job_payload_snapshots"
-        ).fetchone()[0]
+        payload = conn.execute("SELECT payload FROM job_payload_snapshots").fetchone()[
+            0
+        ]
 
-    assert result == {"tables": 3, "rows": 3}
-    assert board_payload == '{"board": true}'
-    assert version == ("plain", "<p>plain</p>", '{"plain": true}', "salary")
+    assert result == {"tables": 6, "rows": 6}
+    assert source_metadata == '{"restored": true}'
+    assert board == (
+        '{"source-1": "source-1:board-1"}',
+        '["AI", "SaaS"]',
+        '["Remote", "New York"]',
+        '{"board": true}',
+    )
+    assert version == (
+        '["Remote", "New York"]',
+        "plain",
+        "<p>plain</p>",
+        '{"plain": true}',
+        "salary",
+    )
     assert payload == '{"raw": true}'
 
 
@@ -743,7 +1439,7 @@ def test_sqlite_schema_normalization_uses_basic_sqlite_affinities(
             """
         )
 
-    updated = gen._normalize_sqlite_schema_for_kaggle_indexer(db_path)
+    updated = gen._normalize_sqlite_schema_for_public_upload(db_path)
 
     with sqlite3.connect(db_path) as conn:
         ddl = conn.execute(
@@ -762,7 +1458,7 @@ def test_sqlite_schema_normalization_uses_basic_sqlite_affinities(
     assert "REAL" in ddl
 
 
-def test_sqlite_upload_rebuilds_plain_tables_for_kaggle_indexer(
+def test_sqlite_upload_rebuilds_plain_tables_for_public_upload(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "plain.sqlite"
@@ -793,7 +1489,7 @@ def test_sqlite_upload_rebuilds_plain_tables_for_kaggle_indexer(
             (json.dumps({"ok": True}),),
         )
 
-    result = gen._rebuild_sqlite_tables_for_kaggle_indexer(db_path)
+    result = gen._rebuild_sqlite_tables_for_public_upload(db_path)
 
     with sqlite3.connect(db_path) as conn:
         ddl = {
@@ -819,8 +1515,9 @@ def test_sqlite_upload_rebuilds_plain_tables_for_kaggle_indexer(
 def test_skill_backfill_uses_batched_keyset_pagination() -> None:
     source = SCRIPT_PATH.read_text(encoding="utf-8")
     body = source[
-        source.index("def _backfill_sqlite_skill_tables") :
-        source.index("def _extract_version_skills")
+        source.index("def _backfill_sqlite_skill_tables") : source.index(
+            "def _extract_version_skills"
+        )
     ]
 
     assert "LIMIT ? OFFSET ?" not in body
@@ -1039,6 +1736,14 @@ def test_generated_kaggle_upload_root_has_only_public_data_files() -> None:
         gen.NB_FILE,
         f"starter/{gen.STARTER_NB_FILE}",
         "starter/kernel-metadata.json",
+        *{
+            f"examples/{spec.slug}/{spec.code_file}"
+            for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS
+        },
+        *{
+            f"examples/{spec.slug}/kernel-metadata.json"
+            for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS
+        },
         gen.DB_FILE,
         *{f"{gen.CSV_DIR}/{table.name}.csv" for table in gen.TABLES},
         *{f"{gen.PARQUET_DIR}/{table.name}.parquet" for table in gen.TABLES},
@@ -1082,6 +1787,12 @@ def test_public_upload_stage_excludes_private_and_manager_files(tmp_path: Path) 
     starter_dir.mkdir()
     (starter_dir / "kernel-metadata.json").write_text("{}\n", encoding="utf-8")
     (starter_dir / gen.STARTER_NB_FILE).write_text("{}\n", encoding="utf-8")
+    examples_dir = bundle_dir / "examples"
+    for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
+        notebook_dir = examples_dir / spec.slug
+        notebook_dir.mkdir(parents=True)
+        (notebook_dir / "kernel-metadata.json").write_text("{}\n", encoding="utf-8")
+        (notebook_dir / spec.code_file).write_text("{}\n", encoding="utf-8")
 
     upload_dir = tmp_path / "upload"
     gen._stage_public_upload_dir(bundle_dir, upload_dir)
@@ -1103,8 +1814,47 @@ def test_public_upload_stage_excludes_private_and_manager_files(tmp_path: Path) 
     assert gen.NB_FILE not in actual_files
     assert "starter/kernel-metadata.json" not in actual_files
     assert f"starter/{gen.STARTER_NB_FILE}" not in actual_files
+    for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
+        assert f"examples/{spec.slug}/kernel-metadata.json" not in actual_files
+        assert f"examples/{spec.slug}/{spec.code_file}" not in actual_files
     assert not (actual_files & set(gen.PRIVATE_EVIDENCE_FILES))
     assert not (actual_files & set(gen.PRIVATE_METADATA_FILES))
+
+
+def test_private_upload_prune_removes_runtime_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "dataset-metadata.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / gen.DATASET_IMAGE_FILE).write_bytes(b"image")
+    (tmp_path / gen.DB_FILE).write_bytes(b"SQLite format 3\x00")
+    for relative_path in (
+        gen.PRIVATE_EVIDENCE_FILES
+        + gen.PRIVATE_METADATA_FILES
+        + gen.PRIVATE_UPLOAD_RUNTIME_FILES
+    ):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+    for relative_dir in gen.PRIVATE_UPLOAD_RUNTIME_DIRS:
+        path = tmp_path / relative_dir
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "private.txt").write_text("private\n", encoding="utf-8")
+    for suffix in gen.SQLITE_SIDECAR_SUFFIXES:
+        (tmp_path / f"{gen.DB_FILE}{suffix}").write_text("sidecar\n", encoding="utf-8")
+
+    gen._prune_private_upload_files(tmp_path)
+
+    assert (tmp_path / "dataset-metadata.json").exists()
+    assert (tmp_path / gen.DATASET_IMAGE_FILE).exists()
+    assert (tmp_path / gen.DB_FILE).exists()
+    for relative_path in (
+        gen.PRIVATE_EVIDENCE_FILES
+        + gen.PRIVATE_METADATA_FILES
+        + gen.PRIVATE_UPLOAD_RUNTIME_FILES
+    ):
+        assert not (tmp_path / relative_path).exists()
+    for relative_dir in gen.PRIVATE_UPLOAD_RUNTIME_DIRS:
+        assert not (tmp_path / relative_dir).exists()
+    for suffix in gen.SQLITE_SIDECAR_SUFFIXES:
+        assert not (tmp_path / f"{gen.DB_FILE}{suffix}").exists()
 
 
 def test_public_upload_stage_prefers_hardlinks() -> None:
@@ -1114,12 +1864,79 @@ def test_public_upload_stage_prefers_hardlinks() -> None:
     assert "shutil.copy2" in source
 
 
+def test_runtime_generator_stage_is_minimal(tmp_path: Path) -> None:
+    upload_dir = tmp_path / "runtime-upload"
+
+    gen._stage_runtime_generator_dir(upload_dir)
+
+    actual_files = {
+        path.relative_to(upload_dir).as_posix()
+        for path in upload_dir.rglob("*")
+        if path.is_file()
+    }
+    metadata = json.loads((upload_dir / "dataset-metadata.json").read_text())
+
+    assert actual_files == {"dataset-metadata.json", gen.RUNTIME_GENERATOR_SCRIPT_FILE}
+    assert metadata["id"] == gen.RUNTIME_GENERATOR_DATASET_ID
+    assert metadata["isPrivate"] is True
+    assert metadata["licenses"] == [{"name": gen.DATASET_LICENSE}]
+    assert metadata["resources"] == [
+        {
+            "path": gen.RUNTIME_GENERATOR_SCRIPT_FILE,
+            "description": (
+                "OpenOppsDB Kaggle metadata, bundle, quality gate, staging, "
+                "and live metadata repair generator used by the manager "
+                "notebook runtime."
+            ),
+        }
+    ]
+    assert not (actual_files & set(gen.PUBLIC_UPLOAD_DATA_FILES))
+    assert not (actual_files & set(gen.PRIVATE_EVIDENCE_FILES))
+    assert not (actual_files & set(gen.PRIVATE_METADATA_FILES))
+    assert gen.NB_FILE not in actual_files
+    assert gen.STARTER_NB_FILE not in actual_files
+    assert gen.DATAPACKAGE_FILE not in actual_files
+
+
+def test_generator_cli_stages_runtime_generator_and_exits(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_dir = tmp_path / "output"
+    upload_dir = tmp_path / "runtime-upload"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_kaggle_metadata.py",
+            "--output-dir",
+            str(output_dir),
+            "--stage-runtime-generator-dir",
+            str(upload_dir),
+        ],
+    )
+
+    gen.main()
+
+    assert not output_dir.exists()
+    assert sorted(path.name for path in upload_dir.iterdir()) == [
+        "dataset-metadata.json",
+        gen.RUNTIME_GENERATOR_SCRIPT_FILE,
+    ]
+
+
 def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     justfile = (repo_root / "Justfile").read_text(encoding="utf-8")
 
     assert "--stage-public-upload-dir" in justfile
+    assert "--stage-runtime-generator-dir" in justfile
     assert 'kaggle := "uv run --with kaggle kaggle"' in justfile
+    assert "kaggle-runtime-generator-create:" in justfile
+    assert (
+        'kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator":'
+        in justfile
+    )
     assert '{{ kaggle }} datasets create -p "$upload_dir"' in justfile
     assert '{{ kaggle }} datasets version -p "$upload_dir"' in justfile
     assert "{{ kaggle }} datasets status wyattowalsh/openoppsdb" in justfile
@@ -1132,15 +1949,259 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     assert "kagglehub-live-readback" in justfile
     assert "scripts/verify_kagglehub_readback.py" in justfile
     assert "kagglehub[polars-datasets]" in justfile
-    assert '${dataset#dataset=}' in justfile
-    assert '${dataset#version=}' in justfile
-    assert '${version#version=}' in justfile
+    assert "kaggle-example-notebooks-push timeout=\"3600\":" in justfile
+    assert "kaggle-example-notebooks-status:" in justfile
+    assert "kaggle-example-notebooks-pull-check:" in justfile
+    assert "kaggle-example-notebooks-files page_size=\"200\":" in justfile
+    assert "scripts/verify_kaggle_notebook_pullback.py" in justfile
+    assert "kaggle/examples/advanced-usage" in justfile
+    assert "kaggle/examples/hiring-market-map" in justfile
+    assert "kaggle/examples/skills-radar" in justfile
+    assert gen.ADVANCED_NB_ID in justfile
+    assert gen.HIRING_MARKET_NB_ID in justfile
+    assert gen.SKILLS_RADAR_NB_ID in justfile
+    assert "${dataset#dataset=}" in justfile
+    assert "${dataset#version=}" in justfile
+    assert "${version#version=}" in justfile
     assert (
         "kaggle-live-verify: kaggle-live-status kaggle-live-files "
         "kagglehub-live-readback"
     ) in justfile
+    assert (
+        "kaggle-example-notebooks-status kaggle-example-notebooks-pull-check"
+        in justfile
+    )
     assert "kaggle datasets create -p kaggle" not in justfile
     assert "kaggle datasets version -p kaggle" not in justfile
+
+
+def test_generator_cli_orchestrates_manager_runtime_bundle(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_dir = tmp_path / "output"
+    upload_dir = tmp_path / "upload"
+    data_db = tmp_path / gen.DB_FILE
+    sync_metrics = tmp_path / gen.SYNC_METRICS_FILE
+    status_json = tmp_path / gen.STATUS_FILE
+    coverage_json = tmp_path / gen.COVERAGE_FILE
+    quality_report = tmp_path / gen.SNAPSHOT_QUALITY_FILE
+    data_db.write_bytes(b"SQLite format 3\x00")
+    sync_metrics.write_text("{}\n", encoding="utf-8")
+    status_json.write_text("{}\n", encoding="utf-8")
+    coverage_json.write_text("{}\n", encoding="utf-8")
+    calls: list[tuple[str, tuple, dict]] = []
+
+    def record(name: str):
+        def inner(*args, **kwargs):
+            calls.append((name, args, kwargs))
+            if name == "quality":
+                kwargs["report_path"].write_text(
+                    '{"status":"pass"}\n', encoding="utf-8"
+                )
+
+        return inner
+
+    monkeypatch.setattr(gen, "_write_data_artifacts", record("data"))
+    monkeypatch.setattr(gen, "_write_dataset_image", record("image"))
+    monkeypatch.setattr(gen, "_write_snapshot_quality_report", record("quality"))
+    monkeypatch.setattr(gen, "_prune_private_upload_files", record("prune"))
+    monkeypatch.setattr(gen, "_stage_public_upload_dir", record("stage"))
+    monkeypatch.setattr(gen, "_wait_live_dataset_ready", record("wait"))
+    monkeypatch.setattr(gen, "_update_live_file_metadata", record("live"))
+    monkeypatch.setattr(gen, "_write_manager_notebook", record("manager"))
+    monkeypatch.setattr(gen, "_write_starter_notebook", record("starter"))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_kaggle_metadata.py",
+            "--output-dir",
+            str(output_dir),
+            "--data-db",
+            str(data_db),
+            "--mutate-data-db-for-upload",
+            "--sync-metrics",
+            str(sync_metrics),
+            "--status-json",
+            str(status_json),
+            "--coverage-json",
+            str(coverage_json),
+            "--quality-report",
+            str(quality_report),
+            "--prune-private-upload-files",
+            "--stage-public-upload-dir",
+            str(upload_dir),
+            "--skip-notebooks",
+            "--wait-live-dataset-ready",
+            "--wait-live-dataset-min-version",
+            "37",
+            "--wait-live-dataset-timeout-seconds",
+            "12",
+            "--wait-live-dataset-poll-seconds",
+            "3",
+            "--update-live-file-metadata",
+            "--live-file-metadata-kaggle-auth",
+            "--live-file-metadata-sqlite-timeout-seconds",
+            "4",
+            "--live-file-metadata-sqlite-poll-seconds",
+            "2",
+        ],
+    )
+
+    gen.main()
+
+    names = [name for name, _, _ in calls]
+    assert names == ["data", "image", "quality", "prune", "stage", "wait", "live"]
+    assert calls[0][1] == (output_dir, data_db)
+    assert calls[0][2] == {"mutate_data_db_for_upload": True}
+    assert calls[2][2]["report_path"] == quality_report
+    assert calls[4][1] == (output_dir, upload_dir)
+    assert calls[5][1] == (gen.DATASET_ID,)
+    assert calls[5][2] == {
+        "min_version": 37,
+        "timeout_seconds": 12.0,
+        "poll_seconds": 3.0,
+    }
+    assert calls[6][1] == (output_dir / "dataset-metadata.json",)
+    assert calls[6][2] == {
+        "use_browser_cookies": False,
+        "use_kaggle_auth": True,
+        "sqlite_index_timeout_seconds": 4.0,
+        "sqlite_index_poll_seconds": 2.0,
+    }
+
+
+def test_live_file_metadata_can_use_kaggle_auth_repair(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    metadata_path = tmp_path / "dataset-metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "id": gen.DATASET_ID,
+                "title": "openoppsdb",
+                "subtitle": "",
+                "description": "desc",
+                "isPrivate": False,
+                "licenses": [{"name": gen.DATASET_LICENSE}],
+                "keywords": [],
+                "expectedUpdateFrequency": "daily",
+                "userSpecifiedSources": "",
+                "resources": [{"path": gen.DB_FILE, "description": "db"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeKaggleClient:
+        def __enter__(self):
+            return types.SimpleNamespace(
+                datasets=types.SimpleNamespace(
+                    dataset_api_client=types.SimpleNamespace(
+                        update_dataset_metadata=lambda request: types.SimpleNamespace(
+                            errors=[]
+                        )
+                    )
+                )
+            )
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    class FakeKaggleApi:
+        def authenticate(self) -> None:
+            pass
+
+        def _new_license(self, name: str) -> str:
+            return name
+
+        def build_kaggle_client(self) -> FakeKaggleClient:
+            return FakeKaggleClient()
+
+    kaggle_api_module = types.ModuleType("kaggle.api.kaggle_api_extended")
+    kaggle_api_module.KaggleApi = FakeKaggleApi
+    dataset_api_service_module = types.ModuleType(
+        "kagglesdk.datasets.types.dataset_api_service"
+    )
+    dataset_api_service_module.ApiUpdateDatasetMetadataRequest = type(
+        "ApiUpdateDatasetMetadataRequest",
+        (),
+        {},
+    )
+    dataset_types_module = types.ModuleType("kagglesdk.datasets.types.dataset_types")
+    dataset_types_module.DatasetSettings = type("DatasetSettings", (), {})
+    dataset_types_module.DatasetSettingsFile = type("DatasetSettingsFile", (), {})
+    dataset_types_module.DatasetSettingsFileColumn = type(
+        "DatasetSettingsFileColumn",
+        (),
+        {},
+    )
+    monkeypatch.setitem(sys.modules, "kaggle", types.ModuleType("kaggle"))
+    monkeypatch.setitem(sys.modules, "kaggle.api", types.ModuleType("kaggle.api"))
+    monkeypatch.setitem(sys.modules, "kagglesdk", types.ModuleType("kagglesdk"))
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets",
+        types.ModuleType("kagglesdk.datasets"),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets.types",
+        types.ModuleType("kagglesdk.datasets.types"),
+    )
+    monkeypatch.setitem(
+        sys.modules, "kaggle.api.kaggle_api_extended", kaggle_api_module
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets.types.dataset_api_service",
+        dataset_api_service_module,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets.types.dataset_types",
+        dataset_types_module,
+    )
+    calls: list[tuple[dict, float, float]] = []
+
+    def fake_kaggle_auth(
+        metadata, *, sqlite_index_timeout_seconds, sqlite_index_poll_seconds
+    ):
+        calls.append(
+            (metadata, sqlite_index_timeout_seconds, sqlite_index_poll_seconds)
+        )
+
+    monkeypatch.setattr(
+        gen,
+        "_update_live_databundle_metadata_with_kaggle_auth",
+        fake_kaggle_auth,
+    )
+
+    gen._update_live_file_metadata(
+        metadata_path,
+        use_kaggle_auth=True,
+        sqlite_index_timeout_seconds=4,
+        sqlite_index_poll_seconds=2,
+    )
+
+    assert calls == [
+        (
+            json.loads(metadata_path.read_text(encoding="utf-8")),
+            4,
+            2,
+        )
+    ]
+
+
+def test_kaggle_basic_auth_header_reads_environment(monkeypatch) -> None:
+    monkeypatch.setenv("KAGGLE_USERNAME", "user")
+    monkeypatch.setenv("KAGGLE_KEY", "key")
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
+
+    assert gen._kaggle_basic_auth_header() == "Basic dXNlcjprZXk="
 
 
 def test_sqlite_table_metadata_repair_updates_indexed_kaggle_tables() -> None:
@@ -1202,7 +2263,9 @@ def test_sqlite_table_metadata_repair_updates_indexed_kaggle_tables() -> None:
     assert board_key["extendedType"] == "ID"
 
 
-def test_sqlite_table_metadata_repair_fails_when_kaggle_has_not_indexed_sqlite() -> None:
+def test_sqlite_table_metadata_repair_fails_when_kaggle_has_not_indexed_sqlite() -> (
+    None
+):
     def post(route: str, body: dict) -> dict:
         raise AssertionError(route)
 
@@ -1213,9 +2276,34 @@ def test_sqlite_table_metadata_repair_fails_when_kaggle_has_not_indexed_sqlite()
             {"path": "files/openoppsdb.sqlite"},
         )
     except RuntimeError as exc:
-        assert "Kaggle SQLite indexer did not index openoppsdb.sqlite" in str(exc)
+        assert "Kaggle did not expose sqliteInfo.tables" in str(exc)
     else:
         raise AssertionError("Expected missing sqliteInfo to fail")
+
+
+def test_sqlite_table_metadata_wait_returns_blocker_when_unindexed() -> None:
+    def post(route: str, body: dict) -> dict:
+        raise AssertionError(route)
+
+    def refresh_file_info() -> dict:
+        raise AssertionError("refresh should not run after an immediate timeout")
+
+    table_count, column_count, rating, blocker = (
+        gen._update_sqlite_table_metadata_when_indexed(
+            post,
+            {"datasetId": 1, "databundleVersionId": 2},
+            {"path": "files/openoppsdb.sqlite"},
+            refresh_file_info=refresh_file_info,
+            timeout_seconds=0,
+            poll_seconds=1,
+        )
+    )
+
+    assert table_count == 0
+    assert column_count == 0
+    assert rating == {}
+    assert blocker is not None
+    assert "Kaggle did not expose sqliteInfo.tables" in blocker
 
 
 def test_wait_live_dataset_ready_requires_next_ready_version(monkeypatch) -> None:
@@ -1274,6 +2362,125 @@ def test_sqlite_metadata_tables_store_table_and_column_descriptions(
     assert jobs["table_description"] == "Stable job identities and lifecycle state."
     assert job_column["column_title"] == "Board Key"
     assert job_column["column_description"] == "Board key this job belongs to."
+    assert job_column["operational_nullable"] == 0
+    assert job_column["public_sqlite_value_status"] == "full"
+    assert json.loads(job_column["full_export_paths_json"]) == [
+        "exports/csv/jobs.csv",
+        "exports/parquet/jobs.parquet",
+    ]
+    assert json.loads(job_column["relationship_json"]) == {
+        "joinHint": None,
+        "primaryKey": False,
+        "referencedBy": [],
+        "references": [
+            {
+                "column": "key",
+                "nullable": False,
+                "onDelete": "CASCADE",
+                "table": "boards",
+            }
+        ],
+    }
+
+
+def test_public_sqlite_integrity_checks_table_columns_and_relationships(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, job_versions=1)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET current_version_id = 'missing-version'")
+        conn.commit()
+
+    report = gen._sqlite_snapshot_report(db_path)
+
+    assert report["missingColumnErrors"] == []
+    assert report["extraColumnErrors"] == []
+    assert "jobs.current_version_id->job_versions.id:1" in report["orphanErrors"]
+
+
+def test_snapshot_quality_report_blocks_null_required_relationships(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET board_key = NULL WHERE id = 'job-1'")
+        conn.commit()
+
+    sqlite_report = gen._sqlite_snapshot_report(db_path)
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert "jobs.board_key->boards.key:1" in sqlite_report["orphanErrors"]
+    assert (
+        "sqlite_orphan_error:jobs.board_key->boards.key:1" in report["hardBlockers"]
+    )
+
+
+def test_snapshot_quality_report_blocks_null_public_sqlite_primary_keys(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET id = NULL WHERE id = 'job-1'")
+        conn.commit()
+
+    sqlite_report = gen._sqlite_snapshot_report(db_path)
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert "jobs.pk:1" in sqlite_report["nullKeyErrors"]
+    assert "sqlite_null_key_error:jobs.pk:1" in report["hardBlockers"]
+    assert "jobs.pk:1" not in sqlite_report["duplicateErrors"]
+
+
+def test_public_sqlite_integrity_blocks_missing_model_columns(tmp_path: Path) -> None:
+    db_path = tmp_path / gen.DB_FILE
+    with sqlite3.connect(db_path) as conn:
+        for table in gen.DATA_TABLES:
+            conn.execute(f'CREATE TABLE "{table.name}" (row_id INTEGER)')
+    gen._write_sqlite_metadata(db_path)
+
+    report = gen._sqlite_snapshot_report(db_path)
+
+    assert "sources.key" in report["missingColumnErrors"]
+    assert "sources.row_id" in report["extraColumnErrors"]
+
+
+def test_public_bundle_prunes_stale_board_provider_routes(tmp_path: Path) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO board_providers (
+                id, source_key, board_key, provider_id, support_level
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            ("orphan-route", "source-1", "missing-board", "greenhouse", "jobs"),
+        )
+        conn.commit()
+
+    assert gen._prune_orphan_board_provider_routes(db_path) == 1
+    report = gen._sqlite_snapshot_report(db_path)
+
+    assert report["orphanErrors"] == []
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM board_providers WHERE id = 'orphan-route'"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_snapshot_quality_report_passes_for_complete_snapshot(tmp_path: Path) -> None:
@@ -1347,6 +2554,36 @@ def test_snapshot_quality_report_blocks_empty_skill_tables(tmp_path: Path) -> No
     assert report["status"] == "fail"
     assert "missing_job_version_skill_rows" in report["hardBlockers"]
     assert "missing_job_version_skill_keyword_rows" in report["hardBlockers"]
+
+
+def test_snapshot_quality_report_uses_parquet_counts_for_sqlite_preview_tables(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, job_versions=1)
+    parquet_dir = tmp_path / gen.PARQUET_DIR
+    gen.pl.DataFrame({"row_id": [1]}).write_parquet(
+        parquet_dir / "job_version_skills.parquet"
+    )
+    gen.pl.DataFrame({"row_id": [1]}).write_parquet(
+        parquet_dir / "job_version_skill_keywords.parquet"
+    )
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "pass"
+    assert report["hardBlockers"] == []
+    assert report["counts"]["job_version_skills"] == 1
+    assert report["counts"]["job_version_skill_keywords"] == 1
+    assert report["parquetCounts"] == {
+        "job_version_skill_keywords": 1,
+        "job_version_skills": 1,
+    }
 
 
 def test_snapshot_quality_report_allows_documented_empty_snapshot(
@@ -1444,47 +2681,85 @@ def _write_quality_bundle(
     db_path = output_dir / gen.DB_FILE
     with sqlite3.connect(db_path) as conn:
         for table in gen.DATA_TABLES:
-            extra_columns = {
-                "sources": "enabled INTEGER",
-                "jobs": "status TEXT",
-                "board_providers": "support_level TEXT",
-                "job_sync_runs": "success INTEGER",
-            }.get(table.name)
-            columns = "row_id INTEGER"
-            if extra_columns:
-                columns = f"{columns}, {extra_columns}"
-            conn.execute(f'CREATE TABLE "{table.name}" ({columns})')
-        conn.executemany(
-            "INSERT INTO sources (enabled) VALUES (1)",
-            [() for _ in range(enabled_sources)],
+            columns = ", ".join(
+                f"{_quote_identifier(column)} TEXT"
+                for column in table.model.model_fields
+            )
+            conn.execute(f"CREATE TABLE {_quote_identifier(table.name)} ({columns})")
+
+        def insert_rows(
+            table_name: str,
+            columns: tuple[str, ...],
+            rows: list[tuple[object, ...]],
+        ) -> None:
+            if not rows:
+                return
+            column_sql = ", ".join(_quote_identifier(column) for column in columns)
+            placeholders = ", ".join("?" for _ in columns)
+            conn.executemany(
+                f"INSERT INTO {_quote_identifier(table_name)} ({column_sql}) "
+                f"VALUES ({placeholders})",
+                rows,
+            )
+
+        insert_rows(
+            "sources",
+            ("key", "enabled"),
+            [(f"source-{index}", 1) for index in range(1, enabled_sources + 1)],
         )
-        conn.executemany(
-            "INSERT INTO boards (row_id) VALUES (1)",
-            [() for _ in range(boards)],
+        insert_rows(
+            "boards",
+            ("key", "source_key"),
+            [(f"board-{index}", "source-1") for index in range(1, boards + 1)],
         )
-        conn.executemany(
-            "INSERT INTO board_providers (support_level) VALUES ('jobs')",
-            [() for _ in range(routes)],
+        insert_rows(
+            "board_providers",
+            ("id", "source_key", "board_key", "provider_id", "support_level"),
+            [
+                (f"route-{index}", "source-1", "board-1", "greenhouse", "jobs")
+                for index in range(1, routes + 1)
+            ],
         )
-        conn.executemany(
-            "INSERT INTO jobs (status) VALUES ('open')",
-            [() for _ in range(jobs)],
+        current_version_id = "version-1" if job_versions else None
+        insert_rows(
+            "jobs",
+            ("id", "board_key", "status", "current_version_id"),
+            [
+                (f"job-{index}", "board-1", "open", current_version_id)
+                for index in range(1, jobs + 1)
+            ],
         )
-        conn.executemany(
-            "INSERT INTO job_versions (row_id) VALUES (1)",
-            [() for _ in range(job_versions)],
+        insert_rows(
+            "job_versions",
+            ("id", "job_id"),
+            [
+                (f"version-{index}", "job-1" if jobs else None)
+                for index in range(1, job_versions + 1)
+            ],
         )
-        conn.executemany(
-            "INSERT INTO job_version_skills (row_id) VALUES (1)",
-            [() for _ in range(job_version_skills)],
+        insert_rows(
+            "job_version_skills",
+            ("id", "job_version_id", "ordinal"),
+            [
+                (f"skill-{index}", "version-1" if job_versions else None, index - 1)
+                for index in range(1, job_version_skills + 1)
+            ],
         )
-        conn.executemany(
-            "INSERT INTO job_version_skill_keywords (row_id) VALUES (1)",
-            [() for _ in range(job_version_skill_keywords)],
+        insert_rows(
+            "job_version_skill_keywords",
+            ("id", "skill_id"),
+            [
+                (f"keyword-{index}", "skill-1" if job_version_skills else None)
+                for index in range(1, job_version_skill_keywords + 1)
+            ],
         )
-        conn.executemany(
-            "INSERT INTO job_sync_runs (success) VALUES (1)",
-            [() for _ in range(job_sync_runs)],
+        insert_rows(
+            "job_sync_runs",
+            ("id", "board_key", "success"),
+            [
+                (f"sync-run-{index}", "board-1", 1)
+                for index in range(1, job_sync_runs + 1)
+            ],
         )
     gen._write_sqlite_metadata(db_path)
     _write_required_quality_files(output_dir)
@@ -1506,6 +2781,306 @@ def _write_required_quality_files(output_dir: Path) -> None:
         path = output_dir / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}\n", encoding="utf-8")
+
+
+def _notebook_setup_namespace() -> dict[str, object]:
+    setup_source = gen._notebook_setup_source()
+    setup_defs = setup_source.split("\nrequire_kaggle_credentials()\n", 1)[0]
+    namespace: dict[str, object] = {}
+    exec(setup_defs, namespace)
+    return namespace
+
+
+def _insert_representative_app_rows(db_path: Path) -> None:
+    observed_at = "2026-06-16 12:00:00"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (
+                key, url, provider_id, enabled, version, raw_metadata,
+                extra_payload, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "source-1",
+                "https://example.com/jobs",
+                "getro",
+                1,
+                '{"name":"fixture"}',
+                '{"catalog":"fixture"}',
+                "{}",
+                observed_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (
+                key, source_key, source_keys, source_board_keys, remote_id,
+                remote_slug, name, domain, website_url, description, markets,
+                locations, staff_count, num_jobs_hint, raw_payload, extra_payload,
+                synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "board-1",
+                "source-1",
+                '["source-1"]',
+                '["source-1:board-1"]',
+                "remote-board-1",
+                "acme",
+                "Acme",
+                "example.com",
+                "https://example.com",
+                "Fixture board",
+                '["SaaS"]',
+                '["New York"]',
+                10,
+                1,
+                '{"board":true}',
+                "{}",
+                observed_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO board_providers (
+                id, source_key, board_key, provider_id, label, support_level,
+                count_hint, board_url, token, host, tenant, site, last_status,
+                raw_payload, extra_payload, detected_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "board-provider-1",
+                "source-1",
+                "board-1",
+                "greenhouse",
+                "Greenhouse",
+                "jobs",
+                1,
+                "https://boards.greenhouse.io/acme",
+                "acme",
+                None,
+                None,
+                None,
+                "route_ready",
+                '{"provider":true}',
+                "{}",
+                observed_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                id, board_key, provider_id, remote_id, status, current_version_id,
+                current_content_hash, current_payload_hash, first_seen_at,
+                last_seen_at, closed_at, synced_at, extra_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "job-1",
+                "board-1",
+                "greenhouse",
+                "remote-job-1",
+                "open",
+                "version-1",
+                "content-hash-1",
+                "payload-hash-1",
+                observed_at,
+                observed_at,
+                None,
+                observed_at,
+                "{}",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO job_versions (
+                id, job_id, version, content_hash, payload_hash, title,
+                locations, department, team, workplace_type, company,
+                employment_type, description, description_html, remote,
+                compensation, salary, salary_min, salary_max, salary_currency,
+                experience, responsibilities, qualifications, skills,
+                job_description, posting_url, apply_url, posted_at, updated_at,
+                extra_payload, first_seen_at, last_seen_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "version-1",
+                "job-1",
+                1,
+                "content-hash-1",
+                "payload-hash-1",
+                "Software Engineer",
+                '["New York"]',
+                "Engineering",
+                "Platform",
+                "remote",
+                "Acme",
+                "full-time",
+                "Build products.",
+                "<p>Build products.</p>",
+                "remote",
+                '{"currency":"USD"}',
+                "$100k",
+                100000.0,
+                150000.0,
+                "USD",
+                "mid",
+                '["Build"]',
+                '["Python"]',
+                '[{"name":"Python"}]',
+                '{"title":"Software Engineer"}',
+                "https://example.com/jobs/1",
+                "https://example.com/apply/1",
+                "2026-06-16",
+                "2026-06-16",
+                "{}",
+                observed_at,
+                observed_at,
+                observed_at,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO job_version_locations VALUES (?, ?, ?, ?)",
+            ("location-1", "version-1", 0, "New York"),
+        )
+        conn.execute(
+            "INSERT INTO job_version_skills VALUES (?, ?, ?, ?, ?)",
+            ("skill-1", "version-1", 0, "Python", "mid"),
+        )
+        conn.execute(
+            "INSERT INTO job_version_skill_keywords VALUES (?, ?, ?, ?)",
+            ("keyword-1", "skill-1", 0, "python"),
+        )
+        conn.execute(
+            "INSERT INTO job_version_bullets VALUES (?, ?, ?, ?, ?)",
+            ("bullet-1", "version-1", "responsibility", 0, "Build products."),
+        )
+        conn.execute(
+            "INSERT INTO job_payload_snapshots VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "payload-1",
+                "job-1",
+                "listing",
+                "payload-hash-1",
+                '{"raw":true}',
+                observed_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO job_sync_runs (
+                id, board_key, provider_id, synced_at, success, error, job_count,
+                new_count, unchanged_count, changed_count, reopened_count,
+                closed_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "sync-run-1",
+                "board-1",
+                "greenhouse",
+                observed_at,
+                1,
+                None,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO job_sync_observations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "observation-1",
+                "sync-run-1",
+                "job-1",
+                "version-1",
+                "seen",
+                "content-hash-1",
+                "payload-hash-1",
+                observed_at,
+            ),
+        )
+
+
+def _copy_plain_public_snapshot(
+    schema_db: Path,
+    public_db: Path,
+    *,
+    app_table_names: tuple[str, ...],
+) -> None:
+    public_db.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(public_db) as conn:
+        conn.execute(
+            f"ATTACH DATABASE {_quote_sql_literal(schema_db.as_posix())} AS operational"
+        )
+        for table_name in app_table_names:
+            conn.execute(
+                f"CREATE TABLE {_quote_identifier(table_name)} AS "
+                f"SELECT * FROM operational.{_quote_identifier(table_name)}"
+            )
+        conn.execute(
+            """
+            CREATE TABLE openopps_tables (
+                table_name TEXT PRIMARY KEY,
+                table_title TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO openopps_tables VALUES (?, ?)",
+            ("sources", "Sources"),
+        )
+        conn.execute(
+            """
+            CREATE TABLE openopps_columns (
+                table_name TEXT NOT NULL,
+                column_name TEXT NOT NULL,
+                column_title TEXT NOT NULL,
+                PRIMARY KEY (table_name, column_name)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO openopps_columns VALUES (?, ?, ?)",
+            ("sources", "key", "Key"),
+        )
+        conn.commit()
+        conn.execute("DETACH DATABASE operational")
+
+
+def _quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _quote_sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _has_sqlite_index(
+    conn: sqlite3.Connection,
+    table_name: str,
+    columns: tuple[str, ...],
+    *,
+    unique: bool = False,
+) -> bool:
+    indexes = conn.execute(
+        f"PRAGMA index_list({_quote_identifier(table_name)})"
+    ).fetchall()
+    for index in indexes:
+        if unique and not index[2]:
+            continue
+        indexed_columns = tuple(
+            row[2]
+            for row in conn.execute(
+                f"PRAGMA index_info({_quote_identifier(index[1])})"
+            ).fetchall()
+        )
+        if indexed_columns == columns:
+            return True
+    return False
 
 
 def _png_dimensions(path: Path) -> tuple[int, int]:

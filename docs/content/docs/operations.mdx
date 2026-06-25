@@ -189,16 +189,25 @@ OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested
 
 ## OpenOppsDB Kaggle
 
-The generated Kaggle bundle lives in `kaggle/`. It contains `dataset-metadata.json`, `kernel-metadata.json`, the connected `openoppsdb-manager.ipynb` notebook, and generated SQLite/CSV/Parquet artifacts when a data DB is supplied. `dataset-metadata.json` is the Kaggle UI source of truth for public file descriptions and field-level descriptors for every CSV and Parquet export. Full snapshot runs write private `sync_metrics.json`, `status.json`, `coverage.json`, and `snapshot-quality.json` evidence while validating the bundle, then prune those files before publishing. The live dataset recipes stage a temporary upload directory containing only Kaggle dataset control files plus `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`.
+The generated Kaggle bundle lives in `kaggle/`. It contains `dataset-metadata.json`, `kernel-metadata.json`, the connected `openoppsdb-manager.ipynb` notebook, public example notebooks under `kaggle/starter/` and `kaggle/examples/`, and generated SQLite/CSV/Parquet artifacts when a data DB is supplied. `dataset-metadata.json` is the Kaggle UI source of truth for public file descriptions and field-level descriptors for every CSV and Parquet export. `openoppsdb.sqlite` remains directly readable and carries `openopps_tables`/`openopps_columns` metadata for SQLite clients; if Kaggle does not expose nested SQLite table previews for a fresh upload, use the mirrored CSV/Parquet exports for Kaggle-rendered table previews and field metadata. Full snapshot runs write private `sync_metrics.json`, `status.json`, `coverage.json`, and `snapshot-quality.json` evidence while validating the bundle, then prune those files before publishing. The live dataset recipes stage a temporary upload directory containing only Kaggle dataset control files plus `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`; notebooks are pushed as separate Kaggle kernels.
 
 Run the local non-live generation and validation path from the repository root:
 
 ```bash
 just kaggle-meta
+uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, runs the unfiltered `openopps sync --metrics-json` workflow, writes private status and coverage evidence, regenerates metadata, exports every SQLite table to CSV and Parquet, writes a private `snapshot-quality.json`, prunes private evidence from the upload directory, and versions the dataset only when the quality gate passes. The notebook seeds bounded Kaggle runtime defaults for source freshness, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
+For a fresh local SQLite bundle seed, initialize the DB and run top-level source discovery before bundle generation:
+
+```bash
+OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps admin db init
+OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps sync --metrics-json --refresh-cache
+uv run python scripts/generate_kaggle_metadata.py --data-db .tmp/openoppsdb-operational.sqlite
+```
+
+The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, reads public snapshot input from `wyattowalsh/openoppsdb`, downloads a compatible `scripts/generate_kaggle_metadata.py` from the private `wyattowalsh/openoppsdb-manager-runtime` input by default, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, restores projected large columns from prior Parquet exports, rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed, and runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit`. It writes private status and coverage evidence, then delegates skill-table backfill, metadata regeneration, public SQLite metadata tables, CSV/Parquet exports, private `snapshot-quality.json`, evidence pruning, public upload staging, and best-effort live Kaggle file metadata repair to the generator script. Run `just kaggle-live-file-metadata` from a browser-authenticated local maintainer environment after live publishes when the Kaggle DataBundle checklist or column-description score must be repaired authoritatively. Refresh the private runtime dataset with the current generator before pushing the manager. The notebook seeds bounded Kaggle runtime defaults for source freshness, job-route freshness, route limits, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
 
 The scheduled Kaggle notebook environment must expose Kaggle API credentials before the manager starts. Configure `KAGGLE_USERNAME` and `KAGGLE_KEY`, or `KAGGLE_API_TOKEN`, as Kaggle notebook secrets/environment variables; otherwise the manager fails fast before running the expensive sync.
 
@@ -207,12 +216,18 @@ Live deployment remains a local maintainer action with Kaggle CLI credentials:
 ```bash
 just kaggle-dataset-create
 just kaggle-dataset-version "OpenOppsDB daily snapshot"
+just kaggle-runtime-generator-version "OpenOppsDB manager runtime generator"
 just kaggle-notebook-push
+just kaggle-example-notebooks-push
+just kaggle-example-notebooks-status
+just kaggle-example-notebooks-pull-check
 just kaggle-live-verify
 ```
 
-Use `just kaggle-dataset-create` only for the first public upload; use `just kaggle-dataset-version` after the dataset exists. The live write recipes stage a data-only upload directory and wrap the Kaggle CLI with `KAGGLE_API_TOKEN` from `kaggle auth print-access-token`, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when OAuth credentials are unavailable and are intentionally outside CI.
-`just kaggle-notebook-push` also passes a one-hour Kaggle kernel timeout by default; override it with `just kaggle-notebook-push timeout=5400` only for a deliberate longer maintenance run.
+The public example notebooks are generated from the repo source of truth and pushed as separate Kaggle kernels: `wyattowalsh/openoppsdb-starter-notebook`, `wyattowalsh/openoppsdb-advanced-usage`, `wyattowalsh/openoppsdb-hiring-market-map`, and `wyattowalsh/openoppsdb-skills-radar`. They are read-only, internet-disabled, credential-free, and attached only to `wyattowalsh/openoppsdb`. After pushing, run `just kaggle-example-notebooks-pull-check` to pull and verify the live source bundles; `just kaggle-example-notebooks-files page_size=200` lists output files emitted by those notebook runs.
+
+Use `just kaggle-dataset-create` only for the first public upload; use `just kaggle-dataset-version` after the dataset exists. Use `just kaggle-runtime-generator-create` only for the first private manager-runtime upload; use `just kaggle-runtime-generator-version` before pushing the manager notebook after generator changes. The live write recipes stage temporary upload directories and run through the Kaggle CLI, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when Kaggle credentials are unavailable and are intentionally outside CI.
+`just kaggle-notebook-push` and `just kaggle-example-notebooks-push` pass a one-hour Kaggle kernel timeout by default; override their `timeout` argument only for a deliberate longer maintenance run.
 
 ## CI/CD
 

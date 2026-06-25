@@ -15,7 +15,7 @@ except ImportError:  # pragma: no cover - Windows fallback keeps process lock on
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import Engine, create_engine, event, inspect, text
 
 from openopps.settings import OpenOppsSettings
 
@@ -30,6 +30,53 @@ REQUIRED_SQLITE_COLUMNS: dict[str, set[str]] = {
     "job_payload_snapshots": {"job_id", "payload_kind", "payload_hash"},
     "job_sync_runs": {"board_key", "provider_id", "synced_at"},
     "job_sync_observations": {"sync_run_id", "job_id", "observation_kind"},
+}
+EXPECTED_SQLITE_FOREIGN_KEYS: dict[str, set[tuple[str, str, str]]] = {
+    "boards": {("source_key", "sources", "key")},
+    "board_providers": {
+        ("source_key", "sources", "key"),
+        ("board_key", "boards", "key"),
+    },
+    "jobs": {("board_key", "boards", "key")},
+    "job_versions": {("job_id", "jobs", "id")},
+    "job_version_locations": {("job_version_id", "job_versions", "id")},
+    "job_version_skills": {("job_version_id", "job_versions", "id")},
+    "job_version_skill_keywords": {("skill_id", "job_version_skills", "id")},
+    "job_version_bullets": {("job_version_id", "job_versions", "id")},
+    "job_payload_snapshots": {("job_id", "jobs", "id")},
+    "job_sync_runs": {("board_key", "boards", "key")},
+    "job_sync_observations": {
+        ("sync_run_id", "job_sync_runs", "id"),
+        ("job_id", "jobs", "id"),
+        ("job_version_id", "job_versions", "id"),
+    },
+}
+EXPECTED_SQLITE_UNIQUE_INDEXES: dict[str, set[tuple[str, ...]]] = {
+    "boards": {("source_key", "remote_id")},
+    "board_providers": {("source_key", "board_key", "provider_id")},
+    "jobs": {("board_key", "provider_id", "remote_id")},
+    "job_versions": {("job_id", "content_hash"), ("job_id", "version")},
+    "job_version_locations": {("job_version_id", "ordinal", "label")},
+    "job_version_skills": {("job_version_id", "ordinal")},
+    "job_version_skill_keywords": {("skill_id", "ordinal", "keyword")},
+    "job_version_bullets": {("job_version_id", "kind", "ordinal", "text")},
+    "job_payload_snapshots": {("job_id", "payload_kind", "payload_hash")},
+}
+MANAGED_SQLITE_TABLES: set[str] = {
+    "sources",
+    "boards",
+    "board_providers",
+    "jobs",
+    "job_versions",
+    "job_version_locations",
+    "job_version_skills",
+    "job_version_skill_keywords",
+    "job_version_bullets",
+    "job_payload_snapshots",
+    "job_sync_runs",
+    "job_sync_observations",
+    "openopps_tables",
+    "openopps_columns",
 }
 
 
@@ -46,8 +93,24 @@ def upgrade_sqlite_database(settings: OpenOppsSettings) -> None:
         settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
     with _sqlite_upgrade_lock(settings):
+        _validate_existing_sqlite_columns(settings)
         command.upgrade(_alembic_config(settings), ALEMBIC_HEAD)
         _validate_sqlite_schema(settings)
+
+
+def enable_sqlite_foreign_keys(engine: Engine) -> None:
+    """Enable SQLite foreign-key enforcement for every new DB-API connection."""
+
+    if engine.url.get_backend_name() != "sqlite":
+        return
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 
 
 def migration_script_location() -> Path:
@@ -116,6 +179,7 @@ def _process_upgrade_lock(lock_key: str) -> threading.Lock:
 def _validate_sqlite_schema(settings: OpenOppsSettings) -> None:
     connect_args = {"check_same_thread": False}
     engine = create_engine(settings.db_url, connect_args=connect_args)
+    enable_sqlite_foreign_keys(engine)
     try:
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
@@ -133,6 +197,8 @@ def _validate_sqlite_schema(settings: OpenOppsSettings) -> None:
                 f"{table_name}.{column}"
                 for column in sorted(column_names - existing_columns)
             )
+        missing.extend(_missing_sqlite_unique_indexes(inspector))
+        missing.extend(_missing_sqlite_foreign_keys(inspector))
         if missing:
             location = str(settings.sqlite_path or settings.db_url)
             raise DatabaseSchemaError(
@@ -143,5 +209,122 @@ def _validate_sqlite_schema(settings: OpenOppsSettings) -> None:
                 "This usually means a pre-release local SQLite database was stamped "
                 "before the v0.1 schema was finalized."
             )
+        with engine.connect() as connection:
+            foreign_key_enabled = connection.execute(
+                text("PRAGMA foreign_keys")
+            ).scalar()
+            if int(foreign_key_enabled or 0) != 1:
+                raise DatabaseSchemaError("SQLite foreign key enforcement is disabled.")
+            foreign_key_errors = connection.execute(
+                text("PRAGMA foreign_key_check")
+            ).all()
+            if foreign_key_errors:
+                location = str(settings.sqlite_path or settings.db_url)
+                sample = ", ".join(str(tuple(row)) for row in foreign_key_errors[:5])
+                raise DatabaseSchemaError(
+                    "does not pass OpenOpps foreign key validation. "
+                    f"Reset or repair that local DB (path: {location}). "
+                    f"Foreign key errors: {sample}"
+                )
     finally:
         engine.dispose()
+
+
+def _validate_existing_sqlite_columns(settings: OpenOppsSettings) -> None:
+    if settings.sqlite_path is not None and not settings.sqlite_path.exists():
+        return
+    connect_args = {"check_same_thread": False}
+    engine = create_engine(settings.db_url, connect_args=connect_args)
+    try:
+        inspector = inspect(engine)
+        table_names = set(inspector.get_table_names())
+        if "alembic_version" not in table_names:
+            managed_tables = table_names & MANAGED_SQLITE_TABLES
+            if managed_tables:
+                _raise_unstamped_sqlite_database_error(settings, managed_tables)
+            return
+        _validate_required_sqlite_columns(settings, inspector, table_names)
+    finally:
+        engine.dispose()
+
+
+def _raise_unstamped_sqlite_database_error(
+    settings: OpenOppsSettings, table_names: set[str]
+) -> None:
+    location = str(settings.sqlite_path or settings.db_url)
+    sample = ", ".join(sorted(table_names)[:8])
+    if len(table_names) > 8:
+        sample = f"{sample}, ..."
+    raise DatabaseSchemaError(
+        "does not match the OpenOpps v0.1.0 schema. "
+        "Reset that local DB and rerun `openopps admin db init` "
+        f"(path: {location}), or set OPENOPPS_DB_URL to a new SQLite file. "
+        "Existing OpenOpps tables were found without Alembic schema metadata: "
+        f"{sample}. "
+        "If this is a public OpenOppsDB Kaggle snapshot, rehydrate it into a "
+        "fresh operational database instead of running `admin db init` in place."
+    )
+
+
+def _validate_required_sqlite_columns(
+    settings: OpenOppsSettings, inspector, table_names: set[str]
+) -> None:
+    missing: list[str] = []
+    for table_name, column_names in REQUIRED_SQLITE_COLUMNS.items():
+        if table_name not in table_names:
+            missing.extend(f"{table_name}.{column}" for column in sorted(column_names))
+            continue
+        existing_columns = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        missing.extend(
+            f"{table_name}.{column}"
+            for column in sorted(column_names - existing_columns)
+        )
+    if missing:
+        location = str(settings.sqlite_path or settings.db_url)
+        raise DatabaseSchemaError(
+            "does not match the OpenOpps v0.1.0 schema. "
+            "Reset that local DB and rerun `openopps admin db init` "
+            f"(path: {location}), or set OPENOPPS_DB_URL to a new SQLite file. "
+            f"Missing columns: {', '.join(missing)}. "
+            "This usually means a pre-release local SQLite database was stamped "
+            "before the v0.1 schema was finalized."
+        )
+
+
+def _missing_sqlite_unique_indexes(inspector) -> list[str]:
+    missing: list[str] = []
+    for table_name, expected_indexes in EXPECTED_SQLITE_UNIQUE_INDEXES.items():
+        existing = {
+            tuple(item["column_names"])
+            for item in inspector.get_unique_constraints(table_name)
+            if item.get("column_names")
+        }
+        existing.update(
+            tuple(item["column_names"])
+            for item in inspector.get_indexes(table_name)
+            if item.get("unique") and item.get("column_names")
+        )
+        for columns in sorted(expected_indexes):
+            if columns not in existing:
+                missing.append(f"{table_name}.unique({', '.join(columns)})")
+    return missing
+
+
+def _missing_sqlite_foreign_keys(inspector) -> list[str]:
+    missing: list[str] = []
+    for table_name, expected_keys in EXPECTED_SQLITE_FOREIGN_KEYS.items():
+        existing = set()
+        for item in inspector.get_foreign_keys(table_name):
+            constrained = item.get("constrained_columns") or []
+            referred = item.get("referred_columns") or []
+            referred_table = item.get("referred_table")
+            if len(constrained) == 1 and len(referred) == 1 and referred_table:
+                existing.add((constrained[0], referred_table, referred[0]))
+        for column_name, referred_table, referred_column in sorted(expected_keys):
+            if (column_name, referred_table, referred_column) not in existing:
+                missing.append(
+                    f"{table_name}.{column_name}->{referred_table}.{referred_column}"
+                )
+    return missing

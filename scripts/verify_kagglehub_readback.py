@@ -47,54 +47,55 @@ def main() -> None:
     if args.version is not None:
         handle = f"{handle}/versions/{args.version}"
 
-    checks: dict[str, Any] = {"dataset": handle, "files": {}, "sqlite": {}}
+    checks: dict[str, Any] = {
+        "dataset": handle,
+        "files": {},
+        "sqlite": {},
+        "tableCounts": {},
+    }
+    table_counts: dict[str, dict[str, int]] = {table: {} for table in TABLES}
 
-    parquet_checks = {
-        f"exports/parquet/{table}.parquet": {"min_rows": 1} for table in TABLES
-    }
-    parquet_checks["exports/parquet/openopps_tables.parquet"] = {
-        "rows": EXPECTED_TABLES
-    }
-    parquet_checks["exports/parquet/openopps_columns.parquet"] = {
-        "min_rows": EXPECTED_TABLES
-    }
-    csv_checks = {
-        "exports/csv/openopps_tables.csv": {"rows": EXPECTED_TABLES},
-        "exports/csv/openopps_columns.csv": {"min_rows": 1},
-        "exports/csv/sources.csv": {"min_rows": 1},
+    file_checks = {
+        **{
+            f"exports/parquet/{table}.parquet": _table_expectation(table)
+            for table in TABLES
+        },
+        **{f"exports/csv/{table}.csv": _table_expectation(table) for table in TABLES},
     }
 
-    for path, expectation in {**parquet_checks, **csv_checks}.items():
+    for path, expectation in file_checks.items():
         frame = kagglehub.dataset_load(KaggleDatasetAdapter.POLARS, handle, path)
         summary = _summarize_frame(frame)
         _assert_expectation(path, summary, expectation)
         checks["files"][path] = summary
+        table_name = _table_name_from_export_path(path)
+        surface = "parquet" if path.endswith(".parquet") else "csv"
+        table_counts[table_name][surface] = summary["rows"]
 
     if not args.skip_sqlite:
-        sqlite_queries = {
-            "jobs": "select count(*) as rows from jobs",
-            "job_versions": "select count(*) as rows from job_versions",
-            "job_sync_runs": "select count(*) as rows from job_sync_runs",
-            "openopps_tables": "select count(*) as rows from openopps_tables",
-            "openopps_columns": "select count(*) as rows from openopps_columns",
-        }
-        for table_name, query in sqlite_queries.items():
+        for table_name in TABLES:
             frame = kagglehub.dataset_load(
                 KaggleDatasetAdapter.POLARS,
                 handle,
                 "openoppsdb.sqlite",
-                sql_query=query,
+                sql_query=f'select count(*) as rows from "{table_name}"',
             )
             row_count = _single_value(frame, "rows")
-            if table_name == "openopps_tables":
-                if row_count != EXPECTED_TABLES:
-                    raise AssertionError(
-                        f"SQLite {table_name} expected {EXPECTED_TABLES} rows, "
-                        f"found {row_count}."
-                    )
-            elif row_count <= 0:
-                raise AssertionError(f"SQLite {table_name} is empty.")
+            _assert_expectation(
+                f"SQLite {table_name}",
+                {"rows": row_count, "columns": 1},
+                _table_expectation(table_name),
+            )
             checks["sqlite"][table_name] = {"rows": row_count}
+            table_counts[table_name]["sqlite"] = row_count
+
+    for table_name, surface_counts in table_counts.items():
+        if len(set(surface_counts.values())) > 1:
+            raise AssertionError(
+                f"{table_name} row counts differ across public surfaces: "
+                f"{surface_counts}."
+            )
+        checks["tableCounts"][table_name] = surface_counts
 
     print(json.dumps(checks, indent=2, sort_keys=True))
 
@@ -116,6 +117,18 @@ def _summarize_frame(frame: Any) -> dict[str, int]:
             raise TypeError(f"Unsupported KaggleHub frame type: {type(data)!r}")
         height, width = shape
     return {"rows": int(height), "columns": int(width)}
+
+
+def _table_expectation(table_name: str) -> dict[str, int]:
+    if table_name == "openopps_tables":
+        return {"rows": EXPECTED_TABLES}
+    if table_name == "openopps_columns":
+        return {"min_rows": EXPECTED_TABLES}
+    return {"min_rows": 1}
+
+
+def _table_name_from_export_path(path: str) -> str:
+    return path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
 
 
 def _single_value(frame: Any, column: str) -> int:

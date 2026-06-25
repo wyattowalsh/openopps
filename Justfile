@@ -59,6 +59,14 @@ kaggle-bundle-check db="kaggle/openoppsdb.sqlite":
     @db="{{ db }}"; db="${db#db=}"; if [ -f "$db" ]; then uv run python scripts/generate_kaggle_metadata.py --data-db "$db"; else echo "No SQLite DB at $db; validating metadata-only Kaggle bundle."; uv run python scripts/generate_kaggle_metadata.py; fi
     uv run pytest tests/unit/openopps/test_kaggle_metadata.py -q
 
+# Create the private OpenOppsDB manager runtime generator Kaggle dataset.
+kaggle-runtime-generator-create:
+    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" -q -t -r zip
+
+# Version the private OpenOppsDB manager runtime generator Kaggle dataset.
+kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator":
+    @message="{{ message }}"; message="${message#message=}"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip
+
 # Create the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-create:
     @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" --public -q -t -r zip
@@ -78,6 +86,10 @@ kaggle-notebook-push timeout="3600":
 # Push the public OpenOppsDB starter notebook to Kaggle.
 kaggle-starter-notebook-push timeout="3600":
     @timeout="{{ timeout }}"; {{ kaggle }} kernels push -p kaggle/starter --timeout "${timeout#timeout=}"
+
+# Push all public OpenOppsDB example notebooks to Kaggle.
+kaggle-example-notebooks-push timeout="3600":
+    @timeout="{{ timeout }}"; timeout="${timeout#timeout=}"; for dir in kaggle/starter kaggle/examples/advanced-usage kaggle/examples/hiring-market-map kaggle/examples/skills-radar; do {{ kaggle }} kernels push -p "$dir" --timeout "$timeout"; done
 
 # Show live OpenOppsDB dataset status from Kaggle.
 kaggle-live-status:
@@ -107,8 +119,20 @@ kaggle-notebook-files page_size="200":
 kaggle-starter-notebook-status:
     @status="$({{ kaggle }} kernels status wyattowalsh/openoppsdb-starter-notebook)"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'
 
+# Show live OpenOppsDB public example notebook statuses from Kaggle.
+kaggle-example-notebooks-status:
+    @for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do status="$({{ kaggle }} kernels status "$kernel")"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'; done
+
+# Pull and verify live OpenOppsDB public example notebook source bundles from Kaggle.
+kaggle-example-notebooks-pull-check:
+    @tmp_dir="$(mktemp -d)"; trap 'rm -rf "$tmp_dir"' EXIT; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do slug="${kernel#*/}"; mkdir -p "$tmp_dir/$slug"; {{ kaggle }} kernels pull "$kernel" -p "$tmp_dir/$slug" -m >/dev/null; done; uv run python scripts/verify_kaggle_notebook_pullback.py "$tmp_dir"
+
+# List output files emitted by live OpenOppsDB public example notebook runs.
+kaggle-example-notebooks-files page_size="200":
+    @page_size="{{ page_size }}"; page_size="${page_size#page_size=}"; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do echo "== $kernel =="; {{ kaggle }} kernels files "$kernel" --page-size "$page_size"; done
+
 # Run the live non-destructive Kaggle status/file verification commands.
-kaggle-live-verify: kaggle-live-status kaggle-live-files kagglehub-live-readback kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files kaggle-starter-notebook-status
+kaggle-live-verify: kaggle-live-status kaggle-live-files kagglehub-live-readback kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files kaggle-starter-notebook-status kaggle-example-notebooks-status kaggle-example-notebooks-pull-check
 
 # List OpenSpec changes as agent-readable JSON.
 openspec-list:

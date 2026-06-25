@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from hashlib import sha1
 import json
+import os
 from pathlib import Path
 from pprint import pformat
 import re
@@ -16,7 +18,8 @@ import subprocess
 import sys
 import time
 import types
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Callable, Literal, Union, get_args, get_origin
+import urllib.request
 
 import polars as pl
 from pydantic import BaseModel, Field
@@ -38,7 +41,7 @@ from openopps.models import (
     _SKILL_CATALOG,
     extract_job_skills,
 )
-from openopps.utils import slugify
+from openopps.utils import stable_id, slugify
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,15 @@ class Resource:
     tables: tuple[Table, ...] = ()
 
 
+@dataclass(frozen=True)
+class PublicNotebookSpec:
+    slug: str
+    notebook_id: str
+    title: str
+    code_file: str
+    notebook_factory: Callable[[], dict[str, Any]]
+
+
 class OpenOppsTableRow(BaseModel):
     table_name: str = Field(description="SQLite table name.")
     table_title: str = Field(description="Human-readable table label.")
@@ -77,7 +89,24 @@ class OpenOppsColumnRow(BaseModel):
         description="JSON Schema type derived from the model field."
     )
     required: bool = Field(
-        description="Whether the source model marks the column as required."
+        description="Whether the Pydantic boundary model marks the field as required."
+    )
+    operational_nullable: bool = Field(
+        description="Whether the operational SQLite schema allows NULL for this column."
+    )
+    public_sqlite_value_status: str = Field(
+        description=(
+            "How the public SQLite value is represented: full, projected_null, "
+            "preview_truncated_when_long, or generated_metadata."
+        )
+    )
+    full_export_paths_json: str | None = Field(
+        default=None,
+        description="JSON array of CSV/Parquet export paths containing full column values.",
+    )
+    relationship_json: str | None = Field(
+        default=None,
+        description="JSON object describing primary-key and join relationships, when known.",
     )
     source_name: str | None = Field(
         default=None,
@@ -98,6 +127,9 @@ class OpenOppsColumnRow(BaseModel):
 
 
 DATASET_ID = "wyattowalsh/openoppsdb"
+RUNTIME_GENERATOR_DATASET_ID = "wyattowalsh/openoppsdb-manager-runtime"
+RUNTIME_GENERATOR_DATASET_SLUG = "openoppsdb-manager-runtime"
+RUNTIME_GENERATOR_SCRIPT_FILE = "generate_kaggle_metadata.py"
 DATASET_LICENSE = "CC0-1.0"
 DB_FILE = "openoppsdb.sqlite"
 CSV_DIR = "exports/csv"
@@ -113,14 +145,21 @@ NB_FILE = "openoppsdb-manager.ipynb"
 NB_ID = "wyattowalsh/openoppsdb-manager"
 STARTER_NB_FILE = "openoppsdb-starter.ipynb"
 STARTER_NB_ID = "wyattowalsh/openoppsdb-starter-notebook"
+ADVANCED_NB_FILE = "openoppsdb-advanced-usage.ipynb"
+ADVANCED_NB_ID = "wyattowalsh/openoppsdb-advanced-usage"
+HIRING_MARKET_NB_FILE = "openoppsdb-hiring-market-map.ipynb"
+HIRING_MARKET_NB_ID = "wyattowalsh/openoppsdb-hiring-market-map"
+SKILLS_RADAR_NB_FILE = "openoppsdb-skills-radar.ipynb"
+SKILLS_RADAR_NB_ID = "wyattowalsh/openoppsdb-skills-radar"
 DATASET_IMAGE_FILE = "dataset-cover-image.png"
 DATASET_IMAGE_SOURCE = Path("docs/public/social/openoppsdb.png")
 DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[1] / "kaggle"
 DEFAULT_MANAGER_DIR = DEFAULT_DATASET_DIR
 DEFAULT_STARTER_DIR = DEFAULT_DATASET_DIR / "starter"
+DEFAULT_EXAMPLES_DIR = DEFAULT_DATASET_DIR / "examples"
 GENERATOR_SCRIPT_URL = (
-    "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
-    "scripts/generate_kaggle_metadata.py"
+    f"file:///kaggle/input/{RUNTIME_GENERATOR_DATASET_SLUG}/"
+    f"{RUNTIME_GENERATOR_SCRIPT_FILE}"
 )
 DATASET_IMAGE_URL = (
     "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
@@ -138,6 +177,161 @@ SQLITE_PREVIEW_TEXT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("job_versions", "locations"),
     ("sources", "raw_metadata"),
 )
+SQLITE_UPLOAD_PROJECTED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("boards", "raw_payload"),
+    ("job_versions", "description"),
+    ("job_versions", "description_html"),
+    ("job_versions", "job_description"),
+    ("job_versions", "responsibilities"),
+    ("job_versions", "qualifications"),
+    ("job_versions", "skills"),
+    ("job_versions", "compensation"),
+    ("job_payload_snapshots", "payload"),
+)
+SQLITE_UPLOAD_PROJECTED_COLUMN_SET = frozenset(SQLITE_UPLOAD_PROJECTED_COLUMNS)
+SQLITE_PREVIEW_TEXT_COLUMN_SET = frozenset(SQLITE_PREVIEW_TEXT_COLUMNS)
+SQLITE_DERIVED_CHILD_TABLES: tuple[str, ...] = (
+    "job_version_locations",
+    "job_version_skills",
+    "job_version_skill_keywords",
+    "job_version_bullets",
+)
+PUBLIC_SQLITE_VALUE_STATUSES = frozenset(
+    {"full", "projected_null", "preview_truncated_when_long", "generated_metadata"}
+)
+APP_PRIMARY_KEY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "sources": ("key",),
+    "boards": ("key",),
+    "board_providers": ("id",),
+    "jobs": ("id",),
+    "job_versions": ("id",),
+    "job_version_locations": ("id",),
+    "job_version_skills": ("id",),
+    "job_version_skill_keywords": ("id",),
+    "job_version_bullets": ("id",),
+    "job_payload_snapshots": ("id",),
+    "job_sync_runs": ("id",),
+    "job_sync_observations": ("id",),
+    "openopps_tables": ("table_name",),
+    "openopps_columns": ("table_name", "column_name"),
+}
+RELATIONSHIP_REFERENCES: dict[tuple[str, str], tuple[dict[str, object], ...]] = {
+    ("boards", "source_key"): (
+        {"table": "sources", "column": "key", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("board_providers", "source_key"): (
+        {"table": "sources", "column": "key", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("board_providers", "board_key"): (
+        {"table": "boards", "column": "key", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("jobs", "board_key"): (
+        {"table": "boards", "column": "key", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("jobs", "current_version_id"): (
+        {"table": "job_versions", "column": "id", "nullable": True, "onDelete": None},
+    ),
+    ("job_versions", "job_id"): (
+        {"table": "jobs", "column": "id", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("job_version_locations", "job_version_id"): (
+        {
+            "table": "job_versions",
+            "column": "id",
+            "nullable": False,
+            "onDelete": "CASCADE",
+        },
+    ),
+    ("job_version_skills", "job_version_id"): (
+        {
+            "table": "job_versions",
+            "column": "id",
+            "nullable": False,
+            "onDelete": "CASCADE",
+        },
+    ),
+    ("job_version_skill_keywords", "skill_id"): (
+        {
+            "table": "job_version_skills",
+            "column": "id",
+            "nullable": False,
+            "onDelete": "CASCADE",
+        },
+    ),
+    ("job_version_bullets", "job_version_id"): (
+        {
+            "table": "job_versions",
+            "column": "id",
+            "nullable": False,
+            "onDelete": "CASCADE",
+        },
+    ),
+    ("job_payload_snapshots", "job_id"): (
+        {"table": "jobs", "column": "id", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("job_sync_runs", "board_key"): (
+        {"table": "boards", "column": "key", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("job_sync_observations", "sync_run_id"): (
+        {
+            "table": "job_sync_runs",
+            "column": "id",
+            "nullable": False,
+            "onDelete": "CASCADE",
+        },
+    ),
+    ("job_sync_observations", "job_id"): (
+        {"table": "jobs", "column": "id", "nullable": False, "onDelete": "CASCADE"},
+    ),
+    ("job_sync_observations", "job_version_id"): (
+        {
+            "table": "job_versions",
+            "column": "id",
+            "nullable": True,
+            "onDelete": "SET NULL",
+        },
+    ),
+    ("openopps_columns", "table_name"): (
+        {
+            "table": "openopps_tables",
+            "column": "table_name",
+            "nullable": False,
+            "onDelete": "CASCADE",
+        },
+    ),
+}
+ENUM_VALUES_BY_COLUMN: dict[tuple[str, str], tuple[str, ...]] = {
+    ("board_providers", "support_level"): ("detect", "jobs", "unsupported"),
+    ("jobs", "status"): ("open", "closed"),
+    ("job_payload_snapshots", "payload_kind"): ("listing", "detail"),
+    ("job_sync_observations", "observation_kind"): (
+        "new",
+        "unchanged",
+        "changed",
+        "reopened",
+        "closed",
+    ),
+    ("job_versions", "remote"): ("Full", "Hybrid", "None"),
+    ("job_version_bullets", "kind"): ("responsibility", "qualification"),
+}
+JOIN_HINTS_BY_COLUMN: dict[tuple[str, str], str] = {
+    (
+        "jobs",
+        "current_version_id",
+    ): "Join jobs.current_version_id to job_versions.id for the current content snapshot.",
+    (
+        "job_versions",
+        "job_id",
+    ): "Join job_versions.job_id to jobs.id for all content versions of a job.",
+    (
+        "job_sync_observations",
+        "sync_run_id",
+    ): "Join job_sync_observations.sync_run_id to job_sync_runs.id for route run context.",
+    (
+        "job_sync_observations",
+        "job_version_id",
+    ): "Join non-null job_version_id values to job_versions.id for observed content.",
+}
 MAX_COLUMN_DESCRIPTION_LENGTH = 160
 NOTEBOOK_SYNC_ENV_DEFAULTS: dict[str, str] = {
     "OPENOPPS_SOURCE_FRESHNESS_SECONDS": "86400",
@@ -232,6 +426,24 @@ METADATA_TABLES: tuple[Table, ...] = (
 )
 
 TABLES: tuple[Table, ...] = DATA_TABLES + METADATA_TABLES
+PUBLIC_SQLITE_TABLE_NAMES: tuple[str, ...] = tuple(table.name for table in TABLES)
+PUBLIC_SQLITE_TABLE_NAME_SET = frozenset(PUBLIC_SQLITE_TABLE_NAMES)
+EXPORT_ORDER_COLUMNS: dict[str, tuple[str, ...]] = {
+    "sources": ("key",),
+    "boards": ("key",),
+    "board_providers": ("source_key", "board_key", "provider_id", "id"),
+    "jobs": ("board_key", "provider_id", "remote_id", "id"),
+    "job_versions": ("job_id", "version", "id"),
+    "job_version_locations": ("job_version_id", "ordinal", "label", "id"),
+    "job_version_skills": ("job_version_id", "ordinal", "id"),
+    "job_version_skill_keywords": ("skill_id", "ordinal", "keyword", "id"),
+    "job_version_bullets": ("job_version_id", "kind", "ordinal", "text", "id"),
+    "job_payload_snapshots": ("job_id", "payload_kind", "payload_hash", "id"),
+    "job_sync_runs": ("synced_at", "board_key", "provider_id", "id"),
+    "job_sync_observations": ("observed_at", "sync_run_id", "job_id", "id"),
+    "openopps_tables": ("table_name",),
+    "openopps_columns": ("table_name", "column_name"),
+}
 
 
 DATA_RESOURCES: tuple[Resource, ...] = (
@@ -240,13 +452,10 @@ DATA_RESOURCES: tuple[Resource, ...] = (
             name="openopps_database",
             path=DB_FILE,
             description=(
-                "Full SQLite ledger with source, board, provider route, job lifecycle, "
-                "version history, raw payload snapshot, sync observation, and in-DB "
-                "table and column metadata tables. The SQLite upload uses plain "
-                "table DDL and nulls bulky narrative, text, and JSON mirrors so "
-                "Kaggle can index table previews; full rendered descriptions, "
-                "structured job-description JSON, and raw payloads remain in "
-                "the CSV and Parquet exports."
+                "OpenOppsDB SQLite database file with source, board, provider "
+                "route, job lifecycle, version history, sync observations, and "
+                "in-database openopps_tables/openopps_columns metadata. Kaggle "
+                "column metadata is attached to the CSV and Parquet exports."
             ),
             format="sqlite",
             mediatype="application/vnd.sqlite3",
@@ -282,8 +491,9 @@ EVIDENCE_RESOURCES: tuple[Resource, ...] = (
         name="sync_metrics",
         path=SYNC_METRICS_FILE,
         description=(
-            "JSON metrics emitted by the unfiltered `openopps sync --metrics-json` "
-            "manager run, including provider error summaries."
+            "JSON metrics emitted by the bounded `openopps jobs sync "
+            "--metrics-json --freshness-seconds --limit` manager run, "
+            "including provider error summaries."
         ),
         format="json",
         mediatype="application/json",
@@ -332,6 +542,19 @@ PRIVATE_METADATA_FILES: tuple[str, ...] = (
     DATAPACKAGE_FILE,
     EXPOSED_DATAPACKAGE_FILE,
 )
+PRIVATE_UPLOAD_RUNTIME_FILES: tuple[str, ...] = (
+    NB_FILE,
+    STARTER_NB_FILE,
+    "kernel-metadata.json",
+    "generate_kaggle_metadata.py",
+)
+PRIVATE_UPLOAD_RUNTIME_DIRS: tuple[str, ...] = (
+    ".ipynb_checkpoints",
+    "examples",
+    "notebooks",
+    "starter",
+    "public-upload",
+)
 PUBLIC_UPLOAD_CONTROL_FILES: tuple[str, ...] = (
     "dataset-metadata.json",
     DATASET_IMAGE_FILE,
@@ -366,16 +589,51 @@ def main() -> None:
         help="Directory to receive the public Kaggle starter notebook.",
     )
     parser.add_argument(
+        "--examples-dir",
+        type=Path,
+        default=DEFAULT_EXAMPLES_DIR,
+        help="Directory to receive public Kaggle example notebooks.",
+    )
+    parser.add_argument(
+        "--skip-notebooks",
+        action="store_true",
+        help=(
+            "Skip writing manager, starter, and example notebook artifacts. "
+            "Intended for Kaggle manager runtime calls that only build "
+            "data/metadata outputs."
+        ),
+    )
+    parser.add_argument(
+        "--stage-runtime-generator-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Write the private manager-runtime Kaggle dataset bundle containing "
+            "only dataset-metadata.json and generate_kaggle_metadata.py, then exit."
+        ),
+    )
+    parser.add_argument(
         "--data-db",
         type=Path,
         default=None,
         help=f"Existing SQLite DB to copy as {DB_FILE} and export alongside tables.",
     )
     parser.add_argument(
+        "--mutate-data-db-for-upload",
+        action="store_true",
+        help=(
+            "Mutate --data-db in place when it is the output openoppsdb.sqlite. "
+            "Private Kaggle manager disk-pressure optimization."
+        ),
+    )
+    parser.add_argument(
         "--sync-metrics",
         type=Path,
         default=None,
-        help="JSON metrics file from `openopps sync --metrics-json`.",
+        help=(
+            "JSON metrics file from the bounded manager "
+            "`openopps jobs sync --metrics-json --freshness-seconds --limit` run."
+        ),
     )
     parser.add_argument(
         "--status-json",
@@ -435,19 +693,30 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--live-file-metadata-kaggle-auth",
+        action="store_true",
+        help=(
+            "Attempt Kaggle's live databundle metadata checklist repair using "
+            "KAGGLE_USERNAME/KAGGLE_KEY basic auth. This is best-effort in "
+            "Kaggle notebook manager runs; use --live-file-metadata-browser-cookies "
+            "from a local browser-authenticated environment for the authoritative "
+            "post-publish databundle repair."
+        ),
+    )
+    parser.add_argument(
         "--live-file-metadata-sqlite-timeout-seconds",
         type=float,
-        default=1200.0,
+        default=120.0,
         help=(
-            "Seconds to wait for Kaggle's SQLite indexer to expose sqliteInfo "
-            "when repairing live table metadata."
+            "Seconds to wait for Kaggle to expose sqliteInfo.tables when "
+            "attempting best-effort nested SQLite table metadata repair."
         ),
     )
     parser.add_argument(
         "--live-file-metadata-sqlite-poll-seconds",
         type=float,
-        default=30.0,
-        help="Polling interval for live SQLite indexer metadata repair.",
+        default=15.0,
+        help="Polling interval for best-effort live SQLite table metadata repair.",
     )
     parser.add_argument(
         "--wait-live-dataset-ready",
@@ -485,10 +754,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.stage_runtime_generator_dir is not None:
+        _stage_runtime_generator_dir(args.stage_runtime_generator_dir)
+        return
+
     output_dir: Path = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     if args.data_db is not None:
-        _write_data_artifacts(output_dir, args.data_db)
+        _write_data_artifacts(
+            output_dir,
+            args.data_db,
+            mutate_data_db_for_upload=args.mutate_data_db_for_upload,
+        )
     _write_dataset_image(output_dir)
     _remove_dataset_notebooks(output_dir)
     if args.quality_report is None:
@@ -511,10 +788,13 @@ def main() -> None:
         if args.prune_private_upload_files:
             _prune_private_upload_files(output_dir)
 
-    manager_dir: Path = args.manager_dir
-    _write_manager_notebook(manager_dir)
-    starter_dir: Path = args.starter_dir
-    _write_starter_notebook(starter_dir)
+    if not args.skip_notebooks:
+        manager_dir: Path = args.manager_dir
+        _write_manager_notebook(manager_dir)
+        starter_dir: Path = args.starter_dir
+        _write_starter_notebook(starter_dir)
+        examples_dir: Path = args.examples_dir
+        _write_example_notebooks(examples_dir)
 
     if args.stage_public_upload_dir is not None:
         _stage_public_upload_dir(output_dir, args.stage_public_upload_dir)
@@ -529,6 +809,7 @@ def main() -> None:
         _update_live_file_metadata(
             output_dir / "dataset-metadata.json",
             use_browser_cookies=args.live_file_metadata_browser_cookies,
+            use_kaggle_auth=args.live_file_metadata_kaggle_auth,
             sqlite_index_timeout_seconds=(
                 args.live_file_metadata_sqlite_timeout_seconds
             ),
@@ -556,6 +837,33 @@ def dataset_metadata() -> dict[str, Any]:
     }
 
 
+def runtime_generator_dataset_metadata() -> dict[str, Any]:
+    return {
+        "id": RUNTIME_GENERATOR_DATASET_ID,
+        "title": "openoppsdb manager runtime",
+        "subtitle": "Private generator script input for the OpenOppsDB manager.",
+        "description": (
+            "Private Kaggle dataset used only by the scheduled "
+            "`openoppsdb-manager` notebook. It carries the exact "
+            "`scripts/generate_kaggle_metadata.py` runtime that the notebook "
+            "downloads, compile-checks, and uses to build the public "
+            "OpenOppsDB SQLite/CSV/Parquet bundle after syncing."
+        ),
+        "licenses": [{"name": DATASET_LICENSE}],
+        "isPrivate": True,
+        "resources": [
+            {
+                "path": RUNTIME_GENERATOR_SCRIPT_FILE,
+                "description": (
+                    "OpenOppsDB Kaggle metadata, bundle, quality gate, staging, "
+                    "and live metadata repair generator used by the manager "
+                    "notebook runtime."
+                ),
+            }
+        ],
+    }
+
+
 def _dataset_description() -> str:
     return """# OpenOppsDB
 
@@ -563,13 +871,13 @@ OpenOppsDB is a versioned public hiring-board ledger generated by the OpenOpps C
 
 ## What is included
 
-- `openoppsdb.sqlite`: the SQLite ledger, including metadata tables named `openopps_tables` and `openopps_columns`. To keep Kaggle table previews indexable, this read-only upload copy uses plain table DDL and nulls bulky narrative, text, and JSON mirrors after export; full values remain in the CSV and Parquet exports.
+- `openoppsdb.sqlite`: the OpenOppsDB SQLite database file, including metadata tables named `openopps_tables` and `openopps_columns`.
 - `exports/csv/*.csv`: full table exports for spreadsheet and lightweight analysis workflows, including rendered HTML descriptions, structured job-description JSON, and raw payloads.
 - `exports/parquet/*.parquet`: full table exports for Python, DuckDB, Polars, Spark, and warehouse workflows, including rendered HTML descriptions, structured job-description JSON, and raw payloads.
 
 ## How updates work
 
-The connected Kaggle notebook `openoppsdb-manager` is intended to run once per day on a Kaggle cron schedule. Each run installs OpenOpps from GitHub, copies the current `openoppsdb.sqlite` from this dataset, runs `openopps sync --metrics-json`, captures private run evidence for the quality gate, exports every SQLite table to CSV and Parquet, regenerates Kaggle field metadata, prunes private manager evidence from the upload directory, and publishes a new dataset version only when the quality gate passes. The public file surface is intentionally limited to `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`.
+The connected Kaggle notebook `openoppsdb-manager` is intended to run once per day on a Kaggle cron schedule. Each run installs OpenOpps from GitHub, copies the current public `openoppsdb.sqlite` snapshot from this dataset, restores projected large columns and derived child tables from the prior Parquet exports, rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed, runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit`, and captures private run evidence for the quality gate. It then invokes `scripts/generate_kaggle_metadata.py` to backfill derived skill tables, export every SQLite table to CSV and Parquet, regenerate Kaggle field metadata, write the public SQLite metadata tables, prune private manager evidence, stage the public upload directory, and attempt best-effort live Kaggle file metadata repair after publish. Local maintainer runs of `just kaggle-live-file-metadata` use browser-authenticated cookies for the authoritative Kaggle DataBundle checklist and column-score repair. The public file surface is intentionally limited to `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`.
 
 ## Quick start
 
@@ -584,7 +892,7 @@ versions = pl.read_parquet('/kaggle/input/openoppsdb/exports/parquet/job_version
 
 ## Notes and limitations
 
-OpenOpps only uses public endpoints and public pages. Provider payloads are preserved for auditability, but normalized fields should be treated as best-effort public-data extraction rather than official ATS records. A row can appear across multiple source catalogs; durable keys and sync observation tables are provided so downstream users can reason about provenance and change history.
+OpenOpps only uses public endpoints and public pages. Provider payloads are preserved for auditability, but normalized fields should be treated as best-effort public-data extraction rather than official ATS records. Kaggle renders CSV and Parquet exports as the primary tabular preview and column-metadata surfaces; if Kaggle does not expose nested SQLite table previews for a fresh upload, open the SQLite file directly or use the mirrored CSV/Parquet exports. A row can appear across multiple source catalogs; durable keys and sync observation tables are provided so downstream users can reason about provenance and change history.
 """
 
 
@@ -610,7 +918,7 @@ def kernel_metadata() -> dict[str, Any]:
         "enable_tpu": False,
         "enable_internet": True,
         "keywords": [],
-        "dataset_sources": [DATASET_ID],
+        "dataset_sources": [DATASET_ID, RUNTIME_GENERATOR_DATASET_ID],
         "competition_sources": [],
         "kernel_sources": [],
         "model_sources": [],
@@ -619,11 +927,13 @@ def kernel_metadata() -> dict[str, Any]:
     }
 
 
-def starter_kernel_metadata() -> dict[str, Any]:
+def public_notebook_kernel_metadata(
+    *, notebook_id: str, title: str, code_file: str
+) -> dict[str, Any]:
     return {
-        "id": STARTER_NB_ID,
-        "title": "OpenOppsDB starter notebook",
-        "code_file": STARTER_NB_FILE,
+        "id": notebook_id,
+        "title": title,
+        "code_file": code_file,
         "language": "python",
         "kernel_type": "notebook",
         "is_private": False,
@@ -640,6 +950,14 @@ def starter_kernel_metadata() -> dict[str, Any]:
     }
 
 
+def starter_kernel_metadata() -> dict[str, Any]:
+    return public_notebook_kernel_metadata(
+        notebook_id=STARTER_NB_ID,
+        title="OpenOppsDB starter notebook",
+        code_file=STARTER_NB_FILE,
+    )
+
+
 def notebook() -> dict[str, Any]:
     return {
         "cells": [
@@ -651,12 +969,19 @@ def notebook() -> dict[str, Any]:
                 "cadence such as `0 6 * * *`. Each run installs OpenOpps from "
                 "GitHub, copies the newest `/kaggle/input/**/openoppsdb.sqlite` "
                 "snapshot into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, "
-                "runs `openopps sync --metrics-json`, captures status and coverage "
-                "evidence for the private quality gate, prepares SQLite/CSV/"
-                "Parquet artifacts, writes in-database table and column "
-                "metadata, prunes private evidence from the upload directory, "
-                "and deploys a new dataset version only after the quality gate "
-                "passes.",
+                "restores projected large columns from prior Parquet exports, "
+                "rehydrates the plain public SQLite snapshot into an operational "
+                "Alembic schema when needed, runs bounded `openopps jobs sync "
+                "--metrics-json --freshness-seconds --limit`, captures status "
+                "and coverage evidence for the private quality gate, then invokes "
+                "`scripts/generate_kaggle_metadata.py` to backfill derived skill "
+                "tables, prepare SQLite/CSV/Parquet artifacts, write in-database "
+                "table and column metadata, prune private evidence, stage the "
+                "public upload directory, deploy a new dataset version only after "
+                "the quality gate passes, and attempt best-effort live Kaggle file "
+                "metadata repair. Local `just kaggle-live-file-metadata` runs use "
+                "browser-authenticated cookies for the authoritative Kaggle "
+                "DataBundle checklist repair.",
             ),
             _code_cell("setup", _notebook_setup_source()),
             _code_cell("sync-openopps", _notebook_sync_source()),
@@ -790,6 +1115,388 @@ summary
     }
 
 
+def advanced_usage_notebook() -> dict[str, Any]:
+    return _public_notebook_document(
+        [
+            _markdown_cell(
+                "overview",
+                "# OpenOppsDB advanced usage\n\n"
+                "This read-only example shows durable joins, version history, "
+                "sync observations, and when to use Parquet exports for columns "
+                "that are projected out of the public SQLite preview copy.",
+            ),
+            _code_cell("setup", _public_notebook_setup_source()),
+            _code_cell(
+                "current_roles",
+                """with sqlite3.connect(DB_URI, uri=True) as conn:
+    current_roles = pd.read_sql_query(
+        \"\"\"
+        select
+            j.id as job_id,
+            coalesce(v.company, b.name) as company,
+            v.title,
+            j.provider_id,
+            j.status,
+            v.remote,
+            v.employment_type,
+            j.first_seen_at,
+            j.last_seen_at,
+            v.posting_url
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        left join boards b on b.key = j.board_key
+        where j.status = 'open'
+        order by j.last_seen_at desc
+        limit 25
+        \"\"\",
+        conn,
+    )
+
+current_roles
+""",
+            ),
+            _code_cell(
+                "version_history",
+                """with sqlite3.connect(DB_URI, uri=True) as conn:
+    version_history = pd.read_sql_query(
+        \"\"\"
+        select
+            j.id as job_id,
+            coalesce(max(v.company), max(b.name)) as company,
+            max(v.title) as latest_title,
+            count(v.id) as version_count,
+            min(v.first_seen_at) as first_version_seen_at,
+            max(v.last_seen_at) as last_version_seen_at
+        from jobs j
+        join job_versions v on v.job_id = j.id
+        left join boards b on b.key = j.board_key
+        group by j.id
+        having count(v.id) > 1
+        order by version_count desc, last_version_seen_at desc
+        limit 20
+        \"\"\",
+        conn,
+    )
+    observation_mix = pd.read_sql_query(
+        \"\"\"
+        select observation_kind, count(*) as observations
+        from job_sync_observations
+        group by observation_kind
+        order by observations desc
+        \"\"\",
+        conn,
+    )
+
+display(version_history)
+observation_mix
+""",
+            ),
+            _code_cell(
+                "parquet_full_text",
+                """parquet_path = DATASET_DIR / "exports" / "parquet" / "job_versions.parquet"
+if parquet_path.exists():
+    try:
+        full_text_sample = (
+            pd.read_parquet(
+                parquet_path,
+                columns=["id", "title", "company", "description", "posting_url"],
+            )
+            .dropna(subset=["description"])
+            .head(10)
+        )
+    except Exception as exc:
+        full_text_sample = pd.DataFrame(
+            {"note": [f"Parquet sample unavailable in this runtime: {type(exc).__name__}"]}
+        )
+else:
+    full_text_sample = pd.DataFrame({"note": ["Parquet export not found"]})
+
+full_text_sample
+""",
+            ),
+        ]
+    )
+
+
+def hiring_market_map_notebook() -> dict[str, Any]:
+    return _public_notebook_document(
+        [
+            _markdown_cell(
+                "overview",
+                "# OpenOppsDB hiring market map\n\n"
+                "This topical notebook maps current open roles by company, "
+                "provider, location, and remote/workplace signal.",
+            ),
+            _code_cell("setup", _public_notebook_setup_source()),
+            _code_cell(
+                "market_tables",
+                """with sqlite3.connect(DB_URI, uri=True) as conn:
+    top_companies = pd.read_sql_query(
+        \"\"\"
+        select
+            coalesce(v.company, b.name, 'Unknown') as company,
+            count(*) as open_roles,
+            count(distinct j.board_key) as boards
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        left join boards b on b.key = j.board_key
+        where j.status = 'open'
+        group by company
+        order by open_roles desc, company
+        limit 20
+        \"\"\",
+        conn,
+    )
+    provider_mix = pd.read_sql_query(
+        \"\"\"
+        select provider_id, count(*) as open_roles
+        from jobs
+        where status = 'open'
+        group by provider_id
+        order by open_roles desc, provider_id
+        limit 15
+        \"\"\",
+        conn,
+    )
+    location_mix = pd.read_sql_query(
+        \"\"\"
+        select l.label as location, count(distinct j.id) as open_roles
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        join job_version_locations l on l.job_version_id = v.id
+        where j.status = 'open' and l.label is not null and l.label <> ''
+        group by l.label
+        order by open_roles desc, location
+        limit 20
+        \"\"\",
+        conn,
+    )
+    remote_mix = pd.read_sql_query(
+        \"\"\"
+        select coalesce(v.remote, 'Unknown') as remote, count(*) as open_roles
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        where j.status = 'open'
+        group by remote
+        order by open_roles desc
+        \"\"\",
+        conn,
+    )
+
+display(top_companies)
+display(provider_mix)
+display(location_mix)
+remote_mix
+""",
+            ),
+            _code_cell(
+                "market_charts",
+                """fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+if not top_companies.empty:
+    top_companies.head(10).sort_values("open_roles").plot.barh(
+        x="company", y="open_roles", ax=axes[0], legend=False, title="Top companies"
+    )
+else:
+    axes[0].set_title("Top companies")
+if not location_mix.empty:
+    location_mix.head(10).sort_values("open_roles").plot.barh(
+        x="location", y="open_roles", ax=axes[1], legend=False, title="Top locations"
+    )
+else:
+    axes[1].set_title("Top locations")
+plt.tight_layout()
+plt.show()
+""",
+            ),
+        ]
+    )
+
+
+def skills_radar_notebook() -> dict[str, Any]:
+    return _public_notebook_document(
+        [
+            _markdown_cell(
+                "overview",
+                "# OpenOppsDB skills radar\n\n"
+                "This topical notebook explores skill groups, keywords, role "
+                "slices, and skill-pair co-occurrence in current open roles.",
+            ),
+            _code_cell("setup", _public_notebook_setup_source()),
+            _code_cell(
+                "skill_tables",
+                """with sqlite3.connect(DB_URI, uri=True) as conn:
+    top_skills = pd.read_sql_query(
+        \"\"\"
+        select lower(s.name) as skill, count(distinct j.id) as open_roles
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        join job_version_skills s on s.job_version_id = v.id
+        where j.status = 'open' and s.name is not null and s.name <> ''
+        group by lower(s.name)
+        order by open_roles desc, skill
+        limit 25
+        \"\"\",
+        conn,
+    )
+    top_keywords = pd.read_sql_query(
+        \"\"\"
+        select lower(k.keyword) as keyword, count(distinct j.id) as open_roles
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        join job_version_skills s on s.job_version_id = v.id
+        join job_version_skill_keywords k on k.skill_id = s.id
+        where j.status = 'open' and k.keyword is not null and k.keyword <> ''
+        group by lower(k.keyword)
+        order by open_roles desc, keyword
+        limit 25
+        \"\"\",
+        conn,
+    )
+    skill_pairs = pd.read_sql_query(
+        \"\"\"
+        select
+            lower(s1.name) as skill_a,
+            lower(s2.name) as skill_b,
+            count(distinct j.id) as open_roles
+        from jobs j
+        join job_versions v on v.id = j.current_version_id
+        join job_version_skills s1 on s1.job_version_id = v.id
+        join job_version_skills s2
+          on s2.job_version_id = v.id and lower(s1.name) < lower(s2.name)
+        where j.status = 'open'
+          and s1.name is not null and s1.name <> ''
+          and s2.name is not null and s2.name <> ''
+        group by lower(s1.name), lower(s2.name)
+        order by open_roles desc, skill_a, skill_b
+        limit 25
+        \"\"\",
+        conn,
+    )
+
+display(top_skills)
+display(top_keywords)
+skill_pairs
+""",
+            ),
+            _code_cell(
+                "role_slices",
+                """with sqlite3.connect(DB_URI, uri=True) as conn:
+    role_slices = pd.read_sql_query(
+        \"\"\"
+        with role_labels as (
+            select
+                v.id as version_id,
+                case
+                    when lower(v.title) like '%data%' then 'data'
+                    when lower(v.title) like '%engineer%' then 'engineering'
+                    when lower(v.title) like '%product%' then 'product'
+                    when lower(v.title) like '%sales%' then 'sales'
+                    else 'other'
+                end as role_slice
+            from jobs j
+            join job_versions v on v.id = j.current_version_id
+            where j.status = 'open'
+        )
+        select
+            r.role_slice,
+            lower(s.name) as skill,
+            count(*) as mentions
+        from role_labels r
+        join job_version_skills s on s.job_version_id = r.version_id
+        where s.name is not null and s.name <> ''
+        group by r.role_slice, lower(s.name)
+        order by mentions desc, role_slice, skill
+        limit 40
+        \"\"\",
+        conn,
+    )
+
+role_slices
+""",
+            ),
+            _code_cell(
+                "skill_chart",
+                """if not top_skills.empty:
+    ax = top_skills.head(15).sort_values("open_roles").plot.barh(
+        x="skill", y="open_roles", figsize=(10, 6), legend=False, title="Top skills"
+    )
+    ax.set_xlabel("Current open roles")
+    plt.tight_layout()
+    plt.show()
+else:
+    print("No skill rows found in this snapshot.")
+""",
+            ),
+        ]
+    )
+
+
+def _public_notebook_setup_source() -> str:
+    return """from pathlib import Path
+import sqlite3
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+db_candidates = sorted(Path("/kaggle/input").glob("**/openoppsdb.sqlite"))
+if not db_candidates:
+    raise FileNotFoundError("No openoppsdb.sqlite input found under /kaggle/input")
+DB_PATH = db_candidates[0]
+DATASET_DIR = DB_PATH.parent
+DB_URI = f"file:{DB_PATH}?mode=ro&immutable=1"
+print(f"Reading OpenOppsDB snapshot from {DB_PATH}")
+"""
+
+
+def _public_notebook_document(cells: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "cells": cells,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "codemirror_mode": {"name": "ipython", "version": 3},
+                "file_extension": ".py",
+                "mimetype": "text/x-python",
+                "name": "python",
+                "nbconvert_exporter": "python",
+                "pygments_lexer": "ipython3",
+                "version": "3.12",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+
+
+PUBLIC_EXAMPLE_NOTEBOOKS: tuple[PublicNotebookSpec, ...] = (
+    PublicNotebookSpec(
+        slug="advanced-usage",
+        notebook_id=ADVANCED_NB_ID,
+        title="OpenOppsDB advanced usage",
+        code_file=ADVANCED_NB_FILE,
+        notebook_factory=advanced_usage_notebook,
+    ),
+    PublicNotebookSpec(
+        slug="hiring-market-map",
+        notebook_id=HIRING_MARKET_NB_ID,
+        title="OpenOppsDB hiring market map",
+        code_file=HIRING_MARKET_NB_FILE,
+        notebook_factory=hiring_market_map_notebook,
+    ),
+    PublicNotebookSpec(
+        slug="skills-radar",
+        notebook_id=SKILLS_RADAR_NB_ID,
+        title="OpenOppsDB skills radar",
+        code_file=SKILLS_RADAR_NB_FILE,
+        notebook_factory=skills_radar_notebook,
+    ),
+)
+
+
 def datapackage() -> dict[str, Any]:
     return {
         "profile": "data-package",
@@ -815,7 +1522,13 @@ def _write_dataset_image(output_dir: Path) -> None:
     if not source.exists():
         if target.exists():
             return
-        raise FileNotFoundError(f"Kaggle dataset image does not exist: {source}")
+        try:
+            urllib.request.urlretrieve(DATASET_IMAGE_URL, target)
+        except Exception as exc:
+            raise FileNotFoundError(
+                f"Kaggle dataset image does not exist: {source}"
+            ) from exc
+        return
     shutil.copy2(source, target)
 
 
@@ -835,6 +1548,30 @@ def _write_starter_notebook(starter_dir: Path) -> None:
     _write_json(starter_dir / STARTER_NB_FILE, starter_notebook())
 
 
+def _write_example_notebooks(examples_dir: Path) -> None:
+    examples_dir.mkdir(parents=True, exist_ok=True)
+    expected_slugs = {spec.slug for spec in PUBLIC_EXAMPLE_NOTEBOOKS}
+    for path in examples_dir.iterdir():
+        if path.is_dir() and path.name not in expected_slugs:
+            shutil.rmtree(path)
+        elif path.is_file():
+            path.unlink()
+    for spec in PUBLIC_EXAMPLE_NOTEBOOKS:
+        notebook_dir = examples_dir / spec.slug
+        if notebook_dir.exists():
+            shutil.rmtree(notebook_dir)
+        notebook_dir.mkdir(parents=True)
+        _write_json(
+            notebook_dir / "kernel-metadata.json",
+            public_notebook_kernel_metadata(
+                notebook_id=spec.notebook_id,
+                title=spec.title,
+                code_file=spec.code_file,
+            ),
+        )
+        _write_json(notebook_dir / spec.code_file, spec.notebook_factory())
+
+
 def _remove_dataset_notebooks(output_dir: Path) -> None:
     notebooks_dir = output_dir / "notebooks"
     if notebooks_dir.exists():
@@ -844,39 +1581,60 @@ def _remove_dataset_notebooks(output_dir: Path) -> None:
         ds_store.unlink()
 
 
-def _write_data_artifacts(output_dir: Path, data_db: Path) -> None:
+def _write_data_artifacts(
+    output_dir: Path,
+    data_db: Path,
+    *,
+    mutate_data_db_for_upload: bool = False,
+) -> None:
     source_db = data_db.expanduser().resolve()
     if not source_db.exists():
         raise FileNotFoundError(f"SQLite database does not exist: {source_db}")
     target_db = output_dir / DB_FILE
-    build_db = output_dir / f".{DB_FILE}.build"
-    _remove_sqlite_sidecars(build_db)
-    if build_db.exists():
-        build_db.unlink()
+    target_db_resolved = target_db.resolve()
+    use_source_in_place = mutate_data_db_for_upload and source_db == target_db_resolved
+    build_db = target_db if use_source_in_place else output_dir / f".{DB_FILE}.build"
+    if not use_source_in_place:
+        _remove_sqlite_sidecars(build_db)
+        if build_db.exists():
+            build_db.unlink()
     _checkpoint_sqlite(source_db)
-    shutil.copy2(source_db, build_db)
+    if not use_source_in_place:
+        shutil.copy2(source_db, build_db)
     _restore_projected_sqlite_columns_from_export_dir(
         build_db,
         output_dir / PARQUET_DIR,
     )
+    _restore_derived_sqlite_tables_from_export_dir(
+        build_db,
+        output_dir / PARQUET_DIR,
+    )
+    _backfill_sqlite_version_child_tables(build_db)
     _clean_data_artifacts(output_dir, preserve=source_db)
     try:
         _drop_private_sqlite_tables(build_db)
+        _prune_orphan_board_provider_routes(build_db)
         _backfill_sqlite_skill_tables(build_db)
         _write_sqlite_metadata(build_db)
+        _assert_public_sqlite_table_allowlist(build_db)
+        _assert_public_sqlite_logical_integrity(build_db)
         _checkpoint_sqlite(build_db)
 
         _write_full_table_exports(output_dir, build_db)
-        _project_sqlite_for_kaggle_indexer(build_db)
-        _truncate_sqlite_text_for_kaggle_indexer(build_db)
-        _normalize_sqlite_schema_for_kaggle_indexer(build_db)
-        _rebuild_sqlite_tables_for_kaggle_indexer(build_db)
+        _project_sqlite_for_public_upload(build_db)
+        _truncate_sqlite_text_for_public_upload(build_db)
+        _normalize_sqlite_schema_for_public_upload(build_db)
+        _rebuild_sqlite_tables_for_public_upload(build_db)
+        _assert_public_sqlite_table_allowlist(build_db)
+        _assert_public_sqlite_logical_integrity(build_db)
         _finalize_sqlite_for_upload(build_db)
-        build_db.replace(target_db)
+        if not use_source_in_place:
+            build_db.replace(target_db)
     finally:
-        _remove_sqlite_sidecars(build_db)
-        if build_db.exists():
-            build_db.unlink()
+        if not use_source_in_place:
+            _remove_sqlite_sidecars(build_db)
+            if build_db.exists():
+                build_db.unlink()
     if source_db.parent == output_dir.resolve() and source_db != target_db.resolve():
         source_db.unlink()
         _remove_sqlite_sidecars(source_db)
@@ -915,82 +1673,108 @@ def _write_full_table_exports(output_dir: Path, db_path: Path) -> None:
             _write_table_csv(conn, table, csv_path)
             pl.scan_csv(
                 csv_path,
-                infer_schema_length=1000,
+                schema_overrides=_polars_schema_overrides(table),
+                infer_schema_length=0,
                 low_memory=True,
+                try_parse_dates=True,
             ).sink_parquet(parquet_path)
 
 
-def _project_sqlite_for_kaggle_indexer(db_path: Path) -> dict[str, int]:
-    """Trim upload-only SQLite mirrors that prevent Kaggle from indexing tables."""
-    projection_columns = (
-        ("boards", "raw_payload"),
-        ("job_versions", "description"),
-        ("job_versions", "description_html"),
-        ("job_versions", "job_description"),
-        ("job_versions", "responsibilities"),
-        ("job_versions", "qualifications"),
-        ("job_versions", "skills"),
-        ("job_versions", "compensation"),
-        ("job_payload_snapshots", "payload"),
-    )
-    total_rows = 0
-    total_bytes = 0
-    nulled_columns = []
-    with sqlite3.connect(db_path) as conn:
-        for table_name, column_name in projection_columns:
-            columns = {
+def _configure_sqlite_upload_mutation(conn: sqlite3.Connection) -> None:
+    # These mutations happen on a disposable public upload copy. Avoid large
+    # rollback journals in constrained Kaggle notebook working disks.
+    conn.execute("PRAGMA busy_timeout=60000")
+    for pragma in (
+        "PRAGMA journal_mode=OFF",
+        "PRAGMA synchronous=OFF",
+        "PRAGMA temp_store=MEMORY",
+    ):
+        try:
+            conn.execute(pragma)
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            print(
+                "SQLite upload mutation pragma skipped because database is locked: "
+                f"{pragma}",
+                flush=True,
+            )
+
+
+def _project_sqlite_for_public_upload(db_path: Path) -> dict[str, int]:
+    """Null upload-only SQLite mirrors before the plain-table rebuild."""
+    projected_columns_by_table: dict[str, list[str]] = {}
+    for table_name, column_name in SQLITE_UPLOAD_PROJECTED_COLUMNS:
+        projected_columns_by_table.setdefault(table_name, []).append(column_name)
+
+    projected_columns: list[str] = []
+    projected_rows = 0
+    with sqlite3.connect(db_path, timeout=60) as conn:
+        _configure_sqlite_upload_mutation(conn)
+        for table_name, candidate_columns in projected_columns_by_table.items():
+            table_columns = {
                 str(row[1])
                 for row in conn.execute(
                     f"PRAGMA table_info({_sqlite_identifier(table_name)})"
                 ).fetchall()
             }
-            if column_name not in columns:
+            active_columns = [
+                column for column in candidate_columns if column in table_columns
+            ]
+            if not active_columns:
                 continue
-            row = conn.execute(
-                f"""
-                SELECT COUNT(*), COALESCE(SUM(length(CAST("{column_name}" AS blob))), 0)
-                FROM "{table_name}"
-                WHERE "{column_name}" IS NOT NULL
-                """
-            ).fetchone()
-            rows = int(row[0] or 0)
-            bytes_removed = int(row[1] or 0)
-            if rows:
+            projected_columns.extend(
+                f"{table_name}.{column_name}" for column_name in active_columns
+            )
+            where_clause = " OR ".join(
+                f"{_sqlite_identifier(column_name)} IS NOT NULL"
+                for column_name in active_columns
+            )
+            row_count = int(
                 conn.execute(
-                    f'UPDATE "{table_name}" SET "{column_name}" = NULL '
-                    f'WHERE "{column_name}" IS NOT NULL'
-                )
-                nulled_columns.append(f"{table_name}.{column_name}")
-                total_rows += rows
-                total_bytes += bytes_removed
+                    f"SELECT count(*) FROM {_sqlite_identifier(table_name)} "
+                    f"WHERE {where_clause}"
+                ).fetchone()[0]
+            )
+            if not row_count:
+                continue
+            assignments = ", ".join(
+                f"{_sqlite_identifier(column_name)} = NULL"
+                for column_name in active_columns
+            )
+            conn.execute(
+                f"UPDATE {_sqlite_identifier(table_name)} "
+                f"SET {assignments} WHERE {where_clause}"
+            )
+            projected_rows += row_count
         conn.commit()
-    if nulled_columns:
+    if projected_columns:
         print(
-            "Prepared SQLite upload projection for Kaggle indexer: "
+            "Projected SQLite public-upload columns: "
             + json.dumps(
-                {
-                    "nulledColumns": nulled_columns,
-                    "rows": total_rows,
-                    "estimatedBytesRemoved": total_bytes,
-                },
+                {"projectedColumns": projected_columns, "rows": projected_rows},
                 sort_keys=True,
             ),
             flush=True,
         )
-    return {"projected_rows": total_rows, "estimated_bytes_removed": total_bytes}
+    return {
+        "projected_columns": len(projected_columns),
+        "projected_rows": projected_rows,
+    }
 
 
-def _truncate_sqlite_text_for_kaggle_indexer(
+def _truncate_sqlite_text_for_public_upload(
     db_path: Path,
     *,
     max_chars: int = SQLITE_PREVIEW_TEXT_MAX_CHARS,
     columns: tuple[tuple[str, str], ...] = SQLITE_PREVIEW_TEXT_COLUMNS,
 ) -> dict[str, int]:
-    """Bound residual SQLite text cells so Kaggle can sample table previews."""
+    """Bound residual SQLite text cells in the compact public upload copy."""
     truncated_rows = 0
     estimated_bytes_removed = 0
     truncated_columns = []
-    with sqlite3.connect(db_path) as conn:
+    with sqlite3.connect(db_path, timeout=60) as conn:
+        _configure_sqlite_upload_mutation(conn)
         for table_name, column_name in columns:
             table_columns = {
                 str(row[1])
@@ -1031,7 +1815,7 @@ def _truncate_sqlite_text_for_kaggle_indexer(
         conn.commit()
     if truncated_columns:
         print(
-            "Bounded SQLite upload text cells for Kaggle indexer: "
+            "Bounded SQLite public-upload text cells: "
             + json.dumps(
                 {
                     "maxChars": max_chars,
@@ -1054,7 +1838,9 @@ def _restore_projected_sqlite_columns_from_export_dir(
     parquet_dir: Path,
 ) -> dict[str, int]:
     restore_specs = (
-        ("boards", "key", ("raw_payload",)),
+        ("sources", "key", ("raw_metadata",), True),
+        ("boards", "key", ("source_board_keys", "markets", "locations"), True),
+        ("boards", "key", ("raw_payload",), False),
         (
             "job_versions",
             "id",
@@ -1067,12 +1853,14 @@ def _restore_projected_sqlite_columns_from_export_dir(
                 "skills",
                 "compensation",
             ),
+            False,
         ),
-        ("job_payload_snapshots", "id", ("payload",)),
+        ("job_versions", "id", ("locations",), True),
+        ("job_payload_snapshots", "id", ("payload",), False),
     )
     restored_tables = 0
     restored_rows = 0
-    for table_name, key_column, column_names in restore_specs:
+    for table_name, key_column, column_names, restore_invalid_json in restore_specs:
         parquet_path = parquet_dir / f"{table_name}.parquet"
         if not parquet_path.is_file():
             continue
@@ -1082,6 +1870,7 @@ def _restore_projected_sqlite_columns_from_export_dir(
             table_name=table_name,
             key_column=key_column,
             column_names=column_names,
+            restore_invalid_json=restore_invalid_json,
         )
         if result["missingBefore"]:
             restored_tables += 1
@@ -1098,6 +1887,75 @@ def _restore_projected_sqlite_columns_from_export_dir(
     return {"tables": restored_tables, "rows": restored_rows}
 
 
+def _restore_derived_sqlite_tables_from_export_dir(
+    db_path: Path,
+    parquet_dir: Path,
+    *,
+    table_names: tuple[str, ...] = SQLITE_DERIVED_CHILD_TABLES,
+) -> dict[str, int]:
+    """Restore derived child tables from previous Parquet exports before export."""
+    restored: dict[str, int] = {}
+    if not parquet_dir.exists():
+        return restored
+    with sqlite3.connect(db_path) as conn:
+        for table_name in table_names:
+            source_parquet = parquet_dir / f"{table_name}.parquet"
+            if not source_parquet.exists():
+                continue
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+            if not table_exists:
+                continue
+            existing_count = int(
+                conn.execute(
+                    f"SELECT count(*) FROM {_sqlite_identifier(table_name)}"
+                ).fetchone()[0]
+            )
+            if existing_count:
+                continue
+            target_columns = [
+                str(row[1])
+                for row in conn.execute(
+                    f"PRAGMA table_info({_sqlite_identifier(table_name)})"
+                ).fetchall()
+            ]
+            if not target_columns:
+                continue
+            frame = pl.read_parquet(source_parquet, columns=target_columns)
+            if frame.height == 0:
+                continue
+            column_sql = ", ".join(
+                _sqlite_identifier(column) for column in target_columns
+            )
+            placeholders = ", ".join("?" for _ in target_columns)
+            insert_sql = (
+                f"INSERT INTO {_sqlite_identifier(table_name)} ({column_sql}) "
+                f"VALUES ({placeholders})"
+            )
+            inserted = 0
+            batch: list[tuple] = []
+            for row in frame.iter_rows(named=False):
+                batch.append(row)
+                if len(batch) >= 10_000:
+                    conn.executemany(insert_sql, batch)
+                    inserted += len(batch)
+                    batch.clear()
+            if batch:
+                conn.executemany(insert_sql, batch)
+                inserted += len(batch)
+            restored[table_name] = inserted
+        conn.commit()
+    if restored:
+        print(
+            "Restored derived SQLite child tables from prior Parquet exports: "
+            + json.dumps(restored, sort_keys=True),
+            flush=True,
+        )
+    return restored
+
+
 def _restore_projected_sqlite_table_columns_from_parquet(
     db_path: Path,
     *,
@@ -1105,6 +1963,7 @@ def _restore_projected_sqlite_table_columns_from_parquet(
     table_name: str,
     key_column: str,
     column_names: tuple[str, ...],
+    restore_invalid_json: bool = False,
 ) -> dict[str, int]:
     with sqlite3.connect(db_path) as conn:
         available_columns = {
@@ -1122,13 +1981,22 @@ def _restore_projected_sqlite_table_columns_from_parquet(
             return {"missingBefore": 0, "restoreRows": 0}
         table_sql = _sqlite_identifier(table_name)
         key_column_sql = _sqlite_identifier(key_column)
-        projected_columns = tuple(column for column in restore_columns if column != key_column)
-        missing_condition = " OR ".join(
-            f"{_sqlite_identifier(column)} IS NULL" for column in projected_columns
+        projected_columns = tuple(
+            column for column in restore_columns if column != key_column
         )
+        restore_predicates = [
+            f"{_sqlite_identifier(column)} IS NULL" for column in projected_columns
+        ]
+        if restore_invalid_json:
+            restore_predicates.extend(
+                f"({_sqlite_identifier(column)} IS NOT NULL "
+                f"AND json_valid({_sqlite_identifier(column)}) = 0)"
+                for column in projected_columns
+            )
+        restore_condition = " OR ".join(restore_predicates)
         missing_count = int(
             conn.execute(
-                f"SELECT count(*) FROM {table_sql} WHERE {missing_condition}"
+                f"SELECT count(*) FROM {table_sql} WHERE {restore_condition}"
             ).fetchone()[0]
         )
     if missing_count == 0:
@@ -1145,9 +2013,10 @@ def _restore_projected_sqlite_table_columns_from_parquet(
         pl.scan_parquet(parquet_path).select(selected_columns).sink_csv(restore_csv)
         restored_rows = 0
         csv.field_size_limit(sys.maxsize)
-        with sqlite3.connect(db_path) as conn, restore_csv.open(
-            newline="", encoding="utf-8"
-        ) as handle:
+        with (
+            sqlite3.connect(db_path) as conn,
+            restore_csv.open(newline="", encoding="utf-8") as handle,
+        ):
             reader = csv.DictReader(handle)
             restore_table = f"restore_{table_name}_{sha1(str(parquet_path).encode()).hexdigest()[:8]}"
             restore_table_sql = _sqlite_identifier(restore_table)
@@ -1187,12 +2056,19 @@ def _restore_projected_sqlite_table_columns_from_parquet(
                 f"WHERE {restore_table_sql}.{key_column_sql} = {table_sql}.{key_column_sql})"
                 for column in update_columns
             )
-            selected_missing_condition = " OR ".join(
+            selected_restore_predicates = [
                 f"{_sqlite_identifier(column)} IS NULL" for column in update_columns
-            )
+            ]
+            if restore_invalid_json:
+                selected_restore_predicates.extend(
+                    f"({_sqlite_identifier(column)} IS NOT NULL "
+                    f"AND json_valid({_sqlite_identifier(column)}) = 0)"
+                    for column in update_columns
+                )
+            selected_restore_condition = " OR ".join(selected_restore_predicates)
             conn.execute(
                 f"UPDATE {table_sql} SET {assignments} "
-                f"WHERE {selected_missing_condition} AND EXISTS ("
+                f"WHERE {selected_restore_condition} AND EXISTS ("
                 f"SELECT 1 FROM {restore_table_sql} "
                 f"WHERE {restore_table_sql}.{key_column_sql} = {table_sql}.{key_column_sql})"
             )
@@ -1202,7 +2078,7 @@ def _restore_projected_sqlite_table_columns_from_parquet(
     return {"missingBefore": missing_count, "restoreRows": restored_rows}
 
 
-def _normalize_sqlite_schema_for_kaggle_indexer(db_path: Path) -> int:
+def _normalize_sqlite_schema_for_public_upload(db_path: Path) -> int:
     replacements = (
         (re.compile(r"\bVARCHAR(?:\(\d+\))?\b"), "TEXT"),
         (re.compile(r"\bJSON\b"), "TEXT"),
@@ -1211,7 +2087,8 @@ def _normalize_sqlite_schema_for_kaggle_indexer(db_path: Path) -> int:
         (re.compile(r"\bFLOAT\b"), "REAL"),
     )
     updated = 0
-    with sqlite3.connect(db_path) as conn:
+    with sqlite3.connect(db_path, timeout=60) as conn:
+        _configure_sqlite_upload_mutation(conn)
         rows = conn.execute(
             "SELECT rowid, sql FROM sqlite_schema WHERE type = 'table' AND sql IS NOT NULL"
         ).fetchall()
@@ -1228,7 +2105,9 @@ def _normalize_sqlite_schema_for_kaggle_indexer(db_path: Path) -> int:
                     )
                     updated += 1
             if updated:
-                schema_version = int(conn.execute("PRAGMA schema_version").fetchone()[0])
+                schema_version = int(
+                    conn.execute("PRAGMA schema_version").fetchone()[0]
+                )
                 conn.execute(f"PRAGMA schema_version = {schema_version + 1}")
         finally:
             conn.execute("PRAGMA writable_schema = OFF")
@@ -1240,7 +2119,7 @@ def _normalize_sqlite_schema_for_kaggle_indexer(db_path: Path) -> int:
         )
     if updated:
         print(
-            "Normalized SQLite upload schema for Kaggle indexer: "
+            "Normalized SQLite public-upload schema: "
             + json.dumps({"tables": updated}, sort_keys=True),
             flush=True,
         )
@@ -1251,7 +2130,7 @@ def _sqlite_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
-def _sqlite_affinity_for_kaggle_indexer(declared_type: str | None) -> str:
+def _sqlite_affinity_for_public_upload(declared_type: str | None) -> str:
     normalized = str(declared_type or "").strip().upper()
     if not normalized:
         return "TEXT"
@@ -1266,17 +2145,21 @@ def _sqlite_affinity_for_kaggle_indexer(declared_type: str | None) -> str:
     return "TEXT"
 
 
-def _rebuild_sqlite_tables_for_kaggle_indexer(db_path: Path) -> dict[str, int]:
-    """Rewrite the public SQLite copy with plain table DDL for Kaggle indexing.
+def _rebuild_sqlite_tables_for_public_upload(db_path: Path) -> dict[str, int]:
+    """Rewrite the public SQLite copy with plain read-only table DDL.
 
-    Kaggle's SQLite indexer handles large constraint-free SQLite datasets such as
-    the NBA database, but does not expose sqliteInfo for OpenOppsDB's constraint-
-    rich SQLAlchemy DDL. The upload copy is read-only public data, so retaining
-    rows and columns matters more than retaining enforcement constraints.
+    Kaggle currently may not expose sqliteInfo for fresh SQLite uploads. The
+    public SQLite copy is still kept compact, portable, and reader-friendly, with
+    table and column descriptions mirrored in openopps_tables/openopps_columns
+    and in the CSV/Parquet resources that Kaggle does render as tabular data.
     """
     rebuilt_tables = 0
     copied_rows = 0
-    with sqlite3.connect(db_path) as conn:
+    projected_columns_by_table: dict[str, set[str]] = {}
+    for table_name, column_name in SQLITE_UPLOAD_PROJECTED_COLUMNS:
+        projected_columns_by_table.setdefault(table_name, set()).add(column_name)
+    with sqlite3.connect(db_path, timeout=60) as conn:
+        _configure_sqlite_upload_mutation(conn)
         conn.execute("PRAGMA foreign_keys = OFF")
         table_names = [
             str(row[0])
@@ -1295,22 +2178,33 @@ def _rebuild_sqlite_tables_for_kaggle_indexer(db_path: Path) -> dict[str, int]:
             ).fetchall()
             if not columns:
                 continue
-            temp_table = f"__openopps_kaggle_plain_{sha1(table_name.encode()).hexdigest()[:12]}"
+            temp_table = (
+                f"__openopps_kaggle_plain_{sha1(table_name.encode()).hexdigest()[:12]}"
+            )
             conn.execute(f"DROP TABLE IF EXISTS {_sqlite_identifier(temp_table)}")
             column_defs = ", ".join(
                 f"{_sqlite_identifier(str(column[1]))} "
-                f"{_sqlite_affinity_for_kaggle_indexer(str(column[2] or ''))}"
+                f"{_sqlite_affinity_for_public_upload(str(column[2] or ''))}"
                 for column in columns
             )
             column_names = ", ".join(
                 _sqlite_identifier(str(column[1])) for column in columns
+            )
+            projected_columns = projected_columns_by_table.get(table_name, set())
+            select_expressions = ", ".join(
+                (
+                    f"NULL AS {_sqlite_identifier(str(column[1]))}"
+                    if str(column[1]) in projected_columns
+                    else _sqlite_identifier(str(column[1]))
+                )
+                for column in columns
             )
             conn.execute(
                 f"CREATE TABLE {_sqlite_identifier(temp_table)} ({column_defs})"
             )
             conn.execute(
                 f"INSERT INTO {_sqlite_identifier(temp_table)} ({column_names}) "
-                f"SELECT {column_names} FROM {_sqlite_identifier(table_name)}"
+                f"SELECT {select_expressions} FROM {_sqlite_identifier(table_name)}"
             )
             row_count = int(conn.execute("SELECT changes()").fetchone()[0])
             conn.execute(f"DROP TABLE {_sqlite_identifier(table_name)}")
@@ -1323,9 +2217,11 @@ def _rebuild_sqlite_tables_for_kaggle_indexer(db_path: Path) -> dict[str, int]:
         conn.commit()
         integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
     if integrity.lower() != "ok":
-        raise RuntimeError(f"SQLite plain-table rebuild failed integrity_check: {integrity}")
+        raise RuntimeError(
+            f"SQLite plain-table rebuild failed integrity_check: {integrity}"
+        )
     print(
-        "Rebuilt SQLite upload tables for Kaggle indexer: "
+        "Rebuilt SQLite public-upload tables: "
         + json.dumps(
             {"tables": rebuilt_tables, "rows": copied_rows},
             sort_keys=True,
@@ -1336,17 +2232,109 @@ def _rebuild_sqlite_tables_for_kaggle_indexer(db_path: Path) -> dict[str, int]:
 
 
 def _write_table_csv(conn: sqlite3.Connection, table: Table, csv_path: Path) -> None:
-    cursor = conn.execute(f'SELECT * FROM "{table.name}"')
-    headers = (
-        [column[0] for column in cursor.description]
-        if cursor.description
-        else list(table.model.model_fields)
+    headers = _sqlite_table_export_columns(conn, table)
+    order_by = _sqlite_table_export_order_by(headers, table)
+    query = (
+        "SELECT "
+        + ", ".join(_sqlite_identifier(column) for column in headers)
+        + f" FROM {_sqlite_identifier(table.name)}"
+        + (
+            " ORDER BY " + ", ".join(_sqlite_identifier(column) for column in order_by)
+            if order_by
+            else ""
+        )
     )
+    cursor = conn.execute(query)
+    boolean_indexes = {
+        index
+        for index, column in enumerate(headers)
+        if column in _table_boolean_columns(table)
+    }
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(headers)
         while rows := cursor.fetchmany(10_000):
-            writer.writerows(rows)
+            if boolean_indexes:
+                writer.writerows(
+                    _coerce_sqlite_export_row(row, boolean_indexes) for row in rows
+                )
+            else:
+                writer.writerows(rows)
+
+
+def _table_boolean_columns(table: Table) -> set[str]:
+    return {
+        field["name"]
+        for field in _model_schema_metadata(table.model)["fields"]
+        if "boolean" in str(field.get("jsonSchemaType") or "")
+    }
+
+
+def _coerce_sqlite_export_row(
+    row: tuple[Any, ...], boolean_indexes: set[int]
+) -> tuple[Any, ...]:
+    values = list(row)
+    for index in boolean_indexes:
+        value = values[index]
+        if value is None or value == "":
+            continue
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "false"}:
+                values[index] = normalized
+                continue
+        values[index] = "true" if bool(int(value)) else "false"
+    return tuple(values)
+
+
+def _sqlite_table_export_columns(conn: sqlite3.Connection, table: Table) -> list[str]:
+    existing_columns = [
+        str(row[1])
+        for row in conn.execute(
+            f"PRAGMA table_info({_sqlite_string_literal(table.name)})"
+        ).fetchall()
+    ]
+    if not existing_columns:
+        raise RuntimeError(f"Cannot export missing SQLite table: {table.name}")
+    expected_columns = list(table.model.model_fields)
+    missing = [column for column in expected_columns if column not in existing_columns]
+    if missing:
+        raise RuntimeError(
+            f"{table.name} is missing export columns: {', '.join(missing)}"
+        )
+    return expected_columns
+
+
+def _sqlite_table_export_order_by(headers: list[str], table: Table) -> tuple[str, ...]:
+    return tuple(
+        column for column in EXPORT_ORDER_COLUMNS[table.name] if column in headers
+    )
+
+
+def _polars_schema_overrides(table: Table) -> dict[str, pl.DataType]:
+    schema: dict[str, pl.DataType] = {}
+    for field in _model_schema_metadata(table.model)["fields"]:
+        schema[field["name"]] = _polars_dtype_for_field(field)
+    return schema
+
+
+def _polars_dtype_for_field(field: dict[str, Any]) -> pl.DataType:
+    field_type = str(field.get("type") or "")
+    logical_type = str(field.get("logicalType") or "")
+    schema_types = {
+        item.strip()
+        for item in str(field.get("jsonSchemaType") or "").split("|")
+        if item.strip() and item.strip() != "null"
+    }
+    if field_type == "datetime" or "datetime" in logical_type:
+        return pl.Datetime
+    if "boolean" in schema_types:
+        return pl.Boolean
+    if "integer" in schema_types:
+        return pl.Int64
+    if "number" in schema_types:
+        return pl.Float64
+    return pl.String
 
 
 def _table_export_frame(table: Table, rows: list[dict[str, object]]) -> pl.DataFrame:
@@ -1556,6 +2544,164 @@ def _backfill_sqlite_skill_tables(db_path: Path) -> dict[str, int]:
     }
 
 
+def _backfill_sqlite_version_child_tables(db_path: Path) -> dict[str, int]:
+    """Populate deterministic location and bullet child rows from job_versions JSON."""
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")
+        table_names = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        required_tables = {
+            "job_versions",
+            "job_version_locations",
+            "job_version_bullets",
+        }
+        if not required_tables <= table_names:
+            return {
+                "versionsExamined": 0,
+                "locationsInserted": 0,
+                "bulletsInserted": 0,
+            }
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_job_version_locations_job_version_id
+            ON job_version_locations (job_version_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_job_version_bullets_job_version_id
+            ON job_version_bullets (job_version_id)
+            """
+        )
+        versions_examined = 0
+        locations_inserted = 0
+        bullets_inserted = 0
+        existing_location_versions = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT job_version_id
+                FROM job_version_locations
+                WHERE job_version_id IS NOT NULL
+                """
+            )
+        }
+        existing_bullet_versions = {
+            str(row[0])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT job_version_id
+                FROM job_version_bullets
+                WHERE job_version_id IS NOT NULL
+                """
+            )
+        }
+        last_rowid = 0
+        chunk_size = 2000
+        while True:
+            rows = conn.execute(
+                """
+                SELECT rowid AS _rowid, id, locations, responsibilities, qualifications
+                FROM job_versions
+                WHERE rowid > ?
+                ORDER BY rowid
+                LIMIT ?
+                """,
+                (last_rowid, chunk_size),
+            ).fetchall()
+            if not rows:
+                break
+            last_rowid = int(rows[-1]["_rowid"])
+            location_rows: list[tuple[str, str, int, str]] = []
+            bullet_rows: list[tuple[str, str, str, int, str]] = []
+            for row in rows:
+                versions_examined += 1
+                version_id = str(row["id"])
+                if version_id not in existing_location_versions:
+                    for ordinal, label in enumerate(
+                        _json_string_list(row["locations"])
+                    ):
+                        location_rows.append(
+                            (
+                                stable_id(version_id, "location", str(ordinal), label),
+                                version_id,
+                                ordinal,
+                                label,
+                            )
+                        )
+                    if location_rows:
+                        existing_location_versions.add(version_id)
+                if version_id not in existing_bullet_versions:
+                    for kind, values in (
+                        ("responsibility", _json_string_list(row["responsibilities"])),
+                        ("qualification", _json_string_list(row["qualifications"])),
+                    ):
+                        for ordinal, text_value in enumerate(values):
+                            bullet_rows.append(
+                                (
+                                    stable_id(
+                                        version_id,
+                                        kind,
+                                        str(ordinal),
+                                        text_value,
+                                    ),
+                                    version_id,
+                                    kind,
+                                    ordinal,
+                                    text_value,
+                                )
+                            )
+                    if bullet_rows:
+                        existing_bullet_versions.add(version_id)
+            if location_rows:
+                cursor = conn.executemany(
+                    """
+                    INSERT INTO job_version_locations (
+                        id,
+                        job_version_id,
+                        ordinal,
+                        label
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    location_rows,
+                )
+                if cursor.rowcount and cursor.rowcount > 0:
+                    locations_inserted += cursor.rowcount
+            if bullet_rows:
+                cursor = conn.executemany(
+                    """
+                    INSERT INTO job_version_bullets (
+                        id,
+                        job_version_id,
+                        kind,
+                        ordinal,
+                        text
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    bullet_rows,
+                )
+                if cursor.rowcount and cursor.rowcount > 0:
+                    bullets_inserted += cursor.rowcount
+            conn.commit()
+    result = {
+        "versionsExamined": versions_examined,
+        "locationsInserted": locations_inserted,
+        "bulletsInserted": bullets_inserted,
+    }
+    if locations_inserted or bullets_inserted:
+        print(
+            "Backfilled SQLite job-version child tables: "
+            + json.dumps(result, sort_keys=True),
+            flush=True,
+        )
+    return result
+
+
 def _extract_version_skills(row: sqlite3.Row) -> list[dict[str, Any]]:
     existing = _json_list(row["skills"])
     if existing:
@@ -1598,6 +2744,10 @@ def _cached_slug(value: str) -> str:
 def _json_list(value: Any) -> list[Any]:
     data = _json_value(value)
     return data if isinstance(data, list) else []
+
+
+def _json_string_list(value: Any) -> list[str]:
+    return [str(item) for item in _json_list(value) if item not in (None, "")]
 
 
 def _json_value(value: Any) -> Any:
@@ -1649,9 +2799,35 @@ def _write_snapshot_quality_report(
     )
     _write_json(report_path, report)
     _checkpoint_sqlite(db_path)
+    _print_snapshot_quality_summary(report)
     if report["status"] != "pass":
         blockers = "; ".join(report["hardBlockers"]) or "unknown quality failure"
         raise SystemExit(f"Snapshot quality gate failed: {blockers}")
+
+
+def _print_snapshot_quality_summary(report: dict[str, Any]) -> None:
+    counts = report.get("counts") or {}
+    print(
+        "OpenOpps snapshot quality: "
+        + json.dumps(
+            {
+                "status": report.get("status"),
+                "hardBlockers": report.get("hardBlockers"),
+                "warnings": report.get("warnings"),
+                "counts": {
+                    "jobs": counts.get("jobs"),
+                    "job_versions": counts.get("job_versions"),
+                    "job_version_skills": counts.get("job_version_skills"),
+                    "job_version_skill_keywords": counts.get(
+                        "job_version_skill_keywords"
+                    ),
+                    "openopps_tables": counts.get("openopps_tables"),
+                    "openopps_columns": counts.get("openopps_columns"),
+                },
+            },
+            sort_keys=True,
+        )
+    )
 
 
 def snapshot_quality_report(
@@ -1680,10 +2856,30 @@ def snapshot_quality_report(
         hard_blockers.append("unreadable_sqlite_database")
     for table_name in sqlite_report["missingTables"]:
         hard_blockers.append(f"missing_sqlite_table:{table_name}")
+    for table_name in sqlite_report["extraTables"]:
+        hard_blockers.append(f"unexpected_sqlite_table:{table_name}")
+    for issue in sqlite_report["missingColumnErrors"]:
+        hard_blockers.append(f"missing_sqlite_column:{issue}")
+    for issue in sqlite_report["extraColumnErrors"]:
+        hard_blockers.append(f"unexpected_sqlite_column:{issue}")
+    for issue in sqlite_report["integrityErrors"]:
+        hard_blockers.append(f"sqlite_integrity_error:{issue}")
+    for issue in sqlite_report["foreignKeyErrors"]:
+        hard_blockers.append(f"sqlite_foreign_key_error:{issue}")
+    for issue in sqlite_report["orphanErrors"]:
+        hard_blockers.append(f"sqlite_orphan_error:{issue}")
+    for issue in sqlite_report["nullKeyErrors"]:
+        hard_blockers.append(f"sqlite_null_key_error:{issue}")
+    for issue in sqlite_report["duplicateErrors"]:
+        hard_blockers.append(f"sqlite_duplicate_error:{issue}")
 
     status_counts = _nested_dict(status, "database", "counts")
     readiness = _nested_dict(status, "readiness")
     sqlite_counts = sqlite_report["counts"]
+    parquet_counts = _parquet_snapshot_counts(
+        output_dir,
+        ("job_version_skills", "job_version_skill_keywords"),
+    )
 
     enabled_sources = _int_count(sqlite_counts.get("enabledSources"))
     source_count = _int_count(
@@ -1705,6 +2901,15 @@ def snapshot_quality_report(
     provider_errors = _dict_value(sync_metrics.get("providerErrors"))
     provider_error_details = _dict_value(sync_metrics.get("providerErrorDetails"))
     total_provider_errors = sum(_int_count(value) for value in provider_errors.values())
+    job_version_rows = _int_count(sqlite_counts.get("job_versions"))
+    job_version_skill_rows = _effective_full_export_count(
+        sqlite_counts.get("job_version_skills"),
+        parquet_counts.get("job_version_skills"),
+    )
+    job_version_skill_keyword_rows = _effective_full_export_count(
+        sqlite_counts.get("job_version_skill_keywords"),
+        parquet_counts.get("job_version_skill_keywords"),
+    )
 
     if source_count == 0 or enabled_sources == 0:
         hard_blockers.append("missing_enabled_source_evidence")
@@ -1716,10 +2921,10 @@ def snapshot_quality_report(
         hard_blockers.append("missing_job_sync_run_evidence")
     if current_jobs == 0 and jobs_persisted == 0 and not empty_snapshot_explanation:
         hard_blockers.append("missing_current_job_evidence")
-    if sqlite_counts.get("job_versions", 0) > 0:
-        if sqlite_counts.get("job_version_skills", 0) == 0:
+    if job_version_rows > 0:
+        if job_version_skill_rows == 0:
             hard_blockers.append("missing_job_version_skill_rows")
-        if sqlite_counts.get("job_version_skill_keywords", 0) == 0:
+        if job_version_skill_keyword_rows == 0:
             hard_blockers.append("missing_job_version_skill_keyword_rows")
 
     for provider_id, count in provider_errors.items():
@@ -1759,6 +2964,9 @@ def snapshot_quality_report(
         "currentJobs": current_jobs,
         "jobSyncRuns": job_sync_runs,
         "jobsPersisted": jobs_persisted,
+        "job_versions": job_version_rows,
+        "job_version_skills": job_version_skill_rows,
+        "job_version_skill_keywords": job_version_skill_keyword_rows,
         "providerErrorCount": total_provider_errors,
     }
     return {
@@ -1787,6 +2995,7 @@ def snapshot_quality_report(
         "providerErrorDetails": provider_error_details,
         "requiredFiles": required_files,
         "sqlite": sqlite_report,
+        "parquetCounts": parquet_counts,
         "coverage": _coverage_excerpt(coverage),
         "emptySnapshotExplanation": empty_snapshot_explanation,
     }
@@ -1821,10 +3030,20 @@ def _required_file_checks(
 
 
 def _prune_private_upload_files(output_dir: Path) -> None:
-    for relative_path in PRIVATE_EVIDENCE_FILES + PRIVATE_METADATA_FILES:
+    for relative_path in (
+        PRIVATE_EVIDENCE_FILES + PRIVATE_METADATA_FILES + PRIVATE_UPLOAD_RUNTIME_FILES
+    ):
         path = output_dir / relative_path
         if path.exists():
             path.unlink()
+    for relative_dir in PRIVATE_UPLOAD_RUNTIME_DIRS:
+        path = output_dir / relative_dir
+        if path.exists():
+            shutil.rmtree(path)
+    for suffix in SQLITE_SIDECAR_SUFFIXES:
+        sidecar = output_dir / f"{DB_FILE}{suffix}"
+        if sidecar.exists():
+            sidecar.unlink()
     metadata_dir = output_dir / "metadata"
     if metadata_dir.exists() and not any(metadata_dir.iterdir()):
         metadata_dir.rmdir()
@@ -1851,27 +3070,92 @@ def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
             shutil.copy2(source, target)
 
 
+def _stage_runtime_generator_dir(upload_dir: Path) -> None:
+    upload_dir = upload_dir.expanduser().resolve()
+    script_path = Path(__file__).resolve()
+    protected_dirs = {
+        script_path.parent,
+        script_path.parent.parent,
+        DEFAULT_DATASET_DIR.resolve(),
+    }
+    if upload_dir in protected_dirs:
+        raise ValueError(
+            "Runtime generator staging directory must be a temporary upload dir"
+        )
+    if upload_dir.exists():
+        shutil.rmtree(upload_dir)
+    upload_dir.mkdir(parents=True)
+
+    _write_json(
+        upload_dir / "dataset-metadata.json", runtime_generator_dataset_metadata()
+    )
+    shutil.copy2(script_path, upload_dir / RUNTIME_GENERATOR_SCRIPT_FILE)
+
+
+def _assert_public_sqlite_table_allowlist(db_path: Path) -> dict[str, list[str]]:
+    with sqlite3.connect(db_path) as conn:
+        inventory = _public_sqlite_table_inventory(conn)
+    extra_tables = inventory["extraTables"]
+    missing_tables = inventory["missingTables"]
+    if extra_tables or missing_tables:
+        raise RuntimeError(
+            "Public SQLite table inventory mismatch: "
+            + json.dumps(inventory, sort_keys=True)
+        )
+    return inventory
+
+
+def _assert_public_sqlite_logical_integrity(db_path: Path) -> dict[str, Any]:
+    with sqlite3.connect(db_path) as conn:
+        report = _sqlite_logical_integrity_report(conn)
+    errors = (
+        report["missingColumnErrors"]
+        + report["extraColumnErrors"]
+        + report["integrityErrors"]
+        + report["foreignKeyErrors"]
+        + report["orphanErrors"]
+        + report["nullKeyErrors"]
+        + report["duplicateErrors"]
+    )
+    if errors:
+        raise RuntimeError(
+            "Public SQLite logical integrity failed: "
+            + json.dumps(errors[:20], sort_keys=True)
+        )
+    return report
+
+
 def _sqlite_snapshot_report(db_path: Path) -> dict[str, Any]:
     report: dict[str, Any] = {
         "path": str(db_path),
         "readable": False,
         "missingTables": [],
+        "extraTables": [],
+        "missingColumnErrors": [],
+        "extraColumnErrors": [],
+        "integrityErrors": [],
+        "foreignKeyErrors": [],
+        "orphanErrors": [],
+        "nullKeyErrors": [],
+        "duplicateErrors": [],
         "counts": {},
     }
     if not db_path.is_file():
         return report
     try:
         with sqlite3.connect(db_path) as conn:
-            tables = {
-                row[0]
-                for row in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
-                )
-            }
-            missing_tables = [
-                table.name for table in TABLES if table.name not in tables
-            ]
-            report["missingTables"] = missing_tables
+            inventory = _public_sqlite_table_inventory(conn)
+            tables = set(inventory["tables"])
+            report["missingTables"] = inventory["missingTables"]
+            report["extraTables"] = inventory["extraTables"]
+            integrity = _sqlite_logical_integrity_report(conn)
+            report["missingColumnErrors"] = integrity["missingColumnErrors"]
+            report["extraColumnErrors"] = integrity["extraColumnErrors"]
+            report["integrityErrors"] = integrity["integrityErrors"]
+            report["foreignKeyErrors"] = integrity["foreignKeyErrors"]
+            report["orphanErrors"] = integrity["orphanErrors"]
+            report["nullKeyErrors"] = integrity["nullKeyErrors"]
+            report["duplicateErrors"] = integrity["duplicateErrors"]
             counts = {
                 table.name: _sqlite_count(conn, table.name)
                 for table in TABLES
@@ -1898,8 +3182,233 @@ def _sqlite_snapshot_report(db_path: Path) -> dict[str, Any]:
     return report
 
 
+def _public_sqlite_table_inventory(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    tables = sorted(
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+            """
+        ).fetchall()
+    )
+    table_set = set(tables)
+    expected = set(PUBLIC_SQLITE_TABLE_NAMES)
+    return {
+        "tables": tables,
+        "missingTables": sorted(expected - table_set),
+        "extraTables": sorted(table_set - expected),
+    }
+
+
+def _sqlite_logical_integrity_report(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    tables = set(_public_sqlite_table_inventory(conn)["tables"])
+    temp_key_tables: dict[tuple[str, str], str] = {}
+    report = {
+        "missingColumnErrors": [],
+        "extraColumnErrors": [],
+        "integrityErrors": [],
+        "foreignKeyErrors": [],
+        "orphanErrors": [],
+        "nullKeyErrors": [],
+        "duplicateErrors": [],
+    }
+    column_inventory = _public_sqlite_column_inventory(conn, tables)
+    report["missingColumnErrors"] = column_inventory["missingColumnErrors"]
+    report["extraColumnErrors"] = column_inventory["extraColumnErrors"]
+    if report["missingColumnErrors"] or report["extraColumnErrors"]:
+        return report
+    try:
+        integrity_rows = [str(row[0]) for row in conn.execute("PRAGMA integrity_check")]
+        report["integrityErrors"] = [
+            value for value in integrity_rows if value.lower() != "ok"
+        ]
+    except sqlite3.Error as exc:
+        report["integrityErrors"] = [str(exc)]
+    try:
+        report["foreignKeyErrors"] = [
+            str(tuple(row))
+            for row in conn.execute("PRAGMA foreign_key_check").fetchall()
+        ]
+    except sqlite3.Error as exc:
+        report["foreignKeyErrors"] = [str(exc)]
+
+    for (table_name, column_name), references in RELATIONSHIP_REFERENCES.items():
+        if table_name not in tables:
+            continue
+        for reference in references:
+            parent_table = str(reference["table"])
+            parent_column = str(reference["column"])
+            if parent_table not in tables:
+                continue
+            nullable = bool(reference.get("nullable"))
+            count = _sqlite_orphan_count(
+                conn,
+                temp_key_tables,
+                table_name=table_name,
+                column_name=column_name,
+                parent_table=parent_table,
+                parent_column=parent_column,
+                nullable=nullable,
+            )
+            if count:
+                report["orphanErrors"].append(
+                    f"{table_name}.{column_name}->{parent_table}.{parent_column}:{count}"
+                )
+
+    for table_name, columns in APP_PRIMARY_KEY_COLUMNS.items():
+        if table_name not in tables:
+            continue
+        null_count = _sqlite_null_key_count(conn, table_name, columns)
+        if null_count:
+            report["nullKeyErrors"].append(f"{table_name}.pk:{null_count}")
+        count = _sqlite_duplicate_count(conn, table_name, columns)
+        if count:
+            report["duplicateErrors"].append(f"{table_name}.pk:{count}")
+    for table_name, columns in {
+        "boards": ("source_key", "remote_id"),
+        "board_providers": ("source_key", "board_key", "provider_id"),
+        "jobs": ("board_key", "provider_id", "remote_id"),
+        "job_versions": ("job_id", "content_hash"),
+        "job_version_skills": ("job_version_id", "ordinal"),
+    }.items():
+        if table_name not in tables:
+            continue
+        count = _sqlite_duplicate_count(conn, table_name, columns)
+        if count:
+            report["duplicateErrors"].append(
+                f"{table_name}.unique({','.join(columns)}):{count}"
+            )
+    return report
+
+
+def _public_sqlite_column_inventory(
+    conn: sqlite3.Connection, tables: set[str]
+) -> dict[str, list[str]]:
+    missing: list[str] = []
+    extra: list[str] = []
+    for table in TABLES:
+        if table.name not in tables:
+            continue
+        expected_columns = set(table.model.model_fields)
+        actual_columns = {
+            str(row[1])
+            for row in conn.execute(
+                f"PRAGMA table_info({_sqlite_identifier(table.name)})"
+            ).fetchall()
+        }
+        missing.extend(
+            f"{table.name}.{column}"
+            for column in sorted(expected_columns - actual_columns)
+        )
+        extra.extend(
+            f"{table.name}.{column}"
+            for column in sorted(actual_columns - expected_columns)
+        )
+    return {"missingColumnErrors": missing, "extraColumnErrors": extra}
+
+
+def _sqlite_orphan_count(
+    conn: sqlite3.Connection,
+    temp_key_tables: dict[tuple[str, str], str],
+    *,
+    table_name: str,
+    column_name: str,
+    parent_table: str,
+    parent_column: str,
+    nullable: bool,
+) -> int:
+    temp_table = _sqlite_parent_key_table(
+        conn,
+        temp_key_tables,
+        table_name=parent_table,
+        column_name=parent_column,
+    )
+    null_predicate = (
+        f"child.{_sqlite_identifier(column_name)} IS NULL" if not nullable else "0"
+    )
+    return int(
+        conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM {_sqlite_identifier(table_name)} AS child
+            LEFT JOIN {_sqlite_identifier(temp_table)} AS parent
+              ON child.{_sqlite_identifier(column_name)} = parent.key
+            WHERE {null_predicate}
+               OR (
+                   child.{_sqlite_identifier(column_name)} IS NOT NULL
+                   AND parent.key IS NULL
+               )
+            """
+        ).fetchone()[0]
+    )
+
+
+def _sqlite_parent_key_table(
+    conn: sqlite3.Connection,
+    temp_key_tables: dict[tuple[str, str], str],
+    *,
+    table_name: str,
+    column_name: str,
+) -> str:
+    cache_key = (table_name, column_name)
+    if cache_key in temp_key_tables:
+        return temp_key_tables[cache_key]
+    suffix = sha1(f"{table_name}.{column_name}".encode("utf-8")).hexdigest()[:12]
+    temp_table = f"__openopps_keys_{suffix}"
+    temp_index = f"__openopps_keys_{suffix}_idx"
+    conn.execute(
+        f"""
+        CREATE TEMP TABLE {_sqlite_identifier(temp_table)} AS
+        SELECT DISTINCT {_sqlite_identifier(column_name)} AS key
+        FROM {_sqlite_identifier(table_name)}
+        WHERE {_sqlite_identifier(column_name)} IS NOT NULL
+        """
+    )
+    conn.execute(
+        f"CREATE INDEX {_sqlite_identifier(temp_index)} "
+        f"ON {_sqlite_identifier(temp_table)} (key)"
+    )
+    temp_key_tables[cache_key] = temp_table
+    return temp_table
+
+
 def _sqlite_count(conn: sqlite3.Connection, table_name: str) -> int:
     return int(conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0])
+
+
+def _sqlite_duplicate_count(
+    conn: sqlite3.Connection, table_name: str, columns: tuple[str, ...]
+) -> int:
+    column_sql = ", ".join(_sqlite_identifier(column) for column in columns)
+    null_checks = " OR ".join(
+        f"{_sqlite_identifier(column)} IS NULL" for column in columns
+    )
+    query = (
+        "SELECT COUNT(*) FROM ("
+        f"SELECT {column_sql}, COUNT(*) AS row_count "
+        f"FROM {_sqlite_identifier(table_name)} "
+        f"WHERE NOT ({null_checks}) "
+        f"GROUP BY {column_sql} HAVING row_count > 1"
+        ")"
+    )
+    return int(conn.execute(query).fetchone()[0])
+
+
+def _sqlite_null_key_count(
+    conn: sqlite3.Connection, table_name: str, columns: tuple[str, ...]
+) -> int:
+    null_checks = " OR ".join(
+        f"{_sqlite_identifier(column)} IS NULL" for column in columns
+    )
+    return int(
+        conn.execute(
+            f"SELECT COUNT(*) FROM {_sqlite_identifier(table_name)} WHERE {null_checks}"
+        ).fetchone()[0]
+    )
 
 
 def _sqlite_count_where(
@@ -1939,6 +3448,31 @@ def _int_count(*values: Any) -> int:
     return 0
 
 
+def _effective_full_export_count(sqlite_value: Any, parquet_value: Any) -> int:
+    sqlite_count = _int_count(sqlite_value)
+    if sqlite_count > 0:
+        return sqlite_count
+    return _int_count(parquet_value)
+
+
+def _parquet_snapshot_counts(
+    output_dir: Path, table_names: tuple[str, ...]
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    parquet_dir = output_dir / PARQUET_DIR
+    for table_name in table_names:
+        path = parquet_dir / f"{table_name}.parquet"
+        if not path.is_file():
+            continue
+        try:
+            counts[table_name] = int(
+                pl.scan_parquet(path).select(pl.len()).collect().item()
+            )
+        except Exception:
+            continue
+    return counts
+
+
 def _coverage_excerpt(coverage: dict[str, Any] | None) -> dict[str, Any] | None:
     if coverage is None:
         return None
@@ -1955,11 +3489,42 @@ def _drop_private_sqlite_tables(db_path: Path) -> None:
         conn.execute("DROP TABLE IF EXISTS alembic_version")
 
 
+def _prune_orphan_board_provider_routes(db_path: Path) -> int:
+    with sqlite3.connect(db_path) as conn:
+        table_names = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        if not {"sources", "boards", "board_providers"} <= table_names:
+            return 0
+        cursor = conn.execute(
+            """
+            DELETE FROM board_providers
+            WHERE source_key NOT IN (SELECT key FROM sources)
+               OR board_key NOT IN (SELECT key FROM boards)
+            """
+        )
+        deleted = int(cursor.rowcount if cursor.rowcount is not None else 0)
+        conn.commit()
+    if deleted:
+        print(
+            "Pruned stale public provider routes before bundle export: "
+            + json.dumps({"rows": deleted}, sort_keys=True),
+            flush=True,
+        )
+    return deleted
+
+
 def _write_sqlite_metadata(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("DROP TABLE IF EXISTS openopps_columns")
+        conn.execute("DROP TABLE IF EXISTS openopps_tables")
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS openopps_tables (
+            CREATE TABLE openopps_tables (
                 table_name TEXT PRIMARY KEY,
                 table_title TEXT NOT NULL,
                 table_description TEXT NOT NULL,
@@ -1970,7 +3535,7 @@ def _write_sqlite_metadata(db_path: Path) -> None:
         )
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS openopps_columns (
+            CREATE TABLE openopps_columns (
                 table_name TEXT NOT NULL,
                 column_name TEXT NOT NULL,
                 column_title TEXT NOT NULL,
@@ -1978,6 +3543,10 @@ def _write_sqlite_metadata(db_path: Path) -> None:
                 logical_type TEXT NOT NULL,
                 json_schema_type TEXT NOT NULL,
                 required INTEGER NOT NULL,
+                operational_nullable INTEGER NOT NULL,
+                public_sqlite_value_status TEXT NOT NULL,
+                full_export_paths_json TEXT,
+                relationship_json TEXT,
                 source_name TEXT,
                 format TEXT,
                 enum_json TEXT,
@@ -1988,8 +3557,6 @@ def _write_sqlite_metadata(db_path: Path) -> None:
             )
             """
         )
-        conn.execute("DELETE FROM openopps_columns")
-        conn.execute("DELETE FROM openopps_tables")
         for table in TABLES:
             conn.execute(
                 """
@@ -2010,6 +3577,10 @@ def _write_sqlite_metadata(db_path: Path) -> None:
                 ),
             )
             for field in _model_schema_metadata(table.model)["fields"]:
+                public_status = _public_sqlite_value_status(table.name, field["name"])
+                enum_values = field.get("enum") or ENUM_VALUES_BY_COLUMN.get(
+                    (table.name, field["name"])
+                )
                 conn.execute(
                     """
                     INSERT INTO openopps_columns (
@@ -2020,28 +3591,121 @@ def _write_sqlite_metadata(db_path: Path) -> None:
                         logical_type,
                         json_schema_type,
                         required,
+                        operational_nullable,
+                        public_sqlite_value_status,
+                        full_export_paths_json,
+                        relationship_json,
                         source_name,
                         format,
                         enum_json,
                         examples_json,
                         default_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         table.name,
                         field["name"],
                         field["title"],
-                        field["description"],
+                        _public_column_description(
+                            table.name,
+                            field["name"],
+                            field["description"],
+                            public_status,
+                        ),
                         field.get("logicalType", field["type"]),
                         field["jsonSchemaType"],
                         int(field["required"]),
+                        int(_operational_nullable(table, field["name"])),
+                        public_status,
+                        _json_or_none(_full_export_paths(table.name)),
+                        _json_or_none(
+                            _relationship_metadata(table.name, field["name"])
+                        ),
                         field.get("sourceName"),
                         field.get("format"),
-                        _json_or_none(field.get("enum")),
+                        _json_or_none(enum_values),
                         _json_or_none(field.get("examples")),
                         _json_or_none(field.get("default")),
                     ),
                 )
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _public_sqlite_value_status(table_name: str, column_name: str) -> str:
+    if table_name in {table.name for table in METADATA_TABLES}:
+        return "generated_metadata"
+    key = (table_name, column_name)
+    if key in SQLITE_UPLOAD_PROJECTED_COLUMN_SET:
+        return "projected_null"
+    if key in SQLITE_PREVIEW_TEXT_COLUMN_SET:
+        return "preview_truncated_when_long"
+    return "full"
+
+
+def _public_column_description(
+    table_name: str, column_name: str, description: str, status: str
+) -> str:
+    if status == "projected_null":
+        return (
+            f"{description} Projected to NULL in public SQLite; use CSV or Parquet "
+            f"exports for full {table_name}.{column_name} values."
+        )
+    if status == "preview_truncated_when_long":
+        return (
+            f"{description} Long public SQLite values may be truncated; use CSV or "
+            f"Parquet exports for full {table_name}.{column_name} values."
+        )
+    return description
+
+
+def _full_export_paths(table_name: str) -> list[str]:
+    return [f"{CSV_DIR}/{table_name}.csv", f"{PARQUET_DIR}/{table_name}.parquet"]
+
+
+def _operational_nullable(table: Table, column_name: str) -> bool:
+    table_model = getattr(table.model, "__table__", None)
+    if table_model is not None and column_name in table_model.columns:
+        return bool(table_model.columns[column_name].nullable)
+    field_info = table.model.model_fields[column_name]
+    return _annotation_allows_none(field_info.annotation) or field_info.default is None
+
+
+def _annotation_allows_none(annotation: Any) -> bool:
+    if annotation is None or annotation is types.NoneType:
+        return True
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        args = get_args(annotation)
+        return bool(args) and _annotation_allows_none(args[0])
+    if origin in (Union, types.UnionType):
+        return any(_annotation_allows_none(arg) for arg in get_args(annotation))
+    return False
+
+
+def _relationship_metadata(table_name: str, column_name: str) -> dict[str, Any] | None:
+    references = list(RELATIONSHIP_REFERENCES.get((table_name, column_name), ()))
+    referenced_by = _referenced_by_relationships(table_name, column_name)
+    primary_key = column_name in APP_PRIMARY_KEY_COLUMNS.get(table_name, ())
+    join_hint = JOIN_HINTS_BY_COLUMN.get((table_name, column_name))
+    if not references and not referenced_by and not primary_key and join_hint is None:
+        return None
+    return {
+        "primaryKey": primary_key,
+        "references": references,
+        "referencedBy": referenced_by,
+        "joinHint": join_hint,
+    }
+
+
+def _referenced_by_relationships(
+    table_name: str, column_name: str
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for (source_table, source_column), references in RELATIONSHIP_REFERENCES.items():
+        for reference in references:
+            if reference["table"] == table_name and reference["column"] == column_name:
+                rows.append({"table": source_table, "column": source_column})
+    return sorted(rows, key=lambda row: (row["table"], row["column"]))
 
 
 def _json_or_none(value: Any) -> str | None:
@@ -2147,41 +3811,43 @@ def _cell_lines(source: str) -> list[str]:
 
 def _notebook_setup_source() -> str:
     sync_env_defaults = json.dumps(NOTEBOOK_SYNC_ENV_DEFAULTS, indent=4, sort_keys=True)
-    skill_catalog = json.dumps(_SKILL_CATALOG, indent=4)
-    notebook_dataset_metadata = pformat(
-        dataset_metadata(),
+    app_table_names = pformat(
+        tuple(table.name for table in DATA_TABLES),
         sort_dicts=True,
         width=100,
     )
-    sqlite_table_metadata = pformat(
-        [_table_metadata(table) for table in TABLES],
+    app_primary_key_columns = pformat(
+        {
+            "sources": ("key",),
+            "boards": ("key",),
+            "board_providers": ("id",),
+            "jobs": ("id",),
+            "job_versions": ("id",),
+            "job_version_locations": ("id",),
+            "job_version_skills": ("id",),
+            "job_version_skill_keywords": ("id",),
+            "job_version_bullets": ("id",),
+            "job_payload_snapshots": ("id",),
+            "job_sync_runs": ("id",),
+            "job_sync_observations": ("id",),
+        },
         sort_dicts=True,
         width=100,
     )
-    table_rows = pformat(_notebook_table_rows(), sort_dicts=True, width=100)
-    column_rows = pformat(_notebook_column_rows(), sort_dicts=True, width=100)
-    public_upload_data_files = pformat(
-        PUBLIC_UPLOAD_DATA_FILES,
+    parquet_restore_tables = pformat(
+        SQLITE_DERIVED_CHILD_TABLES,
         sort_dicts=True,
         width=100,
     )
-    sqlite_preview_text_columns = pformat(
-        SQLITE_PREVIEW_TEXT_COLUMNS,
-        sort_dicts=True,
-        width=100,
-    )
-    return """#@title Initialize
+    return (
+        """#@title Initialize
 from __future__ import annotations
 
-import base64
 import csv
 import hashlib
-from functools import lru_cache
-from html import unescape
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import sqlite3
 import subprocess
@@ -2205,40 +3871,50 @@ OUTPUT_DIR = Path(
     )
 )
 DB_PATH = OUTPUT_DIR / "openoppsdb.sqlite"
+PUBLIC_UPLOAD_DIR = OUTPUT_DIR / "public-upload"
 GENERATOR_SCRIPT = OUTPUT_DIR / "generate_kaggle_metadata.py"
-CSV_DIR = "exports/csv"
-PARQUET_DIR = "exports/parquet"
+GENERATOR_SCRIPT_URL = os.environ.get(
+    "OPENOPPS_GENERATOR_SCRIPT_URL",
+    "__GENERATOR_SCRIPT_URL__",
+)
+GENERATOR_SCRIPT_SHA256 = os.environ.get(
+    "OPENOPPS_GENERATOR_SCRIPT_SHA256",
+    "",
+).strip().lower()
 KAGGLE_INPUT_DIR = Path("/kaggle/input")
 INPUT_DB_GLOB = "**/openoppsdb.sqlite"
+INPUT_SOURCES_PARQUET_GLOB = "**/exports/parquet/sources.parquet"
 INPUT_BOARDS_PARQUET_GLOB = "**/exports/parquet/boards.parquet"
 INPUT_JOB_VERSIONS_PARQUET_GLOB = "**/exports/parquet/job_versions.parquet"
 INPUT_JOB_PAYLOAD_SNAPSHOTS_PARQUET_GLOB = "**/exports/parquet/job_payload_snapshots.parquet"
-GENERATOR_SCRIPT_URL = os.environ.get(
-    "OPENOPPS_GENERATOR_SCRIPT_URL",
-    "https://raw.githubusercontent.com/wyattowalsh/openopps/main/scripts/generate_kaggle_metadata.py",
-)
-DATASET_IMAGE_URL = os.environ.get(
-    "OPENOPPS_DATASET_IMAGE_URL",
-    "https://raw.githubusercontent.com/wyattowalsh/openopps/main/docs/public/social/openoppsdb.png",
-)
 OPENOPPS_SYNC_ENV_DEFAULTS = __OPENOPPS_SYNC_ENV_DEFAULTS__
-SKILL_CATALOG = __SKILL_CATALOG__
-DATASET_METADATA = __DATASET_METADATA__
-SQLITE_TABLE_METADATA = __SQLITE_TABLE_METADATA__
-OPENOPPS_TABLE_ROWS = __OPENOPPS_TABLE_ROWS__
-OPENOPPS_COLUMN_ROWS = __OPENOPPS_COLUMN_ROWS__
-PUBLIC_UPLOAD_DATA_FILES = __PUBLIC_UPLOAD_DATA_FILES__
-SQLITE_PREVIEW_TEXT_MAX_CHARS = __SQLITE_PREVIEW_TEXT_MAX_CHARS__
-SQLITE_PREVIEW_TEXT_COLUMNS = __SQLITE_PREVIEW_TEXT_COLUMNS__
-SKILL_TEXT_VALUE_LIMIT = 4000
-SKILL_LEVEL_ALIASES = (
-    ("Executive", ("chief", "c-level", "c suite", "vp", "vice president")),
-    ("Principal", ("principal", "staff")),
-    ("Senior", ("senior", "sr", "lead")),
-    ("Manager", ("manager", "director", "head of")),
-    ("Junior", ("junior", "jr", "entry level", "intern", "associate")),
-)
-SLUG_RE = re.compile(r"[^a-z0-9]+")
+PUBLIC_METADATA_TABLES = {"openopps_tables", "openopps_columns"}
+APP_TABLE_NAMES = __APP_TABLE_NAMES__
+APP_PRIMARY_KEY_COLUMNS = __APP_PRIMARY_KEY_COLUMNS__
+PARQUET_RESTORE_TABLES = __PARQUET_RESTORE_TABLES__
+PUBLIC_SNAPSHOT_JSON_DEFAULTS = {
+    ("sources", "version"): "{}",
+    ("sources", "raw_metadata"): "{}",
+    ("sources", "extra_payload"): "{}",
+    ("boards", "source_keys"): "[]",
+    ("boards", "source_board_keys"): "{}",
+    ("boards", "markets"): "[]",
+    ("boards", "locations"): "[]",
+    ("boards", "raw_payload"): "{}",
+    ("boards", "extra_payload"): "{}",
+    ("board_providers", "raw_payload"): "{}",
+    ("board_providers", "extra_payload"): "{}",
+    ("jobs", "extra_payload"): "{}",
+    ("job_versions", "version"): "{}",
+    ("job_versions", "locations"): "[]",
+    ("job_versions", "compensation"): "{}",
+    ("job_versions", "responsibilities"): "[]",
+    ("job_versions", "qualifications"): "[]",
+    ("job_versions", "skills"): "[]",
+    ("job_versions", "job_description"): "{}",
+    ("job_versions", "extra_payload"): "{}",
+    ("job_payload_snapshots", "payload"): "{}",
+}
 KAGGLE_SYNC_TIMEOUT_SECONDS = float(
     os.environ.get(
         "OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS",
@@ -2251,6 +3927,18 @@ KAGGLE_JOB_ROUTE_LIMIT = int(
         "__OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT__",
     )
 )
+KAGGLE_METADATA_WAIT_SECONDS = float(
+    os.environ.get("OPENOPPS_KAGGLE_METADATA_WAIT_SECONDS", "900")
+)
+KAGGLE_METADATA_POLL_SECONDS = float(
+    os.environ.get("OPENOPPS_KAGGLE_METADATA_POLL_SECONDS", "30")
+)
+KAGGLE_SQLITE_INDEX_WAIT_SECONDS = float(
+    os.environ.get("OPENOPPS_KAGGLE_SQLITE_INDEX_WAIT_SECONDS", "120")
+)
+KAGGLE_SQLITE_INDEX_POLL_SECONDS = float(
+    os.environ.get("OPENOPPS_KAGGLE_SQLITE_INDEX_POLL_SECONDS", "15")
+)
 KAGGLE_CREDENTIALS_ERROR = (
     "Kaggle API credentials are required to publish openoppsdb. "
     "Configure KAGGLE_USERNAME and KAGGLE_KEY as Kaggle notebook secrets "
@@ -2260,84 +3948,162 @@ KAGGLE_SECRET_RETRIES = int(os.environ.get("OPENOPPS_KAGGLE_SECRET_RETRIES", "30
 KAGGLE_SECRET_RETRY_SECONDS = float(
     os.environ.get("OPENOPPS_KAGGLE_SECRET_RETRY_SECONDS", "10")
 )
+KAGGLE_SECRET_URL_BASE = os.environ.get(
+    "OPENOPPS_KAGGLE_SECRET_URL_BASE",
+    "https://www.kaggle.com",
+)
 KAGGLE_SECRET_LOOKUP_ERRORS: dict[str, str] = {}
+KAGGLE_SECRET_SERVICE_DIAGNOSTIC_EMITTED = False
 
 if OUTPUT_DIR.exists():
     shutil.rmtree(OUTPUT_DIR)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def describe_secret_exception(exc: BaseException) -> str:
+    parts = [type(exc).__name__]
+    message = str(exc).strip()
+    if message:
+        parts.append(message[:240])
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None:
+        cause_parts = [type(cause).__name__]
+        cause_message = str(cause).strip()
+        if cause_message:
+            cause_parts.append(cause_message[:240])
+        reason = getattr(cause, "reason", None)
+        if reason is not None:
+            reason_message = str(reason).strip()
+            if reason_message:
+                cause_parts.append(
+                    f"reason={type(reason).__name__}:{reason_message[:180]}"
+                )
+        parts.append("cause=" + " | ".join(cause_parts))
+    return " | ".join(parts)
+
+
+def emit_kaggle_secret_service_diagnostics() -> None:
+    global KAGGLE_SECRET_SERVICE_DIAGNOSTIC_EMITTED
+    if KAGGLE_SECRET_SERVICE_DIAGNOSTIC_EMITTED:
+        return
+    KAGGLE_SECRET_SERVICE_DIAGNOSTIC_EMITTED = True
+    print(
+        "Kaggle secret-service diagnostics:",
+        json.dumps(
+            {
+                "KAGGLE_IAP_TOKEN_present": bool(os.environ.get("KAGGLE_IAP_TOKEN")),
+                "KAGGLE_SECRET_URL_BASE": KAGGLE_SECRET_URL_BASE,
+                "KAGGLE_URL_BASE_runtime": os.environ.get("KAGGLE_URL_BASE"),
+                "KAGGLE_USER_SECRETS_TOKEN_present": bool(
+                    os.environ.get("KAGGLE_USER_SECRETS_TOKEN")
+                ),
+            },
+            sort_keys=True,
+        ),
+    )
+    try:
+        with urllib.request.urlopen(KAGGLE_SECRET_URL_BASE, timeout=10) as response:
+            print(f"Kaggle URL reachability check succeeded: status={response.status}")
+    except Exception as exc:
+        print(
+            "Kaggle URL reachability check failed: "
+            f"{describe_secret_exception(exc)}"
+        )
+
 
 def normalize_kaggle_notebook_secret(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
 
+
 def read_kaggle_notebook_secrets() -> tuple[str | None, str | None]:
     last_key = None
     last_username = None
-    for attempt in range(1, KAGGLE_SECRET_RETRIES + 1):
-        key_error = None
-        username_error = None
-        try:
-            from kaggle_secrets import UserSecretsClient
-        except Exception as exc:
-            KAGGLE_SECRET_LOOKUP_ERRORS["kaggle_secrets"] = type(exc).__name__
-            print(f"Kaggle notebook secrets client unavailable: {type(exc).__name__}")
-            return last_key, last_username
+    runtime_url_base = os.environ.get("KAGGLE_URL_BASE")
+    os.environ["KAGGLE_URL_BASE"] = KAGGLE_SECRET_URL_BASE
+    try:
+        for attempt in range(1, KAGGLE_SECRET_RETRIES + 1):
+            key_error = None
+            username_error = None
+            try:
+                from kaggle_secrets import UserSecretsClient
+            except Exception as exc:
+                KAGGLE_SECRET_LOOKUP_ERRORS["kaggle_secrets"] = type(exc).__name__
+                print(
+                    f"Kaggle notebook secrets client unavailable: {type(exc).__name__}"
+                )
+                return last_key, last_username
 
-        user_secrets = UserSecretsClient()
-        try:
-            secret_value_0 = user_secrets.get_secret("KAGGLE_KEY")
-        except Exception as exc:
-            key_error = type(exc).__name__
-            KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_KEY"] = key_error
-            print(
-                f"KAGGLE_KEY notebook secret lookup failed "
-                f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES}): "
-                f"{key_error}"
-            )
-            secret_value_0 = None
+            user_secrets = UserSecretsClient()
+            try:
+                secret_value_0 = user_secrets.get_secret("KAGGLE_KEY")
+            except Exception as exc:
+                key_error = type(exc).__name__
+                KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_KEY"] = key_error
+                if attempt == 1:
+                    emit_kaggle_secret_service_diagnostics()
+                print(
+                    f"KAGGLE_KEY notebook secret lookup failed "
+                    f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES}): "
+                    f"{key_error}"
+                )
+                if attempt in {1, KAGGLE_SECRET_RETRIES}:
+                    print(f"KAGGLE_KEY lookup detail: {describe_secret_exception(exc)}")
+                secret_value_0 = None
 
-        try:
-            secret_value_1 = user_secrets.get_secret("KAGGLE_USERNAME")
-        except Exception as exc:
-            username_error = type(exc).__name__
-            KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_USERNAME"] = username_error
-            print(
-                f"KAGGLE_USERNAME notebook secret lookup failed "
-                f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES}): "
-                f"{username_error}"
-            )
-            secret_value_1 = None
+            try:
+                secret_value_1 = user_secrets.get_secret("KAGGLE_USERNAME")
+            except Exception as exc:
+                username_error = type(exc).__name__
+                KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_USERNAME"] = username_error
+                print(
+                    f"KAGGLE_USERNAME notebook secret lookup failed "
+                    f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES}): "
+                    f"{username_error}"
+                )
+                if attempt in {1, KAGGLE_SECRET_RETRIES}:
+                    print(
+                        "KAGGLE_USERNAME lookup detail: "
+                        f"{describe_secret_exception(exc)}"
+                    )
+                secret_value_1 = None
 
-        key = normalize_kaggle_notebook_secret(secret_value_0)
-        username = normalize_kaggle_notebook_secret(secret_value_1)
-        if key:
-            last_key = key
-            KAGGLE_SECRET_LOOKUP_ERRORS.pop("KAGGLE_KEY", None)
-        elif key_error is None:
-            KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_KEY"] = "NotFound"
-            print(
-                f"KAGGLE_KEY not found in Kaggle notebook secrets "
-                f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES})."
-            )
+            key = normalize_kaggle_notebook_secret(secret_value_0)
+            username = normalize_kaggle_notebook_secret(secret_value_1)
+            if key:
+                last_key = key
+                KAGGLE_SECRET_LOOKUP_ERRORS.pop("KAGGLE_KEY", None)
+            elif key_error is None:
+                KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_KEY"] = "NotFound"
+                print(
+                    f"KAGGLE_KEY not found in Kaggle notebook secrets "
+                    f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES})."
+                )
 
-        if username:
-            last_username = username
-            KAGGLE_SECRET_LOOKUP_ERRORS.pop("KAGGLE_USERNAME", None)
-        elif username_error is None:
-            KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_USERNAME"] = "NotFound"
-            print(
-                f"KAGGLE_USERNAME not found in Kaggle notebook secrets "
-                f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES})."
-            )
+            if username:
+                last_username = username
+                KAGGLE_SECRET_LOOKUP_ERRORS.pop("KAGGLE_USERNAME", None)
+            elif username_error is None:
+                KAGGLE_SECRET_LOOKUP_ERRORS["KAGGLE_USERNAME"] = "NotFound"
+                print(
+                    f"KAGGLE_USERNAME not found in Kaggle notebook secrets "
+                    f"(attempt {attempt}/{KAGGLE_SECRET_RETRIES})."
+                )
 
-        if key and username:
-            return key, username
+            if key and username:
+                return key, username
 
-        if attempt < KAGGLE_SECRET_RETRIES:
-            time.sleep(KAGGLE_SECRET_RETRY_SECONDS)
-            continue
-    return last_key, last_username
+            if attempt < KAGGLE_SECRET_RETRIES:
+                time.sleep(KAGGLE_SECRET_RETRY_SECONDS)
+                continue
+        return last_key, last_username
+    finally:
+        if runtime_url_base is None:
+            os.environ.pop("KAGGLE_URL_BASE", None)
+        else:
+            os.environ["KAGGLE_URL_BASE"] = runtime_url_base
+
 
 def load_kaggle_notebook_secrets() -> None:
     if os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"):
@@ -2358,6 +4124,7 @@ def load_kaggle_notebook_secrets() -> None:
         os.environ["KAGGLE_KEY"] = key
         print("KAGGLE_KEY loaded from Kaggle notebook secrets.")
 
+
 def has_kaggle_credentials() -> bool:
     load_kaggle_notebook_secrets()
     kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
@@ -2369,6 +4136,7 @@ def has_kaggle_credentials() -> bool:
         or kaggle_json.exists()
     )
 
+
 def require_kaggle_credentials() -> None:
     if not has_kaggle_credentials():
         if KAGGLE_SECRET_LOOKUP_ERRORS:
@@ -2379,6 +4147,7 @@ def require_kaggle_credentials() -> None:
             raise RuntimeError(f"{KAGGLE_CREDENTIALS_ERROR} Lookup diagnostics: {details}")
         raise RuntimeError(KAGGLE_CREDENTIALS_ERROR)
 
+
 def run(
     command: list[str],
     *,
@@ -2387,6 +4156,7 @@ def run(
 ) -> None:
     print("+", " ".join(command))
     subprocess.run(command, check=True, env=env, timeout=timeout_seconds)
+
 
 def run_json(
     command: list[str],
@@ -2427,6 +4197,7 @@ def run_json(
     print(f"Wrote {output_path}")
     return data
 
+
 def kaggle_dataset_status() -> dict:
     completed = subprocess.run(
         ["kaggle", "datasets", "status", DATASET_ID, "--format", "json"],
@@ -2439,181 +4210,84 @@ def kaggle_dataset_status() -> dict:
         print(completed.stderr, file=sys.stderr)
     return json.loads(completed.stdout)
 
-EMBEDDED_BOUNDED_JOB_SYNC_CODE = r'''
-from __future__ import annotations
 
-import asyncio
-from datetime import UTC, datetime, timedelta
-import json
-from pathlib import Path
-import sqlite3
-import sys
-
-from openopps.ingest import sync_jobs
-from openopps.metrics import SyncMetrics
-from openopps.route_registry import BoardRouteRegistry
-from openopps.settings import OpenOppsSettings
-from openopps.storage import OpenOppsStore
+def install_openopps() -> None:
+    run([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", PACKAGE_SPEC, "kaggle"])
 
 
-def parse_dt(value):
-    if not value:
-        return None
-    parsed = datetime.fromisoformat(str(value))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed
-
-
-def latest_job_syncs(db_path: Path):
-    with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT board_key, provider_id, max(synced_at) "
-            "FROM job_sync_runs "
-            "WHERE success = 1 "
-            "GROUP BY board_key, provider_id"
-        ).fetchall()
-    return {
-        (board_key, provider_id): parse_dt(synced_at)
-        for board_key, provider_id, synced_at in rows
-        if synced_at
-    }
-
-
-def route_sync_key(entry):
-    return (entry.route.board_key, entry.route.provider_id)
-
-
-def route_priority(item):
-    index, entry, synced_at = item
-    earliest = datetime.min.replace(tzinfo=UTC)
-    return (
-        0 if synced_at is None else 1,
-        synced_at or earliest,
-        entry.route.provider_id,
-        entry.board.key,
-        index,
-    )
-
-
-def selected_routes(store, db_path: Path, freshness_seconds: float, route_limit: int):
-    selection = BoardRouteRegistry(store).select(ready_only=True)
-    latest = latest_job_syncs(db_path)
-    cutoff = datetime.now(UTC) - timedelta(seconds=freshness_seconds)
-    fresh_skipped = 0
-    stale = []
-    for index, entry in enumerate(selection.entries):
-        synced_at = latest.get(route_sync_key(entry))
-        if freshness_seconds > 0 and synced_at and synced_at >= cutoff:
-            fresh_skipped += 1
-            continue
-        stale.append((index, entry, synced_at))
-    stale.sort(key=route_priority)
-    selected = stale[:route_limit]
-    deferred = max(0, len(stale) - len(selected))
-    return [entry for _, entry, _ in selected], fresh_skipped, deferred, selection
-
-
-def add_metrics(total: SyncMetrics, item: SyncMetrics) -> None:
-    total.pages += item.pages
-    total.boards += item.boards
-    total.board_providers += item.board_providers
-    total.jobs += item.jobs
-    total.jobs_persisted += item.jobs_persisted
-    total.job_sync_runs += item.job_sync_runs
-    total.jobs_deduped += item.jobs_deduped
-    total.skipped += item.skipped
-    total.duplicate_routes_skipped += item.duplicate_routes_skipped
-    total.retries += item.retries
-    for provider_id, count in item.provider_errors.items():
-        total.provider_errors[provider_id] = (
-            total.provider_errors.get(provider_id, 0) + count
+def download_generator_script() -> None:
+    print(f"Downloading OpenOpps Kaggle metadata generator from {GENERATOR_SCRIPT_URL}")
+    urllib.request.urlretrieve(GENERATOR_SCRIPT_URL, GENERATOR_SCRIPT)
+    source = GENERATOR_SCRIPT.read_text(encoding="utf-8")
+    compile(source, str(GENERATOR_SCRIPT), "exec")
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    if GENERATOR_SCRIPT_SHA256 and digest != GENERATOR_SCRIPT_SHA256:
+        raise RuntimeError(
+            "OpenOpps Kaggle metadata generator checksum mismatch: "
+            f"expected={GENERATOR_SCRIPT_SHA256} actual={digest}"
         )
-    for provider_id, details in item.provider_error_details.items():
-        total_details = total.provider_error_details.setdefault(provider_id, {})
-        for reason, count in details.items():
-            total_details[reason] = total_details.get(reason, 0) + count
-
-
-async def main() -> None:
-    db_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[2])
-    freshness_seconds = float(sys.argv[3])
-    route_limit = int(sys.argv[4])
-    settings = OpenOppsSettings()
-    store = OpenOppsStore(settings)
-    routes, fresh_skipped, deferred, selection = selected_routes(
-        store, db_path, freshness_seconds, route_limit
-    )
-    metrics = SyncMetrics(name="jobs.sync")
-    metrics.skipped += fresh_skipped + deferred
-    metrics.duplicate_routes_skipped += len(selection.duplicate_routes)
-    for entry in routes:
-        add_metrics(
-            metrics,
-            await sync_jobs(
-                settings=settings,
-                store=store,
-                board_key=entry.route.board_key,
-                provider_id=entry.route.provider_id,
-            ),
-        )
-    data = metrics.finish().as_dict()
-    data["selectedRoutes"] = len(routes)
-    data["freshRoutesSkipped"] = fresh_skipped
-    data["deferredRoutes"] = deferred
-    data["missingRouteMetadataSkipped"] = len(selection.missing_route_metadata)
-    data["compatibilityMode"] = "embedded-bounded-job-sync"
-    output_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
-
-
-asyncio.run(main())
-'''
-
-def openopps_cli_supports_bounded_jobs_sync(env: dict[str, str]) -> bool:
     completed = subprocess.run(
-        ["openopps", "jobs", "sync", "--help"],
-        env=env,
+        [sys.executable, str(GENERATOR_SCRIPT), "--help"],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    help_text = completed.stdout + completed.stderr
-    return completed.returncode == 0 and "--freshness-seconds" in help_text and "--limit" in help_text
-
-def run_embedded_bounded_job_sync(
-    output_path: Path,
-    *,
-    env: dict[str, str],
-    timeout_seconds: float | None,
-) -> dict:
-    freshness_seconds = env.get("OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS", "86400")
-    command = [
-        sys.executable,
-        "-c",
-        EMBEDDED_BOUNDED_JOB_SYNC_CODE,
-        str(DB_PATH),
-        str(output_path),
-        freshness_seconds,
-        str(KAGGLE_JOB_ROUTE_LIMIT),
-    ]
-    print("+", sys.executable, "-c", "EMBEDDED_BOUNDED_JOB_SYNC_CODE", ">", output_path)
-    completed = subprocess.run(
-        command,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout_seconds,
-    )
-    if completed.stdout:
-        print(completed.stdout)
     if completed.stderr:
         print(completed.stderr, file=sys.stderr)
-    completed.check_returncode()
-    data = json.loads(output_path.read_text())
-    print(f"Wrote embedded bounded sync metrics to {output_path}")
-    return data
+    if completed.returncode:
+        completed.check_returncode()
+    help_text = completed.stdout + completed.stderr
+    required_flags = [
+        "--skip-notebooks",
+        "--live-file-metadata-kaggle-auth",
+        "--stage-public-upload-dir",
+        "--quality-report",
+    ]
+    missing_flags = [flag for flag in required_flags if flag not in help_text]
+    if missing_flags:
+        raise RuntimeError(
+            "Downloaded OpenOpps Kaggle metadata generator is incompatible; "
+            f"missing CLI flags: {', '.join(missing_flags)}"
+        )
+    print(
+        "OpenOpps Kaggle metadata generator ready:",
+        json.dumps(
+            {
+                "path": str(GENERATOR_SCRIPT),
+                "sha256": digest,
+                "url": GENERATOR_SCRIPT_URL,
+            },
+            sort_keys=True,
+        ),
+    )
+
+
+def run_generator(
+    args: list[str],
+    *,
+    timeout_seconds: float | None = None,
+) -> None:
+    if not GENERATOR_SCRIPT.exists():
+        download_generator_script()
+    run(
+        [sys.executable, str(GENERATOR_SCRIPT), *args],
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def try_run_generator(args: list[str]) -> bool:
+    try:
+        run_generator(args)
+    except Exception as exc:
+        print(
+            "Kaggle live metadata repair failed after successful dataset publish; "
+            "continuing so the scheduled snapshot run completes. "
+            "Run `just kaggle-live-file-metadata` from a browser-authenticated local "
+            f"environment to retry databundle repair. Error: {type(exc).__name__}: {exc}"
+        )
+        return False
+    return True
+
 
 def run_sync_metrics(
     output_path: Path,
@@ -2621,74 +4295,95 @@ def run_sync_metrics(
     env: dict[str, str],
     timeout_seconds: float | None,
 ) -> dict:
-    command = [
-        "openopps",
-        "jobs",
-        "sync",
-        "--metrics-json",
-        "--freshness-seconds",
-        env.get("OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS", "86400"),
-        "--limit",
-        str(KAGGLE_JOB_ROUTE_LIMIT),
-    ]
-    if not openopps_cli_supports_bounded_jobs_sync(env):
-        print(
-            "Installed OpenOpps CLI does not expose bounded jobs sync flags; "
-            "using embedded bounded job sync."
-        )
-        return run_embedded_bounded_job_sync(
-            output_path,
-            env=env,
-            timeout_seconds=timeout_seconds,
-        )
-    try:
-        return run_json(
-            command,
-            output_path,
-            env=env,
-            timeout_seconds=timeout_seconds,
-        )
-    except subprocess.CalledProcessError:
-        print(
-            "bounded openopps jobs sync --metrics-json failed; falling back to "
-            "plain bounded jobs sync and SQLite-derived metrics."
-        )
-        run(
-            [part for part in command if part != "--metrics-json"],
-            env=env,
-            timeout_seconds=timeout_seconds,
-        )
-        data = sqlite_sync_metrics(DB_PATH)
-        output_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
-        print(f"Wrote compatibility sync metrics to {output_path}")
-        return data
+    return run_json(
+        [
+            "openopps",
+            "jobs",
+            "sync",
+            "--metrics-json",
+            "--freshness-seconds",
+            env.get("OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS", "86400"),
+            "--limit",
+            str(KAGGLE_JOB_ROUTE_LIMIT),
+        ],
+        output_path,
+        env=env,
+        timeout_seconds=timeout_seconds,
+    )
 
-def sqlite_sync_metrics(db_path: Path) -> dict:
-    def count(conn, table: str, where: str | None = None) -> int:
-        try:
-            query = f"SELECT count(*) FROM {table}"
-            if where:
-                query = f"{query} WHERE {where}"
-            return int(conn.execute(query).fetchone()[0])
-        except sqlite3.Error:
-            return 0
 
+def sqlite_sidecars(path: Path) -> tuple[Path, ...]:
+    return tuple(path.with_name(path.name + suffix) for suffix in ("-wal", "-shm", "-journal"))
+
+
+def remove_sqlite_sidecars(path: Path) -> None:
+    for sidecar in sqlite_sidecars(path):
+        sidecar.unlink(missing_ok=True)
+
+
+def sqlite_table_names(db_path: Path) -> set[str]:
+    if not db_path.exists():
+        return set()
     with sqlite3.connect(db_path) as conn:
-        jobs = count(conn, "jobs")
-        successful_runs = count(conn, "job_sync_runs", "success = 1")
         return {
-            "compatibilityMode": "sqlite-derived-after-plain-sync",
-            "sourcesProcessed": count(conn, "sources"),
-            "boardsPersisted": count(conn, "boards"),
-            "boardProviders": count(conn, "board_providers"),
-            "jobsPersisted": jobs,
-            "jobSyncRuns": successful_runs,
-            "providerErrors": {},
-            "providerErrorDetails": {},
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
         }
 
-def install_openopps() -> None:
-    run([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", PACKAGE_SPEC, "kaggle"])
+
+def is_public_snapshot_db(db_path: Path) -> bool:
+    table_names = sqlite_table_names(db_path)
+    return (
+        "alembic_version" not in table_names
+        and set(APP_TABLE_NAMES).issubset(table_names)
+        and PUBLIC_METADATA_TABLES.issubset(table_names)
+    )
+
+
+def sanitize_public_snapshot_json_columns(snapshot_path: Path) -> dict[str, int]:
+    sanitized: dict[str, int] = {}
+    with sqlite3.connect(snapshot_path) as conn:
+        for (table_name, column_name), default_json in PUBLIC_SNAPSHOT_JSON_DEFAULTS.items():
+            table_sql = quote_identifier(table_name)
+            column_sql = quote_identifier(column_name)
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+            if not table_exists:
+                continue
+            column_exists = any(
+                str(row[1]) == column_name
+                for row in conn.execute(f"PRAGMA table_info({table_sql})")
+            )
+            if not column_exists:
+                continue
+            bad_count = int(
+                conn.execute(
+                    f"SELECT count(*) FROM {table_sql} "
+                    f"WHERE {column_sql} IS NOT NULL "
+                    f"AND json_valid({column_sql}) = 0"
+                ).fetchone()[0]
+            )
+            if not bad_count:
+                continue
+            conn.execute(
+                f"UPDATE {table_sql} SET {column_sql} = ? "
+                f"WHERE {column_sql} IS NOT NULL "
+                f"AND json_valid({column_sql}) = 0",
+                (default_json,),
+            )
+            sanitized[f"{table_name}.{column_name}"] = bad_count
+        conn.commit()
+    if sanitized:
+        print(
+            "Sanitized invalid public snapshot JSON before rehydrate:",
+            json.dumps(sanitized, sort_keys=True),
+        )
+    return sanitized
+
 
 def copy_latest_input_db() -> None:
     db_candidates = sorted(KAGGLE_INPUT_DIR.glob(INPUT_DB_GLOB))
@@ -2700,8 +4395,240 @@ def copy_latest_input_db() -> None:
     else:
         print("No prior OpenOpps DB snapshot found; creating a new ledger.")
 
+
 def quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
+
+
+def quote_string_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def qualified_table(schema: str, table_name: str) -> str:
+    if schema not in {"main", "public_snapshot"}:
+        raise ValueError(f"Unsupported SQLite schema: {schema}")
+    return f"{schema}.{quote_identifier(table_name)}"
+
+
+def table_columns(conn: sqlite3.Connection, schema: str, table_name: str) -> list[str]:
+    if schema not in {"main", "public_snapshot"}:
+        raise ValueError(f"Unsupported SQLite schema: {schema}")
+    return [
+        row[1]
+        for row in conn.execute(
+            f"PRAGMA {schema}.table_info({quote_string_literal(table_name)})"
+        )
+    ]
+
+
+def public_snapshot_table_count(
+    conn: sqlite3.Connection,
+    schema: str,
+    table_name: str,
+) -> int:
+    return int(
+        conn.execute(
+            f"SELECT count(*) FROM {qualified_table(schema, table_name)}"
+        ).fetchone()[0]
+    )
+
+
+def validate_public_snapshot_table(
+    conn: sqlite3.Connection,
+    table_name: str,
+) -> list[str]:
+    source_columns = table_columns(conn, "public_snapshot", table_name)
+    target_columns = table_columns(conn, "main", table_name)
+    if not source_columns:
+        raise RuntimeError(f"Public OpenOpps snapshot is missing table: {table_name}")
+    missing_columns = [column for column in target_columns if column not in source_columns]
+    if missing_columns:
+        raise RuntimeError(
+            "Public OpenOpps snapshot table "
+            f"{table_name} is missing required columns: {', '.join(missing_columns)}"
+        )
+
+    primary_key_columns = APP_PRIMARY_KEY_COLUMNS[table_name]
+    missing_key_columns = [
+        column for column in primary_key_columns if column not in source_columns
+    ]
+    if missing_key_columns:
+        raise RuntimeError(
+            "Public OpenOpps snapshot table "
+            f"{table_name} is missing primary key columns: "
+            f"{', '.join(missing_key_columns)}"
+        )
+    key_expressions = ", ".join(quote_identifier(column) for column in primary_key_columns)
+    null_predicate = " OR ".join(
+        f"{quote_identifier(column)} IS NULL" for column in primary_key_columns
+    )
+    null_key_count = int(
+        conn.execute(
+            f"SELECT count(*) FROM {qualified_table('public_snapshot', table_name)} "
+            f"WHERE {null_predicate}"
+        ).fetchone()[0]
+    )
+    if null_key_count:
+        raise RuntimeError(
+            "Public OpenOpps snapshot table "
+            f"{table_name} has {null_key_count} rows with null primary keys."
+        )
+    duplicate_key_count = int(
+        conn.execute(
+            "SELECT count(*) FROM ("
+            f"SELECT {key_expressions}, count(*) AS duplicate_count "
+            f"FROM {qualified_table('public_snapshot', table_name)} "
+            f"GROUP BY {key_expressions} HAVING duplicate_count > 1"
+            ")"
+        ).fetchone()[0]
+    )
+    if duplicate_key_count:
+        raise RuntimeError(
+            "Public OpenOpps snapshot table "
+            f"{table_name} has {duplicate_key_count} duplicate primary keys."
+        )
+    return target_columns
+
+
+def import_public_snapshot_tables(snapshot_path: Path) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            f"ATTACH DATABASE {quote_string_literal(snapshot_path.as_posix())} "
+            "AS public_snapshot"
+        )
+        try:
+            for table_name in APP_TABLE_NAMES:
+                target_columns = validate_public_snapshot_table(conn, table_name)
+                source_count = public_snapshot_table_count(
+                    conn, "public_snapshot", table_name
+                )
+                existing_count = public_snapshot_table_count(
+                    conn, "main", table_name
+                )
+                if existing_count:
+                    raise RuntimeError(
+                        "Cannot import public OpenOpps snapshot into non-empty "
+                        f"table {table_name}; found {existing_count} existing rows."
+                    )
+                column_sql = ", ".join(
+                    quote_identifier(column) for column in target_columns
+                )
+                conn.execute(
+                    f"INSERT INTO {qualified_table('main', table_name)} ({column_sql}) "
+                    f"SELECT {column_sql} "
+                    f"FROM {qualified_table('public_snapshot', table_name)}"
+                )
+                imported_count = public_snapshot_table_count(
+                    conn, "main", table_name
+                )
+                if imported_count != source_count:
+                    raise RuntimeError(
+                        "Public OpenOpps snapshot import count mismatch for "
+                        f"{table_name}: source={source_count}, imported={imported_count}."
+                    )
+                summary[table_name] = imported_count
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute("DETACH DATABASE public_snapshot")
+    return summary
+
+
+def restore_derived_public_snapshot_tables_from_parquet() -> dict[str, int]:
+    restored: dict[str, int] = {}
+    if not DB_PATH.exists():
+        return restored
+    import polars as pl
+
+    for table_name in PARQUET_RESTORE_TABLES:
+        parquet_candidates = sorted(
+            KAGGLE_INPUT_DIR.glob(f"**/exports/parquet/{table_name}.parquet")
+        )
+        if not parquet_candidates:
+            continue
+        source_parquet = max(parquet_candidates, key=lambda path: path.stat().st_mtime)
+        with sqlite3.connect(DB_PATH) as conn:
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+            if not table_exists:
+                continue
+            existing_count = public_snapshot_table_count(conn, "main", table_name)
+            if existing_count:
+                continue
+            target_columns = table_columns(conn, "main", table_name)
+            if not target_columns:
+                continue
+
+            frame = pl.read_parquet(source_parquet, columns=target_columns)
+            if frame.height == 0:
+                continue
+            column_sql = ", ".join(quote_identifier(column) for column in target_columns)
+            placeholders = ", ".join("?" for _ in target_columns)
+            insert_sql = (
+                f"INSERT INTO {qualified_table('main', table_name)} ({column_sql}) "
+                f"VALUES ({placeholders})"
+            )
+            batch: list[tuple] = []
+            inserted = 0
+            for row in frame.iter_rows(named=False):
+                batch.append(row)
+                if len(batch) >= 10_000:
+                    conn.executemany(insert_sql, batch)
+                    inserted += len(batch)
+                    batch.clear()
+            if batch:
+                conn.executemany(insert_sql, batch)
+                inserted += len(batch)
+            conn.commit()
+        restored[table_name] = inserted
+        print(
+            "Restored public snapshot table from Parquet:",
+            json.dumps(
+                {
+                    "source": str(source_parquet),
+                    "table": table_name,
+                    "rows": inserted,
+                },
+                sort_keys=True,
+            ),
+        )
+    return restored
+
+
+def rehydrate_public_snapshot_for_openopps(env: dict[str, str]) -> bool:
+    if not DB_PATH.exists() or not is_public_snapshot_db(DB_PATH):
+        return False
+    snapshot_path = DB_PATH.with_name("openoppsdb-public-snapshot.sqlite")
+    snapshot_path.unlink(missing_ok=True)
+    remove_sqlite_sidecars(snapshot_path)
+    print(
+        "Rehydrating public OpenOppsDB snapshot into operational SQLite schema."
+    )
+    shutil.move(DB_PATH, snapshot_path)
+    remove_sqlite_sidecars(DB_PATH)
+    run(["openopps", "admin", "db", "init"], env=env)
+    sanitized_json = sanitize_public_snapshot_json_columns(snapshot_path)
+    summary = import_public_snapshot_tables(snapshot_path)
+    parquet_restored = restore_derived_public_snapshot_tables_from_parquet()
+    print(
+        "Rehydrated public OpenOppsDB snapshot:",
+        json.dumps(
+            {
+                "source": str(snapshot_path),
+                "tables": summary,
+                "parquetRestoredTables": parquet_restored,
+                "sanitizedJson": sanitized_json,
+            },
+            sort_keys=True,
+        ),
+    )
+    return True
+
 
 def restore_projected_sqlite_table_columns(
     *,
@@ -2709,22 +4636,30 @@ def restore_projected_sqlite_table_columns(
     table_name: str,
     key_column: str,
     column_names: list[str],
+    restore_invalid_json: bool = False,
 ) -> None:
     parquet_candidates = sorted(KAGGLE_INPUT_DIR.glob(parquet_glob))
     if not parquet_candidates or not DB_PATH.exists():
         return
     source_parquet = max(parquet_candidates, key=lambda path: path.stat().st_mtime)
     table_sql = quote_identifier(table_name)
-    missing_condition = " OR ".join(
+    restore_predicates = [
         f"{quote_identifier(column)} IS NULL" for column in column_names
-    )
+    ]
+    if restore_invalid_json:
+        restore_predicates.extend(
+            f"({quote_identifier(column)} IS NOT NULL "
+            f"AND json_valid({quote_identifier(column)}) = 0)"
+            for column in column_names
+        )
+    restore_condition = " OR ".join(restore_predicates)
     with sqlite3.connect(DB_PATH) as conn:
-        missing_count = int(
+        restore_candidate_count = int(
             conn.execute(
-                f"SELECT count(*) FROM {table_sql} WHERE {missing_condition}"
+                f"SELECT count(*) FROM {table_sql} WHERE {restore_condition}"
             ).fetchone()[0]
         )
-    if missing_count == 0:
+    if restore_candidate_count == 0:
         return
 
     import polars as pl
@@ -2775,7 +4710,7 @@ def restore_projected_sqlite_table_columns(
         )
         conn.execute(
             f"UPDATE {table_sql} SET {assignments} "
-            f"WHERE {missing_condition} AND EXISTS ("
+            f"WHERE {restore_condition} AND EXISTS ("
             f"SELECT 1 FROM {restore_table_sql} "
             f"WHERE {restore_table_sql}.{key_column_sql} = {table_sql}.{key_column_sql})"
         )
@@ -2788,14 +4723,34 @@ def restore_projected_sqlite_table_columns(
                 "source": str(source_parquet),
                 "table": table_name,
                 "columns": column_names,
-                "missingBefore": missing_count,
+                "missingBefore": restore_candidate_count,
                 "restoreRows": restored_rows,
+                "restoreInvalidJson": restore_invalid_json,
             },
             sort_keys=True,
         ),
     )
 
+
 def restore_projected_sqlite_columns_from_input_exports() -> None:
+    restore_projected_sqlite_table_columns(
+        parquet_glob=INPUT_SOURCES_PARQUET_GLOB,
+        table_name="sources",
+        key_column="key",
+        column_names=["raw_metadata"],
+        restore_invalid_json=True,
+    )
+    restore_projected_sqlite_table_columns(
+        parquet_glob=INPUT_BOARDS_PARQUET_GLOB,
+        table_name="boards",
+        key_column="key",
+        column_names=[
+            "source_board_keys",
+            "markets",
+            "locations",
+        ],
+        restore_invalid_json=True,
+    )
     restore_projected_sqlite_table_columns(
         parquet_glob=INPUT_BOARDS_PARQUET_GLOB,
         table_name="boards",
@@ -2817,1454 +4772,49 @@ def restore_projected_sqlite_columns_from_input_exports() -> None:
         ],
     )
     restore_projected_sqlite_table_columns(
+        parquet_glob=INPUT_JOB_VERSIONS_PARQUET_GLOB,
+        table_name="job_versions",
+        key_column="id",
+        column_names=["locations"],
+        restore_invalid_json=True,
+    )
+    restore_projected_sqlite_table_columns(
         parquet_glob=INPUT_JOB_PAYLOAD_SNAPSHOTS_PARQUET_GLOB,
         table_name="job_payload_snapshots",
         key_column="id",
         column_names=["payload"],
     )
 
-def download_dataset_assets() -> None:
-    urllib.request.urlretrieve(DATASET_IMAGE_URL, OUTPUT_DIR / "dataset-cover-image.png")
-
-def slugify(value: str) -> str:
-    slug = SLUG_RE.sub("-", value.lower()).strip("-")
-    return slug or hashlib.sha1(value.encode("utf-8")).hexdigest()[:12]
-
-def stable_id(*parts) -> str:
-    visible = ":".join(
-        slugify(str(part)) for part in parts if part is not None and str(part) != ""
-    )
-    if len(visible) <= 180:
-        return visible
-    digest = hashlib.sha1(visible.encode("utf-8")).hexdigest()[:16]
-    return f"{visible[:120]}-{digest}"
-
-def stable_id_from_slugs(*slugs: str) -> str:
-    visible = ":".join(slug for slug in slugs if slug)
-    if len(visible) <= 180:
-        return visible
-    digest = hashlib.sha1(visible.encode("utf-8")).hexdigest()[:16]
-    return f"{visible[:120]}-{digest}"
-
-@lru_cache(maxsize=512)
-def cached_slug(value: str) -> str:
-    return slugify(value)
-
-def strip_html(value: str | None) -> str | None:
-    if not value:
-        return None
-    with_breaks = re.sub(r"(?i)<\\s*br\\s*/?\\s*>", "\\n", value)
-    with_breaks = re.sub(r"(?i)</\\s*(p|div|li|h[1-6])\\s*>", "\\n", with_breaks)
-    text = re.sub(r"<[^>]+>", " ", with_breaks)
-    text = unescape(text)
-    text = re.sub(r"[ \\t\\r\\f\\v]+", " ", text)
-    text = re.sub(r"\\n\\s+", "\\n", text)
-    text = re.sub(r"\\n{3,}", "\\n\\n", text)
-    text = text.strip()
-    return text or None
-
-def normalized_skill_text(values) -> str:
-    raw = " ".join(str(value)[:SKILL_TEXT_VALUE_LIMIT] for value in values if value)
-    raw = strip_html(raw) or raw
-    normalized = re.sub(r"[^a-z0-9+#]+", " ", raw.casefold())
-    normalized = re.sub(r"\\s+", " ", normalized).strip()
-    return f" {normalized} "
-
-@lru_cache(maxsize=256)
-def compile_skill_aliases(aliases: tuple[str, ...]):
-    normalized_aliases = tuple(
-        sorted(
-            {
-                normalized_alias
-                for alias in aliases
-                if (normalized_alias := normalized_skill_text([alias]).strip())
-            },
-            key=len,
-            reverse=True,
-        )
-    )
-    if not normalized_aliases:
-        return frozenset(), ()
-    single_tokens = frozenset(
-        normalized_alias
-        for normalized_alias in normalized_aliases
-        if " " not in normalized_alias
-    )
-    phrases = tuple(
-        normalized_alias
-        for normalized_alias in normalized_aliases
-        if " " in normalized_alias
-    )
-    return single_tokens, phrases
-
-@lru_cache(maxsize=1)
-def compiled_skill_catalog():
-    return tuple(
-        (
-            group_name,
-            tuple(
-                (
-                    keyword,
-                    *compile_skill_aliases(tuple(aliases)),
-                )
-                for keyword, aliases in keywords
-            ),
-        )
-        for group_name, keywords in SKILL_CATALOG
-    )
-
-@lru_cache(maxsize=1)
-def compiled_level_aliases():
-    return tuple(
-        (label, *compile_skill_aliases(aliases))
-        for label, aliases in SKILL_LEVEL_ALIASES
-    )
-
-def has_compiled_skill_alias(
-    normalized_text: str,
-    text_tokens: frozenset[str],
-    single_tokens: frozenset[str],
-    phrases: tuple[str, ...],
-) -> bool:
-    return (not text_tokens.isdisjoint(single_tokens)) or any(
-        phrase in normalized_text for phrase in phrases
-    )
-
-def json_value(value):
-    if value in (None, ""):
-        return None
-    if isinstance(value, (list, dict)):
-        return value
-    if isinstance(value, str):
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return None
-    return value
-
-def json_list(value) -> list:
-    data = json_value(value)
-    return data if isinstance(data, list) else []
-
-def string_or_none(value) -> str | None:
-    if value is None:
-        return None
-    return str(value)
-
-def skill_level(row) -> str | None:
-    text = normalized_skill_text([row["experience"], row["title"]])
-    text_tokens = frozenset(text.split())
-    for label, single_tokens, phrases in compiled_level_aliases():
-        if has_compiled_skill_alias(text, text_tokens, single_tokens, phrases):
-            return label
-    return row["experience"]
-
-def extract_version_skills(row) -> list[dict]:
-    existing = json_list(row["skills"])
-    if existing:
-        return existing
-    description_text = row["description"] or row["description_html"]
-    text = normalized_skill_text(
-        [
-            row["title"],
-            row["department"],
-            row["team"],
-            row["employment_type"],
-            description_text,
-            *json_list(row["responsibilities"]),
-            *json_list(row["qualifications"]),
-        ]
-    )
-    if not text.strip():
-        return []
-    level = skill_level(row)
-    text_tokens = frozenset(text.split())
-    skills = []
-    for group_name, keywords in compiled_skill_catalog():
-        matched = [
-            keyword
-            for keyword, single_tokens, phrases in keywords
-            if has_compiled_skill_alias(text, text_tokens, single_tokens, phrases)
-        ]
-        if matched:
-            skills.append({"name": group_name, "level": level, "keywords": matched[:12]})
-    return skills
-
-def backfill_openopps_skill_tables(db_path: Path) -> dict[str, int]:
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 30000")
-        conn.execute("PRAGMA temp_store = MEMORY")
-        tables = {
-            row[0]
-            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
-        required = {
-            "jobs",
-            "job_versions",
-            "job_version_skills",
-            "job_version_skill_keywords",
-        }
-        if not required <= tables:
-            return {
-                "versionsExamined": 0,
-                "versionsBackfilled": 0,
-                "skillsInserted": 0,
-                "skillKeywordsInserted": 0,
-            }
-
-        conn.execute(
-            \"\"\"
-            CREATE INDEX IF NOT EXISTS ix_job_version_skills_job_version_id
-            ON job_version_skills (job_version_id)
-            \"\"\"
-        )
-        conn.execute(
-            \"\"\"
-            CREATE INDEX IF NOT EXISTS ix_job_version_skill_keywords_skill_id
-            ON job_version_skill_keywords (skill_id)
-            \"\"\"
-        )
-        examined = 0
-        backfilled = 0
-        skills_inserted = 0
-        keywords_inserted = 0
-        last_rowid = 0
-        chunk_size = 2000
-        while True:
-            rows = conn.execute(
-                \"\"\"
-                SELECT
-                    v.rowid AS _rowid,
-                    v.id,
-                    v.title,
-                    v.department,
-                    v.team,
-                    v.employment_type,
-                    v.description,
-                    v.description_html,
-                    v.experience,
-                    v.responsibilities,
-                    v.qualifications,
-                    v.skills
-                FROM job_versions AS v
-                WHERE v.rowid > ?
-                  AND (
-                    NOT EXISTS (
-                        SELECT 1
-                        FROM job_version_skills AS s
-                        WHERE s.job_version_id = v.id
-                    )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM job_version_skills AS s
-                        WHERE s.job_version_id = v.id
-                          AND NOT EXISTS (
-                            SELECT 1
-                            FROM job_version_skill_keywords AS k
-                            WHERE k.skill_id = s.id
-                          )
-                    )
-                  )
-                ORDER BY v.rowid
-                LIMIT ?
-                \"\"\",
-                (last_rowid, chunk_size),
-            ).fetchall()
-            if not rows:
-                break
-            last_rowid = int(rows[-1]["_rowid"])
-            version_ids = [(row["id"],) for row in rows]
-            conn.executemany(
-                \"\"\"
-                DELETE FROM job_version_skill_keywords
-                WHERE skill_id IN (
-                    SELECT id
-                    FROM job_version_skills
-                    WHERE job_version_id = ?
-                )
-                \"\"\",
-                version_ids,
-            )
-            conn.executemany(
-                "DELETE FROM job_version_skills WHERE job_version_id = ?",
-                version_ids,
-            )
-            version_updates = []
-            skill_rows = []
-            keyword_rows = []
-            for row in rows:
-                examined += 1
-                skills = extract_version_skills(row)
-                if not skills:
-                    continue
-                version_slug = slugify(str(row["id"]))
-                if not json_list(row["skills"]):
-                    version_updates.append(
-                        (
-                            json.dumps(
-                                skills,
-                                sort_keys=True,
-                                separators=(",", ":"),
-                            ),
-                            row["id"],
-                        )
-                    )
-                for ordinal, skill in enumerate(skills):
-                    skill_id = stable_id_from_slugs(
-                        version_slug,
-                        "skill",
-                        str(ordinal),
-                    )
-                    skill_slug = slugify(skill_id)
-                    skill_rows.append(
-                        (
-                            skill_id,
-                            row["id"],
-                            ordinal,
-                            string_or_none(skill.get("name")),
-                            string_or_none(skill.get("level")),
-                        )
-                    )
-                    for keyword_ordinal, keyword in enumerate(skill.get("keywords") or []):
-                        keyword_text = str(keyword)
-                        keyword_rows.append(
-                            (
-                                stable_id_from_slugs(
-                                    skill_slug,
-                                    "keyword",
-                                    str(keyword_ordinal),
-                                    cached_slug(keyword_text),
-                                ),
-                                skill_id,
-                                keyword_ordinal,
-                                keyword_text,
-                            )
-                        )
-                backfilled += 1
-            if version_updates:
-                conn.executemany(
-                    "UPDATE job_versions SET skills = ? WHERE id = ?",
-                    version_updates,
-                )
-            if skill_rows:
-                cursor = conn.executemany(
-                    \"\"\"
-                    INSERT INTO job_version_skills (
-                        id,
-                        job_version_id,
-                        ordinal,
-                        name,
-                        level
-                    ) VALUES (?, ?, ?, ?, ?)
-                    \"\"\",
-                    skill_rows,
-                )
-                if cursor.rowcount and cursor.rowcount > 0:
-                    skills_inserted += cursor.rowcount
-            if keyword_rows:
-                cursor = conn.executemany(
-                    \"\"\"
-                    INSERT INTO job_version_skill_keywords (
-                        id,
-                        skill_id,
-                        ordinal,
-                        keyword
-                    ) VALUES (?, ?, ?, ?)
-                    \"\"\",
-                    keyword_rows,
-                )
-                if cursor.rowcount and cursor.rowcount > 0:
-                    keywords_inserted += cursor.rowcount
-            conn.commit()
-        conn.commit()
-    return {
-        "versionsExamined": examined,
-        "versionsBackfilled": backfilled,
-        "skillsInserted": skills_inserted,
-        "skillKeywordsInserted": keywords_inserted,
-    }
-
-def write_json(path: Path, data: dict | list) -> None:
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
-    print(f"Wrote {path}")
-
-def read_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text())
-
-def checkpoint_sqlite(db_path: Path) -> None:
-    if db_path.exists():
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
-    for suffix in ("-journal", "-shm", "-wal"):
-        sidecar = db_path.with_name(f"{db_path.name}{suffix}")
-        if sidecar.exists():
-            sidecar.unlink()
-
-def sqlite_header_read_write_versions(db_path: Path) -> tuple[int, int]:
-    header = db_path.read_bytes()[:20]
-    if len(header) < 20 or not header.startswith(b"SQLite format 3\\x00"):
-        raise RuntimeError(f"Not a SQLite database file: {db_path}")
-    return header[18], header[19]
-
-def assert_portable_sqlite_upload(db_path: Path) -> None:
-    versions = sqlite_header_read_write_versions(db_path)
-    if versions != (1, 1):
-        raise RuntimeError(
-            "SQLite upload copy is not in portable rollback-journal format: "
-            f"header read/write versions are {versions}"
-        )
-    with sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True) as conn:
-        quick_check = str(conn.execute("PRAGMA quick_check").fetchone()[0])
-        if quick_check.lower() != "ok":
-            raise RuntimeError(f"SQLite upload copy failed quick_check: {quick_check}")
-        table_count = int(
-            conn.execute(
-                "SELECT count(*) FROM sqlite_master WHERE type = 'table'"
-            ).fetchone()[0]
-        )
-    if table_count == 0:
-        raise RuntimeError("SQLite upload copy has no readable tables.")
-
-def finalize_sqlite_for_upload(db_path: Path) -> None:
-    if not db_path.exists():
-        return
-    portable_db = db_path.with_name(f".{db_path.name}.portable")
-    for suffix in ("-journal", "-shm", "-wal"):
-        sidecar = portable_db.with_name(f"{portable_db.name}{suffix}")
-        if sidecar.exists():
-            sidecar.unlink()
-    if portable_db.exists():
-        portable_db.unlink()
-    with sqlite3.connect(db_path) as conn:
-        checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-        if checkpoint and int(checkpoint[0]) != 0:
-            raise RuntimeError(f"SQLite upload copy has busy WAL readers: {checkpoint}")
-        literal = "'" + portable_db.as_posix().replace("'", "''") + "'"
-        conn.execute(f"VACUUM INTO {literal}")
-    with sqlite3.connect(portable_db) as conn:
-        journal_mode = str(conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0])
-    assert_portable_sqlite_upload(portable_db)
-    portable_db.replace(db_path)
-    checkpoint_sqlite(db_path)
-    if journal_mode.lower() != "delete":
-        raise RuntimeError(
-            f"SQLite upload copy did not switch to DELETE journal mode: {journal_mode}"
-        )
-    assert_portable_sqlite_upload(db_path)
-
-def write_dataset_metadata() -> None:
-    write_json(OUTPUT_DIR / "dataset-metadata.json", DATASET_METADATA)
-
-def drop_private_sqlite_tables(db_path: Path) -> None:
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("DROP TABLE IF EXISTS http_cache")
-        conn.execute("DROP TABLE IF EXISTS alembic_version")
-
-def write_sqlite_metadata(db_path: Path) -> None:
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            \"\"\"
-            CREATE TABLE IF NOT EXISTS openopps_tables (
-                table_name TEXT PRIMARY KEY,
-                table_title TEXT NOT NULL,
-                table_description TEXT NOT NULL,
-                csv_path TEXT NOT NULL,
-                parquet_path TEXT NOT NULL
-            )
-            \"\"\"
-        )
-        conn.execute(
-            \"\"\"
-            CREATE TABLE IF NOT EXISTS openopps_columns (
-                table_name TEXT NOT NULL,
-                column_name TEXT NOT NULL,
-                column_title TEXT NOT NULL,
-                column_description TEXT NOT NULL,
-                logical_type TEXT NOT NULL,
-                json_schema_type TEXT NOT NULL,
-                required INTEGER NOT NULL,
-                source_name TEXT,
-                format TEXT,
-                enum_json TEXT,
-                examples_json TEXT,
-                default_json TEXT,
-                PRIMARY KEY (table_name, column_name)
-            )
-            \"\"\"
-        )
-        conn.execute("DELETE FROM openopps_columns")
-        conn.execute("DELETE FROM openopps_tables")
-        conn.executemany(
-            \"\"\"
-            INSERT INTO openopps_tables (
-                table_name,
-                table_title,
-                table_description,
-                csv_path,
-                parquet_path
-            ) VALUES (
-                :table_name,
-                :table_title,
-                :table_description,
-                :csv_path,
-                :parquet_path
-            )
-            \"\"\",
-            OPENOPPS_TABLE_ROWS,
-        )
-        conn.executemany(
-            \"\"\"
-            INSERT INTO openopps_columns (
-                table_name,
-                column_name,
-                column_title,
-                column_description,
-                logical_type,
-                json_schema_type,
-                required,
-                source_name,
-                format,
-                enum_json,
-                examples_json,
-                default_json
-            ) VALUES (
-                :table_name,
-                :column_name,
-                :column_title,
-                :column_description,
-                :logical_type,
-                :json_schema_type,
-                :required,
-                :source_name,
-                :format,
-                :enum_json,
-                :examples_json,
-                :default_json
-            )
-            \"\"\",
-            OPENOPPS_COLUMN_ROWS,
-        )
-
-def write_table_csv(conn: sqlite3.Connection, table_name: str, csv_path: Path) -> None:
-    cursor = conn.execute(f'SELECT * FROM "{table_name}"')
-    headers = [column[0] for column in cursor.description]
-    with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, lineterminator="\\n")
-        writer.writerow(headers)
-        while rows := cursor.fetchmany(10_000):
-            writer.writerows(rows)
-
-def write_full_table_exports(db_path: Path) -> None:
-    import polars as pl
-
-    csv_dir = OUTPUT_DIR / CSV_DIR
-    parquet_dir = OUTPUT_DIR / PARQUET_DIR
-    csv_dir.mkdir(parents=True, exist_ok=True)
-    parquet_dir.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
-        for table in OPENOPPS_TABLE_ROWS:
-            table_name = table["table_name"]
-            csv_path = csv_dir / f"{table_name}.csv"
-            parquet_path = parquet_dir / f"{table_name}.parquet"
-            print(f"Exporting {table_name}...", flush=True)
-            write_table_csv(conn, table_name, csv_path)
-            pl.scan_csv(
-                csv_path,
-                infer_schema_length=1000,
-                low_memory=True,
-            ).sink_parquet(parquet_path)
-
-def project_sqlite_for_kaggle_indexer(db_path: Path) -> dict:
-    projection_columns = (
-        ("boards", "raw_payload"),
-        ("job_versions", "description"),
-        ("job_versions", "description_html"),
-        ("job_versions", "job_description"),
-        ("job_versions", "responsibilities"),
-        ("job_versions", "qualifications"),
-        ("job_versions", "skills"),
-        ("job_versions", "compensation"),
-        ("job_payload_snapshots", "payload"),
-    )
-    total_rows = 0
-    total_bytes = 0
-    nulled_columns = []
-    with sqlite3.connect(db_path) as conn:
-        for table_name, column_name in projection_columns:
-            columns = {
-                str(row[1])
-                for row in conn.execute(
-                    f"PRAGMA table_info({quote_identifier(table_name)})"
-                ).fetchall()
-            }
-            if column_name not in columns:
-                continue
-            row = conn.execute(
-                f\"\"\"
-                SELECT COUNT(*), COALESCE(SUM(length(CAST("{column_name}" AS blob))), 0)
-                FROM "{table_name}"
-                WHERE "{column_name}" IS NOT NULL
-                \"\"\"
-            ).fetchone()
-            rows = int(row[0] or 0)
-            bytes_removed = int(row[1] or 0)
-            if rows:
-                conn.execute(
-                    f'UPDATE "{table_name}" SET "{column_name}" = NULL '
-                    f'WHERE "{column_name}" IS NOT NULL'
-                )
-                nulled_columns.append(f"{table_name}.{column_name}")
-                total_rows += rows
-                total_bytes += bytes_removed
-        conn.commit()
-    if nulled_columns:
-        print(
-            "Prepared SQLite upload projection for Kaggle indexer:",
-            json.dumps(
-                {
-                    "nulledColumns": nulled_columns,
-                    "rows": total_rows,
-                    "estimatedBytesRemoved": total_bytes,
-                },
-                sort_keys=True,
-            ),
-            flush=True,
-        )
-    return {"projected_rows": total_rows, "estimated_bytes_removed": total_bytes}
-
-def truncate_sqlite_text_for_kaggle_indexer(
-    db_path: Path,
-    *,
-    max_chars: int = SQLITE_PREVIEW_TEXT_MAX_CHARS,
-    columns: tuple[tuple[str, str], ...] = SQLITE_PREVIEW_TEXT_COLUMNS,
-) -> dict:
-    truncated_rows = 0
-    estimated_bytes_removed = 0
-    truncated_columns = []
-    with sqlite3.connect(db_path) as conn:
-        for table_name, column_name in columns:
-            table_columns = {
-                str(row[1])
-                for row in conn.execute(
-                    f"PRAGMA table_info({quote_identifier(table_name)})"
-                ).fetchall()
-            }
-            if column_name not in table_columns:
-                continue
-            row = conn.execute(
-                f\"\"\"
-                SELECT
-                    COUNT(*),
-                    COALESCE(
-                        SUM(length(CAST("{column_name}" AS blob)) - ?),
-                        0
-                    )
-                FROM "{table_name}"
-                WHERE "{column_name}" IS NOT NULL
-                  AND length(CAST("{column_name}" AS text)) > ?
-                \"\"\",
-                (max_chars, max_chars),
-            ).fetchone()
-            rows = int(row[0] or 0)
-            bytes_removed = int(row[1] or 0)
-            if not rows:
-                continue
-            conn.execute(
-                f'UPDATE "{table_name}" '
-                f'SET "{column_name}" = substr(CAST("{column_name}" AS text), 1, ?) '
-                f'WHERE "{column_name}" IS NOT NULL '
-                f'AND length(CAST("{column_name}" AS text)) > ?',
-                (max_chars, max_chars),
-            )
-            truncated_rows += rows
-            estimated_bytes_removed += max(bytes_removed, 0)
-            truncated_columns.append(f"{table_name}.{column_name}")
-        conn.commit()
-    if truncated_columns:
-        print(
-            "Bounded SQLite upload text cells for Kaggle indexer:",
-            json.dumps(
-                {
-                    "maxChars": max_chars,
-                    "truncatedColumns": truncated_columns,
-                    "rows": truncated_rows,
-                    "estimatedBytesRemoved": estimated_bytes_removed,
-                },
-                sort_keys=True,
-            ),
-            flush=True,
-        )
-    return {
-        "truncated_rows": truncated_rows,
-        "estimated_bytes_removed": estimated_bytes_removed,
-    }
-
-def normalize_sqlite_schema_for_kaggle_indexer(db_path: Path) -> int:
-    replacements = (
-        (re.compile(r"\\bVARCHAR(?:\\(\\d+\\))?\\b"), "TEXT"),
-        (re.compile(r"\\bJSON\\b"), "TEXT"),
-        (re.compile(r"\\bDATETIME\\b"), "TEXT"),
-        (re.compile(r"\\bBOOLEAN\\b"), "INTEGER"),
-        (re.compile(r"\\bFLOAT\\b"), "REAL"),
-    )
-    updated = 0
-    with sqlite3.connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT rowid, sql FROM sqlite_schema WHERE type = 'table' AND sql IS NOT NULL"
-        ).fetchall()
-        conn.execute("PRAGMA writable_schema = ON")
-        try:
-            for rowid, sql in rows:
-                normalized = str(sql)
-                for pattern, replacement in replacements:
-                    normalized = pattern.sub(replacement, normalized)
-                if normalized != sql:
-                    conn.execute(
-                        "UPDATE sqlite_schema SET sql = ? WHERE rowid = ?",
-                        (normalized, rowid),
-                    )
-                    updated += 1
-            if updated:
-                schema_version = int(conn.execute("PRAGMA schema_version").fetchone()[0])
-                conn.execute(f"PRAGMA schema_version = {schema_version + 1}")
-        finally:
-            conn.execute("PRAGMA writable_schema = OFF")
-        conn.commit()
-        integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
-    if integrity.lower() != "ok":
-        raise RuntimeError(
-            f"SQLite schema normalization failed integrity_check: {integrity}"
-        )
-    if updated:
-        print(
-            "Normalized SQLite upload schema for Kaggle indexer:",
-            json.dumps({"tables": updated}, sort_keys=True),
-            flush=True,
-        )
-    return updated
-
-def sqlite_identifier(value: str) -> str:
-    return '"' + value.replace('"', '""') + '"'
-
-def sqlite_affinity_for_kaggle_indexer(declared_type: str | None) -> str:
-    normalized = str(declared_type or "").strip().upper()
-    if not normalized:
-        return "TEXT"
-    if "INT" in normalized:
-        return "INTEGER"
-    if "BLOB" in normalized:
-        return "BLOB"
-    if "REAL" in normalized or "FLOA" in normalized or "DOUB" in normalized:
-        return "REAL"
-    if "NUM" in normalized or "DEC" in normalized:
-        return "REAL"
-    return "TEXT"
-
-def rebuild_sqlite_tables_for_kaggle_indexer(db_path: Path) -> dict:
-    rebuilt_tables = 0
-    copied_rows = 0
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("PRAGMA foreign_keys = OFF")
-        table_names = [
-            str(row[0])
-            for row in conn.execute(
-                \"\"\"
-                SELECT name
-                FROM sqlite_schema
-                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                ORDER BY rowid
-                \"\"\"
-            ).fetchall()
-        ]
-        for table_name in table_names:
-            columns = conn.execute(
-                f"PRAGMA table_info({sqlite_string_literal(table_name)})"
-            ).fetchall()
-            if not columns:
-                continue
-            temp_table = f"__openopps_kaggle_plain_{hashlib.sha1(table_name.encode()).hexdigest()[:12]}"
-            conn.execute(f"DROP TABLE IF EXISTS {sqlite_identifier(temp_table)}")
-            column_defs = ", ".join(
-                f"{sqlite_identifier(str(column[1]))} "
-                f"{sqlite_affinity_for_kaggle_indexer(str(column[2] or ''))}"
-                for column in columns
-            )
-            column_names = ", ".join(sqlite_identifier(str(column[1])) for column in columns)
-            conn.execute(f"CREATE TABLE {sqlite_identifier(temp_table)} ({column_defs})")
-            conn.execute(
-                f"INSERT INTO {sqlite_identifier(temp_table)} ({column_names}) "
-                f"SELECT {column_names} FROM {sqlite_identifier(table_name)}"
-            )
-            row_count = int(conn.execute("SELECT changes()").fetchone()[0])
-            conn.execute(f"DROP TABLE {sqlite_identifier(table_name)}")
-            conn.execute(
-                f"ALTER TABLE {sqlite_identifier(temp_table)} "
-                f"RENAME TO {sqlite_identifier(table_name)}"
-            )
-            rebuilt_tables += 1
-            copied_rows += row_count
-        conn.commit()
-        integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
-    if integrity.lower() != "ok":
-        raise RuntimeError(f"SQLite plain-table rebuild failed integrity_check: {integrity}")
-    print(
-        "Rebuilt SQLite upload tables for Kaggle indexer:",
-        json.dumps({"tables": rebuilt_tables, "rows": copied_rows}, sort_keys=True),
-        flush=True,
-    )
-    return {"tables": rebuilt_tables, "rows": copied_rows}
-
-def table_count(conn: sqlite3.Connection, table_name: str) -> int:
-    try:
-        return int(conn.execute(f'SELECT count(*) FROM "{table_name}"').fetchone()[0])
-    except sqlite3.Error:
-        return 0
-
-def snapshot_quality_report() -> dict:
-    hard_blockers = []
-    counts = {}
-    with sqlite3.connect(DB_PATH) as conn:
-        for table in OPENOPPS_TABLE_ROWS:
-            table_name = table["table_name"]
-            counts[table_name] = table_count(conn, table_name)
-
-    required_paths = [
-        "dataset-cover-image.png",
-        "dataset-metadata.json",
-        *PUBLIC_UPLOAD_DATA_FILES,
-    ]
-    required_files = []
-    for relative_path in required_paths:
-        path = OUTPUT_DIR / relative_path
-        item = {
-            "path": relative_path,
-            "exists": path.exists(),
-            "sizeBytes": path.stat().st_size if path.exists() else 0,
-        }
-        required_files.append(item)
-        if not item["exists"]:
-            hard_blockers.append(f"missing_required_file:{relative_path}")
-        elif item["sizeBytes"] == 0:
-            hard_blockers.append(f"empty_required_file:{relative_path}")
-
-    if counts.get("jobs", 0) == 0 and not os.environ.get("OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION"):
-        hard_blockers.append("missing_current_job_evidence")
-    if counts.get("job_versions", 0) > 0:
-        if counts.get("job_version_skills", 0) == 0:
-            hard_blockers.append("missing_job_version_skill_rows")
-        if counts.get("job_version_skill_keywords", 0) == 0:
-            hard_blockers.append("missing_job_version_skill_keyword_rows")
-    if counts.get("openopps_tables") != len(OPENOPPS_TABLE_ROWS):
-        hard_blockers.append("missing_openopps_table_metadata")
-    if counts.get("openopps_columns", 0) <= 0:
-        hard_blockers.append("missing_openopps_column_metadata")
-
-    return {
-        "generatedAt": datetime.now(UTC).isoformat(),
-        "status": "fail" if hard_blockers else "pass",
-        "hardBlockers": hard_blockers,
-        "warnings": [],
-        "counts": counts,
-        "requiredFiles": required_files,
-        "syncMetrics": read_json(OUTPUT_DIR / "sync_metrics.json"),
-        "statusSummary": read_json(OUTPUT_DIR / "status.json"),
-        "coverageSummary": read_json(OUTPUT_DIR / "coverage.json"),
-    }
-
-def prune_private_upload_files() -> None:
-    for relative_path in (
-        "sync_metrics.json",
-        "status.json",
-        "coverage.json",
-        "snapshot-quality.json",
-        "sync_stderr.txt",
-        "generate_kaggle_metadata.py",
-    ):
-        path = OUTPUT_DIR / relative_path
-        if path.exists():
-            path.unlink()
-    shutil.rmtree(OUTPUT_DIR / "_manager-unused", ignore_errors=True)
-    drop_private_sqlite_tables(DB_PATH)
-    project_sqlite_for_kaggle_indexer(DB_PATH)
-    truncate_sqlite_text_for_kaggle_indexer(DB_PATH)
-    normalize_sqlite_schema_for_kaggle_indexer(DB_PATH)
-    rebuild_sqlite_tables_for_kaggle_indexer(DB_PATH)
-    finalize_sqlite_for_upload(DB_PATH)
-
-def write_public_bundle() -> dict:
-    write_dataset_metadata()
-    drop_private_sqlite_tables(DB_PATH)
-    write_sqlite_metadata(DB_PATH)
-    checkpoint_sqlite(DB_PATH)
-    write_full_table_exports(DB_PATH)
-    project_sqlite_for_kaggle_indexer(DB_PATH)
-    truncate_sqlite_text_for_kaggle_indexer(DB_PATH)
-    normalize_sqlite_schema_for_kaggle_indexer(DB_PATH)
-    rebuild_sqlite_tables_for_kaggle_indexer(DB_PATH)
-    finalize_sqlite_for_upload(DB_PATH)
-    quality = snapshot_quality_report()
-    write_json(OUTPUT_DIR / "snapshot-quality.json", quality)
-    if quality["status"] != "pass":
-        blockers = "; ".join(quality["hardBlockers"]) or "unknown quality failure"
-        raise RuntimeError(f"Snapshot quality gate failed: {blockers}")
-    prune_private_upload_files()
-    return quality
-
-def update_kaggle_dataset_file_metadata(dataset_basics: dict | None = None) -> None:
-    from kaggle.api.kaggle_api_extended import KaggleApi
-    from kagglesdk.datasets.types.dataset_api_service import (
-        ApiUpdateDatasetMetadataRequest,
-    )
-    from kagglesdk.datasets.types.dataset_types import (
-        DatasetSettings,
-        DatasetSettingsFile,
-        DatasetSettingsFileColumn,
-    )
-
-    metadata_path = OUTPUT_DIR / "dataset-metadata.json"
-    metadata = json.loads(metadata_path.read_text())
-    resources = metadata.get("resources") or []
-    if not resources:
-        raise RuntimeError(f"No Kaggle resources found in {metadata_path}")
-
-    api = KaggleApi()
-    api.authenticate()
-
-    settings = DatasetSettings()
-    settings.title = str(metadata.get("title") or "")
-    settings.subtitle = str(metadata.get("subtitle") or "")
-    settings.description = str(metadata.get("description") or "")
-    settings.is_private = bool(metadata.get("isPrivate", False))
-    settings.licenses = [
-        api._new_license(str(license_data["name"]))
-        for license_data in metadata.get("licenses", [])
-        if license_data.get("name")
-    ]
-    settings.keywords = [str(keyword) for keyword in metadata.get("keywords", [])]
-    settings.expected_update_frequency = str(
-        metadata.get("expectedUpdateFrequency") or "not specified"
-    )
-    settings.user_specified_sources = str(metadata.get("userSpecifiedSources") or "")
-    settings.data = [
-        _dataset_settings_file(
-            resource,
-            DatasetSettingsFile,
-            DatasetSettingsFileColumn,
-            base_dir=OUTPUT_DIR,
-        )
-        for resource in resources
-    ]
-
-    owner_slug, dataset_slug = str(metadata.get("id") or DATASET_ID).split("/", 1)
-    request = ApiUpdateDatasetMetadataRequest()
-    request.owner_slug = owner_slug
-    request.dataset_slug = dataset_slug
-    request.settings = settings
-
-    try:
-        with api.build_kaggle_client() as kaggle:
-            response = kaggle.datasets.dataset_api_client.update_dataset_metadata(request)
-        errors = getattr(response, "errors", None) or []
-        if errors:
-            raise RuntimeError(f"Kaggle dataset metadata update failed: {errors}")
-        print(f"Updated Kaggle public dataset metadata for {len(settings.data or [])} public files.")
-    except Exception as exc:
-        print(
-            "Kaggle public dataset metadata update failed; continuing with "
-            f"live databundle metadata repair: {type(exc).__name__}"
-        )
-
-    if dataset_basics is None:
-        session, headers = kaggle_internal_metadata_session()
-        dataset_basics = kaggle_dataset_basics(session, headers)
-    update_kaggle_databundle_metadata_external(metadata, dataset_basics)
-
-def try_update_kaggle_dataset_file_metadata(dataset_basics: dict | None = None) -> bool:
-    try:
-        update_kaggle_dataset_file_metadata(dataset_basics)
-    except Exception as exc:
-        print(
-            "Kaggle live metadata repair failed after successful dataset publish; "
-            "continuing so the scheduled snapshot run completes. "
-            "Run `just kaggle-live-file-metadata` from a browser-authenticated local "
-            f"environment to retry databundle repair. Error: {type(exc).__name__}: {exc}"
-        )
-        return False
-    return True
-
-def _dataset_settings_file(
-    resource,
-    dataset_settings_file_cls,
-    dataset_settings_file_column_cls,
-    *,
-    base_dir=None,
-):
-    file_metadata = dataset_settings_file_cls()
-    file_metadata.name = str(resource["path"])
-    file_metadata.description = str(resource.get("description") or "")
-    if base_dir is not None:
-        file_path = Path(base_dir) / str(resource["path"])
-        if file_path.exists():
-            file_metadata.total_bytes = file_path.stat().st_size
-    columns = []
-    for field in resource.get("schema", {}).get("fields", []):
-        column = dataset_settings_file_column_cls()
-        column.name = str(field["name"])
-        column.description = str(field.get("description") or "")
-        column.type = str(field.get("type") or "")
-        columns.append(column)
-    file_metadata.columns = columns
-    return file_metadata
-
-def kaggle_basic_auth_header() -> str:
-    username = os.environ.get("KAGGLE_USERNAME", "").strip()
-    key = os.environ.get("KAGGLE_KEY", "").strip()
-    token = os.environ.get("KAGGLE_API_TOKEN", "").strip()
-    if (not username or not key) and token:
-        try:
-            token_data = json.loads(token)
-        except json.JSONDecodeError:
-            token_data = {}
-        username = username or str(token_data.get("username") or "").strip()
-        key = key or str(token_data.get("key") or "").strip()
-    if not username or not key:
-        raise RuntimeError("Kaggle username/key credentials are required for metadata repair.")
-    encoded = base64.b64encode(f"{username}:{key}".encode()).decode()
-    return f"Basic {encoded}"
-
-def kaggle_internal_metadata_session():
-    import requests
-
-    owner_slug, dataset_slug = DATASET_ID.split("/", 1)
-    session = requests.Session()
-    response = session.get(
-        f"https://www.kaggle.com/datasets/{owner_slug}/{dataset_slug}",
-        timeout=60,
-    )
-    response.raise_for_status()
-    xsrf_token = session.cookies.get("XSRF-TOKEN")
-    if not xsrf_token:
-        raise RuntimeError("Kaggle XSRF token cookie was not returned for metadata repair.")
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": kaggle_basic_auth_header(),
-        "X-XSRF-TOKEN": xsrf_token,
-    }
-    return session, headers
-
-def kaggle_internal_post(session, headers: dict[str, str], route: str, body: dict) -> dict:
-    response = session.post(
-        f"https://www.kaggle.com/api/i/{route}",
-        headers=headers,
-        json=body,
-        timeout=120,
-    )
-    if not response.ok:
-        raise RuntimeError(
-            f"Kaggle internal metadata API failed for {route}: "
-            f"{response.status_code} {response.text[:500]}"
-        )
-    return response.json()
-
-def kaggle_dataset_basics(
-    session,
-    headers: dict[str, str],
-    *,
-    dataset_version_number: int | None = None,
-) -> dict:
-    owner_slug, dataset_slug = DATASET_ID.split("/", 1)
-    body = {
-        "ownerSlug": owner_slug,
-        "datasetSlug": dataset_slug,
-    }
-    if dataset_version_number is not None:
-        body["datasetVersionNumber"] = dataset_version_number
-    return kaggle_internal_post(
-        session,
-        headers,
-        "datasets.DatasetDetailService/GetDatasetBasics",
-        body,
-    )
-
-def wait_for_new_live_dataset_version(previous_version: int | None) -> dict:
-    session, headers = kaggle_internal_metadata_session()
-    deadline = time.time() + float(os.environ.get("OPENOPPS_KAGGLE_METADATA_WAIT_SECONDS", "900"))
-    expected_version = previous_version + 1 if previous_version is not None else None
-    last_details = {}
-    while True:
-        candidates = []
-        default_basics = kaggle_dataset_basics(session, headers)
-        candidates.append(("default", default_basics))
-        if expected_version is not None:
-            try:
-                expected_basics = kaggle_dataset_basics(
-                    session,
-                    headers,
-                    dataset_version_number=expected_version,
-                )
-                candidates.append(("expected", expected_basics))
-            except Exception as exc:
-                last_details = {
-                    "expectedVersionNumber": expected_version,
-                    "expectedVersionError": type(exc).__name__,
-                }
-        for source, basics in candidates:
-            current_version = int(basics.get("datasetVersionNumber") or 0)
-            data = basics.get("data") or {}
-            details = {
-                "source": source,
-                "previousVersionNumber": previous_version,
-                "expectedVersionNumber": expected_version,
-                "currentVersionNumber": current_version,
-                "hasFirestorePath": bool(data.get("firestorePath")),
-                "hasDatabundleVersionId": bool(data.get("versionId")),
-            }
-            if not (
-                data.get("firestorePath")
-                and data.get("versionId")
-                and (previous_version is None or current_version > previous_version)
-                and (expected_version is None or current_version >= expected_version)
-            ):
-                last_details = details
-                continue
-            try:
-                live_files = kaggle_databundle_files(session, headers, basics)
-            except Exception as exc:
-                details["filesError"] = type(exc).__name__
-                last_details = details
-                continue
-            missing_files = sorted(
-                path for path in PUBLIC_UPLOAD_DATA_FILES if path not in live_files
-            )
-            details["liveFileCount"] = len(live_files)
-            details["missingPublicFiles"] = missing_files[:10]
-            if missing_files:
-                last_details = details
-                continue
-            print(
-                "Kaggle live dataset version ready for metadata repair:",
-                json.dumps(
-                    {
-                        "source": source,
-                        "datasetVersionNumber": current_version,
-                        "datasetVersionId": basics.get("datasetVersionId"),
-                        "databundleVersionId": data.get("versionId"),
-                        "liveFileCount": len(live_files),
-                    },
-                    sort_keys=True,
-                ),
-            )
-            return basics
-        if time.time() >= deadline:
-            raise TimeoutError(
-                "Timed out waiting for Kaggle to expose the newly published dataset "
-                "version and public file surface: "
-                + json.dumps(last_details, sort_keys=True)
-            )
-        print(
-            "Waiting for new Kaggle dataset version before metadata repair:",
-            json.dumps(last_details, sort_keys=True),
-        )
-        time.sleep(15)
-
-def kaggle_databundle_column_type(field_type: str) -> tuple[str, str]:
-    normalized = (field_type or "string").lower()
-    if normalized in {"datetime", "date", "time"}:
-        return "DATE_TIME", "EXTENDED_DATA_TYPE_UNSPECIFIED"
-    if normalized in {"integer", "int"}:
-        return "NUMERIC", "INTEGER"
-    if normalized in {"numeric", "number", "float", "decimal"}:
-        return "NUMERIC", "DECIMAL"
-    if normalized == "boolean":
-        return "BOOLEAN", "EXTENDED_DATA_TYPE_UNSPECIFIED"
-    if normalized == "url":
-        return "STRING", "URL"
-    if normalized == "uuid":
-        return "STRING", "UUID"
-    if normalized == "id":
-        return "STRING", "ID"
-    return "STRING", "EXTENDED_DATA_TYPE_UNSPECIFIED"
-
-def kaggle_column_type_from_field(field: dict) -> str:
-    field_type = str(field.get("type") or "").lower()
-    field_name = str(field.get("name") or "")
-    field_format = str(field.get("format") or "")
-    if field_format in {"date-time", "date"}:
-        return "datetime"
-    if field_format in {"uri", "url"} or field_name.endswith("_url"):
-        return "url"
-    if field_name == "id" or field_name.endswith("_id") or field_name.endswith("_key"):
-        return "id"
-    if field_type in {"boolean", "datetime", "id", "integer", "numeric", "number", "url", "uuid"}:
-        return field_type
-    if field_type == "string":
-        return "string"
-    schema_types = {
-        item.strip()
-        for item in str(field.get("jsonSchemaType") or "").split("|")
-        if item.strip() and item.strip() != "null"
-    }
-    if "boolean" in schema_types:
-        return "boolean"
-    if "integer" in schema_types:
-        return "integer"
-    if "number" in schema_types:
-        return "numeric"
-    return "string"
-
-def update_databundle_entity_metadata(
-    post,
-    verification_info: dict,
-    *,
-    firestore_path: str,
-    description: str,
-    fields: list[dict],
-) -> tuple[dict, int]:
-    columns = []
-    fields_by_name = {str(field["name"]): field for field in fields}
-    if fields_by_name:
-        live_columns = post(
-            "datasets.databundles.DatabundleService/GetDatabundleExternalColumns",
-            {
-                "verificationInfo": verification_info,
-                "firestorePath": firestore_path,
-            },
-        ).get("columns") or []
-        for live_column in live_columns:
-            field = fields_by_name.get(str(live_column.get("name") or ""))
-            column_type, extended_type = kaggle_databundle_column_type(
-                kaggle_column_type_from_field(field or {})
-            )
-            column = dict(live_column)
-            column.update(
-                {
-                    "description": str((field or {}).get("description") or ""),
-                    "type": column_type,
-                    "extendedType": extended_type,
-                }
-            )
-            columns.append(column)
-    response = post(
-        "datasets.databundles.DatabundleService/UpdateDatabundleMetadataExternal",
-        {
-            "verificationInfo": verification_info,
-            "firestorePath": firestore_path,
-            "description": description,
-            "columns": columns,
-        },
-    )
-    return response, len(columns)
-
-def update_sqlite_table_metadata_external(
-    post,
-    verification_info: dict,
-    sqlite_file_info: dict,
-) -> tuple[int, int, dict]:
-    sqlite_info = sqlite_file_info.get("sqliteInfo") or {}
-    table_count = int((sqlite_info.get("tables") or {}).get("totalChildren") or 0)
-    if table_count == 0:
-        raise RuntimeError(
-            "Kaggle SQLite indexer did not index openoppsdb.sqlite; "
-            "no sqliteInfo.tables were exposed for live table metadata repair."
-        )
-    children = post(
-        "datasets.databundles.DatabundleService/GetDatabundleExternalChildren",
-        {
-            "verificationInfo": verification_info,
-            "firestorePath": sqlite_file_info["path"],
-            "offset": 0,
-            "count": max(table_count, len(SQLITE_TABLE_METADATA), 200),
-            "depth": 1,
-            "enforceMaxDepthConstraint": False,
-        },
-    )
-    live_tables = {
-        str(table_info.get("name") or ""): table_info
-        for table_info in children.get("tables") or []
-    }
-    expected_tables = {str(table["name"]): table for table in SQLITE_TABLE_METADATA}
-    missing_tables = sorted(set(expected_tables) - set(live_tables))
-    if missing_tables:
-        raise RuntimeError(
-            "Kaggle SQLite indexer omitted expected openoppsdb tables: "
-            + ", ".join(missing_tables)
-        )
-    updated_tables = 0
-    updated_columns = 0
-    rating = {}
-    for table_name, table_metadata in expected_tables.items():
-        live_table = live_tables[table_name]
-        response, column_count = update_databundle_entity_metadata(
-            post,
-            verification_info,
-            firestore_path=str(live_table["path"]),
-            description=str(table_metadata.get("description") or ""),
-            fields=list(table_metadata.get("schema", {}).get("fields", [])),
-        )
-        rating = response.get("usabilityRating") or rating
-        updated_tables += 1
-        updated_columns += column_count
-    return updated_tables, updated_columns, rating
-
-def kaggle_databundle_files(session, headers: dict[str, str], basics: dict) -> dict[str, dict]:
-    data = basics.get("data") or {}
-    root_path = data.get("firestorePath")
-    version_id = data.get("versionId")
-    dataset_id = basics.get("datasetId")
-    if not root_path or not version_id or not dataset_id:
-        raise RuntimeError(f"Missing Kaggle databundle identity in dataset basics: {basics}")
-    verification_info = {
-        "databundleVersionId": version_id,
-        "datasetId": dataset_id,
-    }
-    paths = [
-        root_path,
-        f"{root_path}/directories/exports/directories/csv",
-        f"{root_path}/directories/exports/directories/parquet",
-    ]
-    files: dict[str, dict] = {}
-    for firestore_path in paths:
-        children = kaggle_internal_post(
-            session,
-            headers,
-            "datasets.databundles.DatabundleService/GetDatabundleExternalChildren",
-            {
-                "verificationInfo": verification_info,
-                "firestorePath": firestore_path,
-                "offset": 0,
-                "count": 200,
-                "depth": 1,
-                "enforceMaxDepthConstraint": False,
-            },
-        )
-        for file_info in children.get("files") or []:
-            relative_url = file_info.get("relativeUrl")
-            if relative_url:
-                files[str(relative_url)] = file_info
-    return files
-
-def update_kaggle_databundle_metadata_external(metadata: dict, basics: dict) -> None:
-    session, headers = kaggle_internal_metadata_session()
-    def post(route: str, body: dict) -> dict:
-        return kaggle_internal_post(session, headers, route, body)
-
-    data = basics.get("data") or {}
-    verification_info = {
-        "databundleVersionId": data.get("versionId"),
-        "datasetId": basics.get("datasetId"),
-    }
-    files = kaggle_databundle_files(session, headers, basics)
-    updated_files = 0
-    updated_columns = 0
-    updated_sqlite_tables = 0
-    rating = {}
-    for resource in metadata.get("resources") or []:
-        resource_path = str(resource["path"])
-        file_info = files.get(resource_path)
-        if not file_info:
-            raise RuntimeError(f"Kaggle live databundle file not found: {resource_path}")
-        response, column_count = update_databundle_entity_metadata(
-            post,
-            verification_info,
-            firestore_path=str(file_info["path"]),
-            description=str(resource.get("description") or ""),
-            fields=list(resource.get("schema", {}).get("fields", [])),
-        )
-        rating = response.get("usabilityRating") or {}
-        updated_files += 1
-        updated_columns += column_count
-        if resource_path == "openoppsdb.sqlite":
-            sqlite_deadline = time.time() + float(
-                os.environ.get("OPENOPPS_KAGGLE_SQLITE_INDEX_WAIT_SECONDS", "1200")
-            )
-            while True:
-                try:
-                    table_count, table_column_count, table_rating = (
-                        update_sqlite_table_metadata_external(
-                            post,
-                            verification_info,
-                            file_info,
-                        )
-                    )
-                    break
-                except RuntimeError as exc:
-                    if "Kaggle SQLite indexer did not index" not in str(exc):
-                        raise
-                    if time.time() >= sqlite_deadline:
-                        raise
-                    print(
-                        "Waiting for Kaggle SQLite indexer metadata:",
-                        json.dumps(
-                            {
-                                "path": resource_path,
-                                "reason": str(exc),
-                            },
-                            sort_keys=True,
-                        ),
-                    )
-                    time.sleep(30)
-                    files = kaggle_databundle_files(session, headers, basics)
-                    file_info = files.get(resource_path)
-                    if not file_info:
-                        raise RuntimeError(
-                            f"Kaggle live databundle file not found: {resource_path}"
-                        )
-            updated_sqlite_tables += table_count
-            updated_columns += table_column_count
-            rating = table_rating or rating
-    print(
-        "Updated Kaggle live databundle metadata:",
-        json.dumps(
-            {
-                "files": updated_files,
-                "sqliteTables": updated_sqlite_tables,
-                "columns": updated_columns,
-                "usabilityScore": rating.get("score"),
-                "columnDescriptionScore": rating.get("columnDescriptionScore"),
-                "fileDescriptionScore": rating.get("fileDescriptionScore"),
-            },
-            sort_keys=True,
-        ),
-    )
 
 require_kaggle_credentials()
 install_openopps()
+download_generator_script()
 copy_latest_input_db()
-download_dataset_assets()
-""".replace("__OPENOPPS_SYNC_ENV_DEFAULTS__", sync_env_defaults).replace(
-        "__SKILL_CATALOG__",
-        skill_catalog,
-    ).replace(
-        "__DATASET_METADATA__",
-        notebook_dataset_metadata,
-    ).replace(
-        "__SQLITE_TABLE_METADATA__",
-        sqlite_table_metadata,
-    ).replace(
-        "__OPENOPPS_TABLE_ROWS__",
-        table_rows,
-    ).replace(
-        "__OPENOPPS_COLUMN_ROWS__",
-        column_rows,
-    ).replace(
-        "__PUBLIC_UPLOAD_DATA_FILES__",
-        public_upload_data_files,
-    ).replace(
-        "__SQLITE_PREVIEW_TEXT_MAX_CHARS__",
-        str(SQLITE_PREVIEW_TEXT_MAX_CHARS),
-    ).replace(
-        "__SQLITE_PREVIEW_TEXT_COLUMNS__",
-        sqlite_preview_text_columns,
-    ).replace(
-        "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
-        str(NOTEBOOK_SYNC_TIMEOUT_SECONDS),
-    ).replace(
-        "__OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT__",
-        str(NOTEBOOK_JOB_ROUTE_LIMIT),
+""".replace("__GENERATOR_SCRIPT_URL__", GENERATOR_SCRIPT_URL)
+        .replace(
+            "__OPENOPPS_SYNC_ENV_DEFAULTS__",
+            sync_env_defaults,
+        )
+        .replace(
+            "__APP_TABLE_NAMES__",
+            app_table_names,
+        )
+        .replace(
+            "__APP_PRIMARY_KEY_COLUMNS__",
+            app_primary_key_columns,
+        )
+        .replace(
+            "__PARQUET_RESTORE_TABLES__",
+            parquet_restore_tables,
+        )
+        .replace(
+            "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
+            str(NOTEBOOK_SYNC_TIMEOUT_SECONDS),
+        )
+        .replace(
+            "__OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT__",
+            str(NOTEBOOK_JOB_ROUTE_LIMIT),
+        )
     )
 
 
@@ -4285,18 +4835,34 @@ def _notebook_column_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for table in TABLES:
         for field in _model_schema_metadata(table.model)["fields"]:
+            public_status = _public_sqlite_value_status(table.name, field["name"])
+            enum_values = field.get("enum") or ENUM_VALUES_BY_COLUMN.get(
+                (table.name, field["name"])
+            )
             rows.append(
                 {
                     "table_name": table.name,
                     "column_name": field["name"],
                     "column_title": field["title"],
-                    "column_description": field["description"],
+                    "column_description": _public_column_description(
+                        table.name, field["name"], field["description"], public_status
+                    ),
                     "logical_type": field.get("logicalType", field["type"]),
                     "json_schema_type": field["jsonSchemaType"],
                     "required": int(field["required"]),
+                    "operational_nullable": int(
+                        _operational_nullable(table, field["name"])
+                    ),
+                    "public_sqlite_value_status": public_status,
+                    "full_export_paths_json": _json_or_none(
+                        _full_export_paths(table.name)
+                    ),
+                    "relationship_json": _json_or_none(
+                        _relationship_metadata(table.name, field["name"])
+                    ),
                     "source_name": field.get("sourceName"),
                     "format": field.get("format"),
-                    "enum_json": _json_or_none(field.get("enum")),
+                    "enum_json": _json_or_none(enum_values),
                     "examples_json": _json_or_none(field.get("examples")),
                     "default_json": _json_or_none(field.get("default")),
                 }
@@ -4311,6 +4877,7 @@ openopps_env["OPENOPPS_CACHE_ENABLED"] = "false"
 for key, value in OPENOPPS_SYNC_ENV_DEFAULTS.items():
     openopps_env.setdefault(key, value)
 
+rehydrate_public_snapshot_for_openopps(openopps_env)
 run(["openopps", "admin", "db", "init"], env=openopps_env)
 print(f"OpenOpps bounded jobs sync timeout: {KAGGLE_SYNC_TIMEOUT_SECONDS:g}s")
 print(f"OpenOpps bounded jobs sync route limit: {KAGGLE_JOB_ROUTE_LIMIT}")
@@ -4319,8 +4886,6 @@ sync_metrics = run_sync_metrics(
     env=openopps_env,
     timeout_seconds=KAGGLE_SYNC_TIMEOUT_SECONDS,
 )
-skill_backfill = backfill_openopps_skill_tables(DB_PATH)
-print("OpenOpps skill backfill:", json.dumps(skill_backfill, sort_keys=True))
 status = run_json(
     ["openopps", "status", "--json"],
     OUTPUT_DIR / "status.json",
@@ -4335,23 +4900,33 @@ coverage = run_json(
 
 
 def _notebook_export_source() -> str:
-    return """quality = write_public_bundle()
-print("OpenOpps snapshot quality:", json.dumps({
-    "status": quality["status"],
-    "hardBlockers": quality["hardBlockers"],
-    "warnings": quality["warnings"],
-    "counts": {
-        "jobs": quality["counts"].get("jobs"),
-        "job_versions": quality["counts"].get("job_versions"),
-        "job_version_skills": quality["counts"].get("job_version_skills"),
-        "job_version_skill_keywords": quality["counts"].get("job_version_skill_keywords"),
-        "openopps_tables": quality["counts"].get("openopps_tables"),
-        "openopps_columns": quality["counts"].get("openopps_columns"),
-    },
-}, sort_keys=True))
+    return """generator_args = [
+    "--output-dir",
+    str(OUTPUT_DIR),
+    "--data-db",
+    str(DB_PATH),
+    "--mutate-data-db-for-upload",
+    "--sync-metrics",
+    str(OUTPUT_DIR / "sync_metrics.json"),
+    "--status-json",
+    str(OUTPUT_DIR / "status.json"),
+    "--coverage-json",
+    str(OUTPUT_DIR / "coverage.json"),
+    "--quality-report",
+    str(OUTPUT_DIR / "snapshot-quality.json"),
+    "--prune-private-upload-files",
+    "--stage-public-upload-dir",
+    str(PUBLIC_UPLOAD_DIR),
+    "--skip-notebooks",
+]
+empty_snapshot_explanation = os.environ.get("OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION")
+if empty_snapshot_explanation:
+    generator_args.extend(["--empty-snapshot-explanation", empty_snapshot_explanation])
+run_generator(generator_args)
 
-for path in sorted(OUTPUT_DIR.iterdir()):
-    print(path.name, path.stat().st_size)
+for path in sorted(PUBLIC_UPLOAD_DIR.rglob("*")):
+    if path.is_file():
+        print(path.relative_to(PUBLIC_UPLOAD_DIR), path.stat().st_size)
 """
 
 
@@ -4370,7 +4945,7 @@ run([
     "datasets",
     "version",
     "-p",
-    str(OUTPUT_DIR),
+    str(PUBLIC_UPLOAD_DIR),
     "-m",
     message,
     "-q",
@@ -4378,8 +4953,25 @@ run([
     "-r",
     "zip",
 ])
-published_basics = wait_for_new_live_dataset_version(previous_version)
-metadata_repair_ok = try_update_kaggle_dataset_file_metadata(published_basics)
+expected_version = previous_version + 1
+metadata_repair_ok = try_run_generator([
+    "--output-dir",
+    str(OUTPUT_DIR),
+    "--skip-notebooks",
+    "--wait-live-dataset-ready",
+    "--wait-live-dataset-min-version",
+    str(expected_version),
+    "--wait-live-dataset-timeout-seconds",
+    str(KAGGLE_METADATA_WAIT_SECONDS),
+    "--wait-live-dataset-poll-seconds",
+    str(KAGGLE_METADATA_POLL_SECONDS),
+    "--update-live-file-metadata",
+    "--live-file-metadata-kaggle-auth",
+    "--live-file-metadata-sqlite-timeout-seconds",
+    str(KAGGLE_SQLITE_INDEX_WAIT_SECONDS),
+    "--live-file-metadata-sqlite-poll-seconds",
+    str(KAGGLE_SQLITE_INDEX_POLL_SECONDS),
+])
 print(
     "OpenOpps live metadata repair:",
     json.dumps({"ok": metadata_repair_ok}, sort_keys=True),
@@ -4392,9 +4984,7 @@ run(["kaggle", "datasets", "files", DATASET_ID, "--page-size", "200"])
 def _resource_metadata(resource: Resource) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "profile": (
-            "tabular-data-resource"
-            if resource.format == "csv"
-            else "data-resource"
+            "tabular-data-resource" if resource.format == "csv" else "data-resource"
         ),
         "name": resource.name,
         "path": resource.path,
@@ -4412,11 +5002,13 @@ def _resource_metadata(resource: Resource) -> dict[str, Any]:
 
 
 def _kaggle_upload_resource_metadata(resource: Resource) -> dict[str, Any]:
-    """Return only Kaggle CLI-documented upload-facing resource metadata."""
+    """Return Kaggle upload-facing resource metadata."""
     metadata: dict[str, Any] = {
         "path": resource.path,
         "description": resource.description,
     }
+    if resource.path == DB_FILE:
+        metadata["name"] = "SQLite Database"
     if resource.model is not None:
         metadata["schema"] = {
             "fields": [
@@ -4519,8 +5111,9 @@ def _update_live_file_metadata(
     metadata_path: Path,
     *,
     use_browser_cookies: bool = False,
-    sqlite_index_timeout_seconds: float = 1200.0,
-    sqlite_index_poll_seconds: float = 30.0,
+    use_kaggle_auth: bool = False,
+    sqlite_index_timeout_seconds: float = 120.0,
+    sqlite_index_poll_seconds: float = 15.0,
 ) -> None:
     try:
         from kaggle.api.kaggle_api_extended import KaggleApi
@@ -4580,17 +5173,27 @@ def _update_live_file_metadata(
 
     try:
         with api.build_kaggle_client() as kaggle:
-            response = kaggle.datasets.dataset_api_client.update_dataset_metadata(request)
+            response = kaggle.datasets.dataset_api_client.update_dataset_metadata(
+                request
+            )
         errors = getattr(response, "errors", None) or []
         if errors:
             raise RuntimeError(f"Kaggle dataset metadata update failed: {errors}")
-        print(f"Updated Kaggle file metadata for {len(settings.data or [])} public files.")
+        print(
+            f"Updated Kaggle file metadata for {len(settings.data or [])} public files."
+        )
     except Exception as exc:
-        if not use_browser_cookies:
+        if not use_browser_cookies and not use_kaggle_auth:
             raise
         print(
             "Kaggle file metadata update failed; continuing with "
-            f"browser-cookie databundle metadata repair: {type(exc).__name__}"
+            f"databundle metadata repair: {type(exc).__name__}"
+        )
+    if use_kaggle_auth:
+        _update_live_databundle_metadata_with_kaggle_auth(
+            metadata,
+            sqlite_index_timeout_seconds=sqlite_index_timeout_seconds,
+            sqlite_index_poll_seconds=sqlite_index_poll_seconds,
         )
     if use_browser_cookies:
         _update_live_databundle_metadata_with_browser_cookies(
@@ -4654,7 +5257,16 @@ def _kaggle_column_type_from_field(field: dict[str, Any]) -> str:
         return "url"
     if field_name == "id" or field_name.endswith("_id") or field_name.endswith("_key"):
         return "id"
-    if field_type in {"boolean", "datetime", "id", "integer", "numeric", "number", "url", "uuid"}:
+    if field_type in {
+        "boolean",
+        "datetime",
+        "id",
+        "integer",
+        "numeric",
+        "number",
+        "url",
+        "uuid",
+    }:
         return field_type
     if field_type == "string":
         return "string"
@@ -4676,13 +5288,16 @@ def _update_databundle_entity_metadata(
     columns = []
     fields_by_name = {str(field["name"]): field for field in fields}
     if fields_by_name:
-        live_columns = post(
-            "datasets.databundles.DatabundleService/GetDatabundleExternalColumns",
-            {
-                "verificationInfo": verification_info,
-                "firestorePath": firestore_path,
-            },
-        ).get("columns") or []
+        live_columns = (
+            post(
+                "datasets.databundles.DatabundleService/GetDatabundleExternalColumns",
+                {
+                    "verificationInfo": verification_info,
+                    "firestorePath": firestore_path,
+                },
+            ).get("columns")
+            or []
+        )
         for live_column in live_columns:
             field = fields_by_name.get(str(live_column.get("name") or ""))
             column_type, extended_type = _kaggle_databundle_column_type(
@@ -4718,8 +5333,9 @@ def _update_sqlite_table_metadata_external(
     table_count = int((sqlite_info.get("tables") or {}).get("totalChildren") or 0)
     if table_count == 0:
         raise RuntimeError(
-            "Kaggle SQLite indexer did not index openoppsdb.sqlite; "
-            "no sqliteInfo.tables were exposed for live table metadata repair."
+            "Kaggle did not expose sqliteInfo.tables for openoppsdb.sqlite; "
+            "nested SQLite table metadata cannot be repaired until Kaggle "
+            "renders this fresh SQLite upload as a database."
         )
     children = post(
         "datasets.databundles.DatabundleService/GetDatabundleExternalChildren",
@@ -4740,7 +5356,7 @@ def _update_sqlite_table_metadata_external(
     missing_tables = sorted(set(expected_tables) - set(live_tables))
     if missing_tables:
         raise RuntimeError(
-            "Kaggle SQLite indexer omitted expected openoppsdb tables: "
+            "Kaggle sqliteInfo omitted expected openoppsdb tables: "
             + ", ".join(missing_tables)
         )
     updated_tables = 0
@@ -4761,11 +5377,273 @@ def _update_sqlite_table_metadata_external(
     return updated_tables, updated_columns, rating
 
 
+def _update_sqlite_table_metadata_when_indexed(
+    post,
+    verification_info: dict[str, Any],
+    sqlite_file_info: dict[str, Any],
+    *,
+    refresh_file_info,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> tuple[int, int, dict[str, Any], str | None]:
+    deadline = time.monotonic() + timeout_seconds
+    current_file_info = sqlite_file_info
+    while True:
+        try:
+            table_count, column_count, rating = _update_sqlite_table_metadata_external(
+                post,
+                verification_info,
+                current_file_info,
+            )
+            return table_count, column_count, rating, None
+        except RuntimeError as exc:
+            if "Kaggle did not expose sqliteInfo.tables" not in str(exc):
+                raise
+            reason = str(exc)
+            if time.monotonic() >= deadline:
+                print(
+                    "Kaggle sqliteInfo metadata unavailable; continuing without "
+                    "nested SQLite table metadata: "
+                    + json.dumps(
+                        {
+                            "path": DB_FILE,
+                            "reason": reason,
+                        },
+                        sort_keys=True,
+                    )
+                )
+                return 0, 0, {}, reason
+            print(
+                "Waiting for Kaggle sqliteInfo metadata: "
+                + json.dumps(
+                    {
+                        "path": DB_FILE,
+                        "reason": reason,
+                    },
+                    sort_keys=True,
+                )
+            )
+            time.sleep(max(poll_seconds, 1.0))
+            current_file_info = refresh_file_info()
+
+
+def _kaggle_basic_auth_header() -> str:
+    username = os.environ.get("KAGGLE_USERNAME", "").strip()
+    key = os.environ.get("KAGGLE_KEY", "").strip()
+    token = os.environ.get("KAGGLE_API_TOKEN", "").strip()
+    if (not username or not key) and token:
+        try:
+            token_data = json.loads(token)
+        except json.JSONDecodeError:
+            token_data = {}
+        username = username or str(token_data.get("username") or "").strip()
+        key = key or str(token_data.get("key") or "").strip()
+    if not username or not key:
+        raise RuntimeError(
+            "Kaggle username/key credentials are required for metadata repair."
+        )
+    encoded = base64.b64encode(f"{username}:{key}".encode()).decode()
+    return f"Basic {encoded}"
+
+
+def _kaggle_auth_metadata_session(
+    metadata: dict[str, Any],
+) -> tuple[Any, dict[str, str]]:
+    try:
+        import requests
+    except Exception as exc:  # pragma: no cover - Kaggle runtime helper.
+        raise RuntimeError("Kaggle-auth metadata repair requires `requests`.") from exc
+
+    owner_slug, dataset_slug = str(metadata.get("id") or DATASET_ID).split("/", 1)
+    dataset_url = f"https://www.kaggle.com/datasets/{owner_slug}/{dataset_slug}"
+    session = requests.Session()
+    response = session.get(dataset_url, timeout=60)
+    response.raise_for_status()
+    xsrf_token = session.cookies.get("XSRF-TOKEN") or session.cookies.get("CSRF-TOKEN")
+    if not xsrf_token:
+        raise RuntimeError(
+            "Kaggle XSRF token cookie was not returned for metadata repair."
+        )
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": _kaggle_basic_auth_header(),
+        "Origin": "https://www.kaggle.com",
+        "Referer": dataset_url,
+        "X-XSRF-TOKEN": xsrf_token,
+    }
+    return session, headers
+
+
+def _kaggle_internal_post(
+    session: Any,
+    headers: dict[str, str],
+    route: str,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    response = session.post(
+        f"https://www.kaggle.com/api/i/{route}",
+        headers=headers,
+        json=body,
+        timeout=120,
+    )
+    if not response.ok:
+        raise RuntimeError(
+            f"Kaggle internal metadata API failed for {route}: "
+            f"{response.status_code} {response.text[:500]}"
+        )
+    return response.json()
+
+
+def _kaggle_dataset_basics_with_auth(
+    metadata: dict[str, Any],
+    session: Any,
+    headers: dict[str, str],
+    *,
+    dataset_version_number: int | None = None,
+) -> dict[str, Any]:
+    owner_slug, dataset_slug = str(metadata.get("id") or DATASET_ID).split("/", 1)
+    body: dict[str, Any] = {
+        "ownerSlug": owner_slug,
+        "datasetSlug": dataset_slug,
+    }
+    if dataset_version_number is not None:
+        body["datasetVersionNumber"] = dataset_version_number
+    return _kaggle_internal_post(
+        session,
+        headers,
+        "datasets.DatasetDetailService/GetDatasetBasics",
+        body,
+    )
+
+
+def _kaggle_databundle_files_with_auth(
+    post,
+    basics: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    data = basics.get("data") or {}
+    root_path = data.get("firestorePath")
+    version_id = data.get("versionId")
+    dataset_id = basics.get("datasetId")
+    if not root_path or not version_id or not dataset_id:
+        raise RuntimeError(f"Missing Kaggle databundle identity: {basics}")
+    verification_info = {
+        "databundleVersionId": version_id,
+        "datasetId": dataset_id,
+    }
+    files: dict[str, dict[str, Any]] = {}
+    for firestore_path in (
+        root_path,
+        f"{root_path}/directories/exports/directories/csv",
+        f"{root_path}/directories/exports/directories/parquet",
+    ):
+        children = post(
+            "datasets.databundles.DatabundleService/GetDatabundleExternalChildren",
+            {
+                "verificationInfo": verification_info,
+                "firestorePath": firestore_path,
+                "offset": 0,
+                "count": 200,
+                "depth": 1,
+                "enforceMaxDepthConstraint": False,
+            },
+        )
+        for file_info in children.get("files") or []:
+            relative_url = file_info.get("relativeUrl")
+            if relative_url:
+                files[str(relative_url)] = file_info
+    return files
+
+
+def _update_live_databundle_metadata_with_kaggle_auth(
+    metadata: dict[str, Any],
+    *,
+    sqlite_index_timeout_seconds: float = 120.0,
+    sqlite_index_poll_seconds: float = 15.0,
+) -> None:
+    session, headers = _kaggle_auth_metadata_session(metadata)
+
+    def post(route: str, body: dict[str, Any]) -> dict[str, Any]:
+        return _kaggle_internal_post(session, headers, route, body)
+
+    basics = _kaggle_dataset_basics_with_auth(metadata, session, headers)
+    data = basics.get("data") or {}
+    verification_info = {
+        "databundleVersionId": data.get("versionId"),
+        "datasetId": basics.get("datasetId"),
+    }
+    files = _kaggle_databundle_files_with_auth(post, basics)
+
+    updated_files = 0
+    updated_columns = 0
+    updated_sqlite_tables = 0
+    sqlite_metadata_blockers: list[str] = []
+    rating: dict[str, Any] = {}
+    for resource in metadata.get("resources") or []:
+        resource_path = str(resource["path"])
+        file_info = files.get(resource_path)
+        if not file_info:
+            raise RuntimeError(
+                f"Kaggle live databundle file not found: {resource_path}"
+            )
+        update_response, column_count = _update_databundle_entity_metadata(
+            post,
+            verification_info,
+            firestore_path=str(file_info["path"]),
+            description=str(resource.get("description") or ""),
+            fields=list(resource.get("schema", {}).get("fields", [])),
+        )
+        rating = update_response.get("usabilityRating") or rating
+        updated_files += 1
+        updated_columns += column_count
+        if resource_path == DB_FILE:
+
+            def refresh_sqlite_file_info() -> dict[str, Any]:
+                refreshed_files = _kaggle_databundle_files_with_auth(post, basics)
+                refreshed_file_info = refreshed_files.get(resource_path)
+                if not refreshed_file_info:
+                    raise RuntimeError(
+                        f"Kaggle live databundle file not found: {resource_path}"
+                    )
+                return refreshed_file_info
+
+            table_count, table_column_count, table_rating, blocker = (
+                _update_sqlite_table_metadata_when_indexed(
+                    post,
+                    verification_info,
+                    file_info,
+                    refresh_file_info=refresh_sqlite_file_info,
+                    timeout_seconds=sqlite_index_timeout_seconds,
+                    poll_seconds=sqlite_index_poll_seconds,
+                )
+            )
+            if blocker:
+                sqlite_metadata_blockers.append(blocker)
+            updated_sqlite_tables += table_count
+            updated_columns += table_column_count
+            rating = table_rating or rating
+    print(
+        "Updated Kaggle live databundle metadata: "
+        + json.dumps(
+            {
+                "files": updated_files,
+                "sqliteTables": updated_sqlite_tables,
+                "sqliteTableMetadataBlocked": len(sqlite_metadata_blockers),
+                "columns": updated_columns,
+                "usabilityScore": rating.get("score"),
+                "columnDescriptionScore": rating.get("columnDescriptionScore"),
+                "fileDescriptionScore": rating.get("fileDescriptionScore"),
+            },
+            sort_keys=True,
+        )
+    )
+
+
 def _update_live_databundle_metadata_with_browser_cookies(
     metadata: dict[str, Any],
     *,
-    sqlite_index_timeout_seconds: float = 1200.0,
-    sqlite_index_poll_seconds: float = 30.0,
+    sqlite_index_timeout_seconds: float = 120.0,
+    sqlite_index_poll_seconds: float = 15.0,
 ) -> None:
     try:
         import browser_cookie3
@@ -4855,12 +5733,15 @@ def _update_live_databundle_metadata_with_browser_cookies(
     updated_files = 0
     updated_columns = 0
     updated_sqlite_tables = 0
+    sqlite_metadata_blockers: list[str] = []
     rating: dict[str, Any] = {}
     for resource in metadata.get("resources") or []:
         resource_path = str(resource["path"])
         file_info = files.get(resource_path)
         if not file_info:
-            raise RuntimeError(f"Kaggle live databundle file not found: {resource_path}")
+            raise RuntimeError(
+                f"Kaggle live databundle file not found: {resource_path}"
+            )
         update_response, column_count = _update_databundle_entity_metadata(
             post,
             verification_info,
@@ -4872,39 +5753,27 @@ def _update_live_databundle_metadata_with_browser_cookies(
         updated_files += 1
         updated_columns += column_count
         if resource_path == DB_FILE:
-            sqlite_deadline = time.monotonic() + sqlite_index_timeout_seconds
-            while True:
-                try:
-                    table_count, table_column_count, table_rating = (
-                        _update_sqlite_table_metadata_external(
-                            post,
-                            verification_info,
-                            file_info,
-                        )
+
+            def refresh_sqlite_file_info() -> dict[str, Any]:
+                refreshed_file_info = fetch_files().get(resource_path)
+                if not refreshed_file_info:
+                    raise RuntimeError(
+                        f"Kaggle live databundle file not found: {resource_path}"
                     )
-                    break
-                except RuntimeError as exc:
-                    if "Kaggle SQLite indexer did not index" not in str(exc):
-                        raise
-                    if time.monotonic() >= sqlite_deadline:
-                        raise
-                    print(
-                        "Waiting for Kaggle SQLite indexer metadata: "
-                        + json.dumps(
-                            {
-                                "path": DB_FILE,
-                                "reason": str(exc),
-                            },
-                            sort_keys=True,
-                        )
-                    )
-                    time.sleep(max(sqlite_index_poll_seconds, 1.0))
-                    files = fetch_files()
-                    file_info = files.get(resource_path)
-                    if not file_info:
-                        raise RuntimeError(
-                            f"Kaggle live databundle file not found: {resource_path}"
-                        )
+                return refreshed_file_info
+
+            table_count, table_column_count, table_rating, blocker = (
+                _update_sqlite_table_metadata_when_indexed(
+                    post,
+                    verification_info,
+                    file_info,
+                    refresh_file_info=refresh_sqlite_file_info,
+                    timeout_seconds=sqlite_index_timeout_seconds,
+                    poll_seconds=sqlite_index_poll_seconds,
+                )
+            )
+            if blocker:
+                sqlite_metadata_blockers.append(blocker)
             updated_sqlite_tables += table_count
             updated_columns += table_column_count
             rating = table_rating or rating
@@ -4914,6 +5783,7 @@ def _update_live_databundle_metadata_with_browser_cookies(
             {
                 "files": updated_files,
                 "sqliteTables": updated_sqlite_tables,
+                "sqliteTableMetadataBlocked": len(sqlite_metadata_blockers),
                 "columns": updated_columns,
                 "usabilityScore": rating.get("score"),
                 "columnDescriptionScore": rating.get("columnDescriptionScore"),
@@ -4936,15 +5806,19 @@ def _kaggle_field_metadata(field: dict[str, Any]) -> dict[str, Any]:
 def _kaggle_field_type(field: dict[str, Any]) -> str:
     field_name = str(field["name"])
     field_format = str(field.get("format") or "")
-    logical_type = str(field.get("type") or "")
+    logical_type = str(field.get("logicalType") or field.get("type") or "")
     schema_types = {
         item.strip()
         for item in str(field.get("jsonSchemaType") or "").split("|")
         if item.strip() and item.strip() != "null"
     }
-    if field_format in {"date-time", "date"} or "datetime" in logical_type:
+    if field_format in {"date-time", "datetime", "date"} or "datetime" in logical_type:
         return "datetime"
-    if field_format in {"uri", "url"} or field_name.endswith("_url"):
+    if (
+        field_format in {"uri", "url"}
+        or field_name in {"url", "uri"}
+        or field_name.endswith("_url")
+    ):
         return "url"
     if field_name == "id" or field_name.endswith("_id") or field_name.endswith("_key"):
         return "id"
@@ -5052,7 +5926,11 @@ def _frictionless_field_type(
         return "datetime"
     if field_format == "date":
         return "date"
-    if field_format in {"uri", "url"} or field_name.endswith("_url"):
+    if (
+        field_format in {"uri", "url"}
+        or field_name in {"url", "uri"}
+        or field_name.endswith("_url")
+    ):
         return "string"
 
     schema_type = _json_schema_type(field_schema)
