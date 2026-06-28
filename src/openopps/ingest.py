@@ -330,7 +330,7 @@ def _select_sources(
         if source_key in BOARD_SOURCE_CATALOG:
             return [BOARD_SOURCE_CATALOG[source_key]]
         raise ValueError(f"Unknown source: {source_key}")
-    return [source for source in sources if source.enabled]
+    return sources
 
 
 def _partition_fresh_sources(
@@ -365,11 +365,8 @@ def _unscoped_source(
         or stored_source.provider_id != catalog_source.provider_id
     ):
         return stored_source
-    if not catalog_source.enabled:
-        return catalog_source
     return catalog_source.model_copy(
         update={
-            "enabled": stored_source.enabled,
             "version": stored_source.version,
             "raw_metadata": catalog_source.raw_metadata | stored_source.raw_metadata,
             "synced_at": stored_source.synced_at,

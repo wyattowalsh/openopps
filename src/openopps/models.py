@@ -813,11 +813,6 @@ class SourceRecord(OpenOppsRecord):
         description="Source adapter identifier used to fetch and normalize boards.",
         examples=["ycombinator", "consider", "getro", "manual"],
     )
-    enabled: bool = Field(
-        default=True,
-        description="Whether unscoped source syncs should include this source.",
-        examples=[True],
-    )
     version: JsonDict = Field(
         default_factory=dict,
         description="Provider-supplied version or cursor metadata for incremental syncs.",
@@ -1961,11 +1956,6 @@ class SourceRow(SQLModel, table=True):
     )
     provider_id: str = SQLField(
         index=True, min_length=1, description="Source adapter identifier."
-    )
-    enabled: bool = SQLField(
-        default=True,
-        index=True,
-        description="Whether unscoped syncs include this source.",
     )
     version: JsonDict = SQLField(
         default_factory=dict,

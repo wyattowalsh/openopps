@@ -25,14 +25,12 @@ def upgrade() -> None:
         sa.Column("key", sa.String(), nullable=False),
         sa.Column("url", sa.String(), nullable=False),
         sa.Column("provider_id", sa.String(), nullable=False),
-        sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("version", sa.JSON(), nullable=True),
         sa.Column("raw_metadata", sa.JSON(), nullable=True),
         sa.Column("extra_payload", sa.JSON(), nullable=True),
         sa.Column("synced_at", sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint("key"),
     )
-    op.create_index("ix_sources_enabled", "sources", ["enabled"])
     op.create_index("ix_sources_provider_id", "sources", ["provider_id"])
     op.create_index("ix_sources_synced_at", "sources", ["synced_at"])
 

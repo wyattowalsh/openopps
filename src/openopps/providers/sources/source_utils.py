@@ -22,7 +22,7 @@ SOURCE_TAXONOMY_KEYS = (
     "sourceYear",
     "sourceCategory",
     "sourceAttribution",
-    "defaultEnabledReason",
+    "inclusionReason",
 )
 
 
@@ -35,7 +35,7 @@ def source_taxonomy_metadata(
     refresh_cadence: str,
     source_category: str,
     source_attribution: str,
-    default_enabled_reason: str,
+    inclusion_reason: str,
     source_year: int | None = None,
     **extra: Any,
 ) -> JsonDict:
@@ -47,7 +47,7 @@ def source_taxonomy_metadata(
         "refreshCadence": refresh_cadence,
         "sourceCategory": source_category,
         "sourceAttribution": source_attribution,
-        "defaultEnabledReason": default_enabled_reason,
+        "inclusionReason": inclusion_reason,
     }
     if source_year is not None:
         metadata["sourceYear"] = source_year
@@ -67,7 +67,7 @@ async def fetch_text(
     validate_public_https_url(url, allow_manual=allow_manual)
     if url.lower().startswith("manual://"):
         raise ValueError(f"Manual source {url} must provide embedded rows or CSV text")
-    response = await client.get(url, headers={"accept": accept})
+    response = await client.get(url, headers={"accept": accept}, follow_redirects=True)
     response.raise_for_status()
     return response.text
 

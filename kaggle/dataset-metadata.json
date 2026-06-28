@@ -42,11 +42,6 @@
             "type": "id"
           },
           {
-            "description": "Whether unscoped syncs include this source.",
-            "name": "enabled",
-            "type": "boolean"
-          },
-          {
             "description": "Provider version metadata.",
             "name": "version",
             "type": "string"
@@ -912,11 +907,6 @@
             "description": "Source adapter identifier.",
             "name": "provider_id",
             "type": "id"
-          },
-          {
-            "description": "Whether unscoped syncs include this source.",
-            "name": "enabled",
-            "type": "boolean"
           },
           {
             "description": "Provider version metadata.",

@@ -225,8 +225,6 @@ def build_coverage_report(
         filters={"source": source_key, "provider": provider_filter},
         sources={
             "total": len(sources),
-            "enabled": sum(1 for source in sources if source.enabled),
-            "disabled": sum(1 for source in sources if not source.enabled),
             "byProvider": _count_by(source.provider_id for source in sources),
             "yield": build_source_yield_report(store, source_key=source_key).totals,
         },
@@ -480,7 +478,6 @@ def _source_yield_item(
     return {
         "source": source.key,
         "providerId": source.provider_id,
-        "enabled": source.enabled,
         "taxonomy": _source_taxonomy(source.raw_metadata),
         "companyCandidates": company_candidates,
         "canonicalBoards": canonical_boards,
@@ -541,7 +538,7 @@ def _source_taxonomy(raw_metadata: dict[str, Any]) -> dict[str, Any]:
         "sourceYear",
         "sourceCategory",
         "sourceAttribution",
-        "defaultEnabledReason",
+        "inclusionReason",
     }
     return {key: raw_metadata[key] for key in sorted(keys) if key in raw_metadata}
 

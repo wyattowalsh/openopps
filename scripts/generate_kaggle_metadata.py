@@ -38,7 +38,6 @@ from openopps.models import (
     JobVersionSkillKeywordRow,
     JobVersionSkillRow,
     SourceRow,
-    _SKILL_CATALOG,
     extract_job_skills,
 )
 from openopps.utils import stable_id, slugify
@@ -2881,7 +2880,6 @@ def snapshot_quality_report(
         ("job_version_skills", "job_version_skill_keywords"),
     )
 
-    enabled_sources = _int_count(sqlite_counts.get("enabledSources"))
     source_count = _int_count(
         status_counts.get("sources"), sqlite_counts.get("sources")
     )
@@ -2911,8 +2909,8 @@ def snapshot_quality_report(
         parquet_counts.get("job_version_skill_keywords"),
     )
 
-    if source_count == 0 or enabled_sources == 0:
-        hard_blockers.append("missing_enabled_source_evidence")
+    if source_count == 0:
+        hard_blockers.append("missing_source_evidence")
     if board_count == 0:
         hard_blockers.append("missing_board_data")
     if route_count == 0 or executable_routes == 0:
@@ -2955,7 +2953,6 @@ def snapshot_quality_report(
             warnings.append(f"status_issue:{issue}")
 
     counts = {
-        "enabledSources": enabled_sources,
         "sources": source_count,
         "boards": board_count,
         "boardProviders": route_count,
@@ -3161,9 +3158,6 @@ def _sqlite_snapshot_report(db_path: Path) -> dict[str, Any]:
                 for table in TABLES
                 if table.name in tables
             }
-            counts["enabledSources"] = _sqlite_count_where(
-                conn, "sources", "enabled = 1"
-            )
             counts["openJobs"] = _sqlite_count_where(conn, "jobs", "status = 'open'")
             counts["jobCapableRoutes"] = _sqlite_count_where(
                 conn, "board_providers", "support_level = 'jobs'"

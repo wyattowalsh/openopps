@@ -33,7 +33,6 @@ def build_docs_data() -> dict[str, Any]:
                 "key": source.key,
                 "providerId": source.provider_id,
                 "url": source.url,
-                "enabled": source.enabled,
                 "taxonomy": _source_taxonomy_data(source.raw_metadata),
             }
             for source in source_records
@@ -64,7 +63,7 @@ def _source_taxonomy_data(raw_metadata: dict[str, Any]) -> dict[str, Any]:
         "sourceYear",
         "sourceCategory",
         "sourceAttribution",
-        "defaultEnabledReason",
+        "inclusionReason",
     )
     return {key: raw_metadata[key] for key in keys if key in raw_metadata}
 

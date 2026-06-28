@@ -21,12 +21,12 @@ Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a p
 
 OpenOpps packages a small set of low-friction non-VC source families as source adapters, not job providers. These sources add company candidates and provenance metadata; they only become job-yielding after route detection, route probing, and provider job syncs find public job-capable routes.
 
-| Source family                 | Packaged keys         | Default  | Notes                                                                                                    |
-| ----------------------------- | --------------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| Official public-company index | `sec-company-tickers` | Disabled | Opt-in listed-company backbone; SEC fair-access controls can reject generic scheduled sync environments. |
-| Public index CSV              | `sp500`, `nasdaq100`  | Disabled | Opt-in seed data for index membership; `nasdaq100` is manual until a reviewed CSV is configured.         |
-| Employer ranking CSV          | `fortune500`          | Disabled | Opt-in ranking seed data; supports embedded user-supplied CSV rows for reviewed local refreshes.         |
-| Ecosystem landscape           | `cncf-landscape`      | Enabled  | Reads CNCF `landscape.yml` public fields and intentionally excludes logos and Crunchbase-derived fields. |
+| Source family                 | Packaged keys         | Notes                                                                                                    |
+| ----------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------- |
+| Official public-company index | `sec-company-tickers` | Included listed-company backbone; SEC fair-access controls can reject generic scheduled sync environments. |
+| Public index CSV              | `sp500`, `nasdaq100`  | Included seed data for index membership; `nasdaq100` remains manual until a reviewed CSV is configured.    |
+| Employer ranking CSV          | `fortune500`          | Included ranking seed data; supports embedded user-supplied CSV rows for reviewed local refreshes.         |
+| Ecosystem landscape           | `cncf-landscape`      | Reads CNCF `landscape.yml` public fields and intentionally excludes logos and Crunchbase-derived fields.   |
 
 Each packaged source includes taxonomy metadata such as `providerType`, `coverageMode`, `accessType`, `licenseStatus`, `refreshCadence`, and `sourceAttribution` in the source `raw_metadata` payload.
 

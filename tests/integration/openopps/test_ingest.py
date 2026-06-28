@@ -31,19 +31,18 @@ def _mock_greenhouse_jobs(token: str, jobs: list[dict[str, object]]) -> Any:
     )
 
 
-def test_unscoped_source_selection_honors_current_catalog_disabled_defaults(
+def test_unscoped_source_selection_includes_every_catalog_source(
     tmp_path: Path,
 ):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
-    store.upsert_source(SEC_COMPANY_TICKERS_SOURCE.model_copy(update={"enabled": True}))
+    store.upsert_source(SEC_COMPANY_TICKERS_SOURCE)
 
     selected = ingest_module._select_sources(store, None)
     explicit = ingest_module._select_sources(store, "sec-company-tickers")
 
-    assert "sec-company-tickers" not in {source.key for source in selected}
+    assert "sec-company-tickers" in {source.key for source in selected}
     assert explicit[0].key == "sec-company-tickers"
-    assert explicit[0].enabled is True
 
 
 def test_unscoped_source_selection_preserves_custom_source_overrides(
@@ -56,16 +55,17 @@ def test_unscoped_source_selection_preserves_custom_source_overrides(
             key="a16z",
             url="https://custom.example/companies",
             provider_id="consider",
-            enabled=False,
         )
     )
 
     selected = ingest_module._select_sources(store, None)
     explicit = ingest_module._select_sources(store, "a16z")
 
-    assert "a16z" not in {source.key for source in selected}
+    assert "a16z" in {source.key for source in selected}
+    assert next(source for source in selected if source.key == "a16z").url == (
+        "https://custom.example/companies"
+    )
     assert explicit[0].url == "https://custom.example/companies"
-    assert explicit[0].enabled is False
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,6 @@ CNCF_LANDSCAPE_SOURCE = SourceRecord(
     key="cncf-landscape",
     url="https://raw.githubusercontent.com/cncf/landscape/master/landscape.yml",
     provider_id="cncf_landscape",
-    enabled=True,
     raw_metadata=source_taxonomy_metadata(
         provider_type="ecosystem_landscape",
         coverage_mode="projects",
@@ -25,7 +24,7 @@ CNCF_LANDSCAPE_SOURCE = SourceRecord(
         refresh_cadence="periodic",
         source_category="cloud_native_ecosystem",
         source_attribution="Cloud Native Computing Foundation landscape.yml data; logos and Crunchbase-derived fields are intentionally not ingested.",
-        default_enabled_reason="Public GitHub landscape data is a high-yield non-VC ecosystem backbone.",
+        inclusion_reason="Public GitHub landscape data is a high-yield non-VC ecosystem backbone.",
         indexName="CNCF Landscape",
     ),
 )

@@ -82,9 +82,37 @@ async def test_public_index_csv_normalizes_remote_csv_rows():
     assert providers == []
     assert meta["indexName"] == "S&P 500"
     assert boards[0].key == "sp500:aapl"
-    assert boards[0].remote_id == "320193"
+    assert boards[0].remote_id == "AAPL"
     assert boards[0].markets == ["Information Technology", "Technology Hardware"]
     assert boards[0].locations == ["Cupertino CA"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_public_index_csv_uses_symbol_remote_ids_for_duplicate_ciks():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(SP500_SOURCE.url).mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                "Symbol,Security,GICS Sector,GICS Sub-Industry,Headquarters Location,CIK\n"
+                "GOOGL,Alphabet Inc. (Class A),Communication Services,Interactive Media,Mountain View CA,1652044\n"
+                "GOOG,Alphabet Inc. (Class C),Communication Services,Interactive Media,Mountain View CA,1652044\n"
+            ),
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in PublicIndexCsvSourceAdapter(settings).iter_boards(
+                client, SP500_SOURCE, page_size=100
+            )
+        ]
+
+    boards, _, _ = pages[0]
+    assert [board.remote_id for board in boards] == ["GOOGL", "GOOG"]
+    assert [board.key for board in boards] == ["sp500:googl", "sp500:goog"]
 
 
 @pytest.mark.asyncio
@@ -154,8 +182,40 @@ async def test_ranking_csv_supports_manual_embedded_rows():
     assert providers == []
     assert meta["indexName"] == "Fortune 500"
     assert boards[0].key == "fortune500:1-acme-retail"
+    assert boards[0].remote_id == "1-Acme Retail"
     assert boards[0].website_url == "https://acme.example"
     assert boards[0].markets == ["Retail"]
+
+
+@pytest.mark.asyncio
+async def test_ranking_csv_uses_rank_and_name_remote_ids_for_duplicate_ranks():
+    settings = OpenOppsSettings(cache_enabled=False)
+    source = FORTUNE500_SOURCE.model_copy(
+        update={
+            "url": "manual://fortune500",
+            "raw_metadata": {
+                **FORTUNE500_SOURCE.raw_metadata,
+                "rows": [
+                    {"Rank": "306", "Company": "CST Brands"},
+                    {"Rank": "306", "Company": "Another Company"},
+                ],
+            },
+        }
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in RankingCsvSourceAdapter(settings).iter_boards(
+                client, source, page_size=100
+            )
+        ]
+
+    boards, _, _ = pages[0]
+    assert [board.remote_id for board in boards] == [
+        "306-CST Brands",
+        "306-Another Company",
+    ]
 
 
 @pytest.mark.asyncio

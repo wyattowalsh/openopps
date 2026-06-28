@@ -1018,7 +1018,7 @@ def test_data_artifact_writer_adds_metadata_before_exports() -> None:
     ) < source.index("_finalize_sqlite_for_upload(build_db)")
 
 
-def test_table_csv_export_serializes_sqlite_booleans_for_polars(
+def test_table_csv_export_serializes_sources_for_polars(
     tmp_path: Path,
 ) -> None:
     db_path = _write_quality_bundle(tmp_path)
@@ -1030,7 +1030,7 @@ def test_table_csv_export_serializes_sqlite_booleans_for_polars(
 
     rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
 
-    assert rows[0]["enabled"] == "true"
+    assert "enabled" not in rows[0]
     gen.pl.scan_csv(
         csv_path,
         schema_overrides=gen._polars_schema_overrides(sources_table),
@@ -2504,7 +2504,7 @@ def test_snapshot_quality_report_blocks_structurally_unusable_snapshot(
 ) -> None:
     db_path = _write_quality_bundle(
         tmp_path,
-        enabled_sources=0,
+        sources=0,
         boards=0,
         routes=0,
     )
@@ -2518,7 +2518,7 @@ def test_snapshot_quality_report_blocks_structurally_unusable_snapshot(
     )
 
     assert report["status"] == "fail"
-    assert "missing_enabled_source_evidence" in report["hardBlockers"]
+    assert "missing_source_evidence" in report["hardBlockers"]
     assert "missing_board_data" in report["hardBlockers"]
     assert "missing_executable_route_evidence" in report["hardBlockers"]
 
@@ -2669,7 +2669,7 @@ def test_snapshot_quality_report_blocks_dominant_provider_failures(
 def _write_quality_bundle(
     output_dir: Path,
     *,
-    enabled_sources: int = 1,
+    sources: int = 1,
     boards: int = 1,
     routes: int = 1,
     jobs: int = 1,
@@ -2704,8 +2704,8 @@ def _write_quality_bundle(
 
         insert_rows(
             "sources",
-            ("key", "enabled"),
-            [(f"source-{index}", 1) for index in range(1, enabled_sources + 1)],
+            ("key",),
+            [(f"source-{index}",) for index in range(1, sources + 1)],
         )
         insert_rows(
             "boards",
@@ -2797,15 +2797,14 @@ def _insert_representative_app_rows(db_path: Path) -> None:
         conn.execute(
             """
             INSERT INTO sources (
-                key, url, provider_id, enabled, version, raw_metadata,
+                key, url, provider_id, version, raw_metadata,
                 extra_payload, synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "source-1",
                 "https://example.com/jobs",
                 "getro",
-                1,
                 '{"name":"fixture"}',
                 '{"catalog":"fixture"}',
                 "{}",

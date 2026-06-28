@@ -22,9 +22,11 @@ from openopps.utils import slugify
 
 FORTUNE500_SOURCE = SourceRecord(
     key="fortune500",
-    url="https://raw.githubusercontent.com/cmusam/fortune500/master/fortune500.csv",
+    url=(
+        "https://raw.githubusercontent.com/Redislabs-Solution-Architects/"
+        "redisearch_demo_and_preso/master/fortune500.csv"
+    ),
     provider_id="ranking_csv",
-    enabled=False,
     raw_metadata=source_taxonomy_metadata(
         provider_type="employer_ranking",
         coverage_mode="ranked_companies",
@@ -32,8 +34,8 @@ FORTUNE500_SOURCE = SourceRecord(
         license_status="needs_review",
         refresh_cadence="annual",
         source_category="employer_ranking",
-        source_attribution="Scrappy community Fortune 500 CSV seed; use a reviewed source URL or embedded user-supplied CSV for refreshes.",
-        default_enabled_reason="Disabled by default because Fortune ranking data requires explicit provenance review.",
+        source_attribution="Community Fortune 500 CSV seed from the RediSearch demo repository; use a reviewed source URL or embedded user-supplied CSV for refreshes.",
+        inclusion_reason="Included as a public ranking seed; downstream users should review provenance before using ranking membership as authority.",
         indexName="Fortune 500",
     ),
 )
@@ -43,7 +45,7 @@ class RankingCsvSourceAdapter:
     provider_id = "ranking_csv"
     provider_label = "Ranking CSV"
     provider_description = (
-        "Opt-in CSV ranking source adapter for employer and company lists."
+        "CSV ranking source adapter for employer and company lists."
     )
 
     def __init__(self, settings: OpenOppsSettings):
@@ -104,7 +106,7 @@ def _board_from_ranking_row(
     return index_board_record(
         source=source,
         name=name,
-        remote_id=str(first_string(row, "ID", "id") or rank or name),
+        remote_id=str(first_string(row, "ID", "id") or f"{rank}-{name}"),
         remote_slug=slugify(f"{rank}-{name}"),
         website_url=domain,
         markets=[industry] if industry else [],

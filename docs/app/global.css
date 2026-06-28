@@ -302,7 +302,6 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-status-chip[data-tone="jobs"],
-  .openopps-status-chip[data-tone="enabled"],
   .openopps-status-chip[data-tone="yes"] {
     @apply border-primary/45 bg-primary/10 text-primary;
   }
@@ -313,7 +312,6 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-status-chip[data-tone="unsupported"],
-  .openopps-status-chip[data-tone="disabled"],
   .openopps-status-chip[data-tone="no"] {
     @apply border-muted-foreground/30 bg-muted/70 text-muted-foreground;
   }

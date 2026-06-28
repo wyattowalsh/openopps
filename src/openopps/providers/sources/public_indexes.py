@@ -25,7 +25,6 @@ SP500_SOURCE = SourceRecord(
     key="sp500",
     url="https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv",
     provider_id="public_index_csv",
-    enabled=False,
     raw_metadata=source_taxonomy_metadata(
         provider_type="public_company_index",
         coverage_mode="listed_companies",
@@ -34,7 +33,7 @@ SP500_SOURCE = SourceRecord(
         refresh_cadence="periodic",
         source_category="public_company_index",
         source_attribution="Community-maintained S&P 500 constituents CSV derived from public index tables.",
-        default_enabled_reason="Disabled by default because branded index membership provenance is community-maintained, not an official S&P feed.",
+        inclusion_reason="Included as a community-maintained public-company index seed; treat membership provenance as advisory.",
         indexName="S&P 500",
     ),
 )
@@ -43,7 +42,6 @@ NASDAQ100_SOURCE = SourceRecord(
     key="nasdaq100",
     url="manual://nasdaq100",
     provider_id="public_index_csv",
-    enabled=False,
     raw_metadata=source_taxonomy_metadata(
         provider_type="public_company_index",
         coverage_mode="listed_companies",
@@ -52,7 +50,7 @@ NASDAQ100_SOURCE = SourceRecord(
         refresh_cadence="periodic",
         source_category="public_company_index",
         source_attribution="Community-maintained Nasdaq-100 constituents seed; replace with a reviewed source URL before production refreshes.",
-        default_enabled_reason="Disabled by default because Nasdaq-100 membership should be treated as scrappy opt-in seed data.",
+        inclusion_reason="Included as an embedded public-company index seed; treat membership provenance as advisory.",
         indexName="Nasdaq-100",
     ),
 )
@@ -62,7 +60,7 @@ class PublicIndexCsvSourceAdapter:
     provider_id = "public_index_csv"
     provider_label = "Public Index CSV"
     provider_description = (
-        "Opt-in CSV source adapter for public-company index membership seeds."
+        "CSV source adapter for public-company index membership seeds."
     )
 
     def __init__(self, settings: OpenOppsSettings):
@@ -125,7 +123,7 @@ def _board_from_index_row(
     return index_board_record(
         source=source,
         name=name,
-        remote_id=str(cik or symbol or name),
+        remote_id=str(symbol or cik or name),
         remote_slug=remote_slug,
         markets=[value for value in [sector, industry] if value],
         locations=[location] if location else [],

@@ -194,8 +194,8 @@ def test_migration_nulls_observation_version_refs_after_version_cleanup(
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
-            INSERT INTO sources (key, url, provider_id, enabled)
-            VALUES ('source-1', 'https://example.com', 'manual', 1)
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('source-1', 'https://example.com', 'manual')
             """
         )
         conn.execute(

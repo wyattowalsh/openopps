@@ -69,7 +69,7 @@ OpenOpps SHALL block Kaggle dataset publishing when the generated snapshot is st
 
 #### Scenario: Provider failures make the snapshot misleading
 
-- **WHEN** provider or source failures are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without enabled source, board, executable route, or current/persisted job evidence
+- **WHEN** provider or source failures are hidden, unclassified, dominant enough to make the snapshot misleading, or leave the run without source, board, executable route, or current/persisted job evidence
 - **THEN** the OpenOppsDB workflow blocks publishing unless a documented first-run or upstream-outage explanation makes the empty evidence defensible
 
 ### Requirement: OpenOppsDB deployment remains local and verifiable

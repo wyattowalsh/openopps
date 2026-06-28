@@ -22,7 +22,6 @@ SEC_COMPANY_TICKERS_SOURCE = SourceRecord(
     key="sec-company-tickers",
     url=SEC_COMPANY_TICKERS_URL,
     provider_id="sec_company_tickers",
-    enabled=False,
     raw_metadata=source_taxonomy_metadata(
         provider_type="public_company_index",
         coverage_mode="listed_companies",
@@ -31,10 +30,9 @@ SEC_COMPANY_TICKERS_SOURCE = SourceRecord(
         refresh_cadence="periodic",
         source_category="public_companies",
         source_attribution="U.S. Securities and Exchange Commission company tickers file",
-        default_enabled_reason=(
-            "Opt-in because SEC fair-access controls can reject generic scheduled "
-            "sync environments; run manually when the caller has a compliant "
-            "declared User-Agent and network path."
+        inclusion_reason=(
+            "Included through the official SEC company tickers file; callers remain "
+            "responsible for a compliant declared User-Agent and network path."
         ),
     ),
 )

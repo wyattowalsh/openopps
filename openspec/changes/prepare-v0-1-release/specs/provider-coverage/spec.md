@@ -53,7 +53,7 @@ OpenOpps SHALL only promote candidate providers to v0.1 job-fetching support whe
 #### Scenario: Wellfound source remains anti-bot blocked
 
 - **WHEN** Wellfound/Angel startup discovery is blocked by anti-bot controls and no static no-auth extraction path is proven
-- **THEN** OpenOpps reports Wellfound/Angel as unsupported or disabled source metadata
+- **THEN** OpenOpps reports Wellfound/Angel as unsupported source metadata
 - **AND** does not present it as a failed job-capable provider
 
 ### Requirement: Published coverage includes snapshot context

@@ -426,7 +426,6 @@ def test_source_yield_report_counts_source_family_metrics(tmp_path: Path):
         {
             "source": "a16z",
             "providerId": "consider",
-            "enabled": True,
             "taxonomy": {},
             "companyCandidates": 3,
             "canonicalBoards": 3,

@@ -315,12 +315,10 @@ class OpenOppsStore:
                     session.merge(row)
                 session.commit()
 
-    def list_sources(self, enabled_only: bool = False) -> list[SourceRecord]:
+    def list_sources(self) -> list[SourceRecord]:
         self.init_db()
         with Session(self.engine) as session:
             statement = select(SourceRow)
-            if enabled_only:
-                statement = statement.where(SourceRow.enabled == True)  # noqa: E712
             return [source_from_row(row) for row in session.exec(statement).all()]
 
     def get_source(self, key: str) -> SourceRecord | None:

@@ -614,7 +614,7 @@ def _status_issues(
 def sync_all(
     source_key: Annotated[
         str | None,
-        typer.Argument(help="Optional source key; omit to sync all enabled sources."),
+        typer.Argument(help="Optional source key; omit to sync every configured source."),
     ] = None,
     board: Annotated[
         str | None,
@@ -1031,21 +1031,13 @@ def sources_add(
             help="Source adapter id used to parse the catalog.",
         ),
     ] = "consider_a16z",
-    enabled: Annotated[
-        bool,
-        typer.Option(
-            "--enabled/--disabled", help="Include this source in unscoped sync runs."
-        ),
-    ] = True,
 ) -> None:
     try:
         validate_public_https_url(url, allow_manual=True)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     store = _store()
-    store.upsert_source(
-        SourceRecord(key=key, url=url, provider_id=provider, enabled=enabled)
-    )
+    store.upsert_source(SourceRecord(key=key, url=url, provider_id=provider))
     console.print(f"Added source {key}")
 
 
@@ -1069,11 +1061,8 @@ def sources_list(
         return
     _table(
         "Sources",
-        ["key", "provider", "enabled", "url"],
-        [
-            [record.key, record.provider_id, record.enabled, record.url]
-            for record in records
-        ],
+        ["key", "provider", "url"],
+        [[record.key, record.provider_id, record.url] for record in records],
     )
 
 
@@ -1208,12 +1197,12 @@ def sources_yield(
 
 
 @sources_app.command(
-    "sync", help="Discover boards from one source or all enabled sources."
+    "sync", help="Discover boards from one source or every configured source."
 )
 def sources_sync(
     source_key: Annotated[
         str | None,
-        typer.Argument(help="Optional source key; omit to sync all enabled sources."),
+        typer.Argument(help="Optional source key; omit to sync every configured source."),
     ] = None,
     no_db: Annotated[
         bool,
@@ -1331,9 +1320,7 @@ def boards_add(
     store = _store()
     if not store.get_source(source):
         store.upsert_source(
-            SourceRecord(
-                key=source, url="manual://source", provider_id="manual", enabled=True
-            )
+            SourceRecord(key=source, url="manual://source", provider_id="manual")
         )
     board = BoardRecord(
         key=slugify(key),

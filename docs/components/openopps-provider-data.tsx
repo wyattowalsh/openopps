@@ -114,7 +114,6 @@ export function SourceCatalogSummary() {
 							<th>Adapter</th>
 							<th>Type</th>
 							<th>Access</th>
-							<th>Status</th>
 							<th>Catalog URL</th>
 						</tr>
 					</thead>
@@ -129,14 +128,6 @@ export function SourceCatalogSummary() {
 								</td>
 								<td>{source.taxonomy.providerType ?? "source"}</td>
 								<td>{source.taxonomy.accessType ?? "public"}</td>
-								<td>
-									<span
-										className="openopps-status-chip"
-										data-tone={source.enabled ? "enabled" : "disabled"}
-									>
-										{source.enabled ? "enabled" : "disabled"}
-									</span>
-								</td>
 								<td>
 									<a href={source.url}>{source.url}</a>
 								</td>

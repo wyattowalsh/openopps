@@ -801,7 +801,6 @@ def test_sources_show_prefers_persisted_source_over_catalog(tmp_path: Path):
             key="a16z",
             url="https://custom.example/companies",
             provider_id="consider",
-            enabled=False,
         )
     )
 
@@ -811,7 +810,6 @@ def test_sources_show_prefers_persisted_source_over_catalog(tmp_path: Path):
     row = json.loads(result.output)
     assert row["url"] == "https://custom.example/companies"
     assert row["provider_id"] == "consider"
-    assert row["enabled"] is False
 
 
 def test_sources_add_rejects_private_or_deceptive_urls(tmp_path: Path):

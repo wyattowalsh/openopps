@@ -95,7 +95,7 @@ class OpenOppsSettings(BaseSettings):
         description=(
             "Freshness window, in seconds, for skipping recently synced source "
             "catalogs during unscoped full sync retries. A value of 0 disables the "
-            "skip and refreshes every enabled source."
+            "skip and refreshes every configured source."
         ),
         examples=[0.0, 86400.0],
     )

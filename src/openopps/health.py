@@ -183,7 +183,7 @@ def _select_sources(
     provider_filter: str | None,
 ) -> list[SourceRecord]:
     source_catalog = {source.key: source for source in all_board_sources()}
-    sources = store.list_sources(enabled_only=True)
+    sources = store.list_sources()
     if not sources:
         sources = list(source_catalog.values())
     if source_key:
@@ -194,7 +194,7 @@ def _select_sources(
         sources = [
             source for source in sources if source.provider_id == provider_filter
         ]
-    return [source for source in sources if source.enabled]
+    return sources
 
 
 async def _check_source(

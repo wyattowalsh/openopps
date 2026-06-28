@@ -13,7 +13,6 @@ export type SourceCatalogEntry = {
 	key: string;
 	providerId: string;
 	url: string;
-	enabled: boolean;
 	taxonomy: {
 		providerType?: string;
 		coverageMode?: string;
@@ -23,7 +22,7 @@ export type SourceCatalogEntry = {
 		sourceYear?: number;
 		sourceCategory?: string;
 		sourceAttribution?: string;
-		defaultEnabledReason?: string;
+		inclusionReason?: string;
 	};
 };
 
