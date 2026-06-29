@@ -1542,3 +1542,164 @@ CONSIDER_SOURCE = SourceRecord(
     provider_id="consider",
     raw_metadata={"board": "consider"},
 )
+
+WINTERMUTE_SOURCE = SourceRecord(
+    key="wintermute",
+    url="https://consider.com/boards/vc/wintermute/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "wintermute"},
+)
+
+
+CELESTA_SOURCE = SourceRecord(
+    key="celesta",
+    url="https://consider.com/boards/vc/celesta/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "celesta"},
+)
+
+
+DFJGROWTH_SOURCE = SourceRecord(
+    key="dfjgrowth",
+    url="https://consider.com/boards/vc/dfj-growth/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "dfjgrowth"},
+)
+
+
+JETBLUEVENTURES_SOURCE = SourceRecord(
+    key="jetblueventures",
+    url="https://consider.com/boards/vc/jetblue-ventures/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "jetblueventures"},
+)
+
+
+MYRIADVENTURES_SOURCE = SourceRecord(
+    key="myriadventures",
+    url="https://jobs.myriadventures.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "myriadventures"},
+)
+
+
+PARTNERSGROUP_SOURCE = SourceRecord(
+    key="partnersgroup",
+    url="https://consider.com/boards/vc/partners-group/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "partnersgroup"},
+)
+
+
+LOCALGLOBESOLAR_SOURCE = SourceRecord(
+    key="localglobesolar",
+    url="https://consider.com/boards/vc/localglobe-solar/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "localglobesolar"},
+)
+
+
+DIMENSIONCAP_SOURCE = SourceRecord(
+    key="dimensioncap",
+    url="https://talent.dimensioncap.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "dimensioncap"},
+)
+
+
+BIPVENTURES_SOURCE = SourceRecord(
+    key="bipventures",
+    url="https://jobs.bipventures.vc/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "bipventures"},
+)
+
+
+FAST_SOURCE = SourceRecord(
+    key="fast",
+    url="https://consider.com/boards/vc/fast/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "fast"},
+)
+
+
+INFLEXION_SOURCE = SourceRecord(
+    key="inflexion",
+    url="https://consider.com/boards/vc/inflexion/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "inflexion"},
+)
+
+
+TCG_SOURCE = SourceRecord(
+    key="tcg",
+    url="https://consider.com/boards/vc/tcg/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "tcg"},
+)
+
+
+MARKETONECAPITAL_SOURCE = SourceRecord(
+    key="marketonecapital",
+    url="https://consider.com/boards/vc/market-one-capital/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "marketonecapital"},
+)
+
+
+BLUEHERON_SOURCE = SourceRecord(
+    key="blueheron",
+    url="https://consider.com/boards/vc/blue-heron/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "blueheron"},
+)
+
+
+MVPVENTURES_SOURCE = SourceRecord(
+    key="mvpventures",
+    url="https://consider.com/boards/vc/mvp-ventures/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "mvpventures"},
+)
+
+
+MANAVENTURES_SOURCE = SourceRecord(
+    key="manaventures",
+    url="https://consider.com/boards/vc/mana-ventures/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "manaventures"},
+)
+
+
+NEWFUNDCAP_SOURCE = SourceRecord(
+    key="newfundcap",
+    url="https://jobs.newfundcap.com/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "newfundcap"},
+)
+
+
+INTUITIVESURGICAL_SOURCE = SourceRecord(
+    key="intuitivesurgical",
+    url="https://consider.com/boards/vc/intuitive-surgical/companies",
+    provider_id="consider",
+    enabled=True,
+    raw_metadata={"board": "intuitivesurgical"},
+)
