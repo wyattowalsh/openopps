@@ -365,8 +365,6 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert 'os.environ["KAGGLE_URL_BASE"] = runtime_url_base' in source
     assert "time.sleep(KAGGLE_SECRET_RETRY_SECONDS)" in source
     assert "Kaggle API credentials are required" in source
-    assert "KAGGLE_SQLITE_INDEX_WAIT_SECONDS" in source
-    assert "OPENOPPS_KAGGLE_SQLITE_INDEX_WAIT_SECONDS" in source
 
     assert "INPUT_BOARDS_PARQUET_GLOB" in source
     assert "INPUT_JOB_VERSIONS_PARQUET_GLOB" in source
@@ -397,6 +395,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "def download_generator_script()" in source
     assert "def run_generator(" in source
     assert "def try_run_generator(" in source
+    assert "def emit_disk_usage(" in source
     assert "PUBLIC_UPLOAD_DIR" in source
     for flag in (
         "--data-db",
@@ -410,8 +409,6 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
         "--wait-live-dataset-ready",
         "--wait-live-dataset-min-version",
         "--update-live-file-metadata",
-        "--live-file-metadata-kaggle-auth",
-        "--live-file-metadata-sqlite-timeout-seconds",
     ):
         assert flag in source
 
@@ -495,6 +492,23 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
         'run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"]'
     )
     assert "OpenOpps live metadata repair:" in source
+    assert '"databundle": "skipped_in_notebook"' in source
+    assert '"mode": "kaggle-api"' in source
+    assert 'emit_disk_usage("before_artifact_export")' in source
+    assert 'emit_disk_usage("after_artifact_export")' in source
+    assert 'emit_disk_usage("before_dataset_publish")' in source
+    export_disk_call = source.index('emit_disk_usage("before_artifact_export")')
+    export_generator_call = source.index("run_generator(generator_args)")
+    assert export_disk_call < export_generator_call
+    publish_disk_call = source.index('emit_disk_usage("before_dataset_publish")')
+    publish_command = source.index('"datasets"', export_generator_call)
+    assert publish_disk_call < publish_command
+    metadata_repair_args = source[
+        metadata_repair_call : source.index("])", metadata_repair_call)
+    ]
+    assert "--live-file-metadata-kaggle-auth" not in metadata_repair_args
+    assert "--live-file-metadata-sqlite-timeout-seconds" not in metadata_repair_args
+    assert "--live-file-metadata-sqlite-poll-seconds" not in metadata_repair_args
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
 
 
@@ -2194,6 +2208,129 @@ def test_live_file_metadata_can_use_kaggle_auth_repair(
             2,
         )
     ]
+
+
+def test_live_file_metadata_skips_unauthenticated_kaggle_auth_after_official_update(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    metadata_path = tmp_path / "dataset-metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "id": gen.DATASET_ID,
+                "title": "openoppsdb",
+                "subtitle": "",
+                "description": "desc",
+                "isPrivate": False,
+                "licenses": [{"name": gen.DATASET_LICENSE}],
+                "keywords": [],
+                "expectedUpdateFrequency": "daily",
+                "userSpecifiedSources": "",
+                "resources": [{"path": gen.DB_FILE, "description": "db"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeKaggleClient:
+        def __enter__(self):
+            return types.SimpleNamespace(
+                datasets=types.SimpleNamespace(
+                    dataset_api_client=types.SimpleNamespace(
+                        update_dataset_metadata=lambda request: types.SimpleNamespace(
+                            errors=[]
+                        )
+                    )
+                )
+            )
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    class FakeKaggleApi:
+        def authenticate(self) -> None:
+            pass
+
+        def _new_license(self, name: str) -> str:
+            return name
+
+        def build_kaggle_client(self) -> FakeKaggleClient:
+            return FakeKaggleClient()
+
+    kaggle_api_module = types.ModuleType("kaggle.api.kaggle_api_extended")
+    kaggle_api_module.KaggleApi = FakeKaggleApi
+    dataset_api_service_module = types.ModuleType(
+        "kagglesdk.datasets.types.dataset_api_service"
+    )
+    dataset_api_service_module.ApiUpdateDatasetMetadataRequest = type(
+        "ApiUpdateDatasetMetadataRequest",
+        (),
+        {},
+    )
+    dataset_types_module = types.ModuleType("kagglesdk.datasets.types.dataset_types")
+    dataset_types_module.DatasetSettings = type("DatasetSettings", (), {})
+    dataset_types_module.DatasetSettingsFile = type("DatasetSettingsFile", (), {})
+    dataset_types_module.DatasetSettingsFileColumn = type(
+        "DatasetSettingsFileColumn",
+        (),
+        {},
+    )
+    monkeypatch.setitem(sys.modules, "kaggle", types.ModuleType("kaggle"))
+    monkeypatch.setitem(sys.modules, "kaggle.api", types.ModuleType("kaggle.api"))
+    monkeypatch.setitem(sys.modules, "kagglesdk", types.ModuleType("kagglesdk"))
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets",
+        types.ModuleType("kagglesdk.datasets"),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets.types",
+        types.ModuleType("kagglesdk.datasets.types"),
+    )
+    monkeypatch.setitem(
+        sys.modules, "kaggle.api.kaggle_api_extended", kaggle_api_module
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets.types.dataset_api_service",
+        dataset_api_service_module,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kagglesdk.datasets.types.dataset_types",
+        dataset_types_module,
+    )
+
+    def fake_kaggle_auth(
+        metadata, *, sqlite_index_timeout_seconds, sqlite_index_poll_seconds
+    ):
+        raise RuntimeError(
+            "Kaggle internal metadata API failed for "
+            "datasets.databundles.DatabundleService/UpdateDatabundleMetadataExternal: "
+            '401 {"error":{"status":"UNAUTHENTICATED"}}'
+        )
+
+    monkeypatch.setattr(
+        gen,
+        "_update_live_databundle_metadata_with_kaggle_auth",
+        fake_kaggle_auth,
+    )
+
+    gen._update_live_file_metadata(
+        metadata_path,
+        use_kaggle_auth=True,
+        sqlite_index_timeout_seconds=4,
+        sqlite_index_poll_seconds=2,
+    )
+
+    output = capsys.readouterr().out
+    assert "Updated Kaggle file metadata for 1 public files." in output
+    assert "Kaggle-auth databundle metadata repair skipped" in output
+    assert '"status": "unauthenticated"' in output
 
 
 def test_kaggle_basic_auth_header_reads_environment(monkeypatch) -> None:

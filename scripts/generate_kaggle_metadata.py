@@ -3974,12 +3974,6 @@ KAGGLE_METADATA_WAIT_SECONDS = float(
 KAGGLE_METADATA_POLL_SECONDS = float(
     os.environ.get("OPENOPPS_KAGGLE_METADATA_POLL_SECONDS", "30")
 )
-KAGGLE_SQLITE_INDEX_WAIT_SECONDS = float(
-    os.environ.get("OPENOPPS_KAGGLE_SQLITE_INDEX_WAIT_SECONDS", "120")
-)
-KAGGLE_SQLITE_INDEX_POLL_SECONDS = float(
-    os.environ.get("OPENOPPS_KAGGLE_SQLITE_INDEX_POLL_SECONDS", "15")
-)
 KAGGLE_CREDENTIALS_ERROR = (
     "Kaggle API credentials are required to publish openoppsdb. "
     "Configure KAGGLE_USERNAME and KAGGLE_KEY as Kaggle notebook secrets "
@@ -4280,7 +4274,6 @@ def download_generator_script() -> None:
     help_text = completed.stdout + completed.stderr
     required_flags = [
         "--skip-notebooks",
-        "--live-file-metadata-kaggle-auth",
         "--stage-public-upload-dir",
         "--quality-report",
     ]
@@ -4328,6 +4321,24 @@ def try_run_generator(args: list[str]) -> bool:
         )
         return False
     return True
+
+
+def emit_disk_usage(label: str, path: Path = OUTPUT_DIR) -> None:
+    usage_path = path if path.exists() else path.parent
+    usage = shutil.disk_usage(usage_path)
+    print(
+        "OpenOpps disk usage:",
+        json.dumps(
+            {
+                "freeBytes": usage.free,
+                "label": label,
+                "path": str(usage_path),
+                "totalBytes": usage.total,
+                "usedBytes": usage.used,
+            },
+            sort_keys=True,
+        ),
+    )
 
 
 def run_sync_metrics(
@@ -4941,7 +4952,8 @@ coverage = run_json(
 
 
 def _notebook_export_source() -> str:
-    return """generator_args = [
+    return """emit_disk_usage("before_artifact_export")
+generator_args = [
     "--output-dir",
     str(OUTPUT_DIR),
     "--data-db",
@@ -4964,6 +4976,7 @@ empty_snapshot_explanation = os.environ.get("OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION
 if empty_snapshot_explanation:
     generator_args.extend(["--empty-snapshot-explanation", empty_snapshot_explanation])
 run_generator(generator_args)
+emit_disk_usage("after_artifact_export")
 
 for path in sorted(PUBLIC_UPLOAD_DIR.rglob("*")):
     if path.is_file():
@@ -4981,6 +4994,7 @@ print(
     json.dumps(previous_status, sort_keys=True),
 )
 
+emit_disk_usage("before_dataset_publish")
 run([
     "kaggle",
     "datasets",
@@ -5007,15 +5021,17 @@ metadata_repair_ok = try_run_generator([
     "--wait-live-dataset-poll-seconds",
     str(KAGGLE_METADATA_POLL_SECONDS),
     "--update-live-file-metadata",
-    "--live-file-metadata-kaggle-auth",
-    "--live-file-metadata-sqlite-timeout-seconds",
-    str(KAGGLE_SQLITE_INDEX_WAIT_SECONDS),
-    "--live-file-metadata-sqlite-poll-seconds",
-    str(KAGGLE_SQLITE_INDEX_POLL_SECONDS),
 ])
 print(
     "OpenOpps live metadata repair:",
-    json.dumps({"ok": metadata_repair_ok}, sort_keys=True),
+    json.dumps(
+        {
+            "databundle": "skipped_in_notebook",
+            "mode": "kaggle-api",
+            "ok": metadata_repair_ok,
+        },
+        sort_keys=True,
+    ),
 )
 run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"])
 run(["kaggle", "datasets", "files", DATASET_ID, "--page-size", "200"])
@@ -5212,6 +5228,7 @@ def _update_live_file_metadata(
     request.dataset_slug = dataset_slug
     request.settings = settings
 
+    official_metadata_ok = False
     try:
         with api.build_kaggle_client() as kaggle:
             response = kaggle.datasets.dataset_api_client.update_dataset_metadata(
@@ -5223,6 +5240,7 @@ def _update_live_file_metadata(
         print(
             f"Updated Kaggle file metadata for {len(settings.data or [])} public files."
         )
+        official_metadata_ok = True
     except Exception as exc:
         if not use_browser_cookies and not use_kaggle_auth:
             raise
@@ -5231,17 +5249,39 @@ def _update_live_file_metadata(
             f"databundle metadata repair: {type(exc).__name__}"
         )
     if use_kaggle_auth:
-        _update_live_databundle_metadata_with_kaggle_auth(
-            metadata,
-            sqlite_index_timeout_seconds=sqlite_index_timeout_seconds,
-            sqlite_index_poll_seconds=sqlite_index_poll_seconds,
-        )
+        try:
+            _update_live_databundle_metadata_with_kaggle_auth(
+                metadata,
+                sqlite_index_timeout_seconds=sqlite_index_timeout_seconds,
+                sqlite_index_poll_seconds=sqlite_index_poll_seconds,
+            )
+        except RuntimeError as exc:
+            if not official_metadata_ok or not _is_kaggle_internal_auth_error(exc):
+                raise
+            print(
+                "Kaggle-auth databundle metadata repair skipped after successful "
+                "official file metadata update: "
+                + json.dumps(
+                    {
+                        "reason": str(exc),
+                        "status": "unauthenticated",
+                    },
+                    sort_keys=True,
+                )
+            )
     if use_browser_cookies:
         _update_live_databundle_metadata_with_browser_cookies(
             metadata,
             sqlite_index_timeout_seconds=sqlite_index_timeout_seconds,
             sqlite_index_poll_seconds=sqlite_index_poll_seconds,
         )
+
+
+def _is_kaggle_internal_auth_error(exc: BaseException) -> bool:
+    message = str(exc)
+    return "Kaggle internal metadata API failed" in message and (
+        "401" in message or "UNAUTHENTICATED" in message
+    )
 
 
 def _dataset_settings_file(
