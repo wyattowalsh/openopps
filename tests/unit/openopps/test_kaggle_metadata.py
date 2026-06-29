@@ -1474,6 +1474,7 @@ def test_sqlite_schema_normalization_uses_basic_sqlite_affinities(
 
 def test_sqlite_upload_rebuilds_plain_tables_for_public_upload(
     tmp_path: Path,
+    capsys,
 ) -> None:
     db_path = tmp_path / "plain.sqlite"
     with sqlite3.connect(db_path) as conn:
@@ -1504,6 +1505,7 @@ def test_sqlite_upload_rebuilds_plain_tables_for_public_upload(
         )
 
     result = gen._rebuild_sqlite_tables_for_public_upload(db_path)
+    output = capsys.readouterr().out
 
     with sqlite3.connect(db_path) as conn:
         ddl = {
@@ -1515,6 +1517,8 @@ def test_sqlite_upload_rebuilds_plain_tables_for_public_upload(
         child = conn.execute("SELECT * FROM child").fetchone()
 
     assert result == {"tables": 2, "rows": 2}
+    assert '"mode": "in_place"' in output
+    assert not db_path.with_name(f".{db_path.name}.plain").exists()
     assert child == ("c1", "p1", 3.5, json.dumps({"ok": True}))
     assert "PRIMARY KEY" not in ddl["parent"]
     assert "UNIQUE" not in ddl["parent"]
@@ -1720,6 +1724,41 @@ def test_sqlite_upload_finalization_compacts_freed_payload(
     with sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True) as conn:
         assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
         assert conn.execute("SELECT value FROM sample").fetchone()[0] is None
+
+
+def test_sqlite_upload_finalization_skips_vacuum_without_disk_headroom(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    db_path = tmp_path / gen.DB_FILE
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE keep (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO keep (value) VALUES ('ok')")
+        conn.execute("CREATE TABLE discard (id INTEGER PRIMARY KEY, value TEXT)")
+        conn.executemany(
+            "INSERT INTO discard (value) VALUES (?)",
+            [("x" * 10_000,) for _ in range(100)],
+        )
+        conn.execute("DROP TABLE discard")
+        conn.commit()
+        assert int(conn.execute("PRAGMA freelist_count").fetchone()[0]) > 0
+    before_size = db_path.stat().st_size
+
+    monkeypatch.setattr(
+        gen.shutil,
+        "disk_usage",
+        lambda path: types.SimpleNamespace(free=0, total=before_size, used=before_size),
+    )
+
+    gen._finalize_sqlite_for_upload(db_path)
+    output = capsys.readouterr().out
+
+    assert "working disk lacks compaction headroom" in output
+    assert db_path.stat().st_size == before_size
+    with sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True) as conn:
+        assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT value FROM keep").fetchone()[0] == "ok"
 
 
 def test_generated_data_files_are_all_described_when_present() -> None:
