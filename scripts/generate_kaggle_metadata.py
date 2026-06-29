@@ -2157,68 +2157,82 @@ def _rebuild_sqlite_tables_for_public_upload(db_path: Path) -> dict[str, int]:
     projected_columns_by_table: dict[str, set[str]] = {}
     for table_name, column_name in SQLITE_UPLOAD_PROJECTED_COLUMNS:
         projected_columns_by_table.setdefault(table_name, set()).add(column_name)
-    with sqlite3.connect(db_path, timeout=60) as conn:
-        _configure_sqlite_upload_mutation(conn)
-        conn.execute("PRAGMA foreign_keys = OFF")
-        table_names = [
-            str(row[0])
-            for row in conn.execute(
-                """
-                SELECT name
-                FROM sqlite_schema
-                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                ORDER BY rowid
-                """
-            ).fetchall()
-        ]
-        for table_name in table_names:
-            columns = conn.execute(
-                f"PRAGMA table_info({_sqlite_string_literal(table_name)})"
-            ).fetchall()
-            if not columns:
-                continue
-            temp_table = (
-                f"__openopps_kaggle_plain_{sha1(table_name.encode()).hexdigest()[:12]}"
-            )
-            conn.execute(f"DROP TABLE IF EXISTS {_sqlite_identifier(temp_table)}")
-            column_defs = ", ".join(
-                f"{_sqlite_identifier(str(column[1]))} "
-                f"{_sqlite_affinity_for_public_upload(str(column[2] or ''))}"
-                for column in columns
-            )
-            column_names = ", ".join(
-                _sqlite_identifier(str(column[1])) for column in columns
-            )
-            projected_columns = projected_columns_by_table.get(table_name, set())
-            select_expressions = ", ".join(
-                (
-                    f"NULL AS {_sqlite_identifier(str(column[1]))}"
-                    if str(column[1]) in projected_columns
-                    else _sqlite_identifier(str(column[1]))
+    rebuild_db = db_path.with_name(f".{db_path.name}.plain")
+    _remove_sqlite_sidecars(rebuild_db)
+    if rebuild_db.exists():
+        rebuild_db.unlink()
+    try:
+        with sqlite3.connect(db_path, timeout=60) as source_conn, sqlite3.connect(
+            rebuild_db, timeout=60
+        ) as target_conn:
+            _configure_sqlite_upload_mutation(target_conn)
+            target_conn.execute("PRAGMA foreign_keys = OFF")
+            table_names = [
+                str(row[0])
+                for row in source_conn.execute(
+                    """
+                    SELECT name
+                    FROM sqlite_schema
+                    WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                    ORDER BY rowid
+                    """
+                ).fetchall()
+            ]
+            for table_name in table_names:
+                columns = source_conn.execute(
+                    f"PRAGMA table_info({_sqlite_string_literal(table_name)})"
+                ).fetchall()
+                if not columns:
+                    continue
+                column_defs = ", ".join(
+                    f"{_sqlite_identifier(str(column[1]))} "
+                    f"{_sqlite_affinity_for_public_upload(str(column[2] or ''))}"
+                    for column in columns
                 )
-                for column in columns
+                column_names = ", ".join(
+                    _sqlite_identifier(str(column[1])) for column in columns
+                )
+                target_conn.execute(
+                    f"CREATE TABLE {_sqlite_identifier(table_name)} ({column_defs})"
+                )
+                projected_columns = projected_columns_by_table.get(table_name, set())
+                projected_indexes = {
+                    index
+                    for index, column in enumerate(columns)
+                    if str(column[1]) in projected_columns
+                }
+                select_columns = ", ".join(
+                    _sqlite_identifier(str(column[1])) for column in columns
+                )
+                placeholders = ", ".join("?" for _ in columns)
+                cursor = source_conn.execute(
+                    f"SELECT {select_columns} FROM {_sqlite_identifier(table_name)}"
+                )
+                insert_sql = (
+                    f"INSERT INTO {_sqlite_identifier(table_name)} ({column_names}) "
+                    f"VALUES ({placeholders})"
+                )
+                while rows := cursor.fetchmany(10_000):
+                    if projected_indexes:
+                        rows = [
+                            _project_sqlite_public_upload_row(row, projected_indexes)
+                            for row in rows
+                        ]
+                    target_conn.executemany(insert_sql, rows)
+                    copied_rows += len(rows)
+                rebuilt_tables += 1
+                target_conn.commit()
+            integrity = str(target_conn.execute("PRAGMA integrity_check").fetchone()[0])
+        if integrity.lower() != "ok":
+            raise RuntimeError(
+                f"SQLite plain-table rebuild failed integrity_check: {integrity}"
             )
-            conn.execute(
-                f"CREATE TABLE {_sqlite_identifier(temp_table)} ({column_defs})"
-            )
-            conn.execute(
-                f"INSERT INTO {_sqlite_identifier(temp_table)} ({column_names}) "
-                f"SELECT {select_expressions} FROM {_sqlite_identifier(table_name)}"
-            )
-            row_count = int(conn.execute("SELECT changes()").fetchone()[0])
-            conn.execute(f"DROP TABLE {_sqlite_identifier(table_name)}")
-            conn.execute(
-                f"ALTER TABLE {_sqlite_identifier(temp_table)} "
-                f"RENAME TO {_sqlite_identifier(table_name)}"
-            )
-            rebuilt_tables += 1
-            copied_rows += row_count
-        conn.commit()
-        integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
-    if integrity.lower() != "ok":
-        raise RuntimeError(
-            f"SQLite plain-table rebuild failed integrity_check: {integrity}"
-        )
+        rebuild_db.replace(db_path)
+        _remove_sqlite_sidecars(db_path)
+    finally:
+        _remove_sqlite_sidecars(rebuild_db)
+        if rebuild_db.exists():
+            rebuild_db.unlink()
     print(
         "Rebuilt SQLite public-upload tables: "
         + json.dumps(
@@ -2228,6 +2242,15 @@ def _rebuild_sqlite_tables_for_public_upload(db_path: Path) -> dict[str, int]:
         flush=True,
     )
     return {"tables": rebuilt_tables, "rows": copied_rows}
+
+
+def _project_sqlite_public_upload_row(
+    row: tuple[Any, ...], projected_indexes: set[int]
+) -> tuple[Any, ...]:
+    values = list(row)
+    for index in projected_indexes:
+        values[index] = None
+    return tuple(values)
 
 
 def _write_table_csv(conn: sqlite3.Connection, table: Table, csv_path: Path) -> None:
