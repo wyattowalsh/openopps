@@ -3750,6 +3750,30 @@ def _finalize_sqlite_for_upload(path: Path) -> None:
         checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
         if checkpoint and int(checkpoint[0]) != 0:
             raise RuntimeError(f"SQLite upload copy has busy WAL readers: {checkpoint}")
+    try:
+        with sqlite3.connect(path) as conn:
+            journal_mode = str(conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0])
+            free_pages = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+    except sqlite3.OperationalError as exc:
+        if "locked" not in str(exc).lower():
+            raise
+        journal_mode = ""
+        free_pages = 1
+    if journal_mode:
+        if journal_mode.lower() != "delete":
+            raise RuntimeError(
+                "SQLite upload copy did not switch to DELETE journal mode: "
+                f"{journal_mode}"
+            )
+        if free_pages == 0:
+            _remove_sqlite_sidecars(path)
+            _assert_portable_sqlite_upload(path)
+            print(
+                "SQLite upload VACUUM skipped because freelist is empty.",
+                flush=True,
+            )
+            return
+    with sqlite3.connect(path) as conn:
         conn.execute(f"VACUUM INTO {_sqlite_string_literal(portable_db.as_posix())}")
     with sqlite3.connect(portable_db) as conn:
         journal_mode = str(conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0])
