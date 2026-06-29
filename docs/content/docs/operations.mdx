@@ -169,6 +169,7 @@ Run docs checks from the docs app:
 ```bash
 cd docs
 pnpm data:generate
+pnpm data:generate:search
 pnpm types:check
 pnpm build
 pnpm lint
@@ -176,6 +177,7 @@ rtk lint
 ```
 
 `pnpm data:generate` refreshes package-derived provider/source metadata. `pnpm types:check` also regenerates that metadata before generating Fumadocs MDX artifacts, generating Next.js route types, and running TypeScript without emitting files. `pnpm lint` runs the Next ESLint surface; `rtk lint` is the broader repo-local docs lint from the project checklist.
+`pnpm data:generate:search` refreshes the committed `/docs/explorer` static search index from `kaggle/openoppsdb.sqlite`; run it after updating the local OpenOppsDB snapshot.
 
 Run OpenSpec checks from the repository root:
 

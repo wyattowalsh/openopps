@@ -1,0 +1,22 @@
+---
+title: Dataset Explorer
+description: Search the generated OpenOppsDB board, route, and latest job snapshot.
+---
+
+The explorer reads the committed static search-index snapshot generated from the local OpenOppsDB SQLite export. It does not call provider APIs or require a hosted OpenOpps service.
+
+<div className="not-prose my-6 rounded-2xl border border-border/75 bg-card/85 p-4 text-sm leading-6 text-muted-foreground">
+  Looking for a focused open-jobs view with inline preview and shareable filters? Use the{" "}
+  <a href="/jobs" className="font-semibold text-primary hover:underline">
+    jobs board
+  </a>
+  .
+</div>
+
+<OpenOppsSearchExplorer />
+
+Refresh the snapshot after regenerating `kaggle/openoppsdb.sqlite`:
+
+```bash
+cd docs && pnpm data:generate:search
+```

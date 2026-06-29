@@ -1,8 +1,20 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, type ReactNode } from "react";
+
+declare global {
+	interface Window {
+		__openoppsMermaidViewerControls?: boolean;
+		__openoppsMermaidViewerInitializeAll?: () => void;
+	}
+}
 
 const viewerScript = String.raw`
 (() => {
-  if (window.__openoppsMermaidViewerControls) return;
+  if (window.__openoppsMermaidViewerControls) {
+    window.__openoppsMermaidViewerInitializeAll?.();
+    return;
+  }
   window.__openoppsMermaidViewerControls = true;
 
   const maxZoom = 4;
@@ -263,6 +275,8 @@ const viewerScript = String.raw`
     document.querySelectorAll("[data-openopps-mermaid-viewer]").forEach(initialize);
   }
 
+  window.__openoppsMermaidViewerInitializeAll = initializeAll;
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initializeAll, { once: true });
   } else {
@@ -304,6 +318,17 @@ function ControlButton({
 }
 
 export function MermaidViewer({ svg }: { svg: string }) {
+	useEffect(() => {
+		if (window.__openoppsMermaidViewerControls) {
+			window.__openoppsMermaidViewerInitializeAll?.();
+			return;
+		}
+		const script = document.createElement("script");
+		script.dataset.openoppsMermaidViewerControls = "true";
+		script.textContent = viewerScript;
+		document.body.appendChild(script);
+	}, []);
+
 	return (
 		<div
 			className="openopps-mermaid-viewer"
@@ -312,10 +337,6 @@ export function MermaidViewer({ svg }: { svg: string }) {
 			data-offset-x="0"
 			data-offset-y="0"
 		>
-			<script
-				id="openopps-mermaid-viewer-controls"
-				dangerouslySetInnerHTML={{ __html: viewerScript }}
-			/>
 			<div
 				className="openopps-mermaid-viewport"
 				tabIndex={0}

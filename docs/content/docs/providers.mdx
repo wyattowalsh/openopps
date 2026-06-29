@@ -125,6 +125,8 @@ uv run openopps admin providers registry --provider any --include-missing --limi
 
 Without `--include-missing`, `admin providers registry` skips job-capable hints that still lack executable metadata, such as an Ashby board token or complete Workday CXS route. `--passed-probe-only` narrows output to routes verified by a persisted `admin providers probe-routes --apply` result.
 
+Use the [Dataset Explorer](/docs/explorer) to inspect the generated static snapshot of persisted boards, board-provider routes, and latest job rows.
+
 ## Provider Limits
 
 - Workday support is limited to public postings visible through careers sites; it is not official tenant API access.

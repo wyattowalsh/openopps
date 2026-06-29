@@ -1,5 +1,6 @@
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import { Mermaid } from "@/components/mdx/mermaid";
+import { OpenOppsSearchExplorer } from "@/components/openopps-search-explorer";
 import {
 	AuditProviderTargets,
 	JobProviderSummary,
@@ -14,6 +15,7 @@ export function getMDXComponents(components?: MDXComponents) {
 		AuditProviderTargets,
 		JobProviderSummary,
 		Mermaid,
+		OpenOppsSearchExplorer,
 		SourceAdapterSummary,
 		SourceCatalogSummary,
 		...components,

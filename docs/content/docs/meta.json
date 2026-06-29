@@ -5,6 +5,7 @@
 		"cli-reference",
 		"configuration",
 		"providers",
+		"explorer",
 		"operations"
 	]
 }

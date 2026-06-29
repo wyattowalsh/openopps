@@ -33,6 +33,10 @@ test-cli:
 docs-generate:
     cd docs && pnpm data:generate
 
+# Generate the static docs search-index snapshot from the local Kaggle SQLite DB.
+docs-search-index:
+    cd docs && pnpm data:generate:search
+
 # Generate docs data, MDX output, Next route types, and TypeScript checks.
 docs-check:
     cd docs && pnpm types:check

@@ -14,7 +14,7 @@ function OpenDoorVisual() {
 	return (
 		<div
 			aria-hidden="true"
-			className="mb-5 flex min-h-56 items-center gap-5 rounded-2xl border bg-background/80 p-5"
+			className="mb-5 flex min-h-56 items-center gap-5 rounded-[var(--opps-radius-xl)] border bg-background/80 p-5"
 		>
 			<Image
 				src="/brand/openopps-logo.png"
@@ -66,12 +66,15 @@ export default function HomePage() {
 						</p>
 					</div>
 
-					<div className="flex flex-col gap-3 sm:flex-row">
+					<div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
 						<Button asChild size="lg">
 							<Link href="/docs">
 								Read the docs
 								<ArrowRight className="ml-2 size-4" />
 							</Link>
+						</Button>
+						<Button asChild variant="outline" size="lg">
+							<Link href="/jobs">Browse open jobs</Link>
 						</Button>
 						<Button asChild variant="outline" size="lg">
 							<Link href="/docs/cli-reference">CLI reference</Link>
@@ -80,7 +83,7 @@ export default function HomePage() {
 
 					<div className="grid max-w-2xl gap-3 sm:grid-cols-3">
 						{sourceStats.map(([label, value, detail]) => (
-							<div key={label} className="opps-panel rounded-2xl p-4">
+							<div key={label} className="opps-stat-card">
 								<div className="text-3xl font-bold tracking-[-0.08em] text-primary">
 									{value}
 								</div>
@@ -117,18 +120,24 @@ export default function HomePage() {
 					<OpenDoorVisual />
 
 					<div className="space-y-3 font-mono text-sm">
-						<div className="rounded-2xl border bg-background/70 p-4 shadow-inner">
-							<p className="mb-3 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-								ready checks
-							</p>
+						<div className="openopps-data-table-wrap p-4 shadow-inner">
+							<p className="mb-3 opps-kicker">ready checks</p>
 							<div className="space-y-2">
 								{providerRows.map(([provider, status, note]) => (
-									<div
-										key={provider}
-										className="grid grid-cols-[1fr_auto] gap-3 rounded-lg border bg-card/70 px-3 py-2"
-									>
+									<div key={provider} className="opps-provider-row">
 										<span>{provider}</span>
-										<span className="text-primary">{status}</span>
+										<span
+											className="openopps-status-chip"
+											data-tone={
+												status === "jobs" || status === "yes"
+													? "jobs"
+													: status === "detect" || status === "dry-run"
+														? "detect"
+														: "unsupported"
+											}
+										>
+											{status}
+										</span>
 										<span className="col-span-2 text-xs text-muted-foreground">
 											{note}
 										</span>

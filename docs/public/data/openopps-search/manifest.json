@@ -1,0 +1,3028 @@
+{
+  "defaultEntity": "jobs",
+  "defaultFilters": {
+    "jobs": {
+      "status": "open"
+    }
+  },
+  "detailShards": {
+    "bucketCount": 256,
+    "buckets": {
+      "00": {
+        "count": 285,
+        "path": "/data/openopps-search/jobs-details/00.json"
+      },
+      "01": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/01.json"
+      },
+      "02": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/02.json"
+      },
+      "03": {
+        "count": 296,
+        "path": "/data/openopps-search/jobs-details/03.json"
+      },
+      "04": {
+        "count": 306,
+        "path": "/data/openopps-search/jobs-details/04.json"
+      },
+      "05": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/05.json"
+      },
+      "06": {
+        "count": 292,
+        "path": "/data/openopps-search/jobs-details/06.json"
+      },
+      "07": {
+        "count": 274,
+        "path": "/data/openopps-search/jobs-details/07.json"
+      },
+      "08": {
+        "count": 304,
+        "path": "/data/openopps-search/jobs-details/08.json"
+      },
+      "09": {
+        "count": 282,
+        "path": "/data/openopps-search/jobs-details/09.json"
+      },
+      "0a": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/0a.json"
+      },
+      "0b": {
+        "count": 268,
+        "path": "/data/openopps-search/jobs-details/0b.json"
+      },
+      "0c": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/0c.json"
+      },
+      "0d": {
+        "count": 305,
+        "path": "/data/openopps-search/jobs-details/0d.json"
+      },
+      "0e": {
+        "count": 301,
+        "path": "/data/openopps-search/jobs-details/0e.json"
+      },
+      "0f": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/0f.json"
+      },
+      "10": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/10.json"
+      },
+      "11": {
+        "count": 326,
+        "path": "/data/openopps-search/jobs-details/11.json"
+      },
+      "12": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/12.json"
+      },
+      "13": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/13.json"
+      },
+      "14": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/14.json"
+      },
+      "15": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/15.json"
+      },
+      "16": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/16.json"
+      },
+      "17": {
+        "count": 311,
+        "path": "/data/openopps-search/jobs-details/17.json"
+      },
+      "18": {
+        "count": 331,
+        "path": "/data/openopps-search/jobs-details/18.json"
+      },
+      "19": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/19.json"
+      },
+      "1a": {
+        "count": 315,
+        "path": "/data/openopps-search/jobs-details/1a.json"
+      },
+      "1b": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/1b.json"
+      },
+      "1c": {
+        "count": 326,
+        "path": "/data/openopps-search/jobs-details/1c.json"
+      },
+      "1d": {
+        "count": 333,
+        "path": "/data/openopps-search/jobs-details/1d.json"
+      },
+      "1e": {
+        "count": 339,
+        "path": "/data/openopps-search/jobs-details/1e.json"
+      },
+      "1f": {
+        "count": 340,
+        "path": "/data/openopps-search/jobs-details/1f.json"
+      },
+      "20": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/20.json"
+      },
+      "21": {
+        "count": 310,
+        "path": "/data/openopps-search/jobs-details/21.json"
+      },
+      "22": {
+        "count": 344,
+        "path": "/data/openopps-search/jobs-details/22.json"
+      },
+      "23": {
+        "count": 295,
+        "path": "/data/openopps-search/jobs-details/23.json"
+      },
+      "24": {
+        "count": 273,
+        "path": "/data/openopps-search/jobs-details/24.json"
+      },
+      "25": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/25.json"
+      },
+      "26": {
+        "count": 297,
+        "path": "/data/openopps-search/jobs-details/26.json"
+      },
+      "27": {
+        "count": 293,
+        "path": "/data/openopps-search/jobs-details/27.json"
+      },
+      "28": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/28.json"
+      },
+      "29": {
+        "count": 271,
+        "path": "/data/openopps-search/jobs-details/29.json"
+      },
+      "2a": {
+        "count": 281,
+        "path": "/data/openopps-search/jobs-details/2a.json"
+      },
+      "2b": {
+        "count": 284,
+        "path": "/data/openopps-search/jobs-details/2b.json"
+      },
+      "2c": {
+        "count": 248,
+        "path": "/data/openopps-search/jobs-details/2c.json"
+      },
+      "2d": {
+        "count": 317,
+        "path": "/data/openopps-search/jobs-details/2d.json"
+      },
+      "2e": {
+        "count": 336,
+        "path": "/data/openopps-search/jobs-details/2e.json"
+      },
+      "2f": {
+        "count": 276,
+        "path": "/data/openopps-search/jobs-details/2f.json"
+      },
+      "30": {
+        "count": 333,
+        "path": "/data/openopps-search/jobs-details/30.json"
+      },
+      "31": {
+        "count": 316,
+        "path": "/data/openopps-search/jobs-details/31.json"
+      },
+      "32": {
+        "count": 336,
+        "path": "/data/openopps-search/jobs-details/32.json"
+      },
+      "33": {
+        "count": 287,
+        "path": "/data/openopps-search/jobs-details/33.json"
+      },
+      "34": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/34.json"
+      },
+      "35": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/35.json"
+      },
+      "36": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/36.json"
+      },
+      "37": {
+        "count": 357,
+        "path": "/data/openopps-search/jobs-details/37.json"
+      },
+      "38": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/38.json"
+      },
+      "39": {
+        "count": 306,
+        "path": "/data/openopps-search/jobs-details/39.json"
+      },
+      "3a": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/3a.json"
+      },
+      "3b": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/3b.json"
+      },
+      "3c": {
+        "count": 336,
+        "path": "/data/openopps-search/jobs-details/3c.json"
+      },
+      "3d": {
+        "count": 327,
+        "path": "/data/openopps-search/jobs-details/3d.json"
+      },
+      "3e": {
+        "count": 325,
+        "path": "/data/openopps-search/jobs-details/3e.json"
+      },
+      "3f": {
+        "count": 330,
+        "path": "/data/openopps-search/jobs-details/3f.json"
+      },
+      "40": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/40.json"
+      },
+      "41": {
+        "count": 310,
+        "path": "/data/openopps-search/jobs-details/41.json"
+      },
+      "42": {
+        "count": 269,
+        "path": "/data/openopps-search/jobs-details/42.json"
+      },
+      "43": {
+        "count": 320,
+        "path": "/data/openopps-search/jobs-details/43.json"
+      },
+      "44": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/44.json"
+      },
+      "45": {
+        "count": 316,
+        "path": "/data/openopps-search/jobs-details/45.json"
+      },
+      "46": {
+        "count": 277,
+        "path": "/data/openopps-search/jobs-details/46.json"
+      },
+      "47": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/47.json"
+      },
+      "48": {
+        "count": 276,
+        "path": "/data/openopps-search/jobs-details/48.json"
+      },
+      "49": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/49.json"
+      },
+      "4a": {
+        "count": 316,
+        "path": "/data/openopps-search/jobs-details/4a.json"
+      },
+      "4b": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/4b.json"
+      },
+      "4c": {
+        "count": 292,
+        "path": "/data/openopps-search/jobs-details/4c.json"
+      },
+      "4d": {
+        "count": 295,
+        "path": "/data/openopps-search/jobs-details/4d.json"
+      },
+      "4e": {
+        "count": 291,
+        "path": "/data/openopps-search/jobs-details/4e.json"
+      },
+      "4f": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/4f.json"
+      },
+      "50": {
+        "count": 356,
+        "path": "/data/openopps-search/jobs-details/50.json"
+      },
+      "51": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/51.json"
+      },
+      "52": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/52.json"
+      },
+      "53": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/53.json"
+      },
+      "54": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/54.json"
+      },
+      "55": {
+        "count": 301,
+        "path": "/data/openopps-search/jobs-details/55.json"
+      },
+      "56": {
+        "count": 329,
+        "path": "/data/openopps-search/jobs-details/56.json"
+      },
+      "57": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/57.json"
+      },
+      "58": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/58.json"
+      },
+      "59": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/59.json"
+      },
+      "5a": {
+        "count": 308,
+        "path": "/data/openopps-search/jobs-details/5a.json"
+      },
+      "5b": {
+        "count": 315,
+        "path": "/data/openopps-search/jobs-details/5b.json"
+      },
+      "5c": {
+        "count": 343,
+        "path": "/data/openopps-search/jobs-details/5c.json"
+      },
+      "5d": {
+        "count": 335,
+        "path": "/data/openopps-search/jobs-details/5d.json"
+      },
+      "5e": {
+        "count": 334,
+        "path": "/data/openopps-search/jobs-details/5e.json"
+      },
+      "5f": {
+        "count": 305,
+        "path": "/data/openopps-search/jobs-details/5f.json"
+      },
+      "60": {
+        "count": 299,
+        "path": "/data/openopps-search/jobs-details/60.json"
+      },
+      "61": {
+        "count": 322,
+        "path": "/data/openopps-search/jobs-details/61.json"
+      },
+      "62": {
+        "count": 315,
+        "path": "/data/openopps-search/jobs-details/62.json"
+      },
+      "63": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/63.json"
+      },
+      "64": {
+        "count": 286,
+        "path": "/data/openopps-search/jobs-details/64.json"
+      },
+      "65": {
+        "count": 340,
+        "path": "/data/openopps-search/jobs-details/65.json"
+      },
+      "66": {
+        "count": 278,
+        "path": "/data/openopps-search/jobs-details/66.json"
+      },
+      "67": {
+        "count": 284,
+        "path": "/data/openopps-search/jobs-details/67.json"
+      },
+      "68": {
+        "count": 306,
+        "path": "/data/openopps-search/jobs-details/68.json"
+      },
+      "69": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/69.json"
+      },
+      "6a": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/6a.json"
+      },
+      "6b": {
+        "count": 284,
+        "path": "/data/openopps-search/jobs-details/6b.json"
+      },
+      "6c": {
+        "count": 296,
+        "path": "/data/openopps-search/jobs-details/6c.json"
+      },
+      "6d": {
+        "count": 285,
+        "path": "/data/openopps-search/jobs-details/6d.json"
+      },
+      "6e": {
+        "count": 301,
+        "path": "/data/openopps-search/jobs-details/6e.json"
+      },
+      "6f": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/6f.json"
+      },
+      "70": {
+        "count": 296,
+        "path": "/data/openopps-search/jobs-details/70.json"
+      },
+      "71": {
+        "count": 289,
+        "path": "/data/openopps-search/jobs-details/71.json"
+      },
+      "72": {
+        "count": 297,
+        "path": "/data/openopps-search/jobs-details/72.json"
+      },
+      "73": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/73.json"
+      },
+      "74": {
+        "count": 293,
+        "path": "/data/openopps-search/jobs-details/74.json"
+      },
+      "75": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/75.json"
+      },
+      "76": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/76.json"
+      },
+      "77": {
+        "count": 356,
+        "path": "/data/openopps-search/jobs-details/77.json"
+      },
+      "78": {
+        "count": 305,
+        "path": "/data/openopps-search/jobs-details/78.json"
+      },
+      "79": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/79.json"
+      },
+      "7a": {
+        "count": 342,
+        "path": "/data/openopps-search/jobs-details/7a.json"
+      },
+      "7b": {
+        "count": 351,
+        "path": "/data/openopps-search/jobs-details/7b.json"
+      },
+      "7c": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/7c.json"
+      },
+      "7d": {
+        "count": 311,
+        "path": "/data/openopps-search/jobs-details/7d.json"
+      },
+      "7e": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/7e.json"
+      },
+      "7f": {
+        "count": 327,
+        "path": "/data/openopps-search/jobs-details/7f.json"
+      },
+      "80": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/80.json"
+      },
+      "81": {
+        "count": 284,
+        "path": "/data/openopps-search/jobs-details/81.json"
+      },
+      "82": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/82.json"
+      },
+      "83": {
+        "count": 273,
+        "path": "/data/openopps-search/jobs-details/83.json"
+      },
+      "84": {
+        "count": 275,
+        "path": "/data/openopps-search/jobs-details/84.json"
+      },
+      "85": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/85.json"
+      },
+      "86": {
+        "count": 291,
+        "path": "/data/openopps-search/jobs-details/86.json"
+      },
+      "87": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/87.json"
+      },
+      "88": {
+        "count": 265,
+        "path": "/data/openopps-search/jobs-details/88.json"
+      },
+      "89": {
+        "count": 291,
+        "path": "/data/openopps-search/jobs-details/89.json"
+      },
+      "8a": {
+        "count": 279,
+        "path": "/data/openopps-search/jobs-details/8a.json"
+      },
+      "8b": {
+        "count": 262,
+        "path": "/data/openopps-search/jobs-details/8b.json"
+      },
+      "8c": {
+        "count": 304,
+        "path": "/data/openopps-search/jobs-details/8c.json"
+      },
+      "8d": {
+        "count": 287,
+        "path": "/data/openopps-search/jobs-details/8d.json"
+      },
+      "8e": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/8e.json"
+      },
+      "8f": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/8f.json"
+      },
+      "90": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/90.json"
+      },
+      "91": {
+        "count": 304,
+        "path": "/data/openopps-search/jobs-details/91.json"
+      },
+      "92": {
+        "count": 298,
+        "path": "/data/openopps-search/jobs-details/92.json"
+      },
+      "93": {
+        "count": 341,
+        "path": "/data/openopps-search/jobs-details/93.json"
+      },
+      "94": {
+        "count": 328,
+        "path": "/data/openopps-search/jobs-details/94.json"
+      },
+      "95": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/95.json"
+      },
+      "96": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/96.json"
+      },
+      "97": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/97.json"
+      },
+      "98": {
+        "count": 320,
+        "path": "/data/openopps-search/jobs-details/98.json"
+      },
+      "99": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/99.json"
+      },
+      "9a": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/9a.json"
+      },
+      "9b": {
+        "count": 326,
+        "path": "/data/openopps-search/jobs-details/9b.json"
+      },
+      "9c": {
+        "count": 325,
+        "path": "/data/openopps-search/jobs-details/9c.json"
+      },
+      "9d": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/9d.json"
+      },
+      "9e": {
+        "count": 333,
+        "path": "/data/openopps-search/jobs-details/9e.json"
+      },
+      "9f": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/9f.json"
+      },
+      "a0": {
+        "count": 329,
+        "path": "/data/openopps-search/jobs-details/a0.json"
+      },
+      "a1": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/a1.json"
+      },
+      "a2": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/a2.json"
+      },
+      "a3": {
+        "count": 273,
+        "path": "/data/openopps-search/jobs-details/a3.json"
+      },
+      "a4": {
+        "count": 308,
+        "path": "/data/openopps-search/jobs-details/a4.json"
+      },
+      "a5": {
+        "count": 254,
+        "path": "/data/openopps-search/jobs-details/a5.json"
+      },
+      "a6": {
+        "count": 282,
+        "path": "/data/openopps-search/jobs-details/a6.json"
+      },
+      "a7": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/a7.json"
+      },
+      "a8": {
+        "count": 308,
+        "path": "/data/openopps-search/jobs-details/a8.json"
+      },
+      "a9": {
+        "count": 287,
+        "path": "/data/openopps-search/jobs-details/a9.json"
+      },
+      "aa": {
+        "count": 310,
+        "path": "/data/openopps-search/jobs-details/aa.json"
+      },
+      "ab": {
+        "count": 291,
+        "path": "/data/openopps-search/jobs-details/ab.json"
+      },
+      "ac": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/ac.json"
+      },
+      "ad": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/ad.json"
+      },
+      "ae": {
+        "count": 312,
+        "path": "/data/openopps-search/jobs-details/ae.json"
+      },
+      "af": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/af.json"
+      },
+      "b0": {
+        "count": 296,
+        "path": "/data/openopps-search/jobs-details/b0.json"
+      },
+      "b1": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/b1.json"
+      },
+      "b2": {
+        "count": 333,
+        "path": "/data/openopps-search/jobs-details/b2.json"
+      },
+      "b3": {
+        "count": 331,
+        "path": "/data/openopps-search/jobs-details/b3.json"
+      },
+      "b4": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/b4.json"
+      },
+      "b5": {
+        "count": 286,
+        "path": "/data/openopps-search/jobs-details/b5.json"
+      },
+      "b6": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/b6.json"
+      },
+      "b7": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/b7.json"
+      },
+      "b8": {
+        "count": 363,
+        "path": "/data/openopps-search/jobs-details/b8.json"
+      },
+      "b9": {
+        "count": 326,
+        "path": "/data/openopps-search/jobs-details/b9.json"
+      },
+      "ba": {
+        "count": 334,
+        "path": "/data/openopps-search/jobs-details/ba.json"
+      },
+      "bb": {
+        "count": 311,
+        "path": "/data/openopps-search/jobs-details/bb.json"
+      },
+      "bc": {
+        "count": 316,
+        "path": "/data/openopps-search/jobs-details/bc.json"
+      },
+      "bd": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/bd.json"
+      },
+      "be": {
+        "count": 295,
+        "path": "/data/openopps-search/jobs-details/be.json"
+      },
+      "bf": {
+        "count": 274,
+        "path": "/data/openopps-search/jobs-details/bf.json"
+      },
+      "c0": {
+        "count": 328,
+        "path": "/data/openopps-search/jobs-details/c0.json"
+      },
+      "c1": {
+        "count": 319,
+        "path": "/data/openopps-search/jobs-details/c1.json"
+      },
+      "c2": {
+        "count": 325,
+        "path": "/data/openopps-search/jobs-details/c2.json"
+      },
+      "c3": {
+        "count": 288,
+        "path": "/data/openopps-search/jobs-details/c3.json"
+      },
+      "c4": {
+        "count": 280,
+        "path": "/data/openopps-search/jobs-details/c4.json"
+      },
+      "c5": {
+        "count": 279,
+        "path": "/data/openopps-search/jobs-details/c5.json"
+      },
+      "c6": {
+        "count": 261,
+        "path": "/data/openopps-search/jobs-details/c6.json"
+      },
+      "c7": {
+        "count": 328,
+        "path": "/data/openopps-search/jobs-details/c7.json"
+      },
+      "c8": {
+        "count": 295,
+        "path": "/data/openopps-search/jobs-details/c8.json"
+      },
+      "c9": {
+        "count": 280,
+        "path": "/data/openopps-search/jobs-details/c9.json"
+      },
+      "ca": {
+        "count": 281,
+        "path": "/data/openopps-search/jobs-details/ca.json"
+      },
+      "cb": {
+        "count": 279,
+        "path": "/data/openopps-search/jobs-details/cb.json"
+      },
+      "cc": {
+        "count": 263,
+        "path": "/data/openopps-search/jobs-details/cc.json"
+      },
+      "cd": {
+        "count": 269,
+        "path": "/data/openopps-search/jobs-details/cd.json"
+      },
+      "ce": {
+        "count": 281,
+        "path": "/data/openopps-search/jobs-details/ce.json"
+      },
+      "cf": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/cf.json"
+      },
+      "d0": {
+        "count": 299,
+        "path": "/data/openopps-search/jobs-details/d0.json"
+      },
+      "d1": {
+        "count": 299,
+        "path": "/data/openopps-search/jobs-details/d1.json"
+      },
+      "d2": {
+        "count": 305,
+        "path": "/data/openopps-search/jobs-details/d2.json"
+      },
+      "d3": {
+        "count": 337,
+        "path": "/data/openopps-search/jobs-details/d3.json"
+      },
+      "d4": {
+        "count": 340,
+        "path": "/data/openopps-search/jobs-details/d4.json"
+      },
+      "d5": {
+        "count": 320,
+        "path": "/data/openopps-search/jobs-details/d5.json"
+      },
+      "d6": {
+        "count": 281,
+        "path": "/data/openopps-search/jobs-details/d6.json"
+      },
+      "d7": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/d7.json"
+      },
+      "d8": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/d8.json"
+      },
+      "d9": {
+        "count": 338,
+        "path": "/data/openopps-search/jobs-details/d9.json"
+      },
+      "da": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/da.json"
+      },
+      "db": {
+        "count": 337,
+        "path": "/data/openopps-search/jobs-details/db.json"
+      },
+      "dc": {
+        "count": 322,
+        "path": "/data/openopps-search/jobs-details/dc.json"
+      },
+      "dd": {
+        "count": 331,
+        "path": "/data/openopps-search/jobs-details/dd.json"
+      },
+      "de": {
+        "count": 343,
+        "path": "/data/openopps-search/jobs-details/de.json"
+      },
+      "df": {
+        "count": 311,
+        "path": "/data/openopps-search/jobs-details/df.json"
+      },
+      "e0": {
+        "count": 329,
+        "path": "/data/openopps-search/jobs-details/e0.json"
+      },
+      "e1": {
+        "count": 327,
+        "path": "/data/openopps-search/jobs-details/e1.json"
+      },
+      "e2": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/e2.json"
+      },
+      "e3": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/e3.json"
+      },
+      "e4": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/e4.json"
+      },
+      "e5": {
+        "count": 288,
+        "path": "/data/openopps-search/jobs-details/e5.json"
+      },
+      "e6": {
+        "count": 292,
+        "path": "/data/openopps-search/jobs-details/e6.json"
+      },
+      "e7": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/e7.json"
+      },
+      "e8": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/e8.json"
+      },
+      "e9": {
+        "count": 297,
+        "path": "/data/openopps-search/jobs-details/e9.json"
+      },
+      "ea": {
+        "count": 289,
+        "path": "/data/openopps-search/jobs-details/ea.json"
+      },
+      "eb": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/eb.json"
+      },
+      "ec": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/ec.json"
+      },
+      "ed": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/ed.json"
+      },
+      "ee": {
+        "count": 304,
+        "path": "/data/openopps-search/jobs-details/ee.json"
+      },
+      "ef": {
+        "count": 298,
+        "path": "/data/openopps-search/jobs-details/ef.json"
+      },
+      "f0": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/f0.json"
+      },
+      "f1": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/f1.json"
+      },
+      "f2": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/f2.json"
+      },
+      "f3": {
+        "count": 336,
+        "path": "/data/openopps-search/jobs-details/f3.json"
+      },
+      "f4": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/f4.json"
+      },
+      "f5": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/f5.json"
+      },
+      "f6": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/f6.json"
+      },
+      "f7": {
+        "count": 327,
+        "path": "/data/openopps-search/jobs-details/f7.json"
+      },
+      "f8": {
+        "count": 287,
+        "path": "/data/openopps-search/jobs-details/f8.json"
+      },
+      "f9": {
+        "count": 285,
+        "path": "/data/openopps-search/jobs-details/f9.json"
+      },
+      "fa": {
+        "count": 338,
+        "path": "/data/openopps-search/jobs-details/fa.json"
+      },
+      "fb": {
+        "count": 301,
+        "path": "/data/openopps-search/jobs-details/fb.json"
+      },
+      "fc": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/fc.json"
+      },
+      "fd": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/fd.json"
+      },
+      "fe": {
+        "count": 338,
+        "path": "/data/openopps-search/jobs-details/fe.json"
+      },
+      "ff": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/ff.json"
+      }
+    },
+    "count": 78612,
+    "format": "bucket-map",
+    "root": "/data/openopps-search/jobs-details"
+  },
+  "entities": {
+    "boards": {
+      "columns": [
+        "key",
+        "sourceKey",
+        "name",
+        "domain",
+        "websiteUrl",
+        "staffCount",
+        "numJobsHint"
+      ],
+      "count": 28407,
+      "file": "boards.json",
+      "path": "/data/openopps-search/boards.json"
+    },
+    "jobs": {
+      "chunkSize": 1000,
+      "chunks": [
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0000.json",
+          "index": 0,
+          "path": "/data/openopps-search/jobs/chunks/0000.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0001.json",
+          "index": 1,
+          "path": "/data/openopps-search/jobs/chunks/0001.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0002.json",
+          "index": 2,
+          "path": "/data/openopps-search/jobs/chunks/0002.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0003.json",
+          "index": 3,
+          "path": "/data/openopps-search/jobs/chunks/0003.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0004.json",
+          "index": 4,
+          "path": "/data/openopps-search/jobs/chunks/0004.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0005.json",
+          "index": 5,
+          "path": "/data/openopps-search/jobs/chunks/0005.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0006.json",
+          "index": 6,
+          "path": "/data/openopps-search/jobs/chunks/0006.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0007.json",
+          "index": 7,
+          "path": "/data/openopps-search/jobs/chunks/0007.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0008.json",
+          "index": 8,
+          "path": "/data/openopps-search/jobs/chunks/0008.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0009.json",
+          "index": 9,
+          "path": "/data/openopps-search/jobs/chunks/0009.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0010.json",
+          "index": 10,
+          "path": "/data/openopps-search/jobs/chunks/0010.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0011.json",
+          "index": 11,
+          "path": "/data/openopps-search/jobs/chunks/0011.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0012.json",
+          "index": 12,
+          "path": "/data/openopps-search/jobs/chunks/0012.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0013.json",
+          "index": 13,
+          "path": "/data/openopps-search/jobs/chunks/0013.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0014.json",
+          "index": 14,
+          "path": "/data/openopps-search/jobs/chunks/0014.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0015.json",
+          "index": 15,
+          "path": "/data/openopps-search/jobs/chunks/0015.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0016.json",
+          "index": 16,
+          "path": "/data/openopps-search/jobs/chunks/0016.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0017.json",
+          "index": 17,
+          "path": "/data/openopps-search/jobs/chunks/0017.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0018.json",
+          "index": 18,
+          "path": "/data/openopps-search/jobs/chunks/0018.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0019.json",
+          "index": 19,
+          "path": "/data/openopps-search/jobs/chunks/0019.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0020.json",
+          "index": 20,
+          "path": "/data/openopps-search/jobs/chunks/0020.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0021.json",
+          "index": 21,
+          "path": "/data/openopps-search/jobs/chunks/0021.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0022.json",
+          "index": 22,
+          "path": "/data/openopps-search/jobs/chunks/0022.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0023.json",
+          "index": 23,
+          "path": "/data/openopps-search/jobs/chunks/0023.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0024.json",
+          "index": 24,
+          "path": "/data/openopps-search/jobs/chunks/0024.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0025.json",
+          "index": 25,
+          "path": "/data/openopps-search/jobs/chunks/0025.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0026.json",
+          "index": 26,
+          "path": "/data/openopps-search/jobs/chunks/0026.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0027.json",
+          "index": 27,
+          "path": "/data/openopps-search/jobs/chunks/0027.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0028.json",
+          "index": 28,
+          "path": "/data/openopps-search/jobs/chunks/0028.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0029.json",
+          "index": 29,
+          "path": "/data/openopps-search/jobs/chunks/0029.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0030.json",
+          "index": 30,
+          "path": "/data/openopps-search/jobs/chunks/0030.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0031.json",
+          "index": 31,
+          "path": "/data/openopps-search/jobs/chunks/0031.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0032.json",
+          "index": 32,
+          "path": "/data/openopps-search/jobs/chunks/0032.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0033.json",
+          "index": 33,
+          "path": "/data/openopps-search/jobs/chunks/0033.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0034.json",
+          "index": 34,
+          "path": "/data/openopps-search/jobs/chunks/0034.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0035.json",
+          "index": 35,
+          "path": "/data/openopps-search/jobs/chunks/0035.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0036.json",
+          "index": 36,
+          "path": "/data/openopps-search/jobs/chunks/0036.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0037.json",
+          "index": 37,
+          "path": "/data/openopps-search/jobs/chunks/0037.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0038.json",
+          "index": 38,
+          "path": "/data/openopps-search/jobs/chunks/0038.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0039.json",
+          "index": 39,
+          "path": "/data/openopps-search/jobs/chunks/0039.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0040.json",
+          "index": 40,
+          "path": "/data/openopps-search/jobs/chunks/0040.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0041.json",
+          "index": 41,
+          "path": "/data/openopps-search/jobs/chunks/0041.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0042.json",
+          "index": 42,
+          "path": "/data/openopps-search/jobs/chunks/0042.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0043.json",
+          "index": 43,
+          "path": "/data/openopps-search/jobs/chunks/0043.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0044.json",
+          "index": 44,
+          "path": "/data/openopps-search/jobs/chunks/0044.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0045.json",
+          "index": 45,
+          "path": "/data/openopps-search/jobs/chunks/0045.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0046.json",
+          "index": 46,
+          "path": "/data/openopps-search/jobs/chunks/0046.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0047.json",
+          "index": 47,
+          "path": "/data/openopps-search/jobs/chunks/0047.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0048.json",
+          "index": 48,
+          "path": "/data/openopps-search/jobs/chunks/0048.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0049.json",
+          "index": 49,
+          "path": "/data/openopps-search/jobs/chunks/0049.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0050.json",
+          "index": 50,
+          "path": "/data/openopps-search/jobs/chunks/0050.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0051.json",
+          "index": 51,
+          "path": "/data/openopps-search/jobs/chunks/0051.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0052.json",
+          "index": 52,
+          "path": "/data/openopps-search/jobs/chunks/0052.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0053.json",
+          "index": 53,
+          "path": "/data/openopps-search/jobs/chunks/0053.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0054.json",
+          "index": 54,
+          "path": "/data/openopps-search/jobs/chunks/0054.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0055.json",
+          "index": 55,
+          "path": "/data/openopps-search/jobs/chunks/0055.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0056.json",
+          "index": 56,
+          "path": "/data/openopps-search/jobs/chunks/0056.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0057.json",
+          "index": 57,
+          "path": "/data/openopps-search/jobs/chunks/0057.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0058.json",
+          "index": 58,
+          "path": "/data/openopps-search/jobs/chunks/0058.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0059.json",
+          "index": 59,
+          "path": "/data/openopps-search/jobs/chunks/0059.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0060.json",
+          "index": 60,
+          "path": "/data/openopps-search/jobs/chunks/0060.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0061.json",
+          "index": 61,
+          "path": "/data/openopps-search/jobs/chunks/0061.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0062.json",
+          "index": 62,
+          "path": "/data/openopps-search/jobs/chunks/0062.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0063.json",
+          "index": 63,
+          "path": "/data/openopps-search/jobs/chunks/0063.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0064.json",
+          "index": 64,
+          "path": "/data/openopps-search/jobs/chunks/0064.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0065.json",
+          "index": 65,
+          "path": "/data/openopps-search/jobs/chunks/0065.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0066.json",
+          "index": 66,
+          "path": "/data/openopps-search/jobs/chunks/0066.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0067.json",
+          "index": 67,
+          "path": "/data/openopps-search/jobs/chunks/0067.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0068.json",
+          "index": 68,
+          "path": "/data/openopps-search/jobs/chunks/0068.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0069.json",
+          "index": 69,
+          "path": "/data/openopps-search/jobs/chunks/0069.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0070.json",
+          "index": 70,
+          "path": "/data/openopps-search/jobs/chunks/0070.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0071.json",
+          "index": 71,
+          "path": "/data/openopps-search/jobs/chunks/0071.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0072.json",
+          "index": 72,
+          "path": "/data/openopps-search/jobs/chunks/0072.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0073.json",
+          "index": 73,
+          "path": "/data/openopps-search/jobs/chunks/0073.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0074.json",
+          "index": 74,
+          "path": "/data/openopps-search/jobs/chunks/0074.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0075.json",
+          "index": 75,
+          "path": "/data/openopps-search/jobs/chunks/0075.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0076.json",
+          "index": 76,
+          "path": "/data/openopps-search/jobs/chunks/0076.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0077.json",
+          "index": 77,
+          "path": "/data/openopps-search/jobs/chunks/0077.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0078.json",
+          "index": 78,
+          "path": "/data/openopps-search/jobs/chunks/0078.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0079.json",
+          "index": 79,
+          "path": "/data/openopps-search/jobs/chunks/0079.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0080.json",
+          "index": 80,
+          "path": "/data/openopps-search/jobs/chunks/0080.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0081.json",
+          "index": 81,
+          "path": "/data/openopps-search/jobs/chunks/0081.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0082.json",
+          "index": 82,
+          "path": "/data/openopps-search/jobs/chunks/0082.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0083.json",
+          "index": 83,
+          "path": "/data/openopps-search/jobs/chunks/0083.json"
+        },
+        {
+          "count": 1000,
+          "file": "jobs/chunks/0084.json",
+          "index": 84,
+          "path": "/data/openopps-search/jobs/chunks/0084.json"
+        },
+        {
+          "count": 301,
+          "file": "jobs/chunks/0085.json",
+          "index": 85,
+          "path": "/data/openopps-search/jobs/chunks/0085.json"
+        }
+      ],
+      "columns": [
+        "id",
+        "sourceKey",
+        "boardKey",
+        "providerId",
+        "status",
+        "title",
+        "company",
+        "department",
+        "team",
+        "workplaceType",
+        "remote",
+        "employmentType",
+        "locations",
+        "salaryMin",
+        "salaryMax",
+        "salaryCurrency",
+        "postingUrl",
+        "postedAt",
+        "latestObservedAt",
+        "sourceKeys",
+        "descriptionSnippet",
+        "skillTokens",
+        "syncedAt"
+      ],
+      "count": 85301,
+      "detailPath": "/data/openopps-search/jobs-details/{bucket}.json",
+      "file": "jobs/latest.json",
+      "initialPath": "/data/openopps-search/jobs/latest.json",
+      "path": "/data/openopps-search/jobs/latest.json"
+    },
+    "providers": {
+      "columns": [
+        "id",
+        "sourceKey",
+        "boardKey",
+        "providerId",
+        "label",
+        "supportLevel",
+        "countHint",
+        "boardUrl",
+        "lastStatus"
+      ],
+      "count": 14580,
+      "file": "providers.json",
+      "path": "/data/openopps-search/providers.json"
+    }
+  },
+  "facets": {
+    "employmentTypes": [
+      "100%",
+      "1099 Consultant",
+      "6 Months contract",
+      "All work types",
+      "Alternance",
+      "Apprenticeship",
+      "Associate-Full Time",
+      "BE Employee",
+      "Binance Accelerator Program",
+      "CDI",
+      "CDI - Permanent",
+      "CLT",
+      "CONTRACTOR",
+      "Co-op",
+      "Contract",
+      "Contract - Remote",
+      "Contract Based",
+      "Contract, Full-time",
+      "Contractor",
+      "Contractor (EOR)",
+      "Contractor (USA Only)",
+      "Contractor (remote)",
+      "Contractor / 1099",
+      "Contractor / Freelance",
+      "Contractor With System Access",
+      "Contractor of Record",
+      "Cycle",
+      "Director",
+      "EOR",
+      "EOR Employee",
+      "ES Employee",
+      "ES Intern",
+      "Employee",
+      "Employee (100-80%)",
+      "Employee - Permanent",
+      "Employee / Full-Time",
+      "Employee 100%",
+      "Employee Full-Time",
+      "Engineering",
+      "Entry Level-Full Time",
+      "EoR / Full-time",
+      "Estágio",
+      "Executive",
+      "Exempt Full-time",
+      "Expedock",
+      "Expedock Services",
+      "FR Apprentice",
+      "FR Executive/Cadre",
+      "FR Intern",
+      "FT",
+      "FT (Remote Ok)",
+      "FT (Remote Ok) Evenings and Weekends",
+      "FTE",
+      "Fixed Full Time Employee",
+      "Fixed Term",
+      "Fixed Term Contract (12-month)",
+      "Fixed Time Contractor (FTC) (UK Only)",
+      "Fixed term",
+      "Fixed-Term",
+      "Fixed-Term Contract",
+      "Fixed-Term Contract (6-month)",
+      "Fixed-term",
+      "Fixed-term contract",
+      "Freelance",
+      "Freelance - Self Employment Contract",
+      "Full - time",
+      "Full Time",
+      "Full Time (Country Calendar)",
+      "Full Time -  Hourly",
+      "Full Time - Remote",
+      "Full Time - Salary",
+      "Full Time - Term Limited",
+      "Full Time / On Site",
+      "Full Time / On site or Remote",
+      "Full Time Contract",
+      "Full Time Contractor",
+      "Full Time Employee",
+      "Full Time FTC",
+      "Full Time Hybrid",
+      "Full Time On-Site",
+      "Full Time Permanent",
+      "Full Time Remote",
+      "Full Time or Intern/Co-op",
+      "Full Time, Exempt",
+      "Full Time, Non Exempt",
+      "Full Time, Permanent",
+      "Full time",
+      "Full time (Contract)",
+      "Full time (On Site)",
+      "Full-Time",
+      "Full-Time & Part-Time",
+      "Full-Time (FTE)",
+      "Full-Time (exempt)",
+      "Full-Time - Hybrid",
+      "Full-Time - Remote",
+      "Full-Time / Part-Time",
+      "Full-Time 2025-26 School Year",
+      "Full-Time 2026-27 School Year",
+      "Full-Time Employee",
+      "Full-Time Exempt",
+      "Full-Time Hybrid/Remote",
+      "Full-Time Regular",
+      "Full-Time US",
+      "Full-Time, Cycle Based",
+      "Full-Time, Part-Time",
+      "Full-time",
+      "Full-time (Individual Contributor)",
+      "Full-time (Remote)",
+      "Full-time (exempt)",
+      "Full-time (non-exempt)",
+      "Full-time (remote)",
+      "Full-time / Part-time",
+      "Full-time / freelance",
+      "Full-time Contractor",
+      "Full-time Employee",
+      "Full-time Employment",
+      "Full-time Exempt",
+      "Full-time Non-exempt",
+      "Full-time Onsite or Remote",
+      "Full-time Regular",
+      "Full-time Remote",
+      "Full-time Remote (North America & EU Time Zone)",
+      "Full-time job",
+      "Full-time job / Internship / Apprenticeship",
+      "Full-time, Permanent",
+      "Full-time/Remote",
+      "Full-time: Remote",
+      "FullTime",
+      "Fulltime",
+      "Fulltime- Office",
+      "GE Employee",
+      "GE Intern",
+      "GE Working student",
+      "Globally Remote",
+      "HOURLY_FT",
+      "HOURLY_PT",
+      "Hibrido",
+      "Hourly",
+      "Hourly, full-time",
+      "Hybrid",
+      "Hybrid (Remote / On-Site)",
+      "In Person / Full Time Employee",
+      "In-House Contractor",
+      "Independent Contractor",
+      "Intern",
+      "Intern - Paid",
+      "Intern/Co-op",
+      "International Consultant",
+      "International Contractor (B2B)",
+      "International EOR",
+      "International Full Time Employee",
+      "International Office Entity",
+      "International contractor, Pay as you go",
+      "Internship",
+      "Internship - Práctica",
+      "Internship / Temporary",
+      "Jornada Completa",
+      "Jovem Aprendiz",
+      "Lead",
+      "ME Permanent employee",
+      "Manager",
+      "Mid Level",
+      "Mid-Senior Level",
+      "Modified Full-Time",
+      "NL Permanent employee",
+      "Non-exempt Full-time",
+      "On-roll",
+      "On-site",
+      "PLACEHOLDER, Full-Time Employee",
+      "PT",
+      "Part Time",
+      "Part Time 60%",
+      "Part Time Benefits Eligible",
+      "Part Time Not Benefits Eligible",
+      "Part Time, Full Time, or Contract",
+      "Part or Full Time",
+      "Part time",
+      "Part time (Contract)",
+      "Part-Time",
+      "Part-Time / Fractional",
+      "Part-Time 2025-26 School Year",
+      "Part-Time 2026-27 School Year",
+      "Part-Time Seasonal",
+      "Part-Time and Seasonal",
+      "Part-Time, Seasonal",
+      "Part-time",
+      "Part-time (Individual Contributor)",
+      "Part-time (Seasonal)",
+      "PartTime",
+      "Perm - Full-time",
+      "Permanent",
+      "Permanent - full time",
+      "Permanent Full Time Employee",
+      "Permanent Full-Time",
+      "Permanent contract",
+      "Permanent employment contract",
+      "Permanent, Full-time",
+      "Permanent-Employee",
+      "Pioneer Talent Program",
+      "Probationary",
+      "Product Management",
+      "Regular",
+      "Regular - Full Time",
+      "Regular Full-Time",
+      "Regular, Full-Time",
+      "Remote",
+      "Remote / Full Time Employee",
+      "Remote / Independent Contractor",
+      "Remote Full Time",
+      "Remote and/or Hybrid",
+      "SALARIED_FT",
+      "SALARIED_PT",
+      "ST Fellowships - On-Site",
+      "ST Fellowships - Remote",
+      "Salaried, full-time",
+      "Salary",
+      "Sales",
+      "Scholarship",
+      "Seasonal",
+      "Secondment",
+      "Short Term",
+      "Short-term employment contract",
+      "TEMP",
+      "TFT",
+      "Talent Pooling Opportunity",
+      "Temp Full-time",
+      "Temp to Perm",
+      "Temporary",
+      "Temporary Agency Worker",
+      "Temporary, Part-time",
+      "Temporary/Intern",
+      "Temporary/Seasonal",
+      "Tiempo completo",
+      "UK Permanent employee",
+      "US Full-time Salaried",
+      "US employee",
+      "Work From Home- FT",
+      "Working Student",
+      "contract",
+      "full",
+      "full time",
+      "other",
+      "temporary"
+    ],
+    "jobStatuses": [
+      "closed",
+      "open"
+    ],
+    "providerIds": [
+      "50skills",
+      "acquiretm",
+      "adpjobs",
+      "alphastaff-hiring",
+      "amazon",
+      "angel",
+      "apolrecruit",
+      "appcast",
+      "applicantpool",
+      "applicantpro",
+      "applicantstack",
+      "applitrack",
+      "appone",
+      "ashbyhq",
+      "bamboohr",
+      "betterteam",
+      "brassring",
+      "breezy",
+      "brightmove",
+      "briohr",
+      "calcareers",
+      "calopps",
+      "careerpages",
+      "careerplug",
+      "cats",
+      "civicplus",
+      "collage",
+      "comeet",
+      "consider",
+      "csod",
+      "cutshort",
+      "cvmail",
+      "cvviz",
+      "darwinbox",
+      "dayforcehcm",
+      "dealls",
+      "deel",
+      "dover",
+      "editorial",
+      "edjoin",
+      "edupostingssearch",
+      "eightfold",
+      "elmo",
+      "emploi",
+      "employmenthero",
+      "entertimeonline",
+      "expertia",
+      "factorialhr",
+      "fedex",
+      "feishu",
+      "flatchr",
+      "fountain",
+      "freshteam",
+      "gem",
+      "generic",
+      "gohire",
+      "google",
+      "governmentjobs",
+      "gr8people",
+      "greenhouse",
+      "gupy",
+      "gusto",
+      "herp",
+      "hibob",
+      "hirebridge",
+      "hiretrue",
+      "hiringthing",
+      "homerun",
+      "hr-manager",
+      "hrdepartment",
+      "hrmdirect",
+      "hrmos",
+      "hrpartner",
+      "hrsmart",
+      "humi",
+      "icims",
+      "idealist",
+      "indeed",
+      "inforcloudsuite",
+      "inforlawson",
+      "inhire",
+      "instahyre",
+      "isolvedhire",
+      "jazzhr",
+      "jibe",
+      "jisr",
+      "jobapscloud",
+      "jobdiva",
+      "jobscore",
+      "jobsync",
+      "jobvite",
+      "jobylon",
+      "join",
+      "joveo",
+      "kekahire",
+      "keldair",
+      "kenjo",
+      "kpmgus",
+      "kula",
+      "lever",
+      "linkedin",
+      "linkedin-guest",
+      "liquidcompass",
+      "lumesse-talentlink",
+      "manatal",
+      "munis",
+      "myadp",
+      "mynexthire",
+      "newton",
+      "notion",
+      "odoo",
+      "omnihr",
+      "oraclehcm",
+      "ourcareerpages",
+      "pageuppeople",
+      "pandape",
+      "paraform",
+      "parallel",
+      "paycom",
+      "paycor",
+      "paylocity",
+      "peopleadmin",
+      "peoplehr",
+      "peoplesoft",
+      "personio",
+      "phenompeople",
+      "pinpointhq",
+      "polymer",
+      "pontahr",
+      "powerschool",
+      "practicematch",
+      "puck",
+      "pyjamahr",
+      "quickin",
+      "recooty",
+      "recruitee",
+      "recruiterbox",
+      "recruiterflow",
+      "recrut",
+      "reczee",
+      "revolut",
+      "ripplehire",
+      "rippling",
+      "saashr",
+      "sage",
+      "salesforcesites",
+      "sapsf",
+      "scalis",
+      "schoolspring",
+      "screenloop",
+      "selectminds",
+      "sense",
+      "silkroad",
+      "simplejobboard",
+      "smartrecruiters",
+      "softgardenio",
+      "squarepeghires",
+      "successfactors",
+      "talemetry",
+      "talentbrew",
+      "talentcare",
+      "talentclue",
+      "talentera",
+      "talentlyft",
+      "talentnet",
+      "talentreef",
+      "talentsoft",
+      "taleo",
+      "taleorest",
+      "taleorss",
+      "teamtailor",
+      "teamworkonline",
+      "techinasia",
+      "theapplicantmanager",
+      "trabajosdiarios",
+      "trinethire",
+      "turbohire",
+      "ultipro",
+      "usajobs",
+      "virecruit",
+      "vivahr",
+      "webhr",
+      "werecruit",
+      "workable",
+      "workatastartup",
+      "workbright",
+      "workday",
+      "workforcenow",
+      "wtj",
+      "zhaopin",
+      "zhiye",
+      "ziprecruiter",
+      "zohorecruit",
+      "zwayam"
+    ],
+    "routeStatuses": [
+      "job_sync_unavailable_404",
+      "route_ready"
+    ],
+    "sources": [
+      "01a",
+      "1011vc",
+      "13bookscapital",
+      "1517fund",
+      "1835i",
+      "1871",
+      "2150",
+      "25madison",
+      "360cap",
+      "43north",
+      "4dxventures",
+      "4pt0",
+      "53stations",
+      "5amventures",
+      "645ventures",
+      "8vc",
+      "a16z",
+      "abstractvc",
+      "abundancenetwork",
+      "abven",
+      "accel",
+      "acme",
+      "acp",
+      "activate",
+      "acurio",
+      "adara",
+      "adgm",
+      "adventinternational",
+      "adverb",
+      "age1",
+      "aifund",
+      "aihubmasstech",
+      "airtree",
+      "aixventures",
+      "albumvc",
+      "aldrichcap",
+      "alkeon",
+      "allegiscyber",
+      "alleycorp",
+      "allhands",
+      "allinmilwaukee",
+      "almazcapital",
+      "alphapartners",
+      "alpinesg",
+      "alter",
+      "alven",
+      "amadeus",
+      "americanunderground",
+      "amplifyla",
+      "amplifylaunchpad",
+      "amplifypartners",
+      "amplitudevc",
+      "angelesinvestors",
+      "anitab",
+      "annarborusa",
+      "anthemis",
+      "antler",
+      "aqpsearch",
+      "arbitrum",
+      "archetype",
+      "arcternventures",
+      "arenaco",
+      "arsenalgrowth",
+      "ascendvc",
+      "astanor",
+      "atlasventure",
+      "atomico",
+      "atoneventures",
+      "atxventurepartners",
+      "avp",
+      "azollaventures",
+      "b2venture",
+      "backed",
+      "baincapital",
+      "baincapitalventures",
+      "baincrypto",
+      "bakarlabs",
+      "balderton",
+      "ballisticventures",
+      "banktechventures",
+      "base10",
+      "battery",
+      "bbgventures",
+      "bcapital",
+      "becocapital",
+      "bekventures",
+      "beliade",
+      "benchstrengthvc",
+      "bettervc",
+      "biocom",
+      "blackbird",
+      "blackhornvc",
+      "blackjaysvc",
+      "blacktalentdatabase",
+      "blackwoodvc",
+      "blindspot",
+      "blockchaincapital",
+      "bluebearcap",
+      "bluehaveninitiative",
+      "blueventurefund",
+      "blueyard",
+      "blumbergcapital",
+      "bnbchain",
+      "bonfirevc",
+      "breakout",
+      "breakthroughenergy",
+      "breakthroughenergyfellows",
+      "brightspark",
+      "brv",
+      "btv",
+      "buildingventures",
+      "buoyant",
+      "bvp",
+      "byfounders",
+      "byldvc",
+      "canaan",
+      "canapi",
+      "cantos",
+      "canvasvc",
+      "capitalfactory",
+      "capitalg",
+      "cardinalrefer",
+      "castleisland",
+      "cedarparktexasedc",
+      "cerberus",
+      "cervinventures",
+      "chapterone",
+      "charlestonorg",
+      "cherry",
+      "choosemketech",
+      "circadianvc",
+      "citylight",
+      "claltech",
+      "clarksvilleishiring",
+      "cleanenergyventures",
+      "clearventures",
+      "clevelandtalent",
+      "climatedraft",
+      "climateinvestment",
+      "climatejobs",
+      "cmont",
+      "cncf-landscape",
+      "coinbase",
+      "coinfund",
+      "collaborativefund",
+      "collidecap",
+      "comcastventures",
+      "communitech",
+      "concorde",
+      "congruentvc",
+      "connexacapital",
+      "contrary",
+      "convectivecapital",
+      "conversioncapital",
+      "cornerstonevc",
+      "correlationvc",
+      "costanoavc",
+      "courtsidevc",
+      "craftventures",
+      "cranevc",
+      "creandum",
+      "credoventures",
+      "crosscutvc",
+      "crv",
+      "ctinnovations",
+      "cventures",
+      "cyberfund",
+      "datapowerventures",
+      "dawncapital",
+      "dcedc",
+      "dcg",
+      "dcvc",
+      "deciens",
+      "decisivepoint",
+      "deepscienceventures",
+      "deepworkcapital",
+      "definevc",
+      "definitioncap",
+      "delphiventures",
+      "designerfund",
+      "detroitvc",
+      "dfdf",
+      "diagram",
+      "differentialvc",
+      "digitalfuelcapital",
+      "dragonfly",
+      "drivecapital",
+      "drivetlv",
+      "dukecapitalpartners",
+      "dynamovc",
+      "e14",
+      "earlybird",
+      "echelon",
+      "eclipse",
+      "edisonpartners",
+      "edomarketplace",
+      "elabvc",
+      "electriccapital",
+      "elementalimpact",
+      "elevateventures",
+      "elsewherepartners",
+      "emcap",
+      "emeraldmanagers",
+      "emergecapital",
+      "endicottgp",
+      "energizecap",
+      "energyimpactpartners",
+      "engine",
+      "eniac",
+      "entrepreneurs",
+      "eoventures",
+      "etherealventures",
+      "everywhere",
+      "expa",
+      "extantia",
+      "f2vc",
+      "fabervc",
+      "fabricvc",
+      "fayettechamber",
+      "felicis",
+      "femalefoundersfund",
+      "femtechinsider",
+      "fenbushicapital",
+      "ffwd",
+      "fiftyyears",
+      "fil",
+      "fincapital",
+      "fintech",
+      "fireup",
+      "firstmark",
+      "firstminute",
+      "firstraysvc",
+      "fiveelms",
+      "flarecapital",
+      "flashpointvc",
+      "flintandgenesee",
+      "floridafunders",
+      "flourishventures",
+      "folklorevc",
+      "foodtechscout",
+      "foothillventures",
+      "forerunnerventures",
+      "foresitecapital",
+      "foresitelabs",
+      "fortinocapital",
+      "forumventures",
+      "forward",
+      "foundationcapital",
+      "founderful",
+      "foundry",
+      "foxmontcapital",
+      "fprimecapital",
+      "frameworkventures",
+      "franciscopartners",
+      "freestyle",
+      "freigeist",
+      "fusevc",
+      "future",
+      "fyrfly",
+      "g2vp",
+      "gaingels",
+      "galaxy",
+      "galvanizeclimate",
+      "garuda",
+      "gcvc",
+      "gd1",
+      "genoavc",
+      "georgetown",
+      "georgiafintechacademy",
+      "georgian",
+      "getrocommunity",
+      "gigascale",
+      "globalvc",
+      "goldenventures",
+      "goodwatercap",
+      "gradient",
+      "grandforksiscooler",
+      "greatersatx",
+      "greaterwashingtonpartnership",
+      "greathillpartners",
+      "greenfieldgrowth",
+      "greentownlabs",
+      "greycroft",
+      "greylock",
+      "greymattercapital",
+      "gridironcapital",
+      "griffingp",
+      "grovevc",
+      "growingreenvillenc",
+      "gsv",
+      "gtmfund",
+      "gv",
+      "hardyaka",
+      "hashed",
+      "hcvc",
+      "headline",
+      "healthxventures",
+      "hellokoru",
+      "hetz",
+      "hgventures",
+      "highalpha",
+      "highfivepartners",
+      "hitachiventures",
+      "hivemind",
+      "homeworldbio",
+      "hoxtonventures",
+      "hub71",
+      "humanvc",
+      "humbaventures",
+      "hummingbirdventures",
+      "hunterpointcapital",
+      "hvcapital",
+      "hydeparkvp",
+      "hyperplane",
+      "i2bf",
+      "i2iventures",
+      "ibexinvestors",
+      "iconventures",
+      "ideavillage",
+      "illuminatefinancial",
+      "imaginary",
+      "indexventures",
+      "indiebio",
+      "industriousvc",
+      "initialized",
+      "innovationendeavors",
+      "inovia",
+      "insightpartners",
+      "inspiredcapital",
+      "integritypowersearch",
+      "intudovc",
+      "inuplands",
+      "investedinthemission",
+      "investottawa",
+      "inwomenshealth",
+      "ironspring",
+      "israelvcforum",
+      "istariglobal",
+      "ivp",
+      "jamjarinvestments",
+      "javelinvp",
+      "jdssports",
+      "jobsinvc",
+      "jobswithnoboss",
+      "joinef",
+      "jumpcap",
+      "jumpcrypto",
+      "jumpstartinc",
+      "k1",
+      "kaporcapital",
+      "kaszek",
+      "kcrise",
+      "kdtvc",
+      "khoslaventures",
+      "kickstart",
+      "kindredcapital",
+      "kingriver",
+      "kleinerperkins",
+      "lakestar",
+      "launchcapital",
+      "launchtn",
+      "leadedge",
+      "leadershipforeducationalequity",
+      "leadoutcapital",
+      "learncapital",
+      "leftlanecap",
+      "lemniscap",
+      "leoportfolio",
+      "lererhippeau",
+      "levelequity",
+      "lhh",
+      "lightbank",
+      "lightrock",
+      "linkventures",
+      "liveoakvp",
+      "loeb",
+      "longgame",
+      "longjourney",
+      "lool",
+      "lowercarbon",
+      "lrnewenergy",
+      "lsvp",
+      "luminarventures",
+      "lumoscapitalgroup",
+      "luxcapital",
+      "lyragrowth",
+      "m13",
+      "m1c",
+      "macventurecapital",
+      "madrona",
+      "maineventurefund",
+      "maip",
+      "makeitcu",
+      "makersfund",
+      "mannatreepartners",
+      "mantisvc",
+      "marble",
+      "marsdd",
+      "marvinvc",
+      "masscybercenter",
+      "massdigitalhealth",
+      "massmutualventures",
+      "matchstickventures",
+      "mavenventures",
+      "maveron",
+      "mayfield",
+      "mbaexchange",
+      "mcj",
+      "medtechinnovator",
+      "mehi",
+      "menlovc",
+      "meridianstreetcapital",
+      "meron",
+      "metaprop",
+      "mevp",
+      "moberlyedc",
+      "moderneventures",
+      "monkshillventures",
+      "morestartshere",
+      "morpheus",
+      "motion",
+      "motivatevc",
+      "moxxie",
+      "muditaventurepartners",
+      "multicoin",
+      "munichreventures",
+      "mvp",
+      "mxv",
+      "myjonesborocom",
+      "narreach",
+      "nascent",
+      "nbchamber",
+      "nea",
+      "nebraskaangels",
+      "necessary",
+      "newmarketsvp",
+      "neworleansbio",
+      "newyorkbio",
+      "nextfrontiercapital",
+      "nextview",
+      "nexusvp",
+      "nfx",
+      "ngpcap",
+      "nightdragon",
+      "nightlabs",
+      "noromoseley",
+      "norrsken",
+      "northzone",
+      "notablecap",
+      "notation",
+      "notion",
+      "nucleuscapital",
+      "nv",
+      "nvp",
+      "nyca",
+      "nzero",
+      "oakhcft",
+      "octopusventures",
+      "offline",
+      "ohiox",
+      "oifvc",
+      "omegavp",
+      "onepeak",
+      "oneragtime",
+      "oneventures",
+      "onewagonercounty",
+      "onewayvc",
+      "openocean",
+      "orbitmit",
+      "orbitstartups",
+      "oregonventurefund",
+      "originventures",
+      "outsidersfund",
+      "overturevc",
+      "pangacapital",
+      "panteracapital",
+      "paradigmxyz",
+      "parameter",
+      "partechpartners",
+      "peak",
+      "peakxv",
+      "pearvc",
+      "pelionvp",
+      "penderventures",
+      "peoplefunction",
+      "perotjain",
+      "petersonventures",
+      "phoenixcourt",
+      "phxfwd",
+      "pilabs",
+      "placeholder",
+      "placetobelnk",
+      "planeta",
+      "playground",
+      "playvc",
+      "plugandplayfoundation",
+      "pnptc",
+      "pointnine",
+      "polkadot",
+      "polychain",
+      "powerhouseventures",
+      "praxis",
+      "preludeventures",
+      "primary",
+      "protagonist",
+      "protocolai",
+      "pulsefund",
+      "pumagrowthpartners",
+      "purdueinnovates",
+      "qedinvestors",
+      "qplusequality",
+      "queertech",
+      "qumracapital",
+      "quona",
+      "racap",
+      "radiancapital",
+      "radical",
+      "rallyventures",
+      "reachcapital",
+      "realventures",
+      "redpoint",
+      "redseaventures",
+      "relevanceventures",
+      "remotely",
+      "ret",
+      "rethinkcapital",
+      "rev1ventures",
+      "revelpartners",
+      "revent",
+      "revolution",
+      "rho",
+      "riverparkvc",
+      "rockfordchamber",
+      "rowanedc",
+      "rre",
+      "rubio",
+      "s3vc",
+      "saasventurecapital",
+      "saintjoseph",
+      "sandboxindustries",
+      "sandscapitalventures",
+      "sapphireventures",
+      "sarahsmith",
+      "scalevp",
+      "schmidtmarine",
+      "scribblevc",
+      "seaeventures",
+      "seedcamp",
+      "sequoia",
+      "serena",
+      "setventures",
+      "seventures",
+      "seventyseven",
+      "sggc",
+      "shieldcap",
+      "shima",
+      "sierraventures",
+      "signalfire",
+      "silvertonpartners",
+      "sixty8",
+      "sjfventures",
+      "skagit",
+      "skale",
+      "skydeck",
+      "skyvc",
+      "skyviewventures",
+      "smartfinvc",
+      "socialleverage",
+      "sogalventures",
+      "somacap",
+      "sorensoncap",
+      "sosv",
+      "southparkcommons",
+      "sovereignscapital",
+      "spartangroup",
+      "speedinvest",
+      "spirittechcollective",
+      "springtimeventures",
+      "sprints",
+      "squadra",
+      "squarepeg",
+      "ssedc",
+      "stage2capital",
+      "stanfordclimateventures",
+      "startmunich",
+      "startupcincy",
+      "startx",
+      "sterlingpartners",
+      "stripes",
+      "struckcapital",
+      "stventureslab",
+      "suffolktech",
+      "summitpartners",
+      "supercellinvestments",
+      "supermooncapital",
+      "superorganism",
+      "surgeahead",
+      "susaventures",
+      "symboliccapital",
+      "syndicateone",
+      "ta",
+      "tacostars",
+      "tandeminvest",
+      "tcgcrypto",
+      "tcv",
+      "teamworthy",
+      "techaviv",
+      "techchange",
+      "technyc",
+      "techstars",
+      "techtitans",
+      "tenexcm",
+      "terae",
+      "theadclub",
+      "theblockchainassociation",
+      "thecolumngroup",
+      "thegarage",
+      "thehelm",
+      "theoryvc",
+      "thepeoplepeoplegroup",
+      "theventurecity",
+      "thewia",
+      "thirdpointventures",
+      "thirdrockventures",
+      "thirdsphere",
+      "thisiscny",
+      "thomvest",
+      "threshold",
+      "thrivecap",
+      "tidemarkcap",
+      "tlvpartners",
+      "tnentertainment",
+      "togethxr",
+      "toledoregion",
+      "toyotaventures",
+      "trailheadcap",
+      "transition",
+      "traveltechessentialist",
+      "tribecavp",
+      "trilogyequity",
+      "trinityventures",
+      "trueventures",
+      "tusk",
+      "type1ventures",
+      "uluventures",
+      "uncorkcapital",
+      "underscore",
+      "unreasonablegroup",
+      "updata",
+      "upfront",
+      "uphonestcapital",
+      "uppartners",
+      "uprotterdam",
+      "upwest",
+      "urbaninnovationfund",
+      "usv",
+      "uvcpartners",
+      "valorcapitalgroup",
+      "valoventures",
+      "valtruis",
+      "vamosventures",
+      "variant",
+      "vcet",
+      "venrock",
+      "venturecapitalcareers",
+      "venturesplatform",
+      "venturestudios",
+      "verdane",
+      "vertexventures",
+      "vertexventureshc",
+      "vestigoventures",
+      "vistria",
+      "vmgpartners",
+      "volitioncapital",
+      "vuventurepartners",
+      "waed",
+      "wassonenterprise",
+      "watershed",
+      "weareadamarie",
+      "westboundequity",
+      "westcap",
+      "westlygroup",
+      "whatsupstateny",
+      "wing",
+      "workforceinnovationcenter",
+      "workinba",
+      "workinseguin",
+      "woven",
+      "xange",
+      "xista",
+      "xrcventures",
+      "xyz",
+      "yc",
+      "zeldavc",
+      "zettavp"
+    ],
+    "supportLevels": [
+      "detect",
+      "jobs",
+      "unsupported"
+    ],
+    "workplaces": [
+      "0",
+      "1",
+      "2",
+      "All work types",
+      "Alternance",
+      "Apprenticeship",
+      "Associate-Full Time",
+      "BE Employee",
+      "Binance Accelerator Program",
+      "CDI",
+      "CDI - Permanent",
+      "CLT",
+      "Co-op",
+      "Contract",
+      "Contract - Remote",
+      "Contract Based",
+      "Contract, Full-time",
+      "Contractor",
+      "Contractor (USA Only)",
+      "Contractor (remote)",
+      "Contractor / 1099",
+      "Contractor / Freelance",
+      "Contractor With System Access",
+      "Cycle",
+      "Director",
+      "EOR",
+      "ES Employee",
+      "ES Intern",
+      "Employee",
+      "Employee (100-80%)",
+      "Employee - Permanent",
+      "Employee / Full-Time",
+      "Employee 100%",
+      "Engineering",
+      "Entry Level-Full Time",
+      "EoR / Full-time",
+      "Estágio",
+      "Executive",
+      "Exempt Full-time",
+      "FR Apprentice",
+      "FR Executive/Cadre",
+      "FR Intern",
+      "FT",
+      "FT (Remote Ok)",
+      "FT (Remote Ok) Evenings and Weekends",
+      "Fixed Full Time Employee",
+      "Fixed Term",
+      "Fixed Time Contractor (FTC) (UK Only)",
+      "Fixed term",
+      "Fixed-Term",
+      "Fixed-term",
+      "Fixed-term contract",
+      "Freelance",
+      "Freelance - Self Employment Contract",
+      "Full",
+      "Full - time",
+      "Full Time",
+      "Full Time - Remote",
+      "Full Time - Term Limited",
+      "Full Time / On Site",
+      "Full Time / On site or Remote",
+      "Full Time Contract",
+      "Full Time Contractor",
+      "Full Time Employee",
+      "Full Time Hybrid",
+      "Full Time On-Site",
+      "Full Time Permanent",
+      "Full Time Remote",
+      "Full Time or Intern/Co-op",
+      "Full Time, Exempt",
+      "Full Time, Non Exempt",
+      "Full Time, Permanent",
+      "Full time",
+      "Full time (Contract)",
+      "Full time (On Site)",
+      "Full-Time",
+      "Full-Time & Part-Time",
+      "Full-Time (FTE)",
+      "Full-Time (exempt)",
+      "Full-Time - Hybrid",
+      "Full-Time - Remote",
+      "Full-Time / Part-Time",
+      "Full-Time 2025-26 School Year",
+      "Full-Time 2026-27 School Year",
+      "Full-Time Employee",
+      "Full-Time Exempt",
+      "Full-Time Hybrid/Remote",
+      "Full-Time US",
+      "Full-Time, Cycle Based",
+      "Full-Time, Part-Time",
+      "Full-time",
+      "Full-time (Individual Contributor)",
+      "Full-time (Remote)",
+      "Full-time (exempt)",
+      "Full-time (non-exempt)",
+      "Full-time (remote)",
+      "Full-time / Part-time",
+      "Full-time / freelance",
+      "Full-time Contractor",
+      "Full-time Employee",
+      "Full-time Employment",
+      "Full-time Exempt",
+      "Full-time Non-exempt",
+      "Full-time Onsite or Remote",
+      "Full-time Regular",
+      "Full-time Remote",
+      "Full-time Remote (North America & EU Time Zone)",
+      "Full-time job",
+      "Full-time job / Internship / Apprenticeship",
+      "Full-time/Remote",
+      "Full-time: Remote",
+      "Fulltime",
+      "Fulltime- Office",
+      "GE Employee",
+      "GE Intern",
+      "GE Working student",
+      "Globally Remote",
+      "HYBRID",
+      "Hibrido",
+      "Hourly",
+      "Hourly, full-time",
+      "Hybrid",
+      "Hybrid (Remote / On-Site)",
+      "In Person / Full Time Employee",
+      "Independent Contractor",
+      "Intern",
+      "Intern - Paid",
+      "Intern/Co-op",
+      "International Consultant",
+      "International Contractor (B2B)",
+      "International EOR",
+      "International Full Time Employee",
+      "International Office Entity",
+      "Internship",
+      "Internship - Práctica",
+      "Internship / Temporary",
+      "Jornada Completa",
+      "Jovem Aprendiz",
+      "Lead",
+      "ME Permanent employee",
+      "Manager",
+      "Mid Level",
+      "Mid-Senior Level",
+      "Modified Full-Time",
+      "NL Permanent employee",
+      "Non-exempt Full-time",
+      "None",
+      "ON_SITE",
+      "On-roll",
+      "On-site",
+      "OnSite",
+      "PT",
+      "Part Time",
+      "Part Time Benefits Eligible",
+      "Part Time Not Benefits Eligible",
+      "Part Time, Full Time, or Contract",
+      "Part or Full Time",
+      "Part time",
+      "Part time (Contract)",
+      "Part-Time",
+      "Part-Time / Fractional",
+      "Part-Time 2025-26 School Year",
+      "Part-Time 2026-27 School Year",
+      "Part-Time Seasonal",
+      "Part-Time and Seasonal",
+      "Part-Time, Seasonal",
+      "Part-time",
+      "Part-time (Individual Contributor)",
+      "Part-time (Seasonal)",
+      "Perm - Full-time",
+      "Permanent",
+      "Permanent - full time",
+      "Permanent Full Time Employee",
+      "Permanent Full-Time",
+      "Permanent contract",
+      "Permanent employment contract",
+      "Permanent, Full-time",
+      "Pioneer Talent Program",
+      "Product Management",
+      "REMOTE",
+      "Regular - Full Time",
+      "Regular Full-Time",
+      "Regular, Full-Time",
+      "Remote",
+      "Remote / Full Time Employee",
+      "Remote / Independent Contractor",
+      "Remote Full Time",
+      "Remote and/or Hybrid",
+      "ST Fellowships - On-Site",
+      "ST Fellowships - Remote",
+      "Salaried, full-time",
+      "Salary",
+      "Sales",
+      "Scholarship",
+      "Seasonal",
+      "Short Term",
+      "Short-term employment contract",
+      "TFT",
+      "Talent Pooling Opportunity",
+      "Temp Full-time",
+      "Temp to Perm",
+      "Temporary",
+      "Temporary Agency Worker",
+      "Temporary, Part-time",
+      "Temporary/Intern",
+      "Temporary/Seasonal",
+      "Tiempo completo",
+      "UK Permanent employee",
+      "US Full-time Salaried",
+      "Work From Home- FT",
+      "Working Student",
+      "contract",
+      "full",
+      "full time",
+      "fully",
+      "hybrid",
+      "none",
+      "other",
+      "temporary"
+    ]
+  },
+  "filterSpec": {
+    "department": "substring match",
+    "employmentType": "substring match",
+    "location": "substring match on locations labels",
+    "postedAfter": "posted_at >= date",
+    "postedBefore": "posted_at <= date",
+    "query": "title, company, descriptionSnippet (wide adds dept/team/locations/provider/board)",
+    "remote": "case-insensitive equality",
+    "salaryMax": "range overlap with job salary_min/max",
+    "salaryMin": "range overlap with job salary_min/max",
+    "skill": "substring match on skillTokens",
+    "sourceKey": "boards.source_keys merged with source_key",
+    "status": "exact match",
+    "team": "substring match",
+    "workplaceType": "substring match"
+  },
+  "kaggleDatasetId": "wyattowalsh/openoppsdb",
+  "openJobCount": 78612,
+  "snapshotAt": "2026-06-16T14:54:27.505463Z",
+  "source": {
+    "database": "kaggle/openoppsdb.sqlite",
+    "tables": [
+      "board_providers",
+      "boards",
+      "jobs",
+      "job_versions",
+      "job_version_locations",
+      "job_version_skills"
+    ]
+  },
+  "version": 3
+}

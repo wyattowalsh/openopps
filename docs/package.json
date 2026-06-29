@@ -4,16 +4,19 @@
 	"private": true,
 	"scripts": {
 		"data:generate": "uv run python ../scripts/generate_docs_data.py",
+		"data:generate:search": "uv run python ../scripts/generate_docs_search_index.py",
 		"prebuild": "pnpm data:generate",
-		"build": "next build",
+		"build": "next build --webpack",
 		"dev": "next dev",
 		"start": "next start",
 		"pretypes:check": "pnpm data:generate",
 		"types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
 		"postinstall": "fumadocs-mdx",
-		"lint": "eslint"
+		"lint": "eslint",
+		"test": "vitest run"
 	},
 	"dependencies": {
+		"@tanstack/react-virtual": "^3.13.12",
 		"@fontsource/monaspace-argon": "^5.2.5",
 		"@fontsource/monaspace-neon": "^5.2.5",
 		"@fontsource/monaspace-xenon": "^5.2.5",
@@ -23,7 +26,9 @@
 		"fumadocs-core": "16.8.11",
 		"fumadocs-mdx": "15.0.4",
 		"fumadocs-ui": "16.8.11",
+		"isomorphic-dompurify": "^2.26.0",
 		"lucide-react": "^1.14.0",
+		"nuqs": "^2.7.2",
 		"next": "16.2.6",
 		"radix-ui": "^1.4.3",
 		"react": "^19.2.6",
@@ -42,6 +47,7 @@
 		"eslint-config-next": "16.2.6",
 		"postcss": "^8.5.14",
 		"tailwindcss": "^4.3.0",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"vitest": "^3.2.4"
 	}
 }
