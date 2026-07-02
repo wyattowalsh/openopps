@@ -50,7 +50,7 @@ OPENOPPS_TELEMETRY_DIR="$PWD/.telemetry" \
 pnpm dev
 ```
 
-The local sink appends newline-delimited JSON under `OPENOPPS_TELEMETRY_DIR/YYYY/MM/DD/events.ndjson`. Events include route context, viewport and browser metadata, selected interaction properties, request metadata, hashed IPs by default, and redaction counters. Secret-like fields and values are redacted before writing. Use `OPENOPPS_TELEMETRY_IP_MODE=drop|hash|raw` to control IP handling; `hash` is the default, and `raw` should only be used in controlled local analysis.
+The local sink appends newline-delimited JSON under `OPENOPPS_TELEMETRY_DIR/YYYY/MM/DD/events.ndjson`. Events include route context, viewport and browser metadata, selected interaction properties, request metadata, optional hashed IPs, and redaction counters. Secret-like fields and values are redacted before writing. Use `OPENOPPS_TELEMETRY_IP_MODE=drop|hash|raw` to control IP handling; `hash` is the default, and `raw` should only be used in controlled local analysis. IP headers are ignored unless `OPENOPPS_TELEMETRY_TRUSTED_PROXY` explicitly selects `cloudflare`, `vercel`, or `forwarded`.
 
 Useful limits:
 
@@ -59,6 +59,7 @@ Useful limits:
 | `OPENOPPS_TELEMETRY_MAX_REQUEST_BYTES` | `524288` | Maximum accepted telemetry batch body size. |
 | `OPENOPPS_TELEMETRY_MAX_EVENT_BYTES` | `65536` | Maximum sanitized event/context payload before truncation metadata replaces oversized properties. |
 | `OPENOPPS_TELEMETRY_SALT` | built-in default | Salt used when hashing IP addresses. Set this in deployed environments for stable private hashes. |
+| `OPENOPPS_TELEMETRY_TRUSTED_PROXY` | `none` | Trusted client-IP source: `cloudflare`, `vercel`, or `forwarded`; leave unset unless your ingress owns and strips that header. |
 
 ## Layout
 

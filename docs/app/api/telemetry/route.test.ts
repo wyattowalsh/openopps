@@ -4,9 +4,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "./route";
+import {
+	resetTelemetryRateLimitStateForTests,
+	seedTelemetryRateLimitBucketsForTests,
+	telemetryRateLimitBucketCountForTests,
+} from "./telemetry-rate-limit";
 
 afterEach(() => {
+	vi.useRealTimers();
 	vi.unstubAllEnvs();
+	resetTelemetryRateLimitStateForTests();
 });
 
 describe("telemetry route", () => {
@@ -95,7 +102,7 @@ describe("telemetry route", () => {
 					{
 						authorization: "Bearer should-not-be-written",
 						"user-agent": "vitest",
-						"x-forwarded-for": "203.0.113.10",
+						"cf-connecting-ip": "203.0.113.10",
 						"x-random-debug-header": "ignored",
 					},
 				),
@@ -131,12 +138,40 @@ describe("telemetry route", () => {
 					dropped_unsupported_headers: 3,
 				},
 			});
-			expect(written.request.ip).toMatch(/^[a-f0-9]{64}$/);
+			expect(written.request.ip).toBeUndefined();
 			expect(JSON.stringify(written)).not.toContain("should-not-be-written");
 			expect(JSON.stringify(written)).not.toContain("203.0.113.10");
 			expect(JSON.stringify(written)).not.toContain("private note");
 			expect(JSON.stringify(written)).not.toContain("greenhouse");
 			expect(JSON.stringify(written)).not.toContain("sk_test");
+		} finally {
+			await rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("persists hashed request IPs only for an explicit trusted proxy mode", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "openopps-telemetry-"));
+		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "local-event-lake");
+		vi.stubEnv("OPENOPPS_TELEMETRY_DIR", dir);
+		vi.stubEnv("OPENOPPS_TELEMETRY_SALT", "test-salt");
+		vi.stubEnv("OPENOPPS_TELEMETRY_TRUSTED_PROXY", "cloudflare");
+
+		try {
+			const response = await POST(
+				request(
+					{ events: [event()] },
+					{
+						"user-agent": "vitest",
+						"cf-connecting-ip": "203.0.113.10",
+					},
+				),
+			);
+
+			expect(response.status).toBe(202);
+			const files = await findEventFiles(dir);
+			const written = JSON.parse((await readFile(files[0], "utf8")).trim());
+			expect(written.request.ip).toMatch(/^[a-f0-9]{64}$/);
+			expect(JSON.stringify(written)).not.toContain("203.0.113.10");
 		} finally {
 			await rm(dir, { force: true, recursive: true });
 		}
@@ -207,6 +242,7 @@ describe("telemetry route", () => {
 	it("rate limits public telemetry posts by request fingerprint", async () => {
 		vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_MAX", "1");
 		vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS", "60000");
+		vi.stubEnv("OPENOPPS_TELEMETRY_TRUSTED_PROXY", "forwarded");
 
 		const headers = {
 			"user-agent": "vitest",
@@ -221,6 +257,106 @@ describe("telemetry route", () => {
 			ok: false,
 			error: "telemetry_rate_limited",
 		});
+	});
+
+	it("ignores spoofed IP-like headers unless a trusted proxy mode is configured", async () => {
+		vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_MAX", "1");
+		vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS", "60000");
+
+		const spoofedA = {
+			"user-agent": "vitest",
+			"cf-connecting-ip": "203.0.113.10",
+			"x-vercel-forwarded-for": "198.51.100.10",
+			"x-forwarded-for": "203.0.113.10",
+			"x-real-ip": "198.18.0.10",
+		};
+		const spoofedB = {
+			"user-agent": "vitest",
+			"cf-connecting-ip": "203.0.113.11",
+			"x-vercel-forwarded-for": "198.51.100.11",
+			"x-forwarded-for": "198.18.0.1",
+			"x-real-ip": "198.18.0.11",
+		};
+
+		const firstSpoofed = await POST(request({ events: [event()] }, spoofedA));
+		const secondSpoofed = await POST(request({ events: [event()] }, spoofedB));
+		expect(firstSpoofed.status).toBe(202);
+		expect(secondSpoofed.status).toBe(429);
+	});
+
+	it("rate limits separately by explicitly configured trusted proxy mode", async () => {
+		const scenarios = [
+			{
+				mode: "cloudflare",
+				first: { "cf-connecting-ip": "203.0.113.10" },
+				second: { "cf-connecting-ip": "203.0.113.11" },
+			},
+			{
+				mode: "vercel",
+				first: { "x-vercel-forwarded-for": "198.51.100.10" },
+				second: { "x-vercel-forwarded-for": "198.51.100.11" },
+			},
+			{
+				mode: "forwarded",
+				first: { "x-forwarded-for": "192.0.2.10, 10.0.0.1" },
+				second: { "x-forwarded-for": "192.0.2.11, 10.0.0.1" },
+			},
+		] as const;
+
+		for (const scenario of scenarios) {
+			resetTelemetryRateLimitStateForTests();
+			vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_MAX", "1");
+			vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS", "60000");
+			vi.stubEnv("OPENOPPS_TELEMETRY_TRUSTED_PROXY", scenario.mode);
+
+			const first = await POST(
+				request({ events: [event()] }, { "user-agent": "vitest", ...scenario.first }),
+			);
+			const secondDifferentIp = await POST(
+				request({ events: [event()] }, { "user-agent": "vitest", ...scenario.second }),
+			);
+			const secondSameIp = await POST(
+				request({ events: [event()] }, { "user-agent": "vitest", ...scenario.second }),
+			);
+
+			expect(first.status).toBe(202);
+			expect(secondDifferentIp.status).toBe(202);
+			expect(secondSameIp.status).toBe(429);
+		}
+	});
+
+	it("allows a rate-limited fingerprint after the configured window expires", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-06-30T12:00:00.000Z"));
+		vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_MAX", "1");
+		vi.stubEnv("OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS", "60000");
+		vi.stubEnv("OPENOPPS_TELEMETRY_TRUSTED_PROXY", "forwarded");
+
+		const headers = {
+			"user-agent": "vitest",
+			"x-forwarded-for": "203.0.113.10",
+		};
+		const first = await POST(request({ events: [event()] }, headers));
+		const second = await POST(request({ events: [event()] }, headers));
+		vi.advanceTimersByTime(60_000);
+		const third = await POST(request({ events: [event()] }, headers));
+
+		expect(first.status).toBe(202);
+		expect(second.status).toBe(429);
+		expect(third.status).toBe(202);
+	});
+
+	it("evicts stale rate-limit buckets and caps map growth", () => {
+		const now = Date.now();
+		seedTelemetryRateLimitBucketsForTests(
+			Array.from({ length: 10_050 }, (_, index) => ({
+				key: `bucket-${index}`,
+				lastAccessedAt: now - index,
+			})),
+			now,
+		);
+
+		expect(telemetryRateLimitBucketCountForTests()).toBeLessThanOrEqual(4_096);
 	});
 
 	it("rejects batches after disallowed events are filtered out", async () => {

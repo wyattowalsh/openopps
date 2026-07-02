@@ -12,6 +12,13 @@ import {
 	sanitizeTelemetryProperties,
 } from "@/lib/telemetry";
 
+import {
+	extractTelemetryClientIp,
+	normalizeTelemetryTrustedProxyMode,
+	type TelemetryTrustedProxyMode,
+} from "./telemetry-client-ip";
+import { isTelemetryRateLimited } from "./telemetry-rate-limit";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -20,6 +27,7 @@ const DEFAULT_IP_MODE = "hash";
 const DEFAULT_TELEMETRY_SALT = "openopps-docs-telemetry";
 const DEFAULT_RATE_LIMIT_MAX = 120;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_RATE_LIMIT_MAX_BUCKETS = 4_096;
 const SENSITIVE_HEADER_PATTERN =
 	/^(authorization|cookie|proxy-authorization|set-cookie|x-api-key|x-auth-token)$/i;
 const HEADER_ALLOWLIST = new Set([
@@ -53,6 +61,8 @@ interface TelemetryRouteConfig {
 	salt: string;
 	rateLimitMax: number;
 	rateLimitWindowMs: number;
+	rateLimitMaxBuckets: number;
+	trustedProxy: TelemetryTrustedProxyMode;
 	configError?: "telemetry_raw_ip_not_allowed" | "telemetry_salt_missing";
 }
 
@@ -77,19 +87,12 @@ type ExtractedTelemetryEvents = {
 	submittedEventCount: number;
 };
 
-type RateLimitBucket = {
-	windowStartedAt: number;
-	count: number;
-};
-
-const rateLimitBuckets = new Map<string, RateLimitBucket>();
-
 export async function POST(request: Request) {
 	const config = getTelemetryRouteConfig();
 	if (config.configError) {
 		return jsonResponse({ ok: false, error: config.configError }, 503);
 	}
-	if (isRateLimited(request, config)) {
+	if (isTelemetryRateLimited(request, config)) {
 		return jsonResponse({ ok: false, error: "telemetry_rate_limited" }, 429);
 	}
 
@@ -188,6 +191,13 @@ function getTelemetryRouteConfig(
 			env.OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS,
 			DEFAULT_RATE_LIMIT_WINDOW_MS,
 		),
+		rateLimitMaxBuckets: readPositiveInteger(
+			env.OPENOPPS_TELEMETRY_RATE_LIMIT_MAX_BUCKETS,
+			DEFAULT_RATE_LIMIT_MAX_BUCKETS,
+		),
+		trustedProxy: normalizeTelemetryTrustedProxyMode(
+			env.OPENOPPS_TELEMETRY_TRUSTED_PROXY,
+		),
 		configError,
 	};
 }
@@ -206,7 +216,7 @@ function buildTelemetryEnvelope(
 	const properties = sanitizeTelemetryProperties(
 		filterTelemetryPropertiesForEvent(eventName, event.properties ?? {}),
 		{
-		maxBytes: config.maxEventBytes,
+			maxBytes: config.maxEventBytes,
 		},
 	);
 	const context = sanitizeTelemetryProperties(filterTelemetryContext(event.context ?? {}), {
@@ -329,7 +339,7 @@ function getRequestIp(request: Request, config: TelemetryRouteConfig) {
 	if (config.ipMode === "drop") {
 		return undefined;
 	}
-	const raw = getRawRequestIp(request);
+	const raw = extractTelemetryClientIp(request, config.trustedProxy);
 	if (!raw) {
 		return undefined;
 	}
@@ -338,42 +348,6 @@ function getRequestIp(request: Request, config: TelemetryRouteConfig) {
 	}
 	return createHash("sha256")
 		.update(`${config.salt}:${raw}`)
-		.digest("hex");
-}
-
-function getRawRequestIp(request: Request) {
-	return (
-		request.headers.get("cf-connecting-ip") ??
-		request.headers.get("x-real-ip") ??
-		request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-	);
-}
-
-function isRateLimited(request: Request, config: TelemetryRouteConfig) {
-	if (config.rateLimitMax <= 0 || config.rateLimitWindowMs <= 0) {
-		return false;
-	}
-	const key = rateLimitKey(request, config);
-	const now = Date.now();
-	const current = rateLimitBuckets.get(key);
-	if (!current || now - current.windowStartedAt >= config.rateLimitWindowMs) {
-		rateLimitBuckets.set(key, { windowStartedAt: now, count: 1 });
-		return false;
-	}
-	current.count += 1;
-	return current.count > config.rateLimitMax;
-}
-
-function rateLimitKey(request: Request, config: TelemetryRouteConfig) {
-	const raw =
-		getRawRequestIp(request) ??
-		[
-			request.headers.get("host") ?? "",
-			request.headers.get("origin") ?? "",
-			request.headers.get("user-agent") ?? "",
-		].join("|");
-	return createHash("sha256")
-		.update(`${config.salt}:telemetry-rate:${raw}`)
 		.digest("hex");
 }
 

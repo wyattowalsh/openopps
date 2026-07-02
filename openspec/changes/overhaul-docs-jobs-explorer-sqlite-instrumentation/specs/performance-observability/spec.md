@@ -15,6 +15,12 @@ OpenOpps SHALL instrument the docs app through a first-party telemetry layer tha
 - **THEN** telemetry events are sanitized and appended as NDJSON under date-partitioned files
 - **AND** secret-like values are redacted or dropped before persistence
 
+#### Scenario: Proxy client IP headers are fail-closed
+
+- **WHEN** telemetry receives client IP-like headers without `OPENOPPS_TELEMETRY_TRUSTED_PROXY` configured
+- **THEN** rate limiting and IP hashing ignore those headers
+- **AND** only the selected trusted proxy mode may use a valid client IP header
+
 ### Requirement: Interactive docs work remains responsive
 
 OpenOpps SHALL keep large static search-index interactions responsive with bounded fetch concurrency, deferred UI state, and worker-capable filtering where appropriate.
