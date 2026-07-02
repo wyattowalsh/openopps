@@ -35,7 +35,7 @@ Use `uv run openopps ...` inside the checkout. After `uv tool install -e .` from
 
 ## Public docs surfaces
 
-The docs app exposes three v1 URL surfaces. There is no legacy `/jobs` list route.
+The docs app exposes three v1 URL surfaces plus exact legacy redirects for moved routes.
 
 | URL | Purpose |
 | --- | ------- |
@@ -44,7 +44,7 @@ The docs app exposes three v1 URL surfaces. There is no legacy `/jobs` list rout
 | `/jobs/:id` | Static job detail pages for shareable permalinks and SEO metadata |
 | `/?job=:id` | In-app deep link that opens a job preview on the board |
 
-Bare `/jobs` returns 404. Job detail routes and `/jobs/sitemap/*.xml` remain available under the `/jobs/` prefix.
+Bare `/jobs` redirects to `/`, and `/docs/explorer` redirects to `/explorer`. Trailing-slash variants normalize through the same canonical destinations. Job detail routes and `/jobs/sitemap/*.xml` remain available under the `/jobs/` prefix; do not add broad `/jobs/:path` redirects.
 
 ## Storage
 
@@ -215,6 +215,18 @@ OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested
 
 Keep credentials local. `.env`, `.env.*`, `.envrc`, Kaggle `kaggle.json`, local package-registry credential files, `.netrc`, key bundles, and token or credential JSON files are ignored; `.env.example` remains the tracked non-secret template. Do not print secrets in logs, docs, CI output, or generated artifacts.
 
+## Outbound fetch threat model
+
+OpenOpps source and job providers fetch public HTTPS endpoints from the local CLI. `openopps.http.assert_public_fetch_url` is a defense-in-depth guard for that local threat model:
+
+- URLs must be public `https://` endpoints with a host.
+- DNS is resolved once before the request; any address that resolves to a non-global-routable IP is rejected.
+- Redirect hops are origin-checked, but each hop performs its own DNS lookup.
+
+This guard is **not** rebinding-proof. httpx resolves DNS again at connect time, so a hostile or compromised resolver could return a public address during the pre-check and a private/metadata address when the socket connects (classic DNS TOCTOU / rebinding). Redirect chains widen the window because every hop repeats the lookup.
+
+v0.1 intentionally stops at lightweight validation rather than connect-time IP pinning or a trusted resolver policy. Treat the check as reducing accidental SSRF against RFC1918/link-local targets, not as a network sandbox. If you need stronger outbound controls later, pin the vetted addresses into the client connect path or run ingestion behind an egress policy you control.
+
 ## Telemetry Operations
 
 The docs app telemetry source of truth should be a first-party event lake. The default local mode is no-op; production-like deployments should write raw append-only events to persistent storage, compact them into Parquet, and query them with DuckDB or another local analytical engine.
@@ -237,6 +249,8 @@ Telemetry operations should preserve the raw event lake, cap payload sizes, reco
 | `OPENOPPS_TELEMETRY_IP_MODE` | `hash` | `raw` is rejected when `NODE_ENV=production`; use `hash` or `drop`. |
 | `OPENOPPS_TELEMETRY_RATE_LIMIT_MAX` | `120` | Public POST limit per salted request fingerprint. |
 | `OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window in milliseconds. |
+| `OPENOPPS_TELEMETRY_RATE_LIMIT_MAX_BUCKETS` | `4096` | Maximum in-process rate-limit fingerprints retained before oldest buckets are evicted. |
+| `OPENOPPS_TELEMETRY_TRUSTED_PROXY` | `none` | Valid values are `none`, `cloudflare`, `vercel`, and `forwarded`. Client IP headers are ignored unless a mode is selected; `cloudflare` trusts `cf-connecting-ip`, `vercel` trusts `x-vercel-forwarded-for`, and `forwarded` trusts the first `x-forwarded-for` hop only when your ingress strips client-supplied values. `x-real-ip` is not trusted by this route. |
 
 ## OpenOppsDB Kaggle
 
