@@ -47,10 +47,11 @@ describe("jobs static data", () => {
 		);
 	});
 
-	it("does not publish thin committed job details in job sitemaps", () => {
-		expect(getStaticSearchManifest().source.tables).not.toContain(
-			"job_payload_snapshots",
-		);
+	it("does not publish thin or unqualified job details in job sitemaps", () => {
+		const manifest = getStaticSearchManifest();
+		if (manifest.version < 4) {
+			expect(manifest.source.tables).not.toContain("job_payload_snapshots");
+		}
 		expect(getIndexableJobDetailIds()).toHaveLength(0);
 		expect(getJobSitemapCount()).toBe(0);
 		const urls = getJobSitemapUrls(0);

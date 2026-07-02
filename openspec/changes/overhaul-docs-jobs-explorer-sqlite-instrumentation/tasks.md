@@ -4,7 +4,7 @@
 - [x] Update TypeScript runtime search schema and loader tests for manifest v4.
 - [x] Add no-op/default first-party telemetry and local event-lake sink.
 - [x] Refresh docs IA, design tokens, and compact UI primitives.
-- [ ] Move jobs workbench to `/` and remove `/jobs` routes.
-- [ ] Move explorer dashboard to `/explorer` and remove `/docs/explorer`.
-- [ ] Regenerate docs data and search artifacts where local prerequisites exist.
-- [ ] Run focused Python/docs tests and final validation gates.
+- [x] Move jobs workbench to `/` and remove `/jobs` routes.
+- [x] Move explorer dashboard to `/explorer` and remove `/docs/explorer`.
+- [x] Regenerate docs data and search artifacts where local prerequisites exist.
+- [x] Run focused Python/docs tests and final validation gates.
