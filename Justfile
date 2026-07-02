@@ -51,6 +51,7 @@ docs-search-index-check:
 # Generate docs data, MDX output, Next route types, and TypeScript checks.
 docs-check:
     cd docs && pnpm types:check
+    uv run pytest tests/unit/openopps/test_docs_search_index.py -k committed
 
 # Build the Fumadocs/Next.js docs site.
 docs-build:
@@ -66,7 +67,7 @@ docs-e2e: docs-build
 
 # Run focused browser accessibility checks against the production build.
 docs-a11y: docs-build
-    cd docs && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium accessibility.spec.ts
+    cd docs && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=mobile-chromium accessibility.spec.ts
 
 # Run focused SEO/static-route browser checks against the production build.
 docs-seo-check: docs-build
