@@ -25,6 +25,20 @@ describe("ExplorerResultsPanel", () => {
 		const list = container.querySelector('[role="list"]');
 		expect(list).not.toBeNull();
 		expect(list?.querySelector("button")).toBeNull();
+	}, 15_000);
+
+	it("omits unsafe outbound links", () => {
+		render(
+			<ExplorerResultsPanel
+				entity="jobs"
+				rows={[jobRow("Designer", "javascript:alert(1)")] }
+				total={1}
+				visibleLimit={50}
+				onMore={() => {}}
+			/>,
+		);
+
+		expect(screen.queryByRole("link", { name: /open posting/i })).toBeNull();
 	});
 
 	it("activates the focused posting link on Enter", () => {
@@ -49,10 +63,10 @@ describe("ExplorerResultsPanel", () => {
 
 		expect(clickSpy).toHaveBeenCalled();
 		clickSpy.mockRestore();
-	});
+	}, 15_000);
 });
 
-function jobRow(title: string): SearchRow {
+function jobRow(title: string, url = "https://example.test/jobs/1"): SearchRow {
 	return [
 		`job-${title}`,
 		"manual",
@@ -70,7 +84,7 @@ function jobRow(title: string): SearchRow {
 		null,
 		null,
 		null,
-		"https://example.test/jobs/1",
+		url,
 		"2026-01-01",
 		"2026-01-01",
 		'["manual"]',

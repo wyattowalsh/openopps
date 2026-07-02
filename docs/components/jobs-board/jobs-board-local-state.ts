@@ -12,11 +12,15 @@ import type {
 	SearchRow,
 } from "@/components/openopps-search/search-types";
 import { J, text } from "@/components/openopps-search/search-utils";
+import { safeJobExternalUrl } from "@/lib/job-url";
+import { sanitizeJobDescriptionHtml } from "@/lib/sanitize-html";
 
 export const JOBS_LOCAL_SCHEMA_VERSION = 1;
 export const JOBS_LOCAL_SETTINGS_KEY = "openopps.jobs.local.settings.v1";
 export const JOBS_LOCAL_DB_NAME = "openopps.jobs.local";
 export const JOBS_LOCAL_DB_VERSION = 1;
+export const JOBS_LOCAL_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+export const JOBS_LOCAL_IMPORT_MAX_RECORDS = 5_000;
 
 const JOB_RECORD_STORE = "jobRecords";
 const SAVED_SEARCH_STORE = "savedSearches";
@@ -351,6 +355,7 @@ export function normalizeRetainedJobDetailRecord(
 	if (!jobId || !candidate.detail || typeof candidate.detail !== "object") {
 		return null;
 	}
+	const detail = sanitizeRetainedJobDetail(candidate.detail as JobDetail);
 	return {
 		schemaVersion: JOBS_LOCAL_SCHEMA_VERSION,
 		jobId,
@@ -360,7 +365,19 @@ export function normalizeRetainedJobDetailRecord(
 		rowSnapshot: Array.isArray(candidate.rowSnapshot)
 			? (candidate.rowSnapshot as SearchRow)
 			: null,
-		detail: candidate.detail as JobDetail,
+		detail,
+	};
+}
+
+function sanitizeRetainedJobDetail(detail: JobDetail): JobDetail {
+	return {
+		...detail,
+		postingUrl: safeJobExternalUrl(detail.postingUrl),
+		applyUrl: safeJobExternalUrl(detail.applyUrl),
+		descriptionHtml:
+			typeof detail.descriptionHtml === "string" && detail.descriptionHtml.trim()
+				? sanitizeJobDescriptionHtml(detail.descriptionHtml)
+				: detail.descriptionHtml,
 	};
 }
 
@@ -730,6 +747,17 @@ export function createJobsLocalExportEnvelope(
 export function parseJobsLocalImport(value: string | unknown):
 	| { ok: true; data: JobsLocalExportEnvelope }
 	| { ok: false; errors: string[] } {
+	if (typeof value === "string") {
+		const byteLength = new TextEncoder().encode(value).length;
+		if (byteLength > JOBS_LOCAL_IMPORT_MAX_BYTES) {
+			return {
+				ok: false,
+				errors: [
+					`Import file exceeds the ${formatImportLimit(JOBS_LOCAL_IMPORT_MAX_BYTES)} size limit.`,
+				],
+			};
+		}
+	}
 	let parsed: unknown = value;
 	if (typeof value === "string") {
 		try {
@@ -749,6 +777,20 @@ export function parseJobsLocalImport(value: string | unknown):
 		return {
 			ok: false,
 			errors: ["Import payload is not an OpenOpps jobs local data backup."],
+		};
+	}
+	const recordCount =
+		(Array.isArray(candidate.jobRecords) ? candidate.jobRecords.length : 0) +
+		(Array.isArray(candidate.savedSearches) ? candidate.savedSearches.length : 0) +
+		(Array.isArray(candidate.retainedJobDetails)
+			? candidate.retainedJobDetails.length
+			: 0);
+	if (recordCount > JOBS_LOCAL_IMPORT_MAX_RECORDS) {
+		return {
+			ok: false,
+			errors: [
+				`Import payload exceeds the ${JOBS_LOCAL_IMPORT_MAX_RECORDS.toLocaleString()} record limit.`,
+			],
 		};
 	}
 	const now = new Date().toISOString();
@@ -1205,6 +1247,13 @@ function isPresent<T>(value: T | null | undefined): value is T {
 
 function approximateJsonBytes(value: unknown) {
 	return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+function formatImportLimit(bytes: number) {
+	if (bytes % (1024 * 1024) === 0) {
+		return `${bytes / (1024 * 1024)}MB`;
+	}
+	return `${bytes.toLocaleString()} bytes`;
 }
 
 function createLocalId(prefix: string, now: string) {

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { SearchRow } from "@/components/openopps-search/search-types";
 
 import {
+	FULL_JOBS_INDEX_ROW_THRESHOLD,
 	findJobRowById,
+	needsFullJobsIndexConfirmation,
 	resolveSelectedJobRow,
 	shouldLoadFullJobsIndex,
 } from "./jobs-board-load-state";
@@ -87,6 +89,35 @@ describe("jobs board full-index load state", () => {
 				rows,
 				selectedJobId: "job-c",
 				fullIndexError: null,
+			}),
+		).toBe(true);
+	});
+
+	it("requires explicit confirmation before loading very large job snapshots", () => {
+		const largeJobCount = FULL_JOBS_INDEX_ROW_THRESHOLD + 1;
+		const decision = {
+			activeFilterCount: 1,
+			rows,
+			selectedJobId: "job-a",
+			jobCount: largeJobCount,
+		};
+
+		expect(needsFullJobsIndexConfirmation(decision)).toBe(true);
+		expect(shouldLoadFullJobsIndex(decision)).toBe(false);
+		expect(
+			shouldLoadFullJobsIndex({
+				...decision,
+				fullIndexConfirmed: true,
+			}),
+		).toBe(true);
+	});
+
+	it("does not require confirmation for smaller snapshots", () => {
+		expect(
+			shouldLoadFullJobsIndex({
+				activeFilterCount: 1,
+				rows,
+				jobCount: FULL_JOBS_INDEX_ROW_THRESHOLD,
 			}),
 		).toBe(true);
 	});

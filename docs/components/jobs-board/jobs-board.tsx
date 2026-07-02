@@ -20,6 +20,7 @@ import {
 } from "@/components/jobs-board/jobs-board-local-state";
 import { JobsBoardLocalDataPanel } from "@/components/jobs-board/jobs-board-local-data-panel";
 import {
+	needsFullJobsIndexConfirmation,
 	resolveSelectedJobRow,
 	shouldLoadFullJobsIndex,
 } from "@/components/jobs-board/jobs-board-load-state";
@@ -46,6 +47,7 @@ import {
 	text,
 } from "@/components/openopps-search/search-utils";
 import { Button } from "@/components/ui/button";
+import { safeJobExternalUrl } from "@/lib/job-url";
 import { trackTelemetry } from "@/lib/telemetry";
 
 type JobsBoardProps = {
@@ -64,6 +66,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const [loadingFullIndex, setLoadingFullIndex] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [fullIndexError, setFullIndexError] = useState<string | null>(null);
+	const [fullIndexConfirmed, setFullIndexConfirmed] = useState(false);
 	const [detail, setDetail] = useState<JobDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [detailError, setDetailError] = useState<string | null>(null);
@@ -145,11 +148,24 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		};
 	}, []);
 
+	const jobCount = manifest?.entities.jobs.count ?? 0;
+
 	const needsFullIndex = shouldLoadFullJobsIndex({
 		activeFilterCount,
 		rows,
 		selectedJobId,
 		fullIndexError,
+		jobCount,
+		fullIndexConfirmed,
+	});
+
+	const pendingFullIndexConfirmation = needsFullJobsIndexConfirmation({
+		activeFilterCount,
+		rows,
+		selectedJobId,
+		fullIndexError,
+		jobCount,
+		fullIndexConfirmed,
 	});
 
 	useEffect(() => {
@@ -438,6 +454,15 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		clearFilters();
 	};
 
+	const confirmFullIndexLoad = () => {
+		trackTelemetry("jobs.full_index_confirmed", {
+			jobCount,
+			activeFilterCount,
+			hasSelection: Boolean(selectedJobId),
+		});
+		setFullIndexConfirmed(true);
+	};
+
 	const retryFullIndex = () => {
 		trackTelemetry("jobs.full_index_retry", {
 			activeFilterCount,
@@ -622,6 +647,23 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				{error ? (
 					<div className="opps-error-banner mt-4">
 						<span>{error}</span>
+					</div>
+				) : null}
+
+				{pendingFullIndexConfirmation ? (
+					<div className="opps-error-banner mt-4 flex flex-wrap items-center justify-between gap-3">
+						<span>
+							This snapshot has {jobCount.toLocaleString()} jobs. Loading the full
+							index in your browser may use significant memory.
+						</span>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={confirmFullIndexLoad}
+						>
+							Load full jobs index
+						</Button>
 					</div>
 				) : null}
 

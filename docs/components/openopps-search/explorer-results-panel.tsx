@@ -23,8 +23,9 @@ import {
 	text,
 } from "@/components/openopps-search/search-utils";
 
-import { explorerEntityLabel, formatExplorerNullableNumber } from "./explorer-shared";
+import { safeJobExternalUrl } from "@/lib/job-url";
 import { ExplorerPagination } from "./explorer-pagination";
+import { explorerEntityLabel, formatExplorerNullableNumber } from "./explorer-shared";
 
 type ExplorerResultsPanelProps = {
 	entity: Entity;
@@ -287,12 +288,13 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 function ResultLink({ href, label }: { href: string; label: string }) {
-	if (!href) {
+	const safeHref = safeJobExternalUrl(href);
+	if (!safeHref) {
 		return null;
 	}
 	return (
 		<a
-			href={href}
+			href={safeHref}
 			target="_blank"
 			rel="noopener noreferrer"
 			className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-[var(--opps-radius-md)] border border-border bg-card px-3 text-sm font-semibold text-foreground transition hover:border-primary/50 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"

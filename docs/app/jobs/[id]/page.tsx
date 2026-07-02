@@ -13,6 +13,7 @@ import {
 	jobBoardDeepLink,
 	jobDescriptionText,
 	jobPostingJsonLd,
+	serializeJsonLdScript,
 	safeJobExternalUrl,
 } from "@/lib/jobs-static-data";
 import { appName, socialImages } from "@/lib/shared";
@@ -87,7 +88,7 @@ export default async function JobDeepLinkPage({ params }: JobDeepLinkPageProps) 
 			{jsonLd ? (
 				<script
 					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+					dangerouslySetInnerHTML={{ __html: serializeJsonLdScript(jsonLd) }}
 				/>
 			) : null}
 				<article className="opps-result-card space-y-5 p-5 sm:p-6">

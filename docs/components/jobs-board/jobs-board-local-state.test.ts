@@ -12,6 +12,7 @@ import {
 	jobLifecycleIndicators,
 	mergeJobsLocalSnapshots,
 	normalizeJobsLocalSettings,
+	normalizeRetainedJobDetailRecord,
 	parseJobsLocalImport,
 	pruneRetainedJobDetailsForWorkflowRecords,
 	readJobsLocalSettings,
@@ -326,6 +327,65 @@ describe("jobs board local state", () => {
 			lastSeenSnapshotAt: "2026-04-01T00:00:00.000Z",
 			lastKnownFingerprint: "content-v2",
 		});
+	});
+
+	it("rejects oversized local import payloads before JSON parsing", () => {
+		const oversized = JSON.stringify({
+			source: "openopps.jobs.local",
+			schemaVersion: 1,
+			exportedAt: "2026-06-30T03:00:00.000Z",
+			settings: DEFAULT_JOBS_LOCAL_SETTINGS,
+			jobRecords: [],
+			savedSearches: [],
+			retainedJobDetails: [],
+			padding: "x".repeat(2 * 1024 * 1024),
+		});
+		const parsed = parseJobsLocalImport(oversized);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) {
+			expect(parsed.errors[0]).toContain("2MB");
+		}
+	});
+
+	it("rejects local imports with too many records", () => {
+		const parsed = parseJobsLocalImport({
+			source: "openopps.jobs.local",
+			schemaVersion: 1,
+			exportedAt: "2026-06-30T03:00:00.000Z",
+			settings: DEFAULT_JOBS_LOCAL_SETTINGS,
+			jobRecords: Array.from({ length: 5_001 }, (_, index) => ({
+				jobId: `job-${index}`,
+				createdAt: "2026-06-30T03:00:00.000Z",
+				updatedAt: "2026-06-30T03:00:00.000Z",
+			})),
+			savedSearches: [],
+			retainedJobDetails: [],
+		});
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) {
+			expect(parsed.errors[0]).toContain("5,000");
+		}
+	});
+
+	it("sanitizes retained job detail imports with unsafe urls and html", () => {
+		const record = normalizeRetainedJobDetailRecord({
+			jobId: "job-a",
+			capturedAt: "2026-06-30T03:00:00.000Z",
+			updatedAt: "2026-06-30T03:00:00.000Z",
+			detail: {
+				id: "job-a",
+				status: "open",
+				title: "Platform Engineer",
+				company: "Acme Corp",
+				applyUrl: "javascript:alert(1)",
+				postingUrl: "https://example.com/jobs/1",
+				descriptionHtml: '<img src=x onerror="alert(1)">',
+			},
+		});
+
+		expect(record?.detail.applyUrl).toBeNull();
+		expect(record?.detail.postingUrl).toBe("https://example.com/jobs/1");
+		expect(record?.detail.descriptionHtml).not.toContain("onerror");
 	});
 
 	it("exports and imports only versioned local data envelopes", () => {
