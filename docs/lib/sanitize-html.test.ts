@@ -21,6 +21,20 @@ describe("sanitize-html", () => {
 		expect(sanitized).not.toContain("javascript:");
 	});
 
+	it("removes relative, protocol-relative, and credential-bearing links", () => {
+		const sanitized = sanitizeJobDescriptionHtml(
+			[
+				'<a href="/apply">relative</a>',
+				'<a href="//example.com/apply">protocol relative</a>',
+				'<a href="https://user:pass@example.com/apply">credentials</a>',
+			].join(""),
+		);
+
+		expect(sanitized).not.toContain('href="/apply"');
+		expect(sanitized).not.toContain('href="//example.com/apply"');
+		expect(sanitized).not.toContain("user:pass");
+	});
+
 	it("keeps safe links with noopener attributes", () => {
 		const sanitized = sanitizeJobDescriptionHtml(
 			'<a href="https://example.com/jobs/1">Apply</a>',

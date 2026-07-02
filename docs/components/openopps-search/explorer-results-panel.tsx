@@ -279,7 +279,7 @@ function ProviderResult({ row, focused }: { row: SearchRow; focused: boolean }) 
 function Field({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="min-w-0 rounded-xl border border-border/60 bg-card/65 px-3 py-2">
-			<div className="font-mono text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+			<div className="font-mono text-[0.68rem] font-semibold tracking-normal text-muted-foreground">
 				{label}
 			</div>
 			<div className="mt-1 min-h-5 truncate text-foreground">{value || "n/a"}</div>

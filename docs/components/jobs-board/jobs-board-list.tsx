@@ -83,13 +83,18 @@ export function JobsBoardList({
 		},
 		[activeFocusedIndex, onSelectJob, rows, virtualizer],
 	);
+	const activeDescendant =
+		activeFocusedIndex >= 0
+			? jobsBoardOptionId(text(rows[activeFocusedIndex]?.[J.id]))
+			: undefined;
 
 	return (
 		<div
 			ref={parentRef}
 			className="openopps-data-table-wrap h-full min-h-[24rem] overflow-y-auto lg:min-h-[32rem]"
-			role="list"
+			role="listbox"
 			aria-label="Open jobs results"
+			aria-activedescendant={activeDescendant}
 			tabIndex={0}
 			onKeyDown={handleKeyDown}
 		>
@@ -104,16 +109,19 @@ export function JobsBoardList({
 						<div
 							key={virtualRow.key}
 							className="absolute top-0 left-0 w-full"
-							role="listitem"
+							role="presentation"
 							style={{
 								height: `${virtualRow.size}px`,
 								transform: `translateY(${virtualRow.start}px)`,
 							}}
 						>
 							<JobsBoardListItem
+								id={jobsBoardOptionId(jobId)}
 								row={row}
 								selected={selectedJobId === jobId}
 								focused={activeFocusedIndex === virtualRow.index}
+								posInSet={virtualRow.index + 1}
+								setSize={rows.length}
 								workflowRecord={jobRecords[jobId]}
 								lifecycleIndicators={jobLifecycleIndicators[jobId]}
 								onSelect={onSelectJob}
@@ -124,4 +132,9 @@ export function JobsBoardList({
 			</div>
 		</div>
 	);
+}
+
+function jobsBoardOptionId(jobId: string) {
+	const safeId = jobId.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 120);
+	return `openopps-job-option-${safeId || "unknown"}`;
 }

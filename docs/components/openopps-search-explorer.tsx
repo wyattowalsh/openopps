@@ -72,16 +72,22 @@ function OpenOppsSearchExplorerInner() {
 	const [fullJobsError, setFullJobsError] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [showInspector, setShowInspector] = useState(false);
+	const [manifestRetryKey, setManifestRetryKey] = useState(0);
+	const [chunkRetryKey, setChunkRetryKey] = useState(0);
 	const chunkLoadRequest = useRef(0);
 
 	useEffect(() => {
 		let mounted = true;
 
 		async function loadManifest() {
+			setLoadingManifest(true);
 			try {
 				const nextManifest = await loadSearchManifest();
 				if (mounted) {
 					setManifest(nextManifest);
+					setChunks({});
+					setFullJobsLoaded(false);
+					setFullJobsRequested(false);
 					setFullJobsError(null);
 					setError(null);
 					trackTelemetry("explorer.manifest_loaded", {
@@ -113,7 +119,7 @@ function OpenOppsSearchExplorerInner() {
 		return () => {
 			mounted = false;
 		};
-	}, []);
+	}, [manifestRetryKey]);
 
 	const activeChunk = chunks[entity];
 	const activeFilters = activeFilterCount(entity, filters);
@@ -191,6 +197,8 @@ function OpenOppsSearchExplorerInner() {
 					const nextError = formatLoadError(caught);
 					if (entity === "jobs" && chunks.jobs) {
 						setFullJobsError(nextError);
+					} else {
+						setFullJobsError(null);
 					}
 					setError(nextError);
 				}
@@ -208,7 +216,7 @@ function OpenOppsSearchExplorerInner() {
 				chunkLoadRequest.current += 1;
 			}
 		};
-	}, [chunks, entity, manifest, shouldLoadFullJobs, showInspector]);
+	}, [chunkRetryKey, chunks, entity, manifest, shouldLoadFullJobs, showInspector]);
 
 	const queryTerms = useMemo(
 		() => terms(deferredFilters.query),
@@ -261,6 +269,22 @@ function OpenOppsSearchExplorerInner() {
 		resetPage();
 		setFullJobsRequested(true);
 	};
+	const retryManifest = () => {
+		setError(null);
+		setFullJobsError(null);
+		setLoadingManifest(true);
+		setManifestRetryKey((current) => current + 1);
+	};
+	const retryActiveEntity = () => {
+		if (fullJobsError) {
+			retryFullJobsIndex();
+			return;
+		}
+		setError(null);
+		setFullJobsError(null);
+		resetPage();
+		setChunkRetryKey((current) => current + 1);
+	};
 	const updateFilters = (updater: (current: ExplorerFilters) => ExplorerFilters) => {
 		clearFullJobsError();
 		setFilters(updater);
@@ -301,6 +325,7 @@ function OpenOppsSearchExplorerInner() {
 					loading={loadingManifest}
 					warning={error && !manifest ? error : null}
 					onInspectRows={openInspector}
+					onRetry={!manifest && error ? retryManifest : undefined}
 				/>
 
 				{showInspector ? (
@@ -348,7 +373,8 @@ function OpenOppsSearchExplorerInner() {
 						{error ? (
 							<ExplorerErrorPanel
 								message={error}
-								onRetryFullJobs={fullJobsError ? retryFullJobsIndex : undefined}
+								onRetry={retryActiveEntity}
+								retryLabel={fullJobsError ? "Retry full jobs index" : "Retry index"}
 							/>
 						) : null}
 						{indexNote ? (
@@ -398,17 +424,19 @@ function ExplorerLoadingPanel({
 
 function ExplorerErrorPanel({
 	message,
-	onRetryFullJobs,
+	onRetry,
+	retryLabel = "Retry index",
 }: {
 	message: string;
-	onRetryFullJobs?: () => void;
+	onRetry?: () => void;
+	retryLabel?: string;
 }) {
 	return (
 		<div className="opps-error-banner mt-4">
 			<span>{message}</span>
-			{onRetryFullJobs ? (
-				<Button type="button" variant="outline" size="sm" onClick={onRetryFullJobs}>
-					Retry full jobs index
+			{onRetry ? (
+				<Button type="button" variant="outline" size="sm" onClick={onRetry}>
+					{retryLabel}
 				</Button>
 			) : null}
 		</div>

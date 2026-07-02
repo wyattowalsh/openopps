@@ -325,7 +325,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "OPENOPPS_RUNTIME_PACKAGE_SHA256 is required before downloading" in source
     assert "Downloaded OpenOpps Kaggle runtime package is incompatible" in source
     assert "openopps.kaggle_metadata" not in source
-    assert "rehydrates the plain public SQLite snapshot" in source
+    assert "rehydrates the public SQLite snapshot" in source
     assert "bounded `openopps jobs sync" in source
     assert "runs `openopps sync --metrics-json`" not in source
 

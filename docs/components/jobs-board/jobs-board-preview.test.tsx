@@ -50,6 +50,26 @@ describe("JobsBoardPreview", () => {
 		expect(screen.queryByRole("link", { name: /^apply$/i })).toBeNull();
 		expect(screen.queryByRole("link", { name: /^posting$/i })).toBeNull();
 	}, 15_000);
+
+	it("renders plain generated descriptions as text", () => {
+		render(
+			<JobsBoardPreview
+				row={jobRow()}
+				selectedJobId="job-1"
+				detail={{
+					id: "job-1",
+					status: "open",
+					title: "Designer",
+					company: "Acme",
+					description: "Plain generated posting description.",
+				}}
+				loading={false}
+				error={null}
+			/>,
+		);
+
+		expect(screen.getByText("Plain generated posting description.")).toBeTruthy();
+	}, 15_000);
 });
 
 function jobRow(url = "https://example.test/jobs/1"): SearchRow {

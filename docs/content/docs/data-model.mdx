@@ -19,6 +19,19 @@ OpenOpps keeps the operational ledger in local SQLite, publishes portable extrac
 
 Job storage separates durable posting identity from changing content. The `jobs` table tracks status, first/last seen timestamps, close time, and current hashes. `job_versions` stores normalized user-visible content with child tables for locations, skills, skill keywords, and responsibility or qualification bullets. Raw payload drift updates payload snapshots and observations without creating a new user-visible version when normalized content does not change.
 
+## Ingest surplus taxonomy (S1–S4)
+
+Board ingestions capture more than first-class normalized columns. OpenOpps classifies the extra signal into four surplus classes:
+
+| Class | Where it lives today | Examples |
+| ----- | -------------------- | -------- |
+| **S1 Raw-buried** | `raw_listing`, `raw_detail`, `job_payload_snapshots` | Greenhouse `metadata`, `requisition_id`, office trees |
+| **S2 Fetchable-not-called** | Board detail APIs not requested during sync | Greenhouse `pay_input_ranges`, org `/offices` trees |
+| **S3 Derivable** | Computable from normalized text | `seniority`, expanded skill catalog, `daysOpen` |
+| **S4 Sync-evidence** | `job_sync_runs`, `job_sync_observations` | Velocity, churn, reopen, median days open |
+
+Promotion policy: move high-cardinality S1 keys into typed `JobRecord` fields or `version.extra_payload` (`posting_kind`, `seniority`, `provider_extras`); keep full raw payloads in SQLite/Kaggle only. The docs search index uses **tiered detail shards**—T2 full body for indexable SEO jobs, T1 metadata-only for other open jobs—and never commits `payloadSnapshots`.
+
 ## Count Provenance
 
 OpenOpps has two generated count families:
@@ -58,8 +71,19 @@ The docs app does not call provider APIs at runtime. It reads committed artifact
 | -------- | ------- |
 | `manifest.json` | Snapshot version, generated time, counts, chunks, facets, and provenance. |
 | Job chunks | Searchable latest job rows for the jobs workbench. |
-| Detail shards | Larger posting detail payloads loaded only after a job is selected. |
+| Detail shards | Larger posting detail payloads loaded only after a job is selected. T1 shards carry metadata only; T2 shards add a bounded plain-text body (≤4000 characters, HTML stripped). |
 | Board/provider chunks | Explorer coverage, route, and source/provider inspection. |
+
+### Indexable job criteria
+
+A job receives a **T2** detail shard (and appears in `jobs-indexable-ids.json`) only when all of the following hold at index generation time:
+
+- `status` is open (or unset)
+- `title`, `company`, and a non-empty description (plain or HTML) are present
+- at least one of `postedAt`, `firstSeenAt`, or `versionCreatedAt` is set
+- a safe absolute `postingUrl` or `applyUrl` is present (no credentials, fragments-only, or non-http schemes)
+
+All other open jobs still get T1 metadata-only detail shards for preview and filtering.
 
 Refresh the index after updating `kaggle/openoppsdb.sqlite`:
 
@@ -83,7 +107,23 @@ Jobs and explorer filters should be generated from the static search manifest, n
 - workplace and employment types
 - job status and salary currency
 
+**Seniority** (`seniorities` facet): populated from each job row's `seniority` column. Values come from `version.extra_payload.seniority` when promoted during ingest; otherwise the index generator derives a label from normalized title and `job_versions.experience` text using the same `derive_seniority()` rules as `openopps.models`.
+
+**Days open** (`daysOpen` column): computed at index generation from `snapshotAt` minus `firstSeenAt` (non-negative integer days). This is an S3 derivable field and is not stored in SQLite job rows.
+
 Fuzzy matching should rank normalized generated suggestions first and only fall back to typed substring matching when the user enters a value that is not in the generated index.
+
+## Provider surplus promotion
+
+Provider adapters preserve full upstream payloads on `raw_listing` and `raw_detail`. v0.1 promotion focuses on **S1 list-endpoint fields** already fetched during sync:
+
+| Provider | Promoted surplus (initial) |
+| -------- | -------------------------- |
+| Greenhouse | `metadata`, `requisition_id`, `language`, department/office trees; `posting_kind=prospect` when `internal_job_id` is null |
+| Workable | Split `raw_listing` (list POST) vs `raw_detail` (per-job GET) |
+| Others | See `openspec/changes/ingest-data-surplus/provider-promotion-manifest.json` |
+
+Derived **S3** fields such as `seniority` are computed from title/experience text without extra HTTP. **S4** sync aggregates surface in the search manifest `dashboard.sync` block when `job_sync_runs` is present in the snapshot.
 
 ## Telemetry Event Lake
 

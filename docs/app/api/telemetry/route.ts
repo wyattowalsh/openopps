@@ -9,6 +9,7 @@ import {
 	filterTelemetryContext,
 	filterTelemetryPropertiesForEvent,
 	isAllowedTelemetryEventName,
+	normalizeTelemetryEventName,
 	sanitizeTelemetryProperties,
 } from "@/lib/telemetry";
 
@@ -96,9 +97,8 @@ export async function POST(request: Request) {
 		return jsonResponse({ ok: false, error: "telemetry_rate_limited" }, 429);
 	}
 
-	const text = await request.text();
-	const requestBytes = Buffer.byteLength(text, "utf8");
-	if (requestBytes > config.maxRequestBytes) {
+	const body = await readBoundedRequestText(request, config.maxRequestBytes);
+	if (!body.ok) {
 		return jsonResponse(
 			{ ok: false, error: "telemetry_payload_too_large" },
 			413,
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
 
 	let payload: unknown;
 	try {
-		payload = text ? JSON.parse(text) : {};
+		payload = body.text ? JSON.parse(body.text) : {};
 	} catch {
 		return jsonResponse({ ok: false, error: "telemetry_json_invalid" }, 400);
 	}
@@ -208,11 +208,7 @@ function buildTelemetryEnvelope(
 	config: TelemetryRouteConfig,
 	receivedAt: string,
 ): TelemetryEnvelope {
-	const eventName =
-		typeof event.event_name === "string" &&
-		isAllowedTelemetryEventName(event.event_name)
-			? event.event_name
-			: "page_view";
+	const eventName = normalizeTelemetryEventName(event.event_name) ?? "page_view";
 	const properties = sanitizeTelemetryProperties(
 		filterTelemetryPropertiesForEvent(eventName, event.properties ?? {}),
 		{
@@ -363,6 +359,49 @@ async function appendTelemetryEvents(
 	const file = join(dir, "events.ndjson");
 	const lines = envelopes.map((event) => JSON.stringify(event)).join("\n");
 	await appendFile(file, `${lines}\n`, "utf8");
+}
+
+async function readBoundedRequestText(
+	request: Request,
+	maxBytes: number,
+): Promise<{ ok: true; text: string } | { ok: false }> {
+	const contentLength = request.headers.get("content-length");
+	if (contentLength) {
+		const declaredBytes = Number(contentLength);
+		if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+			return { ok: false };
+		}
+	}
+
+	if (!request.body) {
+		const text = await request.text();
+		return Buffer.byteLength(text, "utf8") <= maxBytes
+			? { ok: true, text }
+			: { ok: false };
+	}
+
+	const reader = request.body.getReader();
+	const decoder = new TextDecoder();
+	let bytes = 0;
+	let text = "";
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+			bytes += value.byteLength;
+			if (bytes > maxBytes) {
+				await reader.cancel();
+				return { ok: false };
+			}
+			text += decoder.decode(value, { stream: true });
+		}
+		text += decoder.decode();
+		return { ok: true, text };
+	} finally {
+		reader.releaseLock();
+	}
 }
 
 function normalizeTelemetrySink(value: string | undefined): TelemetrySink {

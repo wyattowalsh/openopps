@@ -88,6 +88,11 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	"jobs.filters_changed": ["hasSelection", "keys"],
 	"jobs.filters_cleared": ["activeFilterCount", "hasSelection"],
 	"jobs.full_index_error": ["message"],
+	"jobs.full_index_confirmed": [
+		"activeFilterCount",
+		"hasSelection",
+		"jobCount",
+	],
 	"jobs.full_index_loaded": ["reason", "rows"],
 	"jobs.full_index_retry": ["activeFilterCount", "hasSelection"],
 	"jobs.index_error": ["message"],
@@ -349,7 +354,7 @@ export function resetTelemetryClientForTests() {
 }
 
 export function trackTelemetry(
-	eventName: string,
+	eventName: TelemetryEventName,
 	properties?: Record<string, unknown>,
 ) {
 	getTelemetryClient().track(eventName, properties);
@@ -366,11 +371,19 @@ export function setTelemetryRouteContext(context: TelemetryContext) {
 export function isAllowedTelemetryEventName(
 	eventName: unknown,
 ): eventName is TelemetryEventName {
+	return Boolean(normalizeTelemetryEventName(eventName));
+}
+
+export function normalizeTelemetryEventName(
+	eventName: unknown,
+): TelemetryEventName | undefined {
 	if (typeof eventName !== "string") {
-		return false;
+		return undefined;
 	}
 	const normalized = normalizeEventName(eventName);
-	return normalized in TELEMETRY_EVENT_PROPERTY_ALLOWLIST;
+	return normalized in TELEMETRY_EVENT_PROPERTY_ALLOWLIST
+		? (normalized as TelemetryEventName)
+		: undefined;
 }
 
 export function filterTelemetryPropertiesForEvent(

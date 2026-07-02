@@ -232,9 +232,7 @@ export function JobsBoardPreview({
 	onNotesChange,
 	onClose,
 }: JobsBoardPreviewProps) {
-	const descriptionHtml = useSanitizedHtml(
-		detail?.descriptionHtml ?? detail?.description,
-	);
+	const descriptionHtml = useSanitizedHtml(detail?.descriptionHtml);
 
 	if (!row && !selectedJobId) {
 		return (
@@ -253,11 +251,15 @@ export function JobsBoardPreview({
 	const postingUrl =
 		safeJobExternalUrl(detail?.postingUrl) ?? safeJobExternalUrl(row ? text(row[J.url]) : "");
 	const descriptionSnippet = row ? text(row[J.descriptionSnippet]) : "";
+	const descriptionText = text(detail?.description);
 	const sourceKeys = row ? parseSourceKeys(row[J.sourceKeys]) : [];
 	const responsibilities = (detail?.responsibilities ?? []).map(text).filter(Boolean);
 	const qualifications = (detail?.qualifications ?? []).map(text).filter(Boolean);
 	const hasDescription =
-		Boolean(descriptionSnippet) || Boolean(descriptionHtml) || loading;
+		Boolean(descriptionSnippet) ||
+		Boolean(descriptionHtml) ||
+		Boolean(descriptionText) ||
+		loading;
 
 	const trackOutbound = (kind: "apply" | "posting", url: string) => {
 		trackTelemetry("jobs.outbound_clicked", {
@@ -497,6 +499,14 @@ export function JobsBoardPreview({
 					</Section>
 				) : null}
 
+				{!descriptionHtml && descriptionText ? (
+					<Section title="Posting description">
+						<p className="whitespace-pre-line text-sm leading-6 text-foreground">
+							{descriptionText}
+						</p>
+					</Section>
+				) : null}
+
 				{!hasDescription && !error ? (
 					<p className="rounded-[var(--opps-radius-md)] border border-border/70 bg-muted/50 p-3 text-sm leading-6 text-muted-foreground">
 						This static snapshot has metadata for the posting, but no full
@@ -537,20 +547,22 @@ export function JobsBoardPreview({
 					<JsonBlock label="Compensation" value={detail?.compensation} />
 					<JsonBlock label="Job extra payload" value={detail?.jobExtra} />
 					<JsonBlock label="Version extra payload" value={detail?.versionExtra} />
-					{detail?.payloadSnapshots?.map((snapshot, index) => (
-						<JsonBlock
-							key={`${snapshot.kind ?? "snapshot"}-${index}`}
-							label={`Payload snapshot${snapshot.kind ? `: ${snapshot.kind}` : ""}`}
-							value={{
-								kind: snapshot.kind,
-								payloadHash: snapshot.payloadHash,
-								observedAt: snapshot.observedAt,
-								payload: snapshot.payload,
-							}}
-							truncated={snapshot.truncated}
-							originalChars={snapshot.originalChars}
-						/>
-					))}
+					{detail?.payloadSnapshots && detail.payloadSnapshots.length > 0
+						? detail.payloadSnapshots.map((snapshot, index) => (
+								<JsonBlock
+									key={`${snapshot.kind ?? "snapshot"}-${index}`}
+									label={`Payload snapshot${snapshot.kind ? `: ${snapshot.kind}` : ""}`}
+									value={{
+										kind: snapshot.kind,
+										payloadHash: snapshot.payloadHash,
+										observedAt: snapshot.observedAt,
+										payload: snapshot.payload,
+									}}
+									truncated={snapshot.truncated}
+									originalChars={snapshot.originalChars}
+								/>
+							))
+						: null}
 				</div>
 
 				<div className="grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">

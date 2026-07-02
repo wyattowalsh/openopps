@@ -1,8 +1,9 @@
 "use client";
 
 import { Download, Loader2, Settings2, Trash2, Upload, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 
+import { useDialogFocusTrap } from "@/components/jobs-board/dialog-focus";
 import type {
 	JobsLocalSettings,
 	JobsLocalStorageStatus,
@@ -63,26 +64,11 @@ export function JobsBoardLocalDataPanel({
 	const [exportText, setExportText] = useState("");
 	const [importText, setImportText] = useState("");
 	const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+	const [replaceConfirmed, setReplaceConfirmed] = useState(false);
 	const [importMessage, setImportMessage] = useState<string | null>(null);
+	const dialogRef = useRef<HTMLDivElement>(null);
 
-	useEffect(() => {
-		if (!open) {
-			return;
-		}
-		const previous = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		function closeFromEscape(event: KeyboardEvent) {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				onClose();
-			}
-		}
-		document.addEventListener("keydown", closeFromEscape);
-		return () => {
-			document.body.style.overflow = previous;
-			document.removeEventListener("keydown", closeFromEscape);
-		};
-	}, [onClose, open]);
+	useDialogFocusTrap(open, dialogRef, onClose);
 
 	if (!open) {
 		return null;
@@ -93,10 +79,15 @@ export function JobsBoardLocalDataPanel({
 	};
 
 	const importData = async () => {
+		if (importMode === "replace" && !replaceConfirmed) {
+			setImportMessage("Confirm replace before importing.");
+			return;
+		}
 		const result = await onImport(importText, importMode);
 		if (result.ok) {
 			setImportMessage("Import completed.");
 			setImportText("");
+			setReplaceConfirmed(false);
 			return;
 		}
 		setImportMessage(result.errors?.join(" ") || "Import failed.");
@@ -119,6 +110,7 @@ export function JobsBoardLocalDataPanel({
 				onClick={onClose}
 			/>
 			<div
+				ref={dialogRef}
 				className={cn(
 					"absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border/75 bg-card shadow-[0_24px_80px_color-mix(in_oklab,var(--foreground)_16%,transparent)]",
 					"motion-safe:animate-in motion-safe:slide-in-from-right motion-safe:duration-300",
@@ -126,12 +118,7 @@ export function JobsBoardLocalDataPanel({
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="openopps-local-data-title"
-				onKeyDown={(event) => {
-					if (event.key === "Escape") {
-						event.preventDefault();
-						onClose();
-					}
-				}}
+				tabIndex={-1}
 			>
 				<header className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
 					<div>
@@ -243,20 +230,25 @@ export function JobsBoardLocalDataPanel({
 							</Button>
 							<Button
 								type="button"
-								variant="outline"
+								variant={importMode === "replace" ? "destructive" : "outline"}
 								size="sm"
 								onClick={importData}
-								disabled={!importText.trim()}
+								disabled={
+									!importText.trim() ||
+									(importMode === "replace" && !replaceConfirmed)
+								}
 							>
 								<Upload className="size-3.5" />
-								Import JSON
+								{importMode === "replace" ? "Replace Data" : "Import JSON"}
 							</Button>
 							<select
 								className="opps-input h-7 w-auto text-xs"
 								value={importMode}
-								onChange={(event) =>
-									setImportMode(event.target.value === "replace" ? "replace" : "merge")
-								}
+								onChange={(event) => {
+									setImportMode(event.target.value === "replace" ? "replace" : "merge");
+									setReplaceConfirmed(false);
+									setImportMessage(null);
+								}}
 								aria-label="Import mode"
 							>
 								<option value="merge">Merge by updated date</option>
@@ -276,12 +268,30 @@ export function JobsBoardLocalDataPanel({
 							value={importText}
 							onChange={(event) => {
 								setImportText(event.target.value);
+								setReplaceConfirmed(false);
 								setImportMessage(null);
 							}}
 							placeholder="Paste an OpenOpps local data backup to import."
 							aria-label="Import local data JSON"
 							spellCheck={false}
 						/>
+						{importMode === "replace" ? (
+							<label className="flex items-start gap-2 rounded-[var(--opps-radius-md)] border border-destructive/40 bg-destructive/10 p-2 text-xs leading-5 text-destructive">
+								<input
+									type="checkbox"
+									className="mt-0.5"
+									checked={replaceConfirmed}
+									onChange={(event) => {
+										setReplaceConfirmed(event.target.checked);
+										setImportMessage(null);
+									}}
+								/>
+								<span>
+									Replace all saved, hidden, viewed, applied, notes, searches, and
+									retained detail data in this browser.
+								</span>
+							</label>
+						) : null}
 						{importMessage ? (
 							<p className="text-sm text-muted-foreground">{importMessage}</p>
 						) : null}

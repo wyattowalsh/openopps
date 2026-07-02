@@ -34,6 +34,7 @@ JsonDict = dict[str, JsonValue]
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalNonEmptyStr = NonEmptyStr | None
 RemoteWorkLevel = Literal["Full", "Hybrid", "None"]
+PostingKind = Literal["standard", "prospect", "unlisted"]
 _PublicHttpsUrl = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"])]
 _PublicHttpsUrlAdapter = TypeAdapter(_PublicHttpsUrl)
 
@@ -791,12 +792,18 @@ def _has_skill_alias(normalized_text: str, alias: str) -> bool:
 
 
 def _skill_level(record: JobRecord) -> str | None:
+    return derive_seniority(record) or record.experience
+
+
+def derive_seniority(record: JobRecord) -> str | None:
+    """Derive a normalized seniority label from title and experience text."""
+
     text = _normalized_skill_text([record.experience, record.title])
     text_tokens = frozenset(text.split())
     for label, single_tokens, phrases in _compiled_level_aliases():
         if _has_compiled_skill_alias(text, text_tokens, single_tokens, phrases):
             return label
-    return record.experience
+    return None
 
 
 class SourceRecord(OpenOppsRecord):
@@ -1187,6 +1194,21 @@ class JobRecord(OpenOppsRecord):
         description="Unmodified upstream detail payload fetched separately, when available.",
         examples=[{"description": "Build reliable systems."}],
     )
+    posting_kind: PostingKind | None = Field(
+        default=None,
+        description="Normalized posting visibility class such as standard, prospect, or unlisted.",
+        examples=["standard", "prospect"],
+    )
+    seniority: OptionalNonEmptyStr = Field(
+        default=None,
+        description="Deterministic seniority label derived from title and experience text.",
+        examples=["Senior", "Principal"],
+    )
+    provider_extras: JsonDict | None = Field(
+        default=None,
+        description="Provider-promoted surplus fields not mapped to first-class columns.",
+        examples=[{"greenhouse": {"requisitionId": "50", "language": "en"}}],
+    )
     synced_at: AwareDatetime = Field(
         default_factory=utc_now,
         description="UTC timestamp when the job was last fetched.",
@@ -1202,6 +1224,10 @@ class JobRecord(OpenOppsRecord):
                 object.__setattr__(self, "skills", extract_job_skills(self))
         if self.job_description is None:
             object.__setattr__(self, "job_description", build_job_description(self))
+        if not self.seniority:
+            object.__setattr__(self, "seniority", derive_seniority(self))
+        if not self.posting_kind:
+            object.__setattr__(self, "posting_kind", "standard")
         return self
 
 
@@ -1273,6 +1299,21 @@ class GreenhouseJobPosting(ProviderPayload):
         default=None,
         description="Greenhouse HTML job content when requested with content=true.",
         examples=["<p>Build systems.</p>"],
+    )
+    metadata: list[JsonDict] = Field(
+        default_factory=list,
+        description="Greenhouse custom metadata name/value pairs from the list endpoint.",
+        examples=[[{"name": "level", "value": "staff"}]],
+    )
+    requisition_id: str | int | None = Field(
+        default=None,
+        description="Greenhouse requisition identifier when exposed on the board feed.",
+        examples=["50"],
+    )
+    language: OptionalNonEmptyStr = Field(
+        default=None,
+        description="Greenhouse posting language code when exposed on the board feed.",
+        examples=["en"],
     )
 
 

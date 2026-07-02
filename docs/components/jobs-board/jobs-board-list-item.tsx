@@ -18,9 +18,12 @@ import { cn } from "@/lib/utils";
 export const JOB_ROW_HEIGHT = 56;
 
 type JobsBoardListItemProps = {
+	id: string;
 	row: SearchRow;
 	selected: boolean;
 	focused?: boolean;
+	posInSet: number;
+	setSize: number;
 	workflowRecord?: JobWorkflowRecord;
 	lifecycleIndicators?: JobLifecycleIndicator[];
 	onSelect: (jobId: string) => void;
@@ -38,9 +41,12 @@ function Chip({ children }: { children: ReactNode }) {
 }
 
 export function JobsBoardListItem({
+	id,
 	row,
 	selected,
 	focused = false,
+	posInSet,
+	setSize,
 	workflowRecord,
 	lifecycleIndicators = [],
 	onSelect,
@@ -61,14 +67,18 @@ export function JobsBoardListItem({
 	].filter(Boolean);
 
 	return (
-		<button
-			type="button"
+		<div
+			id={id}
+			role="option"
+			tabIndex={-1}
 			onClick={() => onSelect(jobId)}
 			className={cn(
-				"opps-table-row flex w-full flex-col justify-center gap-1 px-3 text-left",
+				"opps-table-row flex w-full cursor-pointer flex-col justify-center gap-1 px-3 text-left",
 			)}
 			style={{ height: JOB_ROW_HEIGHT }}
-			aria-current={selected ? "true" : undefined}
+			aria-selected={selected}
+			aria-posinset={posInSet}
+			aria-setsize={setSize}
 			data-selected={selected ? "true" : "false"}
 			data-focused={focused ? "true" : "false"}
 			aria-label={`${title} at ${company}`}
@@ -93,6 +103,6 @@ export function JobsBoardListItem({
 				{remote ? <Chip>{remote}</Chip> : null}
 				{salary ? <Chip>{salary}</Chip> : null}
 			</div>
-		</button>
+		</div>
 	);
 }

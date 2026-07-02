@@ -1,7 +1,7 @@
 import type { Entity, SearchRow } from "./search-types";
 import type { SearchSuggestion } from "./search-types";
 
-export const SEARCH_VERSION = 4;
+export const SEARCH_VERSION = 5;
 
 export const EXPECTED_PROVIDER_COLUMNS = [
 	"id",
@@ -54,6 +54,8 @@ export const JOB_COLUMN_INDICES = {
 	closedAt: 25,
 	contentHash: 26,
 	payloadHash: 27,
+	seniority: 28,
+	daysOpen: 29,
 } as const;
 
 export const LEGACY_JOB_COLUMNS = [
@@ -89,6 +91,8 @@ export const EXPECTED_JOB_COLUMNS = [
 	"closedAt",
 	"contentHash",
 	"payloadHash",
+	"seniority",
+	"daysOpen",
 ];
 
 export const EXPECTED_COLUMNS = {

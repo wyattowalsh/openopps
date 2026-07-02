@@ -1,8 +1,14 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import {
+	resolveDialogTabMove,
+	shouldCloseDialogFromKey,
+	useDialogFocusTrap,
+	type DialogFocusMove,
+} from "@/components/jobs-board/dialog-focus";
 import type {
 	JobLifecycleIndicator,
 	JobWorkflowRecord,
@@ -28,15 +34,6 @@ type JobsBoardPreviewSheetProps = {
 	onClose: () => void;
 };
 
-const FOCUSABLE_SELECTOR = [
-	"a[href]",
-	"button:not([disabled])",
-	"textarea:not([disabled])",
-	"input:not([disabled])",
-	"select:not([disabled])",
-	'[tabindex]:not([tabindex="-1"])',
-].join(",");
-
 export const JOBS_BOARD_PREVIEW_SHEET_TITLE_ID =
 	"openopps-jobs-preview-sheet-title";
 
@@ -49,10 +46,8 @@ export function getJobsBoardPreviewSheetDialogProps() {
 }
 
 export function shouldCloseJobsBoardPreviewSheet(key: string) {
-	return key === "Escape";
+	return shouldCloseDialogFromKey(key);
 }
-
-type FocusMove = "dialog" | "first" | "last" | "none";
 
 export function resolvePreviewSheetTabMove({
 	activeIndex,
@@ -62,29 +57,8 @@ export function resolvePreviewSheetTabMove({
 	activeIndex: number;
 	focusableCount: number;
 	shiftKey: boolean;
-}): FocusMove {
-	if (focusableCount <= 0) {
-		return "dialog";
-	}
-	if (activeIndex < 0) {
-		return shiftKey ? "last" : "first";
-	}
-	if (shiftKey && activeIndex === 0) {
-		return "last";
-	}
-	if (!shiftKey && activeIndex === focusableCount - 1) {
-		return "first";
-	}
-	return "none";
-}
-
-function getFocusableElements(root: HTMLElement) {
-	return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-		(element) =>
-			element.tabIndex >= 0 &&
-			!element.hidden &&
-			element.getAttribute("aria-hidden") !== "true",
-	);
+}): DialogFocusMove {
+	return resolveDialogTabMove({ activeIndex, focusableCount, shiftKey });
 }
 
 export function JobsBoardPreviewSheet({
@@ -103,66 +77,12 @@ export function JobsBoardPreviewSheet({
 	onClose,
 }: JobsBoardPreviewSheetProps) {
 	const dialogRef = useRef<HTMLDivElement>(null);
-	const onCloseRef = useRef(onClose);
+	const isMobileSheet = useMediaQuery("(max-width: 1023px)");
+	const sheetOpen = open && isMobileSheet;
 
-	useEffect(() => {
-		onCloseRef.current = onClose;
-	}, [onClose]);
+	useDialogFocusTrap(sheetOpen, dialogRef, onClose);
 
-	useEffect(() => {
-		if (!open || !dialogRef.current) {
-			return;
-		}
-		const dialog = dialogRef.current;
-		const previouslyFocused =
-			document.activeElement instanceof HTMLElement
-				? document.activeElement
-				: null;
-		const previous = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		const focusFrame = window.requestAnimationFrame(() => {
-			const target = getFocusableElements(dialog)[0] ?? dialog;
-			target.focus({ preventScroll: true });
-		});
-
-		function handleKeyDown(event: KeyboardEvent) {
-			if (shouldCloseJobsBoardPreviewSheet(event.key)) {
-				event.preventDefault();
-				onCloseRef.current();
-				return;
-			}
-			if (event.key !== "Tab") {
-				return;
-			}
-			const focusable = getFocusableElements(dialog);
-			const activeIndex = focusable.indexOf(document.activeElement as HTMLElement);
-			const move = resolvePreviewSheetTabMove({
-				activeIndex,
-				focusableCount: focusable.length,
-				shiftKey: event.shiftKey,
-			});
-			if (move === "none") {
-				return;
-			}
-			event.preventDefault();
-			if (move === "dialog") {
-				dialog.focus({ preventScroll: true });
-				return;
-			}
-			const target = move === "first" ? focusable[0] : focusable.at(-1);
-			target?.focus({ preventScroll: true });
-		}
-
-		document.addEventListener("keydown", handleKeyDown);
-		return () => {
-			window.cancelAnimationFrame(focusFrame);
-			document.removeEventListener("keydown", handleKeyDown);
-			document.body.style.overflow = previous;
-			previouslyFocused?.focus({ preventScroll: true });
-		};
-	}, [open]);
-
-	if (!open) {
+	if (!sheetOpen) {
 		return null;
 	}
 
@@ -219,4 +139,21 @@ export function JobsBoardPreviewSheet({
 			</div>
 		</div>
 	);
+}
+
+function useMediaQuery(query: string) {
+	const [matches, setMatches] = useState(false);
+
+	useEffect(() => {
+		if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+			return;
+		}
+		const media = window.matchMedia(query);
+		const update = () => setMatches(media.matches);
+		update();
+		media.addEventListener("change", update);
+		return () => media.removeEventListener("change", update);
+	}, [query]);
+
+	return matches;
 }

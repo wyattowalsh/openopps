@@ -83,6 +83,28 @@ class GreenhouseProvider:
         locations = _locations(posting)
         department = posting.departments[0].name if posting.departments else None
         posting_url = _greenhouse_public_url(posting.absolute_url)
+        departments = [
+            entry.model_dump(mode="python", by_alias=True, exclude_none=True)
+            for entry in posting.departments
+        ]
+        offices = [
+            entry.model_dump(mode="python", by_alias=True, exclude_none=True)
+            for entry in posting.offices
+        ]
+        provider_extras: dict[str, object] = {
+            "greenhouse": {
+                key: value
+                for key, value in {
+                    "requisitionId": posting.requisition_id,
+                    "language": posting.language,
+                    "metadata": posting.metadata or None,
+                    "departments": departments or None,
+                    "offices": offices or None,
+                }.items()
+                if value not in (None, [], {})
+            }
+        }
+        posting_kind = "prospect" if posting.internal_job_id is None else "standard"
         return JobRecord(
             id=stable_id(board.key, self.provider_id, remote_id),
             board_key=board.key,
@@ -98,6 +120,8 @@ class GreenhouseProvider:
             posting_url=posting_url,
             apply_url=posting_url,
             updated_at=posting.updated_at,
+            posting_kind=posting_kind,
+            provider_extras=provider_extras,
             raw_listing=posting.as_raw_payload(),
         )
 

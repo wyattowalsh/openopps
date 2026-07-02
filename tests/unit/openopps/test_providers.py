@@ -56,13 +56,16 @@ async def test_greenhouse_fetch_jobs():
                 "jobs": [
                     {
                         "id": 123,
+                        "internal_job_id": 987,
                         "title": "Engineer",
                         "location": {"name": "Remote"},
-                        "departments": [{"name": "Engineering"}],
-                        "offices": [{"name": "United States"}],
+                        "departments": [{"id": 1, "name": "Engineering"}],
+                        "offices": [{"id": 2, "name": "United States"}],
                         "absolute_url": "http://boards.greenhouse.io/acme/jobs/123",
                         "content": "<p>Build reliable APIs.</p>",
                         "metadata": [{"name": "level", "value": "staff"}],
+                        "requisition_id": "50",
+                        "language": "en",
                     }
                 ]
             },
@@ -94,6 +97,52 @@ async def test_greenhouse_fetch_jobs():
     )
     assert jobs[0].posting_url == "https://boards.greenhouse.io/acme/jobs/123"
     assert jobs[0].raw_listing["metadata"] == [{"name": "level", "value": "staff"}]
+    assert jobs[0].posting_kind == "standard"
+    assert jobs[0].provider_extras == {
+        "greenhouse": {
+            "requisitionId": "50",
+            "language": "en",
+            "metadata": [{"name": "level", "value": "staff"}],
+            "departments": [{"id": 1, "name": "Engineering"}],
+            "offices": [{"id": 2, "name": "United States"}],
+        }
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_greenhouse_marks_prospect_posts_without_internal_job_id():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        params={"content": "true"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "id": 456,
+                        "title": "Future Role",
+                        "absolute_url": "https://boards.greenhouse.io/acme/jobs/456",
+                        "content": "<p>Join our talent network.</p>",
+                    }
+                ]
+            },
+        )
+    )
+    route = BoardProviderRecord(
+        id="manual:acme:greenhouse",
+        source_key="manual",
+        board_key="acme",
+        provider_id="greenhouse",
+        support_level=ProviderSupport.JOBS,
+        token="acme",
+    )
+    async with build_async_client(settings) as client:
+        jobs = await GreenhouseProvider(settings).fetch_jobs(client, board(), route)
+
+    assert jobs[0].posting_kind == "prospect"
 
 
 @pytest.mark.asyncio
@@ -547,6 +596,8 @@ async def test_workable_fetch_jobs():
     assert jobs[0].description == "Help customers."
     assert jobs[0].salary == "USD 90000 - 110000"
     assert jobs[0].raw_listing["shortcode"] == "abc123"
+    assert "description" not in jobs[0].raw_listing
+    assert jobs[0].raw_detail["description"] == "<p>Help customers.</p>"
 
 
 @pytest.mark.asyncio

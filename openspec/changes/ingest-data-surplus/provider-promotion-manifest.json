@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "indexReleasePolicy": "B",
+  "postingKindEnum": ["standard", "prospect", "unlisted"],
+  "providers": {
+    "greenhouse": {
+      "priority": "P0",
+      "promote": [
+        "metadata",
+        "requisition_id",
+        "language",
+        "departments",
+        "offices",
+        "posting_kind"
+      ],
+      "rawRetention": "listing_only",
+      "optionalFetch": ["pay_input_ranges"],
+      "tests": ["test_greenhouse_fetch_jobs", "test_greenhouse_marks_prospect_posts_without_internal_job_id"]
+    },
+    "workable": {
+      "priority": "P0",
+      "promote": ["raw_listing_raw_detail_split"],
+      "rawRetention": "split_listing_detail",
+      "tests": ["test_workable_fetch_jobs"]
+    },
+    "lever": {
+      "priority": "P1",
+      "promote": ["categories", "epoch_dates", "sections"],
+      "rawRetention": "listing_only"
+    },
+    "ashbyhq": {
+      "priority": "P1",
+      "promote": ["isListed", "compensation", "workplaceType"],
+      "rawRetention": "listing_only"
+    },
+    "bamboohr": {
+      "priority": "P1",
+      "promote": ["jobOpening", "requisition_ids"],
+      "rawRetention": "split_listing_detail"
+    },
+    "workday": {
+      "priority": "P1",
+      "promote": ["postedOn", "jobDescription"],
+      "rawRetention": "split_listing_detail"
+    },
+    "rippling": {
+      "priority": "P1",
+      "promote": ["payRangeDetails", "workplaceType"],
+      "rawRetention": "split_listing_detail"
+    },
+    "teamtailor": {
+      "priority": "P2",
+      "promote": ["rss_limits"],
+      "optionalFetch": ["html_detail"]
+    },
+    "wpjobmanager": {
+      "priority": "P2",
+      "promote": ["meta_keys"]
+    }
+  },
+  "indexTiers": {
+    "T0": {
+      "audience": "list/search chunks",
+      "fields": ["snippets", "tokens", "salary scalars"],
+      "budgetMb": 80
+    },
+    "T1": {
+      "audience": "thin detail shards",
+      "fields": ["metadata", "urls", "status"],
+      "budgetMb": 30
+    },
+    "T2": {
+      "audience": "rich detail shards",
+      "fields": ["full description_html", "bullets", "status"],
+      "budgetMb": 180
+    },
+    "T3": {
+      "audience": "raw payloads",
+      "fields": ["payloadSnapshots"],
+      "budgetMb": 0,
+      "note": "DB/Parquet only; never in git index"
+    }
+  }
+}

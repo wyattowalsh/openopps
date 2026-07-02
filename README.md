@@ -295,12 +295,14 @@ rtk npx -y @fission-ai/openspec@latest validate --all --strict
 cd docs && pnpm types:check
 cd docs && pnpm build
 cd docs && pnpm test
+cd docs && pnpm exec playwright test --project=chromium
+cd docs && pnpm exec playwright test --project=mobile-chromium accessibility.spec.ts
 just docs-search-index-check
 just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-`just ci` includes `uv lock --check`, docs tests, docs lint, OpenSpec validation, coverage, Kaggle metadata generation, CLI help smoke checks, and diff formatting. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not silently skipped inside the CI recipe.
+`just ci` includes `uv lock --check`, docs type-check/build/unit/browser/accessibility tests, docs lint, OpenSpec validation, coverage, Kaggle metadata generation, CLI help smoke checks, and diff formatting. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not silently skipped inside the CI recipe.
 `just docs-search-index-check` is the explicit maintainer release gate for the committed static docs search snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `docs/public/data/openopps-search/`, and fails on remaining snapshot drift.
 
 Renovate is configured in `renovate.json` for Python `pyproject.toml`/`uv.lock` and docs `package.json`/`pnpm-lock.yaml` maintenance. Review dependency PRs with the same `just ci` path used for local release validation.

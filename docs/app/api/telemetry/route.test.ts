@@ -47,6 +47,101 @@ describe("telemetry route", () => {
 		});
 	});
 
+	it("rejects declared oversized payloads without reading the body stream", async () => {
+		vi.stubEnv("OPENOPPS_TELEMETRY_MAX_REQUEST_BYTES", "16");
+		let getReaderCalled = false;
+		const body = {
+			getReader() {
+				getReaderCalled = true;
+				throw new Error("body should not be read");
+			},
+		};
+
+		const oversizedRequest = {
+			body: body as unknown as ReadableStream<Uint8Array>,
+			headers: new Headers({
+				"content-length": "17",
+				"content-type": "application/json",
+			}),
+			method: "POST",
+			url: "https://docs.openopps.local/api/telemetry",
+		} as Request;
+
+		const response = await POST(oversizedRequest);
+
+		expect(response.status).toBe(413);
+		expect(getReaderCalled).toBe(false);
+		await expect(response.json()).resolves.toMatchObject({
+			ok: false,
+			error: "telemetry_payload_too_large",
+		});
+	});
+
+	it("cancels streamed payloads once they exceed the request byte limit", async () => {
+		vi.stubEnv("OPENOPPS_TELEMETRY_MAX_REQUEST_BYTES", "16");
+		let canceled = false;
+		const encoder = new TextEncoder();
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				controller.enqueue(encoder.encode("x".repeat(20)));
+			},
+			cancel() {
+				canceled = true;
+			},
+		});
+
+		const response = await POST(
+			new Request("https://docs.openopps.local/api/telemetry", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body,
+				duplex: "half",
+			} as RequestInit),
+		);
+
+		expect(response.status).toBe(413);
+		expect(canceled).toBe(true);
+		await expect(response.json()).resolves.toMatchObject({
+			ok: false,
+			error: "telemetry_payload_too_large",
+		});
+	});
+
+	it("persists normalized event names instead of raw submitted names", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "openopps-telemetry-"));
+		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "local-event-lake");
+		vi.stubEnv("OPENOPPS_TELEMETRY_DIR", dir);
+		vi.stubEnv("OPENOPPS_TELEMETRY_SALT", "test-salt");
+
+		try {
+			const response = await POST(
+				request({
+					events: [
+						event({
+							event_name: " jobs.filters changed ",
+							properties: {
+								keys: ["source"],
+								hasSelection: true,
+								private: "drop me",
+							},
+						}),
+					],
+				}),
+			);
+
+			expect(response.status).toBe(202);
+			const files = await findEventFiles(dir);
+			const written = JSON.parse((await readFile(files[0], "utf8")).trim());
+			expect(written.event_name).toBe("jobs.filters_changed");
+			expect(written.properties).toEqual({
+				keys: ["source"],
+				hasSelection: true,
+			});
+		} finally {
+			await rm(dir, { force: true, recursive: true });
+		}
+	});
+
 	it("requires an explicit salt for local event-lake writes", async () => {
 		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "local-event-lake");
 

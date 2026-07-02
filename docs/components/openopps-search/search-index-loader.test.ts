@@ -176,6 +176,90 @@ describe("search index loader", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
+	it("evicts invalid manifests so retry can refetch corrected JSON", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({
+					...manifest,
+					entities: {
+						...manifest.entities,
+						boards: {
+							...manifest.entities.boards,
+							columns: ["bad"],
+						},
+					},
+				}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => manifest,
+			});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(loadSearchManifest()).rejects.toMatchObject({
+			name: "SearchLoadError",
+			code: "invalid_manifest",
+		});
+		await expect(loadSearchManifest()).resolves.toEqual(manifest);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("evicts invalid single-file chunks so retry can refetch corrected JSON", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => ({ ...boards, columns: ["bad"] }),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => boards,
+			});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(loadEntityChunk(manifest, "boards")).rejects.toMatchObject({
+			name: "SearchLoadError",
+			code: "invalid_chunk",
+		});
+		await expect(loadEntityChunk(manifest, "boards")).resolves.toEqual(boards);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("evicts invalid chunk refs so retry can refetch corrected JSON", async () => {
+		let secondChunkAttempts = 0;
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const path = String(input);
+			if (path.endsWith("0000.json")) {
+				return { ok: true, status: 200, json: async () => firstJobs };
+			}
+			secondChunkAttempts += 1;
+			if (secondChunkAttempts === 1) {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ ...secondJobs, columns: ["bad"] }),
+				};
+			}
+			return { ok: true, status: 200, json: async () => secondJobs };
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(loadEntityChunk(manifest, "jobs")).rejects.toMatchObject({
+			name: "SearchLoadError",
+			code: "invalid_chunk",
+		});
+		await expect(loadEntityChunk(manifest, "jobs")).resolves.toMatchObject({
+			rows: [["first"], ["second"]],
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
 	it("rejects unsupported manifest versions with typed errors", async () => {
 		stubFetch({
 			"/data/openopps-search/manifest.json": {

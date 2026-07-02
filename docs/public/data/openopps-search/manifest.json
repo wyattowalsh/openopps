@@ -17,6 +17,10 @@
     "artifacts": {
       "detailShardBuckets": 256,
       "detailShardRecords": 78366,
+      "detailShardTiers": {
+        "T1": 13627,
+        "T2": 64739
+      },
       "jobChunks": 89
     },
     "dataQuality": [
@@ -84,6 +88,156 @@
       ]
     },
     "snapshotAt": "2026-07-02T08:33:21.099662Z",
+    "sync": {
+      "medianDaysOpenByProvider": [
+        {
+          "count": 20985,
+          "medianDaysOpen": 25,
+          "providerId": "ashbyhq"
+        },
+        {
+          "count": 488,
+          "medianDaysOpen": 25.0,
+          "providerId": "bamboohr"
+        },
+        {
+          "count": 44697,
+          "medianDaysOpen": 25,
+          "providerId": "greenhouse"
+        },
+        {
+          "count": 9509,
+          "medianDaysOpen": 25,
+          "providerId": "lever"
+        },
+        {
+          "count": 1150,
+          "medianDaysOpen": 25.0,
+          "providerId": "rippling"
+        },
+        {
+          "count": 1395,
+          "medianDaysOpen": 25,
+          "providerId": "teamtailor"
+        },
+        {
+          "count": 142,
+          "medianDaysOpen": 15.0,
+          "providerId": "workable"
+        }
+      ],
+      "runCount": 480,
+      "topBoardsByChurn": [
+        {
+          "boardKey": "a16z:anduril-industries",
+          "closedCount": 489,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "a16z:databricks",
+          "closedCount": 123,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "bvp:crete-professionals-alliance",
+          "closedCount": 87,
+          "providerId": "ashbyhq"
+        },
+        {
+          "boardKey": "e14:formlabs",
+          "closedCount": 80,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "fincapital:sumup",
+          "closedCount": 68,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "creandum:elastic",
+          "closedCount": 66,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "fiftyyears:billiontoone",
+          "closedCount": 56,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "felicis:verkada",
+          "closedCount": 53,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "creandum:spotify",
+          "closedCount": 52,
+          "providerId": "lever"
+        },
+        {
+          "boardKey": "bvp:anthropic",
+          "closedCount": 50,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "battery:workato",
+          "closedCount": 45,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "balderton:graphcore",
+          "closedCount": 44,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "anthemis:tide",
+          "closedCount": 36,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "baincapitalventures:maintainx",
+          "closedCount": 36,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "battery:braze",
+          "closedCount": 33,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "battery:liberate",
+          "closedCount": 31,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "battery:n26",
+          "closedCount": 31,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "forerunnerventures:oura-company",
+          "closedCount": 29,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "bvp:unframe-ai",
+          "closedCount": 25,
+          "providerId": "greenhouse"
+        },
+        {
+          "boardKey": "forerunnerventures:stress-free",
+          "closedCount": 25,
+          "providerId": "greenhouse"
+        }
+      ],
+      "totals7d": {
+        "changed": 10231,
+        "closed": 2816,
+        "new": 2592,
+        "reopened": 65
+      },
+      "windowDays": 7,
+      "windowStart": "2026-06-25T08:33:21.099662Z"
+    },
     "top": {
       "companies": [
         {
@@ -1709,7 +1863,11 @@
     "indexableCount": 64739,
     "indexableIdIndexFile": "jobs-indexable-ids.json",
     "indexableIdIndexPath": "/data/openopps-search/jobs-indexable-ids.json",
-    "root": "/data/openopps-search/jobs-details"
+    "root": "/data/openopps-search/jobs-details",
+    "tierCounts": {
+      "T1": 13627,
+      "T2": 64739
+    }
   },
   "entities": {
     "boards": {
@@ -2292,7 +2450,9 @@
         "lastSeenAt",
         "closedAt",
         "contentHash",
-        "payloadHash"
+        "payloadHash",
+        "seniority",
+        "daysOpen"
       ],
       "count": 88800,
       "detailPath": "/data/openopps-search/jobs-details/{bucket}.json",
@@ -25643,6 +25803,13 @@
       "GBP",
       "JPY",
       "USD"
+    ],
+    "seniorities": [
+      "Executive",
+      "Junior",
+      "Manager",
+      "Principal",
+      "Senior"
     ],
     "skills": [
       "account executive",
@@ -201473,5 +201640,5 @@
       }
     ]
   },
-  "version": 4
+  "version": 5
 }

@@ -35,6 +35,7 @@ type ExplorerDashboardProps = {
 	loading: boolean;
 	warning?: string | null;
 	onInspectRows: () => void;
+	onRetry?: () => void;
 };
 
 type DashboardModel = SearchDashboard & {
@@ -46,6 +47,7 @@ export function ExplorerDashboard({
 	loading,
 	warning,
 	onInspectRows,
+	onRetry,
 }: ExplorerDashboardProps) {
 	const dashboard = buildDashboardModel(manifest);
 	const suggestionCount = countSuggestions(manifest);
@@ -76,8 +78,13 @@ export function ExplorerDashboard({
 			</div>
 
 			{warning ? (
-				<div className="rounded-[var(--opps-radius-lg)] border border-warning/50 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
-					{warning}
+				<div className="flex flex-col gap-2 rounded-[var(--opps-radius-lg)] border border-warning/50 bg-warning/10 px-3 py-2 text-sm text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
+					<span>{warning}</span>
+					{onRetry ? (
+						<Button type="button" variant="outline" size="sm" onClick={onRetry}>
+							Retry index
+						</Button>
+					) : null}
 				</div>
 			) : null}
 

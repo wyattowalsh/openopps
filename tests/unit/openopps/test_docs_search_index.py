@@ -18,6 +18,9 @@ build_search_index = cast(
     _SEARCH_INDEX_NAMESPACE["build_search_index"],
 )
 SEARCH_INDEX_VERSION = cast(int, _SEARCH_INDEX_NAMESPACE["SEARCH_INDEX_VERSION"])
+DETAIL_DESCRIPTION_MAX_LEN = cast(
+    int, _SEARCH_INDEX_NAMESPACE["DETAIL_DESCRIPTION_MAX_LEN"]
+)
 INITIAL_JOB_LIMIT = cast(int, _SEARCH_INDEX_NAMESPACE["INITIAL_JOB_LIMIT"])
 PROVIDER_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["PROVIDER_COLUMNS"])
 BOARD_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["BOARD_COLUMNS"])
@@ -29,10 +32,42 @@ is_indexable_job_detail = cast(
     "Callable[[dict[str, Any]], bool]",
     _SEARCH_INDEX_NAMESPACE["_is_indexable_job_detail"],
 )
+safe_job_external_url = cast(
+    "Callable[[Any], str | None]",
+    _SEARCH_INDEX_NAMESPACE["_safe_job_external_url"],
+)
 detail_bucket = cast(
     "Callable[[str], str]",
     _SEARCH_INDEX_NAMESPACE["_detail_bucket"],
 )
+
+
+def test_detail_shards_use_tiered_payloads(tmp_path: Path) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    detail_root = output_dir / "jobs-details"
+    records: dict[str, dict[str, Any]] = {}
+    for bucket_path in detail_root.glob("*.json"):
+        records.update(_read_json(bucket_path))
+    rich = records["job-rich"]
+    thin = records["job-thin"]
+    assert rich["detailTier"] == "T2"
+    assert thin["detailTier"] == "T1"
+    assert rich["description"]
+    assert len(rich["description"]) <= DETAIL_DESCRIPTION_MAX_LEN
+    assert "<" not in rich["description"]
+    assert "descriptionHtml" not in rich
+    assert "description" not in thin
+    assert "descriptionHtml" not in thin
+    assert "payloadSnapshots" not in rich
+    assert thin["status"] == "open"
+    assert rich["status"] == "open"
+
+    manifest = _read_json(output_dir / "manifest.json")
+    assert manifest["detailShards"]["tierCounts"] == {"T1": 1, "T2": 1}
 
 
 def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
@@ -195,10 +230,33 @@ def test_search_index_manifest_facets_are_nonblank_and_sorted(tmp_path: Path) ->
     assert manifest["dashboard"]["dataQuality"]
 
 
+def test_search_index_derives_seniority_when_extra_payload_missing(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    columns = manifest["entities"]["jobs"]["columns"]
+    seniority_index = columns.index("seniority")
+    rows = _read_job_rows(output_dir, manifest)
+    open_row = next(row for row in rows if row[columns.index("status")] == "open")
+    assert open_row[seniority_index] == "Principal"
+    assert "Principal" in manifest["facets"]["seniorities"]
+
+
 def test_is_indexable_job_detail_matches_docs_runtime_rules() -> None:
     assert is_indexable_job_detail(
         {
             "status": "open",
+            "title": "Staff Engineer",
+            "company": "Acme",
+            "description": "Build platform systems.",
+            "postedAt": "2026-01-01T00:00:00Z",
+            "postingUrl": "https://acme.example/jobs/1",
+        }
+    )
+    assert is_indexable_job_detail(
+        {
             "title": "Staff Engineer",
             "company": "Acme",
             "description": "Build platform systems.",
@@ -248,6 +306,16 @@ def test_is_indexable_job_detail_matches_docs_runtime_rules() -> None:
     )
 
 
+def test_safe_job_external_url_requires_absolute_hostless_free_urls() -> None:
+    assert safe_job_external_url("https://acme.example/jobs/1") == (
+        "https://acme.example/jobs/1"
+    )
+    assert safe_job_external_url("/jobs/1") is None
+    assert safe_job_external_url("//acme.example/jobs/1") is None
+    assert safe_job_external_url("http:///jobs/1") is None
+    assert safe_job_external_url("https://user:pass@acme.example/jobs/1") is None
+
+
 def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     artifact_dir = repo_root / "docs" / "public" / "data" / "openopps-search"
@@ -255,11 +323,15 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     manifest = _read_json(artifact_dir / "manifest.json")
 
     artifact_version = manifest["version"]
-    assert artifact_version in {3, SEARCH_INDEX_VERSION}
+    assert artifact_version in {3, 4, SEARCH_INDEX_VERSION}
     assert manifest["defaultEntity"] == "jobs"
     assert "detailShards" in manifest
     job_columns = (
-        JOB_COLUMNS if artifact_version == SEARCH_INDEX_VERSION else LEGACY_JOB_COLUMNS
+        JOB_COLUMNS
+        if artifact_version == SEARCH_INDEX_VERSION
+        else LEGACY_JOB_COLUMNS
+        if artifact_version < SEARCH_INDEX_VERSION
+        else JOB_COLUMNS[:28]
     )
 
     expected_columns = {
@@ -279,9 +351,20 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
         assert manifest["entities"][entity]["count"] == chunk["count"]
         assert all(len(row) == len(columns) for row in chunk["rows"])
 
+    providers_chunk = _read_json(artifact_dir / "providers.json")
+    provider_id_index = PROVIDER_COLUMNS.index("providerId")
+    support_level_index = PROVIDER_COLUMNS.index("supportLevel")
+    unsupported_with_provider_ids = [
+        row
+        for row in providers_chunk["rows"]
+        if row[support_level_index] == "unsupported" and row[provider_id_index]
+    ]
+    assert unsupported_with_provider_ids
+
     job_entity = manifest["entities"]["jobs"]
     assert not (artifact_dir / "jobs.json").exists()
     assert job_entity["initialPath"] == "/data/openopps-search/jobs/latest.json"
+    assert (artifact_dir / job_entity["file"]).is_file()
     assert job_entity["chunks"]
     latest_jobs = _read_json(artifact_dir / "jobs" / "latest.json")
     assert latest_jobs["version"] == artifact_version
@@ -304,6 +387,14 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     detail_id_index = _read_json(artifact_dir / detail_shards["idIndexFile"])
     assert detail_id_index.get("version", artifact_version) == artifact_version
     assert detail_id_index["count"] == len(detail_id_index["ids"])
+    indexable_ids: list[str] = []
+    if artifact_version == SEARCH_INDEX_VERSION:
+        indexable_id_index = _read_json(
+            artifact_dir / detail_shards["indexableIdIndexFile"]
+        )
+        assert indexable_id_index.get("version", artifact_version) == artifact_version
+        assert indexable_id_index["count"] == len(indexable_id_index["ids"])
+        indexable_ids = [str(job_id) for job_id in indexable_id_index["ids"]]
     assert detail_shards["count"] == len(open_job_ids) == manifest["openJobCount"]
     assert (
         sum(bucket["count"] for bucket in detail_shards["buckets"].values())
@@ -313,6 +404,7 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     disk_bucket_names = {path.stem for path in detail_root.glob("*.json")}
     assert disk_bucket_names == manifest_bucket_names
     detail_ids: set[str] = set()
+    detail_records: dict[str, dict[str, Any]] = {}
     for bucket, details in detail_shards["buckets"].items():
         bucket_path = detail_root / f"{bucket}.json"
         assert bucket_path.is_file()
@@ -322,9 +414,16 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
             assert detail["id"] == job_id
             assert detail_bucket(job_id) == bucket
             detail_ids.add(job_id)
+            detail_records[job_id] = detail
     assert not any(detail_root.glob("*/*.json"))
     assert detail_ids == set(open_job_ids)
     assert set(detail_id_index["ids"]) == detail_ids
+    assert set(indexable_ids) <= detail_ids
+    assert all("status" in detail for detail in detail_records.values())
+    assert all(
+        is_indexable_job_detail(detail_records[job_id])
+        for job_id in indexable_ids
+    )
     assert len(_artifact_files(artifact_dir)) <= 400
 
 
@@ -356,6 +455,7 @@ def _read_json(path: Path) -> Any:
 def _read_job_rows(artifact_dir: Path, manifest: dict[str, Any]) -> list[list[Any]]:
     rows: list[list[Any]] = []
     for chunk in manifest["entities"]["jobs"]["chunks"]:
+        assert (artifact_dir / chunk["file"]).is_file()
         payload = _read_json(artifact_dir / chunk["file"])
         assert payload["count"] == len(payload["rows"])
         rows.extend(payload["rows"])
@@ -665,6 +765,243 @@ def _write_search_index_db(tmp_path: Path) -> Path:
                     "2026-01-10T00:00:00Z",
                     "2026-01-14T00:00:00Z",
                     "2026-01-10T00:00:00Z",
+                ),
+            ],
+        )
+    return db_path
+
+
+def _write_tiered_shard_db(tmp_path: Path) -> Path:
+    db_path = tmp_path / "tiered.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE job_version_locations (
+                id TEXT PRIMARY KEY,
+                job_version_id TEXT,
+                ordinal INTEGER,
+                label TEXT
+            );
+            CREATE TABLE job_version_skills (
+                id TEXT PRIMARY KEY,
+                job_version_id TEXT,
+                ordinal INTEGER,
+                name TEXT,
+                level TEXT
+            );
+            CREATE TABLE job_version_skill_keywords (
+                id TEXT PRIMARY KEY,
+                skill_id TEXT,
+                ordinal INTEGER,
+                keyword TEXT
+            );
+            CREATE TABLE boards (
+                key TEXT PRIMARY KEY,
+                source_key TEXT,
+                source_keys TEXT,
+                name TEXT,
+                domain TEXT,
+                website_url TEXT,
+                staff_count INTEGER,
+                num_jobs_hint INTEGER,
+                synced_at TEXT
+            );
+            CREATE TABLE board_providers (
+                id TEXT PRIMARY KEY,
+                source_key TEXT,
+                board_key TEXT,
+                provider_id TEXT,
+                label TEXT,
+                support_level TEXT,
+                count_hint INTEGER,
+                board_url TEXT,
+                last_status TEXT,
+                detected_at TEXT
+            );
+            CREATE TABLE jobs (
+                id TEXT PRIMARY KEY,
+                board_key TEXT,
+                provider_id TEXT,
+                remote_id TEXT,
+                status TEXT,
+                current_version_id TEXT,
+                first_seen_at TEXT,
+                last_seen_at TEXT,
+                synced_at TEXT
+            );
+            CREATE TABLE job_versions (
+                id TEXT PRIMARY KEY,
+                job_id TEXT,
+                title TEXT,
+                locations TEXT,
+                department TEXT,
+                team TEXT,
+                workplace_type TEXT,
+                company TEXT,
+                employment_type TEXT,
+                remote TEXT,
+                description TEXT,
+                description_html TEXT,
+                responsibilities TEXT,
+                qualifications TEXT,
+                skills TEXT,
+                job_description TEXT,
+                compensation TEXT,
+                experience TEXT,
+                salary TEXT,
+                salary_min REAL,
+                salary_max REAL,
+                salary_currency TEXT,
+                posting_url TEXT,
+                apply_url TEXT,
+                posted_at TEXT,
+                updated_at TEXT,
+                created_at TEXT,
+                extra_payload TEXT
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (
+                key, source_key, name, domain, website_url, staff_count,
+                num_jobs_hint, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "a16z:acme",
+                "a16z",
+                "Acme",
+                "acme.example",
+                "https://acme.example/jobs",
+                10,
+                2,
+                "2026-02-03T04:05:06.123456Z",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO board_providers (
+                id, source_key, board_key, provider_id, label, support_level,
+                count_hint, board_url, last_status, detected_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "route-1",
+                "a16z",
+                "a16z:acme",
+                "greenhouse",
+                "Greenhouse",
+                "jobs",
+                2,
+                "https://boards.greenhouse.io/acme",
+                "active",
+                "2026-02-02T00:00:00Z",
+            ),
+        )
+        conn.executemany(
+            """
+            INSERT INTO jobs (
+                id, board_key, provider_id, remote_id, status,
+                current_version_id, first_seen_at, last_seen_at, synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "job-rich",
+                    "a16z:acme",
+                    "greenhouse",
+                    "rich-1",
+                    "open",
+                    "version-rich",
+                    "2026-01-01T00:00:00Z",
+                    "2026-02-03T04:05:06.123456Z",
+                    "2026-02-03T00:00:00Z",
+                ),
+                (
+                    "job-thin",
+                    "a16z:acme",
+                    "greenhouse",
+                    "thin-1",
+                    "open",
+                    "version-thin",
+                    "2026-01-15T00:00:00Z",
+                    "2026-02-03T04:05:06.123456Z",
+                    "2026-02-03T00:00:00Z",
+                ),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO job_versions (
+                id, job_id, title, locations, department, team, workplace_type,
+                company, employment_type, remote, description, description_html,
+                responsibilities, qualifications, skills, job_description,
+                compensation, experience, salary, salary_min, salary_max,
+                salary_currency, posting_url, apply_url, posted_at, updated_at,
+                created_at, extra_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "version-rich",
+                    "job-rich",
+                    "Staff Engineer",
+                    '["Remote"]',
+                    "Engineering",
+                    None,
+                    "Remote",
+                    "Acme",
+                    "Full-time",
+                    "Full",
+                    "<p>" + ("Build platform systems. " * 300) + "</p>",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "https://acme.example/jobs/rich",
+                    None,
+                    "2026-01-01T00:00:00Z",
+                    "2026-02-01T00:00:00Z",
+                    "2026-02-01T00:00:00Z",
+                    None,
+                ),
+                (
+                    "version-thin",
+                    "job-thin",
+                    "Untitled",
+                    '[]',
+                    None,
+                    None,
+                    None,
+                    "Acme",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "2026-01-15T00:00:00Z",
+                    "2026-02-01T00:00:00Z",
+                    "2026-02-01T00:00:00Z",
+                    None,
                 ),
             ],
         )

@@ -3,10 +3,9 @@ import type { Page } from "@playwright/test";
 
 async function waitForFirstJob(page: Page) {
 	const firstJob = page
-		.getByRole("list", { name: /open jobs results/i })
-		.getByRole("listitem")
-		.first()
-		.getByRole("button");
+		.getByRole("listbox", { name: /open jobs results/i })
+		.getByRole("option")
+		.first();
 	await expect(firstJob).toBeVisible({ timeout: 30_000 });
 	return firstJob;
 }
@@ -37,6 +36,10 @@ test("jobs board supports local workflow controls without analytics", async ({
 	await expect(page.getByText(/new or changed/).first()).toBeVisible();
 
 	await firstJob.click();
+	await expect(page.getByRole("dialog", { name: /job preview/i })).toHaveCount(0);
+	expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
+		"hidden",
+	);
 	await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible();
 	await page.getByRole("button", { name: /^save$/i }).click();
 	await expect(page.getByText("saved").first()).toBeVisible();
@@ -66,10 +69,10 @@ test("jobs board results support keyboard preview activation", async ({ page }) 
 	await page.goto("/");
 	await waitForFirstJob(page);
 
-	const list = page.getByRole("list", { name: /open jobs results/i });
+	const list = page.getByRole("listbox", { name: /open jobs results/i });
 	await list.focus();
 	await page.keyboard.press("ArrowDown");
-	await expect(list.getByRole("button").first()).toHaveAttribute(
+	await expect(list.getByRole("option").first()).toHaveAttribute(
 		"data-focused",
 		"true",
 	);

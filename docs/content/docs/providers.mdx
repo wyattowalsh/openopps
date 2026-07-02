@@ -48,7 +48,23 @@ Each packaged source includes taxonomy metadata such as `providerType`, `coverag
 
 ## Public No-Auth Board Providers
 
-Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager are job-capable in v0.1 only through public unauthenticated board routes. BambooHR uses public careers endpoints such as `/careers/list` and `/careers/{job_id}/detail`; OpenOpps does not call authenticated BambooHR ATS APIs. WP Job Manager requires an explicit `/wp-json/wp/v2/job-listings` or `/jm-ajax/get_listings/` endpoint and is not inferred from arbitrary WordPress sites.
+Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager are job-capable in v0.1 only through public unauthenticated board routes. Workable fetches list and per-job detail endpoints separately so `raw_listing` and `raw_detail` stay distinct for audit replay. BambooHR uses public careers endpoints such as `/careers/list` and `/careers/{job_id}/detail`; OpenOpps does not call authenticated BambooHR ATS APIs. WP Job Manager requires an explicit `/wp-json/wp/v2/job-listings` or `/jm-ajax/get_listings/` endpoint and is not inferred from arbitrary WordPress sites.
+
+## Surplus field promotion
+
+Greenhouse list responses with `content=true` promote `metadata`, `requisition_id`, `language`, and department/office hierarchy into `provider_extras`; prospect posts without `internal_job_id` are tagged `posting_kind=prospect`. See the S1–S4 surplus taxonomy in [Data Model](/docs/data-model#ingest-surplus-taxonomy-s1s4) and `openspec/changes/ingest-data-surplus/` for the full promotion manifest.
+
+| Provider | Shipped in v0.1 | Planned (manifest) |
+| -------- | --------------- | ------------------ |
+| Greenhouse | `metadata`, `requisition_id`, `language`, department/office trees, `posting_kind` | `pay_input_ranges` (optional N+1 fetch) |
+| Workable | `raw_listing` / `raw_detail` split | — |
+| Lever | — | `categories`, epoch dates, `sections` |
+| Ashby | — | `isListed`, compensation, `workplaceType` |
+| BambooHR | — | `jobOpening`, requisition ids |
+| Workday | — | `postedOn`, `jobDescription` |
+| Rippling | — | `payRangeDetails`, `workplaceType` |
+| Teamtailor | — | RSS limits; optional HTML detail fetch |
+| WP Job Manager | — | meta keys |
 
 ## Provider Coverage
 

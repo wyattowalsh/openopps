@@ -44,7 +44,7 @@ export async function fetchJson<T>(path: string): Promise<T> {
 
 export async function loadSearchManifest(path = SEARCH_MANIFEST_PATH) {
 	const manifest = await fetchJson<SearchManifest>(path);
-	validateSearchManifest(manifest);
+	validateCachedJson(path, manifest, validateSearchManifest);
 	return manifest;
 }
 
@@ -55,7 +55,7 @@ export async function loadInitialJobsChunk(manifest: SearchManifest) {
 		return loadEntityChunk(manifest, "jobs");
 	}
 	const chunk = await fetchJson<SearchChunk>(path);
-	validateSearchChunk("jobs", chunk);
+	validateCachedJson(path, chunk, (value) => validateSearchChunk("jobs", value));
 	return chunk;
 }
 
@@ -79,7 +79,7 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 		);
 	}
 	const chunk = await fetchJson<SearchChunk>(details.path);
-	validateSearchChunk(entity, chunk);
+	validateCachedJson(details.path, chunk, (value) => validateSearchChunk(entity, value));
 	return chunk;
 }
 
@@ -137,8 +137,11 @@ async function loadChunkRefs(entity: Entity, refs: SearchChunkRef[]) {
 		while (cursor < orderedRefs.length) {
 			const index = cursor;
 			cursor += 1;
-			const chunk = await fetchJson<SearchChunk>(orderedRefs[index].path);
-			validateSearchChunk(entity, chunk);
+			const ref = orderedRefs[index];
+			const chunk = await fetchJson<SearchChunk>(ref.path);
+			validateCachedJson(ref.path, chunk, (value) =>
+				validateSearchChunk(entity, value),
+			);
 			chunks[index] = chunk;
 		}
 	}
@@ -149,4 +152,17 @@ async function loadChunkRefs(entity: Entity, refs: SearchChunkRef[]) {
 	);
 	await Promise.all(workers);
 	return chunks;
+}
+
+function validateCachedJson<T>(
+	path: string,
+	value: T,
+	validator: (value: T) => void,
+) {
+	try {
+		validator(value);
+	} catch (caught) {
+		jsonCache.delete(path);
+		throw caught;
+	}
 }

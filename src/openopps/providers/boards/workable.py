@@ -66,7 +66,7 @@ class WorkableProvider:
             detail = (
                 await self._fetch_detail(client, token, shortcode) if shortcode else {}
             )
-            normalized.append(self._normalize(board, token, item | detail))
+            normalized.append(self._normalize(board, token, item, detail))
         return normalized
 
     async def check_jobs(
@@ -119,8 +119,13 @@ class WorkableProvider:
         return data
 
     def _normalize(
-        self, board: BoardRecord, token: str, posting: dict[str, Any]
+        self,
+        board: BoardRecord,
+        token: str,
+        listing: dict[str, Any],
+        detail: dict[str, Any],
     ) -> JobRecord:
+        posting = {**listing, **detail}
         remote_id = str(
             first_present(
                 posting.get("shortcode"),
@@ -186,7 +191,8 @@ class WorkableProvider:
                     posting.get("created_at"),
                 )
             ),
-            raw_listing=_raw(posting),
+            raw_listing=_raw(listing),
+            raw_detail=_raw(detail) if detail else {},
         )
 
 

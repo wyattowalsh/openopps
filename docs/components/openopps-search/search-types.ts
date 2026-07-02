@@ -71,6 +71,28 @@ export type SearchDashboard = {
 		jobChunks: number;
 		detailShardBuckets: number;
 		detailShardRecords: number;
+		detailShardTiers?: Record<string, number>;
+	};
+	sync?: {
+		windowDays: number;
+		windowStart: string | null;
+		runCount: number;
+		totals7d: {
+			new: number;
+			changed: number;
+			closed: number;
+			reopened: number;
+		};
+		medianDaysOpenByProvider: Array<{
+			providerId: string;
+			medianDaysOpen: number;
+			count: number;
+		}>;
+		topBoardsByChurn: Array<{
+			boardKey: string;
+			providerId: string;
+			closedCount: number;
+		}>;
 	};
 };
 
@@ -106,6 +128,9 @@ export type SearchManifest = {
 		format?: "bucket-map";
 		idIndexPath?: string;
 		idIndexFile?: string;
+		indexableIdIndexPath?: string;
+		indexableIdIndexFile?: string;
+		indexableCount?: number;
 		bucketCount: number;
 		count: number;
 		buckets?: Record<string, { path: string; count: number }>;
@@ -125,6 +150,7 @@ export type SearchManifest = {
 		companies?: string[];
 		skills?: string[];
 		salaryCurrencies?: string[];
+		seniorities?: string[];
 	};
 	suggestions?: {
 		sources?: SearchSuggestion[];
@@ -191,6 +217,7 @@ export type JobDetail = {
 	version?: number | null;
 	contentHash?: string | null;
 	payloadHash?: string | null;
+	detailTier?: "T1" | "T2" | string | null;
 	jobExtra?: Record<string, unknown> | null;
 	versionExtra?: Record<string, unknown> | null;
 	payloadSnapshots?: Array<{

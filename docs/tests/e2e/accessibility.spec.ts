@@ -4,10 +4,9 @@ import type { Page } from "@playwright/test";
 
 async function waitForFirstJob(page: Page) {
 	const firstJob = page
-		.getByRole("list", { name: /open jobs results/i })
-		.getByRole("listitem")
-		.first()
-		.getByRole("button");
+		.getByRole("listbox", { name: /open jobs results/i })
+		.getByRole("option")
+		.first();
 	await expect(firstJob).toBeVisible({ timeout: 30_000 });
 	return firstJob;
 }
@@ -23,7 +22,7 @@ test("jobs workbench and local settings pass baseline accessibility checks", asy
 
 	const workbenchScan = await new AxeBuilder({ page })
 		.include("main")
-		.exclude('[role="list"][aria-label="Open jobs results"]')
+		.exclude('[role="listbox"][aria-label="Open jobs results"]')
 		.disableRules(["color-contrast"])
 		.analyze();
 	expect(workbenchScan.violations).toEqual([]);

@@ -641,6 +641,18 @@ html > body[data-scroll-locked] {
   }
 }
 
+@media (pointer: coarse) {
+  .group\/button {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+
+  .opps-input,
+  .opps-select {
+    min-height: 2.5rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

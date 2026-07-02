@@ -9,7 +9,7 @@ export function ExplorerMetric({ label, value }: { label: string; value?: number
 			<div className="font-heading text-xl font-semibold text-primary">
 				{formatCount(value)}
 			</div>
-			<div className="mt-1 truncate font-mono text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+			<div className="mt-1 truncate font-mono text-[0.68rem] font-semibold tracking-normal text-muted-foreground">
 				{label}
 			</div>
 		</div>

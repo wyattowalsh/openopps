@@ -31,8 +31,16 @@ function hardenExternalLinks(element: Element) {
 		return;
 	}
 	try {
-		const parsed = new URL(href, "https://example.com");
-		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		if (!href.startsWith("http://") && !href.startsWith("https://")) {
+			element.removeAttribute("href");
+			return;
+		}
+		const parsed = new URL(href);
+		if (
+			(parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+			parsed.username ||
+			parsed.password
+		) {
 			element.removeAttribute("href");
 			return;
 		}

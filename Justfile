@@ -16,7 +16,7 @@ setup:
 quick: cli-help test-cli openspec-status
 
 # Full local validation graph matching CI lanes.
-ci: diff-check lock-check openspec-validate-all test-cov docs-check docs-build docs-test docs-e2e docs-lint kaggle-meta cli-help
+ci: diff-check lock-check openspec-validate-all test-cov docs-check docs-build docs-test docs-e2e docs-a11y docs-lint kaggle-meta cli-help
 
 # Check that uv.lock is current for pyproject.toml.
 lock-check:

@@ -10,7 +10,7 @@ OpenOpps SHALL provide a generated Kaggle workflow for `wyattowalsh/openoppsdb` 
 - **THEN** it installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` unless an explicit controlled-test override is set
 - **AND** it verifies the `openopps_kaggle` runtime package and `runtime-manifest.json` from the private `wyattowalsh/openoppsdb-manager-runtime` input before running the expensive sync
 - **AND** it copies the newest prior `/kaggle/input/**/openoppsdb.sqlite` file into `/kaggle/working/openoppsdb/openoppsdb.sqlite` before syncing
-- **AND** it restores projected large columns from prior Parquet exports and rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed
+- **AND** it may restore large columns from prior Parquet exports when upgrading legacy thin snapshots and rehydrates the public SQLite snapshot into a fresh operational Alembic schema when needed
 - **AND** it initializes the database and runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit`
 - **AND** it captures private `sync_metrics.json`, `status.json`, and `coverage.json` evidence
 - **AND** it runs `python -m openopps_kaggle` to backfill derived skill helper tables, create the public bundle, write `snapshot-quality.json`, prune manager-run evidence, and stage a public upload directory
@@ -97,19 +97,19 @@ OpenOpps SHALL keep live Kaggle deployment credentialed and local/manual while p
 
 ### Requirement: Release validation checks dependency and docs workflow hygiene
 
-OpenOpps SHALL keep local contributor validation and GitHub Actions aligned for dependency locks, Python tests, docs tests, docs lint, OpenSpec validation, generated metadata, CLI smoke checks, and diff formatting.
+OpenOpps SHALL keep local contributor validation and GitHub Actions aligned for dependency locks, Python tests, docs type-check/build/unit/browser/accessibility tests, docs lint, OpenSpec validation, generated metadata, CLI smoke checks, and diff formatting.
 
 #### Scenario: Contributor runs the local release validation graph
 
 - **WHEN** a contributor runs `just ci`
-- **THEN** OpenOpps checks diff formatting, `uv lock --check`, strict OpenSpec validation, coverage-enforced Python tests, docs type-check/build/test/lint, Kaggle metadata generation, and CLI help smoke checks
+- **THEN** OpenOpps checks diff formatting, `uv lock --check`, strict OpenSpec validation, coverage-enforced Python tests, docs type-check/build/unit/browser/accessibility tests, docs lint, Kaggle metadata generation, and CLI help smoke checks
 - **AND** the graph does not conditionally skip a missing `rtk lint` executable
 
 #### Scenario: CI validates lock files and docs tests
 
 - **WHEN** GitHub Actions runs for a push, pull request, or manual dispatch
 - **THEN** CI checks `uv.lock` with `uv lock --check` before frozen Python installation
-- **AND** the docs job installs with the frozen pnpm lockfile and runs docs type-check, build, tests, and lint
+- **AND** the docs job installs with the frozen pnpm lockfile and runs docs type-check, build, unit tests, browser e2e tests, mobile accessibility tests, and lint
 
 #### Scenario: Maintainer runs optional docs checklist lint
 
