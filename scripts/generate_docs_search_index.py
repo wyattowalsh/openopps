@@ -10,12 +10,14 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 SEARCH_INDEX_VERSION = 4
 DESCRIPTION_SNIPPET_LEN = 200
 SKILL_TOKENS_MAX_LEN = 96
 DETAIL_BUCKET_COUNT = 256
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
+INDEXABLE_IDS_FILE = "jobs-indexable-ids.json"
 JOB_CHUNK_SIZE = 1000
 INITIAL_JOB_LIMIT = 250
 MAX_DETAIL_PAYLOAD_CHARS = 20_000
@@ -135,7 +137,14 @@ def build_search_index(db_path: Path, output_dir: Path) -> dict[str, Any]:
     )
     _attach_payload_snapshots(detail_records, payload_snapshots)
     jobs = _sort_job_rows(jobs)
+    indexable_job_ids = _indexable_job_detail_ids(detail_records)
+    _write_indexable_job_ids(output_dir, indexable_job_ids)
     detail_shards = _write_detail_shards(detail_root, detail_records)
+    detail_shards["indexableIdIndexPath"] = (
+        f"/data/openopps-search/{INDEXABLE_IDS_FILE}"
+    )
+    detail_shards["indexableIdIndexFile"] = INDEXABLE_IDS_FILE
+    detail_shards["indexableCount"] = len(indexable_job_ids)
 
     chunks: dict[str, tuple[list[str], list[list[Any]]]] = {
         "providers": (PROVIDER_COLUMNS, providers),
@@ -568,6 +577,90 @@ def _column_expr(
 
 def _sqlite_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
+
+
+def _clean_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _strip_html(value: str) -> str:
+    return re.sub(r"<[^>]*>", " ", value)
+
+
+def _job_detail_description_text(detail: dict[str, Any]) -> str:
+    description = _clean_text(detail.get("description"))
+    if description:
+        return description
+    return _clean_text(_strip_html(str(detail.get("descriptionHtml") or "")))
+
+
+def _safe_job_external_url(value: Any) -> str | None:
+    raw = _clean_text(value)
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+        if parsed.username or parsed.password:
+            return None
+        if parsed.scheme in {"http", "https"}:
+            return parsed.geturl()
+    except ValueError:
+        return None
+    return None
+
+
+def _primary_job_external_url(detail: dict[str, Any]) -> str | None:
+    return _safe_job_external_url(detail.get("postingUrl")) or _safe_job_external_url(
+        detail.get("applyUrl")
+    )
+
+
+def _is_indexable_job_detail(detail: dict[str, Any]) -> bool:
+    """Mirror docs/lib/jobs-static-data.ts isIndexableJobDetail criteria."""
+
+    status = _clean_text(detail.get("status")).lower()
+    has_open_status = status == "open"
+    has_core_content = bool(
+        _clean_text(detail.get("title"))
+        and _clean_text(detail.get("company"))
+        and _job_detail_description_text(detail)
+    )
+    has_date = any(
+        _parse_timestamp(value)
+        for value in (
+            detail.get("postedAt"),
+            detail.get("firstSeenAt"),
+            detail.get("versionCreatedAt"),
+        )
+    )
+    return bool(
+        has_open_status
+        and has_core_content
+        and has_date
+        and _primary_job_external_url(detail)
+    )
+
+
+def _indexable_job_detail_ids(detail_records: dict[str, dict[str, Any]]) -> list[str]:
+    return sorted(
+        job_id
+        for job_id, detail in detail_records.items()
+        if _is_indexable_job_detail(detail)
+    )
+
+
+def _write_indexable_job_ids(output_dir: Path, job_ids: Sequence[str]) -> None:
+    _write_json(
+        output_dir / INDEXABLE_IDS_FILE,
+        {
+            "version": SEARCH_INDEX_VERSION,
+            "count": len(job_ids),
+            "ids": list(job_ids),
+        },
+        compact=True,
+    )
 
 
 def _detail_bucket(job_id: str) -> str:

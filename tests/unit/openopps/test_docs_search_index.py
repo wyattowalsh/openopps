@@ -24,6 +24,11 @@ BOARD_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["BOARD_COLUMNS"])
 JOB_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["JOB_COLUMNS"])
 LEGACY_JOB_COLUMNS = JOB_COLUMNS[:23]
 DETAIL_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["DETAIL_IDS_FILE"])
+INDEXABLE_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["INDEXABLE_IDS_FILE"])
+is_indexable_job_detail = cast(
+    "Callable[[dict[str, Any]], bool]",
+    _SEARCH_INDEX_NAMESPACE["_is_indexable_job_detail"],
+)
 detail_bucket = cast(
     "Callable[[str], str]",
     _SEARCH_INDEX_NAMESPACE["_detail_bucket"],
@@ -45,6 +50,15 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
         "/data/openopps-search/jobs-detail-ids.json"
     )
     assert (output_dir / DETAIL_IDS_FILE).exists()
+    assert (output_dir / INDEXABLE_IDS_FILE).exists()
+    indexable_ids = _read_json(output_dir / INDEXABLE_IDS_FILE)
+    assert indexable_ids["version"] == SEARCH_INDEX_VERSION
+    assert indexable_ids["count"] == len(indexable_ids["ids"]) == 1
+    assert indexable_ids["ids"] == ["job-1"]
+    assert manifest["detailShards"]["indexableIdIndexPath"] == (
+        "/data/openopps-search/jobs-indexable-ids.json"
+    )
+    assert manifest["detailShards"]["indexableCount"] == 1
     assert manifest["entities"]["jobs"]["detailPath"]
     assert manifest["defaultEntity"] == "jobs"
     assert manifest["defaultFilters"] == {"jobs": {"status": "open"}}
@@ -179,6 +193,59 @@ def test_search_index_manifest_facets_are_nonblank_and_sorted(tmp_path: Path) ->
         "normalized": "canada",
     }
     assert manifest["dashboard"]["dataQuality"]
+
+
+def test_is_indexable_job_detail_matches_docs_runtime_rules() -> None:
+    assert is_indexable_job_detail(
+        {
+            "status": "open",
+            "title": "Staff Engineer",
+            "company": "Acme",
+            "description": "Build platform systems.",
+            "postedAt": "2026-01-01T00:00:00Z",
+            "postingUrl": "https://acme.example/jobs/1",
+        }
+    )
+    assert not is_indexable_job_detail(
+        {
+            "status": "closed",
+            "title": "Staff Engineer",
+            "company": "Acme",
+            "description": "Build platform systems.",
+            "postedAt": "2026-01-01T00:00:00Z",
+            "postingUrl": "https://acme.example/jobs/1",
+        }
+    )
+    assert not is_indexable_job_detail(
+        {
+            "status": "open",
+            "title": "Staff Engineer",
+            "company": "Acme",
+            "description": "Build platform systems.",
+            "postedAt": "2026-01-01T00:00:00Z",
+            "applyUrl": "javascript:alert(1)",
+        }
+    )
+    assert not is_indexable_job_detail(
+        {
+            "status": "open",
+            "title": "Staff Engineer",
+            "company": "Acme",
+            "description": "Build platform systems.",
+            "postedAt": "2026-01-01T00:00:00Z",
+            "postingUrl": "https://user:pass@acme.example/jobs/1",
+        }
+    )
+    assert not is_indexable_job_detail(
+        {
+            "status": "open",
+            "title": "Staff Engineer",
+            "company": "Acme",
+            "description": "Build platform systems.",
+            "postedAt": "2026-01-01T00:00:00Z",
+            "applyUrl": "https://user@acme.example/jobs/1",
+        }
+    )
 
 
 def test_committed_search_index_artifacts_have_runtime_schema() -> None:
