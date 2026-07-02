@@ -1205,11 +1205,17 @@ class ConsiderSourceAdapter:
     ) -> tuple[list[BoardRecord], list[BoardProviderRecord]]:
         boards: list[BoardRecord] = []
         providers: list[BoardProviderRecord] = []
+        seen_board_keys: set[str] = set()
         now = utc_now()
         for company in companies:
             remote_id = str(company.id or company.slug or company.name)
             remote_slug = company.slug or slugify(remote_id)
             board_key = source_board_key(source_key, remote_slug)
+            if board_key in seen_board_keys:
+                board_key = source_board_key(
+                    source_key, f"{remote_slug}-{slugify(remote_id)}"
+                )
+            seen_board_keys.add(board_key)
             website_url = normalize_public_website_url(
                 company.website.url if company.website else None
             )
@@ -1241,7 +1247,9 @@ class ConsiderSourceAdapter:
                         board_key=board_key,
                         provider_id=provider_id,
                         label=job_source.label,
-                        support_level=self.registry.support_level(provider_id),
+                        support_level=self.registry.source_hint_support_level(
+                            provider_id
+                        ),
                         count_hint=job_source.count,
                         raw_payload=job_source.as_raw_payload(),
                         detected_at=now,

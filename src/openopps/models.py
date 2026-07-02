@@ -873,7 +873,10 @@ class BoardProviderRecord(OpenOppsRecord):
     )
     support_level: ProviderSupport = Field(
         default=ProviderSupport.UNSUPPORTED,
-        description="Whether OpenOpps can only detect the route, fetch jobs from it, or cannot use it.",
+        description=(
+            "detect means provider metadata only; jobs means public job fetching is "
+            "available; unsupported means unknown or explicitly unusable."
+        ),
         examples=[ProviderSupport.JOBS],
     )
     count_hint: NonNegativeInt | None = Field(
@@ -2101,7 +2104,12 @@ class BoardProviderRow(SQLModel, table=True):
         default=None, description="Human-readable upstream route label."
     )
     support_level: str = SQLField(
-        index=True, min_length=1, description="Normalized provider support level."
+        index=True,
+        min_length=1,
+        description=(
+            "detect means provider metadata only; jobs means public job fetching is "
+            "available; unsupported means unknown or explicitly unusable."
+        ),
     )
     count_hint: int | None = SQLField(
         default=None, ge=0, description="Approximate provider-reported job count."

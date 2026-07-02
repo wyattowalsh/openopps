@@ -188,7 +188,7 @@
             "type": "string"
           },
           {
-            "description": "Normalized provider support level.",
+            "description": "detect means provider metadata only; jobs means public job fetching is available; unsupported means unknown or explicitly unusable.",
             "name": "support_level",
             "type": "string"
           },
@@ -1055,7 +1055,7 @@
             "type": "string"
           },
           {
-            "description": "Normalized provider support level.",
+            "description": "detect means provider metadata only; jobs means public job fetching is available; unsupported means unknown or explicitly unusable.",
             "name": "support_level",
             "type": "string"
           },

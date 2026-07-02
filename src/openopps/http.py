@@ -402,8 +402,19 @@ async def assert_public_fetch_url(url: str) -> str:
     rejects URLs whose hostname currently resolves to a non-global-routable
     address. It is *not* rebinding-proof. httpx re-resolves DNS at connect time,
     so a TOCTOU/DNS-rebinding window remains between this check and the actual
-    socket connect. Pinning the vetted IP into the connection would close that
-    gap but is out of scope here.
+    socket connect.
+
+    Mitigations today are intentionally lightweight: validate URL shape, resolve
+    once, and reject non-global addresses. They do **not** pin the vetted IP into
+    the subsequent connection, so a hostile or compromised resolver could return
+    a public address at check time and a private/metadata address when httpx
+    connects. Redirect hops are origin-checked, but each hop still performs its
+    own DNS lookup.
+
+    Closing the rebinding gap would require connect-time pinning (for example,
+    binding the client to the addresses observed here) or a trusted resolver
+    policy. That is out of scope for the v0.1 local-CLI threat model unless an
+    operator explicitly opts into stronger outbound controls later.
     """
 
     validate_public_https_url(url)

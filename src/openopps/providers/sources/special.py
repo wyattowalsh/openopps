@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urlencode, urljoin, urlparse
 
 import httpx
+from loguru import logger
 
 from openopps.http import retrying_json_request
 from openopps.models import (
@@ -466,7 +467,7 @@ class PublicPageSourceAdapter:
         candidates = _public_page_link_candidates(
             response.text, source.url, limit=page_size
         )
-        boards, providers = self._normalize_candidates(source, candidates)
+        boards, providers, normalize_meta = self._normalize_candidates(source, candidates)
         yield (
             boards,
             providers,
@@ -474,15 +475,17 @@ class PublicPageSourceAdapter:
                 "sourceUrl": source.url,
                 "candidateLinks": len(candidates),
                 "total": len(boards),
+                "boardKeyCollisions": normalize_meta["boardKeyCollisions"],
                 "note": "Best-effort public page extraction; add a dedicated source adapter for higher fidelity.",
             },
         )
 
     def _normalize_candidates(
         self, source: SourceRecord, candidates: list[dict[str, str]]
-    ) -> tuple[list[BoardRecord], list[BoardProviderRecord]]:
+    ) -> tuple[list[BoardRecord], list[BoardProviderRecord], dict[str, int]]:
         boards_by_key: dict[str, BoardRecord] = {}
         providers_by_id: dict[str, BoardProviderRecord] = {}
+        board_key_collisions = 0
         now = utc_now()
         for candidate in candidates:
             url = candidate["url"]
@@ -498,9 +501,15 @@ class PublicPageSourceAdapter:
                 if route
                 else candidate["name"]
             )
-            boards_by_key.setdefault(
-                board_key,
-                BoardRecord(
+            if board_key in boards_by_key:
+                board_key_collisions += 1
+                logger.debug(
+                    "Skipping public page board-key collision for {} ({})",
+                    board_key,
+                    url,
+                )
+            else:
+                boards_by_key[board_key] = BoardRecord(
                     key=board_key,
                     source_key=source.key,
                     remote_id=url,
@@ -515,8 +524,7 @@ class PublicPageSourceAdapter:
                         "extraction": "public_page_anchor",
                     },
                     synced_at=now,
-                ),
-            )
+                )
             if route:
                 providers_by_id.setdefault(
                     stable_id(source.key, board_key, route.provider_id),
@@ -540,9 +548,16 @@ class PublicPageSourceAdapter:
                         detected_at=now,
                     ),
                 )
+        if board_key_collisions:
+            logger.debug(
+                "Public page extraction skipped {} duplicate board keys for {}",
+                board_key_collisions,
+                source.key,
+            )
         return (
             [boards_by_key[key] for key in sorted(boards_by_key)],
             [providers_by_id[key] for key in sorted(providers_by_id)],
+            {"boardKeyCollisions": board_key_collisions},
         )
 
 

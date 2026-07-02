@@ -1231,3 +1231,53 @@ async def test_wpjobmanager_check_jobs_count_paths_and_invalid_payload():
                 board(),
                 route("wpjobmanager", host="broken.example.com"),
             )
+
+
+def test_consider_normalize_companies_disambiguates_board_key_collisions() -> None:
+    from openopps.models import ConsiderCompany
+    from openopps.providers.sources.consider import ConsiderSourceAdapter
+
+    adapter = ConsiderSourceAdapter(OpenOppsSettings())
+    companies = [
+        ConsiderCompany(id="company-1", slug="acme", name="Acme One"),
+        ConsiderCompany(id="company-2", slug="acme", name="Acme Two"),
+    ]
+
+    boards, _providers = adapter._normalize_companies("yc", companies)
+
+    assert len(boards) == 2
+    assert boards[0].key != boards[1].key
+    assert {board.key for board in boards} == {"yc:acme", "yc:acme-company-2"}
+
+
+def test_public_page_normalize_candidates_counts_board_key_collisions() -> None:
+    from openopps.models import SourceRecord
+    from openopps.providers.sources.special import PublicPageSourceAdapter
+
+    adapter = PublicPageSourceAdapter(OpenOppsSettings())
+    source = SourceRecord(
+        key="demo",
+        url="https://demo.example/portfolio",
+        provider_id="public_page",
+    )
+    candidates = [
+        {
+            "url": "https://acme.example/about",
+            "name": "Acme",
+            "host": "acme.example",
+            "path": "/about",
+            "text": "Acme",
+        },
+        {
+            "url": "https://acme.example/jobs",
+            "name": "Acme",
+            "host": "acme.example",
+            "path": "/jobs",
+            "text": "Acme jobs",
+        },
+    ]
+
+    boards, _providers, meta = adapter._normalize_candidates(source, candidates)
+
+    assert len(boards) == 1
+    assert meta["boardKeyCollisions"] == 1

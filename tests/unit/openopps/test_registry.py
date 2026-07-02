@@ -61,6 +61,16 @@ def test_registry_detects_ashby_hosted_board_url():
     assert detected.board_url == "https://jobs.ashbyhq.com/acme"
 
 
+def test_registry_treats_source_reported_unknown_provider_hints_as_detect_only():
+    registry = provider_registry(plugin_registry=PluginRegistry((), (), ()))
+
+    assert registry.support_level("smartrecruiters") == ProviderSupport.UNSUPPORTED
+    assert (
+        registry.source_hint_support_level("smartrecruiters")
+        == ProviderSupport.DETECT
+    )
+
+
 def test_registry_detects_provider_urls_from_indexed_provider_metadata():
     registry = provider_registry(plugin_registry=PluginRegistry((), (), ()))
 

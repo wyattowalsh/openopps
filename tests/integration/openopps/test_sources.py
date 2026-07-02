@@ -78,6 +78,48 @@ async def test_consider_a16z_normalizes_boards_and_provider_hints():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_consider_source_preserves_unknown_provider_hints_as_detect_only():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.post("https://jobs.a16z.com/api-boards/search-companies").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "companies": [
+                    {
+                        "id": "Acme",
+                        "slug": "acme",
+                        "name": "Acme",
+                        "numJobs": 3,
+                        "jobSources": [
+                            {
+                                "id": "smartrecruiters",
+                                "label": "SmartRecruiters",
+                                "count": 3,
+                            }
+                        ],
+                    }
+                ],
+                "total": 1,
+                "meta": {"size": 1},
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in ConsiderA16zSourceAdapter(settings).iter_boards(
+                client, A16Z_SOURCE, page_size=1
+            )
+        ]
+
+    _boards, providers, _meta = pages[0]
+    assert providers[0].provider_id == "smartrecruiters"
+    assert providers[0].support_level == "detect"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_getro_normalizes_company_boards():
     settings = OpenOppsSettings(cache_enabled=False)
     respx.post("https://api.getro.com/api/v2/collections/8672/search/companies").mock(

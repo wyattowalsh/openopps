@@ -41,6 +41,14 @@ class ProviderRegistry:
             return definition.support_level
         return ProviderSupport.UNSUPPORTED
 
+    def source_hint_support_level(self, provider_id: str) -> ProviderSupport:
+        """Classify a provider id emitted by an upstream board source."""
+
+        support_level = self.support_level(provider_id)
+        if support_level == ProviderSupport.UNSUPPORTED:
+            return ProviderSupport.DETECT
+        return support_level
+
     def detect_url(
         self,
         url: str,
