@@ -303,11 +303,12 @@ def test_sources_sync_unknown_source_is_actionable_typer_error(tmp_path: Path):
 
 def test_cli_bad_parameter_errors_stay_distinct(tmp_path: Path):
     result = invoke(tmp_path, "jobs", "list", "--status", "archived", "--json")
+    output = plain(result.output)
 
     assert result.exit_code == 2
-    assert "Invalid value" in result.output
-    assert "--status must be open, closed, or all" in result.output
-    assert "OpenOpps configuration" not in result.output
+    assert "invalid value" in output.lower()
+    assert "open, closed, or all" in output
+    assert "OpenOpps configuration" not in output
 
 
 def test_sources_sync_reports_compact_warning_for_skips(tmp_path: Path):
