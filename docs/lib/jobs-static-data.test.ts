@@ -33,6 +33,7 @@ describe("jobs static data", () => {
 
 		const detail = getStaticJobDetail(ids[0]);
 		expect(detail?.id).toBe(ids[0]);
+		expect(detail?.status).toBeDefined();
 		expect(formatJobDetailTitle(detail!)).toContain(
 			detail?.title?.trim() || "Untitled role",
 		);
@@ -47,30 +48,36 @@ describe("jobs static data", () => {
 		);
 	});
 
-	it("does not publish thin or unqualified job details in job sitemaps", () => {
+	it("publishes only qualified job details in job sitemaps", () => {
 		const manifest = getStaticSearchManifest();
-		if (manifest.version < 4) {
-			expect(manifest.source.tables).not.toContain("job_payload_snapshots");
+		const indexableIds = getIndexableJobDetailIds();
+		const expectedCount = manifest.detailShards?.indexableCount ?? 0;
+		expect(indexableIds).toHaveLength(expectedCount);
+		expect(getJobSitemapCount()).toBe(
+			Math.ceil(expectedCount / 45000),
+		);
+		if (expectedCount === 0) {
+			expect(getJobSitemapUrls(0)).toHaveLength(0);
+		} else {
+			expect(getJobSitemapUrls(0)).toHaveLength(
+				Math.min(expectedCount, 45000),
+			);
 		}
-		expect(getIndexableJobDetailIds()).toHaveLength(0);
-		expect(getJobSitemapCount()).toBe(0);
-		const urls = getJobSitemapUrls(0);
-		expect(urls).toHaveLength(0);
 	});
 
 	it("keeps JobPosting JSON-LD behind data quality and kill-switch gates", () => {
 		const detail = getStaticJobDetail(getStaticJobDetailIds()[0]);
 		expect(detail).toBeTruthy();
+		const detailIsIndexable = isIndexableJobDetail(detail!);
 		delete process.env.OPENOPPS_JOBPOSTING_STRUCTURED_DATA;
 		delete process.env.NEXT_PUBLIC_OPENOPPS_JOBPOSTING_STRUCTURED_DATA;
 		expect(jobPostingJsonLdEnabled()).toBe(false);
-		expect(isIndexableJobDetail(detail!)).toBe(false);
 		expect(shouldEmitJobPostingJsonLd(detail!)).toBe(false);
 		expect(jobPostingJsonLd(detail!)).toBeNull();
 
 		process.env.OPENOPPS_JOBPOSTING_STRUCTURED_DATA = "1";
 		expect(jobPostingJsonLdEnabled()).toBe(true);
-		expect(shouldEmitJobPostingJsonLd(detail!)).toBe(false);
+		expect(shouldEmitJobPostingJsonLd(detail!)).toBe(detailIsIndexable);
 
 		const completeDetail = {
 			id: "source:provider:job-1",
@@ -88,6 +95,10 @@ describe("jobs static data", () => {
 			title: "Platform Engineer",
 			url: "https://example.com/jobs/1",
 		});
+		expect(isIndexableJobDetail({ ...completeDetail, status: "" })).toBe(true);
+		expect(
+			isIndexableJobDetail({ ...completeDetail, status: "closed" }),
+		).toBe(false);
 	});
 
 	it("returns null for unknown or malformed job ids instead of throwing", () => {

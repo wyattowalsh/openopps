@@ -145,7 +145,7 @@ export function primaryJobExternalUrl(detail: JobDetail) {
 
 export function isIndexableJobDetail(detail: JobDetail) {
 	const status = cleanText(detail.status).toLowerCase();
-	const hasOpenStatus = status === "open";
+	const hasOpenStatus = !status || status === "open";
 	const hasCoreContent = Boolean(
 		cleanText(detail.title) &&
 			cleanText(detail.company) &&

@@ -146,17 +146,9 @@ SQLITE_PREVIEW_TEXT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("job_versions", "locations"),
     ("sources", "raw_metadata"),
 )
-SQLITE_UPLOAD_PROJECTED_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("boards", "raw_payload"),
-    ("job_versions", "description"),
-    ("job_versions", "description_html"),
-    ("job_versions", "job_description"),
-    ("job_versions", "responsibilities"),
-    ("job_versions", "qualifications"),
-    ("job_versions", "skills"),
-    ("job_versions", "compensation"),
-    ("job_payload_snapshots", "payload"),
-)
+# Public Kaggle SQLite mirrors the operational database. Large text columns stay
+# in SQLite; CSV/Parquet exports remain the tabular mirror for Kaggle UI.
+SQLITE_UPLOAD_PROJECTED_COLUMNS: tuple[tuple[str, str], ...] = ()
 SQLITE_UPLOAD_PROJECTED_COLUMN_SET = frozenset(SQLITE_UPLOAD_PROJECTED_COLUMNS)
 SQLITE_PREVIEW_TEXT_COLUMN_SET = frozenset(SQLITE_PREVIEW_TEXT_COLUMNS)
 SQLITE_DERIVED_CHILD_TABLES: tuple[str, ...] = (

@@ -621,7 +621,7 @@ def _is_indexable_job_detail(detail: dict[str, Any]) -> bool:
     """Mirror docs/lib/jobs-static-data.ts isIndexableJobDetail criteria."""
 
     status = _clean_text(detail.get("status")).lower()
-    has_open_status = status == "open"
+    has_open_status = not status or status == "open"
     has_core_content = bool(
         _clean_text(detail.get("title"))
         and _clean_text(detail.get("company"))
@@ -686,7 +686,7 @@ def _write_detail_shards(
         shard_payload = {
             key: value
             for key, value in payload.items()
-            if key != "status" and value not in (None, "", [], {})
+            if key != "payloadSnapshots" and value not in (None, "", [], {})
         }
         buckets.setdefault(bucket, {})[job_id] = shard_payload
 

@@ -1072,7 +1072,7 @@ def test_table_csv_export_serializes_sources_for_polars(
     ).sink_parquet(tmp_path / "sources.parquet")
 
 
-def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
+def test_sqlite_upload_projection_preserves_operational_columns(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "projection.sqlite"
@@ -1124,12 +1124,12 @@ def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
             "SELECT id, payload FROM job_payload_snapshots ORDER BY id"
         ).fetchall()
 
-    assert result == {"projected_columns": 4, "projected_rows": 3}
+    assert result == {"projected_columns": 0, "projected_rows": 0}
     assert rows == [
-        ("version-1", None, None, None),
-        ("version-2", None, None, None),
+        ("version-1", "plain text", "<p>plain text</p>", '{"title":"Engineer"}'),
+        ("version-2", "already compact", None, None),
     ]
-    assert payload_rows == [("payload-1", None)]
+    assert payload_rows == [("payload-1", '{"raw":true}')]
 
     rebuild_result = gen._rebuild_sqlite_tables_for_public_upload(db_path)
 
@@ -1144,10 +1144,10 @@ def test_sqlite_upload_projection_nulls_large_rendered_html_mirror(
 
     assert rebuild_result == {"tables": 2, "rows": 3}
     assert rebuilt_rows == [
-        ("version-1", None, None, None),
-        ("version-2", None, None, None),
+        ("version-1", "plain text", "<p>plain text</p>", '{"title":"Engineer"}'),
+        ("version-2", "already compact", None, None),
     ]
-    assert rebuilt_payload_rows == [("payload-1", None)]
+    assert rebuilt_payload_rows == [("payload-1", '{"raw":true}')]
 
 
 def test_sqlite_upload_truncates_residual_long_text_cells(
@@ -2133,6 +2133,7 @@ def test_manager_notebook_run_openopps_kaggle_verifies_existing_script_before_ex
 def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     repo_root = Path(__file__).resolve().parents[4]
     justfile = (repo_root / "Justfile").read_text(encoding="utf-8")
+    kaggle_dir = repo_root / "kaggle"
 
     assert "--stage-public-upload-dir" in justfile
     assert "--stage-runtime-generator-dir" in justfile
@@ -2162,6 +2163,14 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     assert "kaggle/examples/advanced-usage" in justfile
     assert "kaggle/examples/hiring-market-map" in justfile
     assert "kaggle/examples/skills-radar" in justfile
+    for kernel_dir in [
+        kaggle_dir,
+        kaggle_dir / "starter",
+        kaggle_dir / "examples" / "advanced-usage",
+        kaggle_dir / "examples" / "hiring-market-map",
+        kaggle_dir / "examples" / "skills-radar",
+    ]:
+        assert (kernel_dir / "kernel-metadata.json").is_file()
     assert gen.ADVANCED_NB_ID in justfile
     assert gen.HIRING_MARKET_NB_ID in justfile
     assert gen.SKILLS_RADAR_NB_ID in justfile
