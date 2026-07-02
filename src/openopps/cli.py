@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
 import json
 import runpy
+import sqlite3
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
 
-from click import ClickException, Context
-from loguru import logger
 import typer
+from click import ClickException, Context, get_current_context
+from loguru import logger
+from pydantic import ValidationError
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -55,7 +57,7 @@ from openopps.providers.sources import build_source_adapter
 from openopps.route_registry import BoardRouteRegistry
 from openopps.route_probe import probe_routes
 from openopps.route_select import normalize_provider_filter
-from openopps.settings import OpenOppsSettings
+from openopps.settings import OpenOppsSettings, format_settings_validation_error
 from openopps.storage import OpenOppsStore
 from openopps.storage import BoardFilters, JobFilters
 from openopps.utils import slugify, stable_id
@@ -80,7 +82,7 @@ PROVIDER_FILTER_HELP = (
 SOURCE_FILTER_HELP = "Limit results to one aggregate source key, such as a16z or yc."
 BOARD_FILTER_HELP = "Limit results to one board key."
 LIMIT_HELP = "Maximum records to return after filters are applied."
-EXPORT_FORMAT_HELP = "Export file format: jsonl, csv, or parquet."
+EXPORT_FORMAT_HELP = "Export file format: jsonl, csv, parquet, or sqlite."
 EXPORT_OUTPUT_FILE_HELP = "Destination file path to create or replace."
 SYNC_OUTPUT_FILE_HELP = "Append synced JSONL records to this file path."
 BOARD_HAS_JOBS_HELP = (
@@ -115,6 +117,7 @@ PROVIDER_OPTION_FLAGS = ("--provider", "-p", "-P")
 REFRESH_CACHE_OPTION_FLAGS = ("--refresh-cache", "-r", "-R")
 SOURCE_OPTION_FLAGS = ("--source", "-s", "-S")
 VERBOSE_OPTION_FLAGS = ("--verbose", "-v", "-V")
+SETTINGS_CONTEXT_KEY = "openopps_settings"
 
 
 def _example_data_script_path() -> Path:
@@ -253,15 +256,26 @@ def main(
 
 
 def _settings() -> OpenOppsSettings:
-    return OpenOppsSettings()
+    ctx = get_current_context(silent=True)
+    if ctx is not None:
+        cached = ctx.meta.get(SETTINGS_CONTEXT_KEY)
+        if isinstance(cached, OpenOppsSettings):
+            return cached
+    try:
+        settings = OpenOppsSettings()
+    except ValidationError as exc:
+        raise ClickException(format_settings_validation_error(exc)) from exc
+    if ctx is not None:
+        ctx.meta[SETTINGS_CONTEXT_KEY] = settings
+    return settings
 
 
-def _store() -> OpenOppsStore:
-    return OpenOppsStore(_settings())
+def _store(settings: OpenOppsSettings | None = None) -> OpenOppsStore:
+    return OpenOppsStore(settings or _settings())
 
 
-def _cache() -> HttpCache:
-    settings = _settings()
+def _cache(settings: OpenOppsSettings | None = None) -> HttpCache:
+    settings = settings or _settings()
     if settings.sqlite_path is None:
         raise typer.BadParameter(
             "Cache commands require a local sqlite:/// OPENOPPS_DB_URL because "
@@ -296,6 +310,14 @@ def _catalog_source(key: str) -> SourceRecord | None:
 
 def _json(data: object) -> None:
     console.print_json(json.dumps(data, default=str))
+
+
+def _export_metadata(entity: str, filters: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "entity": entity,
+        "filters": {key: value for key, value in filters.items() if value is not None},
+        "generated_at": utc_now().isoformat(),
+    }
 
 
 def _metrics(metrics, metrics_json: bool, profile: bool) -> None:
@@ -421,8 +443,8 @@ def _table(title: str, columns: list[str], rows: list[list[object]]) -> None:
 
 
 def _status_payload() -> dict[str, Any]:
-    store = _store()
     settings = _settings()
+    store = _store(settings)
     counts = store.status()
     readiness = _readiness_payload(store)
     coverage = _status_coverage_payload(store)
@@ -614,7 +636,9 @@ def _status_issues(
 def sync_all(
     source_key: Annotated[
         str | None,
-        typer.Argument(help="Optional source key; omit to sync every configured source."),
+        typer.Argument(
+            help="Optional source key; omit to sync every configured source."
+        ),
     ] = None,
     board: Annotated[
         str | None,
@@ -983,13 +1007,14 @@ def examples_seed(
     dataset = build_example_dataset(
         seed=seed, board_count=boards, jobs_per_board=jobs_per_board
     )
-    store = _store()
+    settings = _settings()
+    store = _store(settings)
     for source in dataset.sources:
         store.upsert_source(source)
     store.upsert_boards(dataset.boards)
     store.upsert_board_providers(dataset.routes)
     store.upsert_jobs(dataset.jobs)
-    cache = _cache()
+    cache = _cache(settings)
     for record in dataset.cache_records:
         cache.put_json(
             "get",
@@ -1110,7 +1135,8 @@ def sources_test(
 ) -> None:
     async def _run() -> None:
         settings = _settings_with_cache_refresh(refresh_cache)
-        source = _store().get_source(key) or _catalog_source(key)
+        store = _store(settings)
+        source = store.get_source(key) or _catalog_source(key)
         if not source:
             raise typer.BadParameter(f"Unknown source: {key}")
         adapter = build_source_adapter(source.provider_id, settings)
@@ -1202,7 +1228,9 @@ def sources_yield(
 def sources_sync(
     source_key: Annotated[
         str | None,
-        typer.Argument(help="Optional source key; omit to sync every configured source."),
+        typer.Argument(
+            help="Optional source key; omit to sync every configured source."
+        ),
     ] = None,
     no_db: Annotated[
         bool,
@@ -1265,13 +1293,14 @@ def sources_sync(
 ) -> None:
     if no_db and output is None:
         raise typer.BadParameter("--output is required with --no-db")
-    store = None if no_db else _store()
+    settings = _settings_with_cache_refresh(refresh_cache)
+    store = None if no_db else _store(settings)
     try:
         metrics = _run_sync_with_progress(
             "Syncing sources",
             lambda report: asyncio.run(
                 sync_sources(
-                    settings=_settings_with_cache_refresh(refresh_cache),
+                    settings=settings,
                     store=store,
                     source_key=source_key,
                     output=output,
@@ -1392,11 +1421,12 @@ def boards_add_provider(
             host = validate_provider_host(host, "myworkdayjobs.com")
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    store = _store()
+    settings = _settings()
+    store = _store(settings)
     board = store.get_board(board_key)
     if not board:
         raise typer.BadParameter(f"Unknown board: {board_key}")
-    registry = provider_registry(settings=_settings())
+    registry = provider_registry(settings=settings)
     detected = (
         registry.detect_url(url, board_key=board.key, source_key=board.source_key)
         if url
@@ -1721,11 +1751,12 @@ def boards_detect_provider(
         ),
     ] = False,
 ) -> None:
-    store = _store()
+    settings = _settings()
+    store = _store(settings)
     board = store.get_board(board_key)
     if not board:
         raise typer.BadParameter(f"Unknown board: {board_key}")
-    detected = provider_registry(settings=_settings()).detect_url(
+    detected = provider_registry(settings=settings).detect_url(
         url or board.website_url or "", board_key=board.key, source_key=board.source_key
     )
     if not detected:
@@ -1863,6 +1894,21 @@ def boards_export(
         ),
         output,
         format_,
+        sqlite_table="boards",
+        metadata=_export_metadata(
+            "boards",
+            {
+                "source": source,
+                "provider": provider,
+                "market": market,
+                "location": location,
+                "domain": domain,
+                "has_jobs": has_jobs,
+                "min_staff": min_staff,
+                "max_staff": max_staff,
+                "limit": limit,
+            },
+        ),
     )
     console.print(f"Exported {count} boards to {output}")
 
@@ -1951,12 +1997,14 @@ def jobs_sync(
         ),
     ] = False,
 ) -> None:
+    settings = _settings_with_cache_refresh(refresh_cache)
+    store = _store(settings)
     metrics = _run_sync_with_progress(
         "Syncing jobs",
         lambda report: asyncio.run(
             sync_jobs(
-                settings=_settings_with_cache_refresh(refresh_cache),
-                store=_store(),
+                settings=settings,
+                store=store,
                 source_key=source,
                 board_key=board,
                 provider_id=normalize_provider_filter(provider),
@@ -2358,6 +2406,29 @@ def jobs_export(
         ),
         output,
         format_,
+        sqlite_table="jobs",
+        metadata=_export_metadata(
+            "jobs",
+            {
+                "source": source,
+                "board": board,
+                "provider": provider,
+                "location": location,
+                "department": department,
+                "team": team,
+                "workplace_type": workplace_type,
+                "remote": remote,
+                "employment_type": employment_type,
+                "salary_min": salary_min,
+                "salary_max": salary_max,
+                "skill": skill,
+                "query": query,
+                "posted_after": posted_after,
+                "posted_before": posted_before,
+                "status": status,
+                "limit": limit,
+            },
+        ),
     )
     console.print(f"Exported {count} jobs to {output}")
 
@@ -2493,10 +2564,12 @@ def providers_probe_routes(
         typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
+    settings = _settings()
+    store = _store(settings)
     summary = asyncio.run(
         probe_routes(
-            settings=_settings(),
-            store=_store(),
+            settings=settings,
+            store=store,
             source_key=source,
             board_key=board,
             provider_id=normalize_provider_filter(provider),
@@ -2697,10 +2770,12 @@ def providers_health(
         typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
+    settings = _settings()
+    store = _store(settings)
     summary = asyncio.run(
         check_provider_health(
-            settings=_settings(),
-            store=_store(),
+            settings=settings,
+            store=store,
             source_key=source,
             board_key=board,
             provider_id=normalize_provider_filter(provider),
@@ -2873,7 +2948,69 @@ def db_status() -> None:
     _json(_store().status())
 
 
+@admin_db_app.command(
+    "export",
+    help="Export a portable snapshot of the local SQLite database.",
+)
+def db_export(
+    output: Annotated[
+        Path,
+        typer.Option(
+            *OUTPUT_OPTION_FLAGS,
+            help="Destination SQLite database file to create or replace.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ],
+) -> None:
+    settings = _settings()
+    source = settings.sqlite_path
+    if source is None:
+        raise typer.BadParameter(
+            "Database export requires a local sqlite:/// OPENOPPS_DB_URL."
+        )
+    _store(settings).init_db()
+    if not source.exists():
+        raise typer.BadParameter(f"SQLite database does not exist: {source}")
+    _backup_sqlite_database(source, output)
+    console.print(f"Exported SQLite database snapshot to {output}")
+
+
 @admin_db_app.command("vacuum", help="Compact the local SQLite database file.")
 def db_vacuum() -> None:
     _store().vacuum()
     console.print("Database vacuumed")
+
+
+def _backup_sqlite_database(source: Path, output: Path) -> None:
+    source = source.expanduser().resolve()
+    output = output.expanduser().resolve()
+    if source == output:
+        raise typer.BadParameter("Database export output must differ from the source.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        output.unlink()
+    _remove_sqlite_sidecars(output)
+    try:
+        with sqlite3.connect(source) as checkpoint_conn:
+            checkpoint_conn.execute("PRAGMA wal_checkpoint(FULL)")
+        with sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True) as src:
+            with sqlite3.connect(output) as dst:
+                src.backup(dst)
+                dst.execute("PRAGMA journal_mode=DELETE")
+                integrity = dst.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise sqlite3.DatabaseError(
+                        f"SQLite integrity check failed: {integrity!r}"
+                    )
+    except sqlite3.Error as exc:
+        if output.exists():
+            output.unlink()
+        _remove_sqlite_sidecars(output)
+        raise ClickException(f"Unable to export SQLite database: {exc}") from exc
+
+
+def _remove_sqlite_sidecars(path: Path) -> None:
+    for suffix in ("-wal", "-shm", "-journal"):
+        sidecar = path.with_name(f"{path.name}{suffix}")
+        if sidecar.exists():
+            sidecar.unlink()

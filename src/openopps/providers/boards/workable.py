@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, cast
-from urllib.parse import urlparse
 
 import httpx
 
@@ -16,8 +15,11 @@ from openopps.models import (
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.boards.tokens import workable_token_from_url
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
+
+__all__ = ["WorkableProvider", "workable_token", "workable_token_from_url"]
 
 
 _WORKABLE_RATE_LIMITER = AsyncSlidingWindowRateLimiter(limit=10, window_seconds=10.0)
@@ -40,15 +42,8 @@ class WorkableProvider:
     @staticmethod
     def detect_route(url: str) -> ProviderRouteMatch | None:
         validate_public_https_url(url)
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower()
-        parts = [part for part in parsed.path.split("/") if part]
-        if host == "apply.workable.com" and parts and parts[0] != "j":
-            return ProviderRouteMatch(token=parts[0])
-        if host == "www.workable.com" and parts[:2] == ["api", "accounts"]:
-            token = parts[2] if len(parts) > 2 else None
-            return ProviderRouteMatch(token=token)
-        return None
+        token = _token_from_url(url)
+        return ProviderRouteMatch(token=token) if token else None
 
     async def fetch_jobs(
         self,
@@ -200,18 +195,11 @@ def workable_token(route: BoardProviderRecord) -> str | None:
         return route.token.strip()
     if not route.board_url:
         return None
-    parsed = urlparse(route.board_url)
-    host = (parsed.hostname or "").lower()
-    parts = [part for part in parsed.path.split("/") if part]
-    if (
-        host == "www.workable.com"
-        and parts[:2] == ["api", "accounts"]
-        and len(parts) > 2
-    ):
-        return parts[2]
-    if host == "apply.workable.com" and parts and parts[0] != "j":
-        return parts[0]
-    return None
+    return workable_token_from_url(route.board_url)
+
+
+def _token_from_url(url: str) -> str | None:
+    return workable_token_from_url(url)
 
 
 def _locations(posting: dict[str, Any]) -> list[str]:

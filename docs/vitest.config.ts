@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		environment: "node",
-		include: ["components/**/*.test.ts"],
+		include: ["{app,components,lib}/**/*.test.{ts,tsx}"],
 	},
 	resolve: {
 		alias: {

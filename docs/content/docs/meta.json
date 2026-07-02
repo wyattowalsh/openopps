@@ -2,10 +2,12 @@
 	"title": "OpenOpps",
 	"pages": [
 		"index",
-		"cli-reference",
+		"cli",
 		"configuration",
+		"data-model",
 		"providers",
 		"explorer",
-		"operations"
+		"operations",
+		"contributing"
 	]
 }

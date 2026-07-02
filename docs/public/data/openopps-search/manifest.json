@@ -8,6 +8,366 @@
   "detailShards": {
     "bucketCount": 256,
     "buckets": {
+      "10": {
+        "count": 314,
+        "path": "/data/openopps-search/jobs-details/10.json"
+      },
+      "11": {
+        "count": 326,
+        "path": "/data/openopps-search/jobs-details/11.json"
+      },
+      "12": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/12.json"
+      },
+      "13": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/13.json"
+      },
+      "14": {
+        "count": 324,
+        "path": "/data/openopps-search/jobs-details/14.json"
+      },
+      "15": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/15.json"
+      },
+      "16": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/16.json"
+      },
+      "17": {
+        "count": 311,
+        "path": "/data/openopps-search/jobs-details/17.json"
+      },
+      "18": {
+        "count": 331,
+        "path": "/data/openopps-search/jobs-details/18.json"
+      },
+      "19": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/19.json"
+      },
+      "20": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/20.json"
+      },
+      "21": {
+        "count": 310,
+        "path": "/data/openopps-search/jobs-details/21.json"
+      },
+      "22": {
+        "count": 344,
+        "path": "/data/openopps-search/jobs-details/22.json"
+      },
+      "23": {
+        "count": 295,
+        "path": "/data/openopps-search/jobs-details/23.json"
+      },
+      "24": {
+        "count": 273,
+        "path": "/data/openopps-search/jobs-details/24.json"
+      },
+      "25": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/25.json"
+      },
+      "26": {
+        "count": 297,
+        "path": "/data/openopps-search/jobs-details/26.json"
+      },
+      "27": {
+        "count": 293,
+        "path": "/data/openopps-search/jobs-details/27.json"
+      },
+      "28": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/28.json"
+      },
+      "29": {
+        "count": 271,
+        "path": "/data/openopps-search/jobs-details/29.json"
+      },
+      "30": {
+        "count": 333,
+        "path": "/data/openopps-search/jobs-details/30.json"
+      },
+      "31": {
+        "count": 316,
+        "path": "/data/openopps-search/jobs-details/31.json"
+      },
+      "32": {
+        "count": 336,
+        "path": "/data/openopps-search/jobs-details/32.json"
+      },
+      "33": {
+        "count": 287,
+        "path": "/data/openopps-search/jobs-details/33.json"
+      },
+      "34": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/34.json"
+      },
+      "35": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/35.json"
+      },
+      "36": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/36.json"
+      },
+      "37": {
+        "count": 357,
+        "path": "/data/openopps-search/jobs-details/37.json"
+      },
+      "38": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/38.json"
+      },
+      "39": {
+        "count": 306,
+        "path": "/data/openopps-search/jobs-details/39.json"
+      },
+      "40": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/40.json"
+      },
+      "41": {
+        "count": 310,
+        "path": "/data/openopps-search/jobs-details/41.json"
+      },
+      "42": {
+        "count": 269,
+        "path": "/data/openopps-search/jobs-details/42.json"
+      },
+      "43": {
+        "count": 320,
+        "path": "/data/openopps-search/jobs-details/43.json"
+      },
+      "44": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/44.json"
+      },
+      "45": {
+        "count": 316,
+        "path": "/data/openopps-search/jobs-details/45.json"
+      },
+      "46": {
+        "count": 277,
+        "path": "/data/openopps-search/jobs-details/46.json"
+      },
+      "47": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/47.json"
+      },
+      "48": {
+        "count": 276,
+        "path": "/data/openopps-search/jobs-details/48.json"
+      },
+      "49": {
+        "count": 283,
+        "path": "/data/openopps-search/jobs-details/49.json"
+      },
+      "50": {
+        "count": 356,
+        "path": "/data/openopps-search/jobs-details/50.json"
+      },
+      "51": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/51.json"
+      },
+      "52": {
+        "count": 302,
+        "path": "/data/openopps-search/jobs-details/52.json"
+      },
+      "53": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/53.json"
+      },
+      "54": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/54.json"
+      },
+      "55": {
+        "count": 301,
+        "path": "/data/openopps-search/jobs-details/55.json"
+      },
+      "56": {
+        "count": 329,
+        "path": "/data/openopps-search/jobs-details/56.json"
+      },
+      "57": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/57.json"
+      },
+      "58": {
+        "count": 323,
+        "path": "/data/openopps-search/jobs-details/58.json"
+      },
+      "59": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/59.json"
+      },
+      "60": {
+        "count": 299,
+        "path": "/data/openopps-search/jobs-details/60.json"
+      },
+      "61": {
+        "count": 322,
+        "path": "/data/openopps-search/jobs-details/61.json"
+      },
+      "62": {
+        "count": 315,
+        "path": "/data/openopps-search/jobs-details/62.json"
+      },
+      "63": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/63.json"
+      },
+      "64": {
+        "count": 286,
+        "path": "/data/openopps-search/jobs-details/64.json"
+      },
+      "65": {
+        "count": 340,
+        "path": "/data/openopps-search/jobs-details/65.json"
+      },
+      "66": {
+        "count": 278,
+        "path": "/data/openopps-search/jobs-details/66.json"
+      },
+      "67": {
+        "count": 284,
+        "path": "/data/openopps-search/jobs-details/67.json"
+      },
+      "68": {
+        "count": 306,
+        "path": "/data/openopps-search/jobs-details/68.json"
+      },
+      "69": {
+        "count": 303,
+        "path": "/data/openopps-search/jobs-details/69.json"
+      },
+      "70": {
+        "count": 296,
+        "path": "/data/openopps-search/jobs-details/70.json"
+      },
+      "71": {
+        "count": 289,
+        "path": "/data/openopps-search/jobs-details/71.json"
+      },
+      "72": {
+        "count": 297,
+        "path": "/data/openopps-search/jobs-details/72.json"
+      },
+      "73": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/73.json"
+      },
+      "74": {
+        "count": 293,
+        "path": "/data/openopps-search/jobs-details/74.json"
+      },
+      "75": {
+        "count": 321,
+        "path": "/data/openopps-search/jobs-details/75.json"
+      },
+      "76": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/76.json"
+      },
+      "77": {
+        "count": 356,
+        "path": "/data/openopps-search/jobs-details/77.json"
+      },
+      "78": {
+        "count": 305,
+        "path": "/data/openopps-search/jobs-details/78.json"
+      },
+      "79": {
+        "count": 309,
+        "path": "/data/openopps-search/jobs-details/79.json"
+      },
+      "80": {
+        "count": 300,
+        "path": "/data/openopps-search/jobs-details/80.json"
+      },
+      "81": {
+        "count": 284,
+        "path": "/data/openopps-search/jobs-details/81.json"
+      },
+      "82": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/82.json"
+      },
+      "83": {
+        "count": 273,
+        "path": "/data/openopps-search/jobs-details/83.json"
+      },
+      "84": {
+        "count": 275,
+        "path": "/data/openopps-search/jobs-details/84.json"
+      },
+      "85": {
+        "count": 294,
+        "path": "/data/openopps-search/jobs-details/85.json"
+      },
+      "86": {
+        "count": 291,
+        "path": "/data/openopps-search/jobs-details/86.json"
+      },
+      "87": {
+        "count": 290,
+        "path": "/data/openopps-search/jobs-details/87.json"
+      },
+      "88": {
+        "count": 265,
+        "path": "/data/openopps-search/jobs-details/88.json"
+      },
+      "89": {
+        "count": 291,
+        "path": "/data/openopps-search/jobs-details/89.json"
+      },
+      "90": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/90.json"
+      },
+      "91": {
+        "count": 304,
+        "path": "/data/openopps-search/jobs-details/91.json"
+      },
+      "92": {
+        "count": 298,
+        "path": "/data/openopps-search/jobs-details/92.json"
+      },
+      "93": {
+        "count": 341,
+        "path": "/data/openopps-search/jobs-details/93.json"
+      },
+      "94": {
+        "count": 328,
+        "path": "/data/openopps-search/jobs-details/94.json"
+      },
+      "95": {
+        "count": 313,
+        "path": "/data/openopps-search/jobs-details/95.json"
+      },
+      "96": {
+        "count": 307,
+        "path": "/data/openopps-search/jobs-details/96.json"
+      },
+      "97": {
+        "count": 332,
+        "path": "/data/openopps-search/jobs-details/97.json"
+      },
+      "98": {
+        "count": 320,
+        "path": "/data/openopps-search/jobs-details/98.json"
+      },
+      "99": {
+        "count": 318,
+        "path": "/data/openopps-search/jobs-details/99.json"
+      },
       "00": {
         "count": 285,
         "path": "/data/openopps-search/jobs-details/00.json"
@@ -72,46 +432,6 @@
         "count": 309,
         "path": "/data/openopps-search/jobs-details/0f.json"
       },
-      "10": {
-        "count": 314,
-        "path": "/data/openopps-search/jobs-details/10.json"
-      },
-      "11": {
-        "count": 326,
-        "path": "/data/openopps-search/jobs-details/11.json"
-      },
-      "12": {
-        "count": 303,
-        "path": "/data/openopps-search/jobs-details/12.json"
-      },
-      "13": {
-        "count": 313,
-        "path": "/data/openopps-search/jobs-details/13.json"
-      },
-      "14": {
-        "count": 324,
-        "path": "/data/openopps-search/jobs-details/14.json"
-      },
-      "15": {
-        "count": 302,
-        "path": "/data/openopps-search/jobs-details/15.json"
-      },
-      "16": {
-        "count": 303,
-        "path": "/data/openopps-search/jobs-details/16.json"
-      },
-      "17": {
-        "count": 311,
-        "path": "/data/openopps-search/jobs-details/17.json"
-      },
-      "18": {
-        "count": 331,
-        "path": "/data/openopps-search/jobs-details/18.json"
-      },
-      "19": {
-        "count": 313,
-        "path": "/data/openopps-search/jobs-details/19.json"
-      },
       "1a": {
         "count": 315,
         "path": "/data/openopps-search/jobs-details/1a.json"
@@ -135,46 +455,6 @@
       "1f": {
         "count": 340,
         "path": "/data/openopps-search/jobs-details/1f.json"
-      },
-      "20": {
-        "count": 307,
-        "path": "/data/openopps-search/jobs-details/20.json"
-      },
-      "21": {
-        "count": 310,
-        "path": "/data/openopps-search/jobs-details/21.json"
-      },
-      "22": {
-        "count": 344,
-        "path": "/data/openopps-search/jobs-details/22.json"
-      },
-      "23": {
-        "count": 295,
-        "path": "/data/openopps-search/jobs-details/23.json"
-      },
-      "24": {
-        "count": 273,
-        "path": "/data/openopps-search/jobs-details/24.json"
-      },
-      "25": {
-        "count": 303,
-        "path": "/data/openopps-search/jobs-details/25.json"
-      },
-      "26": {
-        "count": 297,
-        "path": "/data/openopps-search/jobs-details/26.json"
-      },
-      "27": {
-        "count": 293,
-        "path": "/data/openopps-search/jobs-details/27.json"
-      },
-      "28": {
-        "count": 302,
-        "path": "/data/openopps-search/jobs-details/28.json"
-      },
-      "29": {
-        "count": 271,
-        "path": "/data/openopps-search/jobs-details/29.json"
       },
       "2a": {
         "count": 281,
@@ -200,46 +480,6 @@
         "count": 276,
         "path": "/data/openopps-search/jobs-details/2f.json"
       },
-      "30": {
-        "count": 333,
-        "path": "/data/openopps-search/jobs-details/30.json"
-      },
-      "31": {
-        "count": 316,
-        "path": "/data/openopps-search/jobs-details/31.json"
-      },
-      "32": {
-        "count": 336,
-        "path": "/data/openopps-search/jobs-details/32.json"
-      },
-      "33": {
-        "count": 287,
-        "path": "/data/openopps-search/jobs-details/33.json"
-      },
-      "34": {
-        "count": 290,
-        "path": "/data/openopps-search/jobs-details/34.json"
-      },
-      "35": {
-        "count": 307,
-        "path": "/data/openopps-search/jobs-details/35.json"
-      },
-      "36": {
-        "count": 309,
-        "path": "/data/openopps-search/jobs-details/36.json"
-      },
-      "37": {
-        "count": 357,
-        "path": "/data/openopps-search/jobs-details/37.json"
-      },
-      "38": {
-        "count": 321,
-        "path": "/data/openopps-search/jobs-details/38.json"
-      },
-      "39": {
-        "count": 306,
-        "path": "/data/openopps-search/jobs-details/39.json"
-      },
       "3a": {
         "count": 283,
         "path": "/data/openopps-search/jobs-details/3a.json"
@@ -263,46 +503,6 @@
       "3f": {
         "count": 330,
         "path": "/data/openopps-search/jobs-details/3f.json"
-      },
-      "40": {
-        "count": 300,
-        "path": "/data/openopps-search/jobs-details/40.json"
-      },
-      "41": {
-        "count": 310,
-        "path": "/data/openopps-search/jobs-details/41.json"
-      },
-      "42": {
-        "count": 269,
-        "path": "/data/openopps-search/jobs-details/42.json"
-      },
-      "43": {
-        "count": 320,
-        "path": "/data/openopps-search/jobs-details/43.json"
-      },
-      "44": {
-        "count": 294,
-        "path": "/data/openopps-search/jobs-details/44.json"
-      },
-      "45": {
-        "count": 316,
-        "path": "/data/openopps-search/jobs-details/45.json"
-      },
-      "46": {
-        "count": 277,
-        "path": "/data/openopps-search/jobs-details/46.json"
-      },
-      "47": {
-        "count": 318,
-        "path": "/data/openopps-search/jobs-details/47.json"
-      },
-      "48": {
-        "count": 276,
-        "path": "/data/openopps-search/jobs-details/48.json"
-      },
-      "49": {
-        "count": 283,
-        "path": "/data/openopps-search/jobs-details/49.json"
       },
       "4a": {
         "count": 316,
@@ -328,46 +528,6 @@
         "count": 324,
         "path": "/data/openopps-search/jobs-details/4f.json"
       },
-      "50": {
-        "count": 356,
-        "path": "/data/openopps-search/jobs-details/50.json"
-      },
-      "51": {
-        "count": 332,
-        "path": "/data/openopps-search/jobs-details/51.json"
-      },
-      "52": {
-        "count": 302,
-        "path": "/data/openopps-search/jobs-details/52.json"
-      },
-      "53": {
-        "count": 309,
-        "path": "/data/openopps-search/jobs-details/53.json"
-      },
-      "54": {
-        "count": 323,
-        "path": "/data/openopps-search/jobs-details/54.json"
-      },
-      "55": {
-        "count": 301,
-        "path": "/data/openopps-search/jobs-details/55.json"
-      },
-      "56": {
-        "count": 329,
-        "path": "/data/openopps-search/jobs-details/56.json"
-      },
-      "57": {
-        "count": 323,
-        "path": "/data/openopps-search/jobs-details/57.json"
-      },
-      "58": {
-        "count": 323,
-        "path": "/data/openopps-search/jobs-details/58.json"
-      },
-      "59": {
-        "count": 332,
-        "path": "/data/openopps-search/jobs-details/59.json"
-      },
       "5a": {
         "count": 308,
         "path": "/data/openopps-search/jobs-details/5a.json"
@@ -391,46 +551,6 @@
       "5f": {
         "count": 305,
         "path": "/data/openopps-search/jobs-details/5f.json"
-      },
-      "60": {
-        "count": 299,
-        "path": "/data/openopps-search/jobs-details/60.json"
-      },
-      "61": {
-        "count": 322,
-        "path": "/data/openopps-search/jobs-details/61.json"
-      },
-      "62": {
-        "count": 315,
-        "path": "/data/openopps-search/jobs-details/62.json"
-      },
-      "63": {
-        "count": 318,
-        "path": "/data/openopps-search/jobs-details/63.json"
-      },
-      "64": {
-        "count": 286,
-        "path": "/data/openopps-search/jobs-details/64.json"
-      },
-      "65": {
-        "count": 340,
-        "path": "/data/openopps-search/jobs-details/65.json"
-      },
-      "66": {
-        "count": 278,
-        "path": "/data/openopps-search/jobs-details/66.json"
-      },
-      "67": {
-        "count": 284,
-        "path": "/data/openopps-search/jobs-details/67.json"
-      },
-      "68": {
-        "count": 306,
-        "path": "/data/openopps-search/jobs-details/68.json"
-      },
-      "69": {
-        "count": 303,
-        "path": "/data/openopps-search/jobs-details/69.json"
       },
       "6a": {
         "count": 302,
@@ -456,46 +576,6 @@
         "count": 300,
         "path": "/data/openopps-search/jobs-details/6f.json"
       },
-      "70": {
-        "count": 296,
-        "path": "/data/openopps-search/jobs-details/70.json"
-      },
-      "71": {
-        "count": 289,
-        "path": "/data/openopps-search/jobs-details/71.json"
-      },
-      "72": {
-        "count": 297,
-        "path": "/data/openopps-search/jobs-details/72.json"
-      },
-      "73": {
-        "count": 313,
-        "path": "/data/openopps-search/jobs-details/73.json"
-      },
-      "74": {
-        "count": 293,
-        "path": "/data/openopps-search/jobs-details/74.json"
-      },
-      "75": {
-        "count": 321,
-        "path": "/data/openopps-search/jobs-details/75.json"
-      },
-      "76": {
-        "count": 313,
-        "path": "/data/openopps-search/jobs-details/76.json"
-      },
-      "77": {
-        "count": 356,
-        "path": "/data/openopps-search/jobs-details/77.json"
-      },
-      "78": {
-        "count": 305,
-        "path": "/data/openopps-search/jobs-details/78.json"
-      },
-      "79": {
-        "count": 309,
-        "path": "/data/openopps-search/jobs-details/79.json"
-      },
       "7a": {
         "count": 342,
         "path": "/data/openopps-search/jobs-details/7a.json"
@@ -520,46 +600,6 @@
         "count": 327,
         "path": "/data/openopps-search/jobs-details/7f.json"
       },
-      "80": {
-        "count": 300,
-        "path": "/data/openopps-search/jobs-details/80.json"
-      },
-      "81": {
-        "count": 284,
-        "path": "/data/openopps-search/jobs-details/81.json"
-      },
-      "82": {
-        "count": 290,
-        "path": "/data/openopps-search/jobs-details/82.json"
-      },
-      "83": {
-        "count": 273,
-        "path": "/data/openopps-search/jobs-details/83.json"
-      },
-      "84": {
-        "count": 275,
-        "path": "/data/openopps-search/jobs-details/84.json"
-      },
-      "85": {
-        "count": 294,
-        "path": "/data/openopps-search/jobs-details/85.json"
-      },
-      "86": {
-        "count": 291,
-        "path": "/data/openopps-search/jobs-details/86.json"
-      },
-      "87": {
-        "count": 290,
-        "path": "/data/openopps-search/jobs-details/87.json"
-      },
-      "88": {
-        "count": 265,
-        "path": "/data/openopps-search/jobs-details/88.json"
-      },
-      "89": {
-        "count": 291,
-        "path": "/data/openopps-search/jobs-details/89.json"
-      },
       "8a": {
         "count": 279,
         "path": "/data/openopps-search/jobs-details/8a.json"
@@ -583,46 +623,6 @@
       "8f": {
         "count": 294,
         "path": "/data/openopps-search/jobs-details/8f.json"
-      },
-      "90": {
-        "count": 307,
-        "path": "/data/openopps-search/jobs-details/90.json"
-      },
-      "91": {
-        "count": 304,
-        "path": "/data/openopps-search/jobs-details/91.json"
-      },
-      "92": {
-        "count": 298,
-        "path": "/data/openopps-search/jobs-details/92.json"
-      },
-      "93": {
-        "count": 341,
-        "path": "/data/openopps-search/jobs-details/93.json"
-      },
-      "94": {
-        "count": 328,
-        "path": "/data/openopps-search/jobs-details/94.json"
-      },
-      "95": {
-        "count": 313,
-        "path": "/data/openopps-search/jobs-details/95.json"
-      },
-      "96": {
-        "count": 307,
-        "path": "/data/openopps-search/jobs-details/96.json"
-      },
-      "97": {
-        "count": 332,
-        "path": "/data/openopps-search/jobs-details/97.json"
-      },
-      "98": {
-        "count": 320,
-        "path": "/data/openopps-search/jobs-details/98.json"
-      },
-      "99": {
-        "count": 318,
-        "path": "/data/openopps-search/jobs-details/99.json"
       },
       "9a": {
         "count": 321,
@@ -1035,7 +1035,9 @@
     },
     "count": 78612,
     "format": "bucket-map",
-    "root": "/data/openopps-search/jobs-details"
+    "root": "/data/openopps-search/jobs-details",
+    "idIndexPath": "/data/openopps-search/jobs-detail-ids.json",
+    "idIndexFile": "jobs-detail-ids.json"
   },
   "entities": {
     "boards": {

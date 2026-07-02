@@ -34,6 +34,7 @@ packages = ["src/openopps"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "scripts"]
 asyncio_mode = "auto"
 markers = [
   "unit: isolated tests for one module or small boundary",

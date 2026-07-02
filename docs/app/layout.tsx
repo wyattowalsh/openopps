@@ -1,5 +1,7 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import "./global.css";
+import { TelemetryProvider } from "@/components/telemetry-provider";
+import { shouldNoIndexDeployment } from "@/lib/jobs-static-data";
 import { appName, siteUrl, socialImages } from "@/lib/shared";
 import type { Metadata } from "next";
 
@@ -14,6 +16,15 @@ export const metadata: Metadata = {
 		template: `%s | ${appName}`,
 	},
 	description: siteDescription,
+	robots: shouldNoIndexDeployment()
+		? {
+				index: false,
+				follow: false,
+			}
+		: {
+				index: true,
+				follow: true,
+			},
 	manifest: "/site.webmanifest",
 	icons: {
 		icon: [
@@ -59,7 +70,9 @@ export default function Layout({ children }: LayoutProps<"/">) {
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<body className="flex min-h-screen flex-col">
-				<RootProvider>{children}</RootProvider>
+				<RootProvider>
+					<TelemetryProvider>{children}</TelemetryProvider>
+				</RootProvider>
 			</body>
 		</html>
 	);

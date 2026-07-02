@@ -26,6 +26,9 @@ function ProviderTable({ providers }: { providers: ProviderData[] }) {
 	return (
 		<div className="openopps-data-table-wrap">
 			<table>
+				<caption className="sr-only">
+					OpenOpps job provider support levels and public route behavior.
+				</caption>
 				<thead>
 					<tr>
 						<th>Label</th>

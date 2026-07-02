@@ -3,7 +3,8 @@ OpenOpps is a Python 3.12+ CLI-only v0.1 project managed with `uv` and `pyprojec
 - `./src/openopps/` is the Python package and `openopps = "openopps.cli:app"` console entry point.
 - `./tests/` mirrors package behavior by execution scope: `tests/unit/openopps/` for isolated module tests, `tests/integration/openopps/` for local storage/CLI/mocked HTTP seams, `tests/smoke/openopps/` for fast critical wiring checks, and `tests/e2e/` reserved for real-boundary journeys.
 - `./scripts/` contains helper scripts such as docs and Kaggle bundle generation.
-- `./kaggle/` contains the generated Kaggle dataset bundle metadata, package-derived data dictionary, and related scheduled active-job snapshot notebook. CSV, Parquet, and SQLite data files are generated locally for upload and ignored by git; refresh metadata with `uv run python scripts/generate_kaggle_metadata.py`, or refresh the full upload bundle with `uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite` after changing exported models.
+- `./kaggle/` contains the generated Kaggle dataset bundle metadata, package-derived data dictionary, and related scheduled active-job snapshot notebook. CSV, Parquet, and SQLite data files are generated locally for upload and ignored by git; refresh metadata with `PYTHONPATH=scripts uv run python -m openopps_kaggle`, or refresh the full upload bundle with `PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite` after changing exported models.
+- `./scripts/openopps_kaggle/` is the Kaggle metadata generator package (`bundle/`, `notebooks/`, `verify_*` subcommands, `runtime_manifest.py`).
 - `./examples/` contains repository-local demo assets, including the deterministic example dataset builder used by `openopps examples seed` and the minimal entry-point plugin template for the `openopps.plugins` group.
 - `./docs/` is the Fumadocs/Next.js docs framework; use pnpm from that directory. Its content graph lives in `docs/content/docs/meta.json`, MDX pages live in `docs/content/docs/`, package-derived docs data is generated into `docs/lib/generated/openopps-data.json`, and LLM-readable routes are exposed by `docs/app/llms.txt/`, `docs/app/llms-full.txt/`, and `docs/app/llms.mdx/` route handlers.
 - `./openspec/` contains OpenSpec specs and change tracking, including `prepare-v0-1-release`.
@@ -20,14 +21,18 @@ Useful validation commands:
 ```bash
 uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
-uv run python scripts/generate_kaggle_metadata.py
-uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite
+uv lock --check
+PYTHONPATH=scripts uv run python -m openopps_kaggle
+PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite
 just --list
 just ci
 cd docs && pnpm data:generate
 cd docs && pnpm types:check
 cd docs && pnpm build
-cd docs && rtk lint
+cd docs && pnpm lint
+cd docs && pnpm test
+just docs-search-index-check
+just docs-rtk-lint
 rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 rtk npx -y @fission-ai/openspec@latest validate --all --strict
 ```

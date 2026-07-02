@@ -118,9 +118,7 @@ def test_enrich_metadata_ignores_invalid_payload_website(tmp_path: Path):
                 name="Media Co",
                 raw_payload={
                     "domain": '[\n\t"Entertainment",\n\t"Broadcast Media"\n]',
-                    "website": {
-                        "url": '[\n\t"Entertainment",\n\t"Broadcast Media"\n]'
-                    },
+                    "website": {"url": '[\n\t"Entertainment",\n\t"Broadcast Media"\n]'},
                 },
             )
         ]

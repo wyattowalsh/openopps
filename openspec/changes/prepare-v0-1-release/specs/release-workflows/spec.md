@@ -8,14 +8,14 @@ OpenOpps SHALL provide a generated Kaggle workflow for `wyattowalsh/openoppsdb` 
 
 - **WHEN** the connected `wyattowalsh/openoppsdb-manager` notebook runs on its daily Kaggle schedule
 - **THEN** it installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` unless an explicit controlled-test override is set
-- **AND** it downloads and checks a compatible `scripts/generate_kaggle_metadata.py` from the private `wyattowalsh/openoppsdb-manager-runtime` input before running the expensive sync
+- **AND** it verifies the `openopps_kaggle` runtime package and `runtime-manifest.json` from the private `wyattowalsh/openoppsdb-manager-runtime` input before running the expensive sync
 - **AND** it copies the newest prior `/kaggle/input/**/openoppsdb.sqlite` file into `/kaggle/working/openoppsdb/openoppsdb.sqlite` before syncing
 - **AND** it restores projected large columns from prior Parquet exports and rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed
 - **AND** it initializes the database and runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit`
 - **AND** it captures private `sync_metrics.json`, `status.json`, and `coverage.json` evidence
-- **AND** it invokes the generator script to backfill derived skill helper tables, create the public bundle, write `snapshot-quality.json`, prune manager-run evidence, and stage a public upload directory
+- **AND** it runs `python -m openopps_kaggle` to backfill derived skill helper tables, create the public bundle, write `snapshot-quality.json`, prune manager-run evidence, and stage a public upload directory
 - **AND** it publishes only the staged `openoppsdb.sqlite` plus every SQLite table as CSV and Parquet exports as public dataset data files
-- **AND** it invokes the generator script to attempt best-effort live Kaggle file metadata repair after publishing the new dataset version
+- **AND** it runs `python -m openopps_kaggle` to attempt best-effort live Kaggle file metadata repair after publishing the new dataset version
 - **AND** browser-authenticated local maintainer repair remains the authoritative path for Kaggle DataBundle checklist and column-description score repair when Kaggle notebook credentials cannot access internal metadata endpoints
 
 #### Scenario: Published metadata describes the full bundle
@@ -94,3 +94,42 @@ OpenOpps SHALL keep live Kaggle deployment credentialed and local/manual while p
 - **WHEN** a maintainer runs live post-deploy verification
 - **THEN** the workflow checks dataset status/version, dataset files, downloaded metadata, manager notebook availability, and manager notebook files for `wyattowalsh/openoppsdb` and `wyattowalsh/openoppsdb-manager`
 - **AND** it verifies direct SQLite readback plus CSV/Parquet table metadata instead of treating missing Kaggle `sqliteInfo.tables` as an OpenOpps data-shape failure
+
+### Requirement: Release validation checks dependency and docs workflow hygiene
+
+OpenOpps SHALL keep local contributor validation and GitHub Actions aligned for dependency locks, Python tests, docs tests, docs lint, OpenSpec validation, generated metadata, CLI smoke checks, and diff formatting.
+
+#### Scenario: Contributor runs the local release validation graph
+
+- **WHEN** a contributor runs `just ci`
+- **THEN** OpenOpps checks diff formatting, `uv lock --check`, strict OpenSpec validation, coverage-enforced Python tests, docs type-check/build/test/lint, Kaggle metadata generation, and CLI help smoke checks
+- **AND** the graph does not conditionally skip a missing `rtk lint` executable
+
+#### Scenario: CI validates lock files and docs tests
+
+- **WHEN** GitHub Actions runs for a push, pull request, or manual dispatch
+- **THEN** CI checks `uv.lock` with `uv lock --check` before frozen Python installation
+- **AND** the docs job installs with the frozen pnpm lockfile and runs docs type-check, build, tests, and lint
+
+#### Scenario: Maintainer runs optional docs checklist lint
+
+- **WHEN** a maintainer needs the broader docs checklist lint surface
+- **THEN** `just docs-rtk-lint` runs `rtk lint` explicitly
+- **AND** default CI and `just ci` do not silently skip that lint when `rtk` is unavailable
+
+### Requirement: Dependency maintenance and local secret hygiene are documented
+
+OpenOpps SHALL keep dependency maintenance reviewable and prevent common local credential files from entering the repository.
+
+#### Scenario: Renovate maintains Python and docs locks
+
+- **WHEN** Renovate runs for the repository
+- **THEN** it uses the recommended Renovate baseline with managers scoped to Python `pyproject.toml`/`uv.lock` and docs npm/pnpm dependencies
+- **AND** scheduled lock-file maintenance keeps `uv.lock` and `docs/pnpm-lock.yaml` fresh through reviewable dependency pull requests
+
+#### Scenario: Local credential files are generated or downloaded
+
+- **WHEN** a maintainer creates local environment, Kaggle, package-registry, network, key, token, or credential files
+- **THEN** the repository ignore rules exclude those files from normal git status
+- **AND** `.env.example` remains available as the tracked non-secret configuration template
+- **AND** CI, docs, and generated artifacts do not require printing or committing secrets

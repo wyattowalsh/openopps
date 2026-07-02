@@ -3,13 +3,12 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import difflib
-import importlib.util
 import json
 from pathlib import Path
 import sys
-from types import ModuleType
 from typing import Any
 
+import openopps_kaggle.generator as generator
 
 FORBIDDEN_SOURCE_TERMS = (
     "KAGGLE_KEY",
@@ -119,7 +118,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def expected_kernels() -> list[ExpectedKernel]:
-    generator = _load_generator()
     kernels = [
         ExpectedKernel(
             kernel_id=generator.STARTER_NB_ID,
@@ -145,21 +143,6 @@ def expected_kernels() -> list[ExpectedKernel]:
     return kernels
 
 
-def _load_generator() -> ModuleType:
-    repo_root = Path(__file__).resolve().parents[1]
-    generator_path = repo_root / "scripts" / "generate_kaggle_metadata.py"
-    module_name = "_openopps_kaggle_metadata_generator"
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-    spec = importlib.util.spec_from_file_location(module_name, generator_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load generator from {generator_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def _canonical_metadata(
     metadata: dict[str, Any], expected_code_file: str
 ) -> dict[str, Any]:
@@ -169,10 +152,9 @@ def _canonical_metadata(
         canonical["docker_image"] = ""
     if canonical.get("code_file") == STARTER_PULL_CODE_FILE_ALIAS:
         canonical["code_file"] = expected_code_file
-    if (
-        expected_code_file == "openoppsdb-starter.ipynb"
-        and canonical.get("keywords") == ["jobs and career"]
-    ):
+    if expected_code_file == "openoppsdb-starter.ipynb" and canonical.get(
+        "keywords"
+    ) == ["jobs and career"]:
         canonical["keywords"] = []
     return canonical
 

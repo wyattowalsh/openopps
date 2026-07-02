@@ -1,0 +1,116 @@
+---
+title: Data Model
+description: Sources, boards, providers, jobs, exports, static indices, and telemetry event-lake guidance.
+---
+
+OpenOpps keeps the operational ledger in local SQLite, publishes portable extracts for analysis, and serves the docs jobs/explorer surfaces from committed static artifacts. Use this page when you need to reason about data boundaries, counts, exports, or telemetry.
+
+## Core Entities
+
+| Entity | Meaning | Primary producer |
+| ------ | ------- | ---------------- |
+| `sources` | Aggregate discovery catalogs such as `a16z`, `accel`, `yc`, public-company indices, or ecosystem landscapes. | Packaged source adapters and plugins. |
+| `boards` | Firm or company hiring boards discovered from sources. | `sources sync`, `boards sync`, and admin board commands. |
+| `board_providers` | Provider route metadata between a board and a public job adapter. | Provider detection, route probing, and board sync. |
+| `jobs` | Stable posting identity and lifecycle fields. | Successful provider-route job syncs. |
+| `job_versions` | Normalized current or historical public posting content. | Job sync content hashing. |
+| `job_payload_snapshots` | Distinct raw listing/detail payload snapshots for replay and audit. | Job sync payload hashing. |
+| `job_sync_runs` and `job_sync_observations` | Per-route sync evidence for new, unchanged, changed, reopened, and closed outcomes. | Provider-route job syncs. |
+
+Job storage separates durable posting identity from changing content. The `jobs` table tracks status, first/last seen timestamps, close time, and current hashes. `job_versions` stores normalized user-visible content with child tables for locations, skills, skill keywords, and responsibility or qualification bullets. Raw payload drift updates payload snapshots and observations without creating a new user-visible version when normalized content does not change.
+
+## Count Provenance
+
+OpenOpps has two generated count families:
+
+| Count family | Source | Used by |
+| ------------ | ------ | ------- |
+| Package catalog counts | `scripts/generate_docs_data.py` writes `docs/lib/generated/openopps-data.json`. | Source catalog, provider registry, export format, docs summary cards. |
+| Snapshot/search counts | `scripts/generate_docs_search_index.py` reads `kaggle/openoppsdb.sqlite` and writes `docs/public/data/openopps-search/`. | Jobs workbench, `/explorer`, snapshot freshness, filters, row totals, and preview/detail shards. |
+
+Do not copy counts into prose unless the sentence explicitly names the snapshot date or package source. Prefer generated components and generated manifest values so the site does not drift when sources, providers, locations, departments, or exports change.
+
+## Exports
+
+`boards export` and `jobs export` provide filtered extracts of normalized records:
+
+```bash
+uv run openopps boards export --provider ashbyhq --has-jobs --format jsonl --output /tmp/openopps-boards.jsonl
+uv run openopps jobs export --remote Full --skill Python --format csv --output /tmp/openopps-jobs.csv
+uv run openopps jobs export --source a16z --salary-min 150000 --format parquet --output /tmp/openopps-jobs.parquet
+uv run openopps jobs export --status all --format sqlite --output /tmp/openopps-jobs.sqlite
+```
+
+| Format | Use case | Notes |
+| ------ | -------- | ----- |
+| `jsonl` | Streaming audit logs and line-oriented processing. | Preserves normalized values as JSON records. |
+| `csv` | Spreadsheet review and lightweight exchange. | Formula-leading strings are neutralized before writing. |
+| `parquet` | Polars, DuckDB, and analytics workflows. | Empty exports should remain readable empty tables. |
+| `sqlite` | Relational handoff, filtered local extracts, and portable query files. | Entity tables should use the flattened CSV/Parquet contract; nested values should be stable JSON strings. |
+
+The full OpenOppsDB snapshot remains the durable SQLite ledger. The docs and Kaggle bundle flows use `kaggle/openoppsdb.sqlite` as the local ignored input for static search artifacts and public dataset generation.
+
+## Static Jobs and Explorer Index
+
+The docs app does not call provider APIs at runtime. It reads committed artifacts under `docs/public/data/openopps-search/`:
+
+| Artifact | Purpose |
+| -------- | ------- |
+| `manifest.json` | Snapshot version, generated time, counts, chunks, facets, and provenance. |
+| Job chunks | Searchable latest job rows for the jobs workbench. |
+| Detail shards | Larger posting detail payloads loaded only after a job is selected. |
+| Board/provider chunks | Explorer coverage, route, and source/provider inspection. |
+
+Refresh the index after updating `kaggle/openoppsdb.sqlite`:
+
+```bash
+just docs-search-index
+just docs-search-index-check
+```
+
+`just docs-search-index-check` requires the ignored local SQLite snapshot, regenerates `docs/public/data/openopps-search/`, and fails if the committed search artifacts still differ. If the SQLite file is absent, use package-derived docs checks and record the missing snapshot as the blocker for search-index parity.
+
+## Facets and Suggestions
+
+Jobs and explorer filters should be generated from the static search manifest, not hardcoded UI lists. The manifest is the right place for canonical values and counts for:
+
+- sources and source aliases
+- providers and support levels
+- locations
+- departments and teams
+- companies
+- skills and skill keywords
+- workplace and employment types
+- job status and salary currency
+
+Fuzzy matching should rank normalized generated suggestions first and only fall back to typed substring matching when the user enters a value that is not in the generated index.
+
+## Telemetry Event Lake
+
+The docs app telemetry source of truth should be a first-party event lake, not a paid analytics product. The collector can run as a no-op locally, append raw events when persistent storage is configured, and compact events into Parquet for DuckDB analysis.
+
+Recommended event shape:
+
+| Field | Meaning |
+| ----- | ------- |
+| `event_id` | Client-generated unique id for de-duping. |
+| `schema_version` | Telemetry schema version, starting at `1`. |
+| `sent_at` and `received_at` | Client and collector timestamps. |
+| `event_name` | Allowlisted event name such as `jobs.filter_set` or `explorer.chart_select`. |
+| `anonymous_id`, `session_id`, `page_id` | First-party anonymous identifiers. |
+| `route`, `path`, `query`, `referrer`, `utm` | Navigation and attribution context. |
+| `viewport`, `timezone`, `language`, `user_agent` | Browser context for debugging and product analytics. |
+| `entity_context` | Job, source, provider, filter, or explorer entity ids when relevant. |
+| `properties` | Event-specific allowlisted metadata. |
+| `redaction_count`, `payload_truncated` | Evidence that sanitization and size limits were applied. |
+
+Recommended sink modes:
+
+| Sink | Use case | Cost posture |
+| ---- | -------- | ------------ |
+| `noop` | Local development or deployments without storage. | Free; records nothing. |
+| `local-event-lake` | Canonical first-party telemetry on persistent disk. | Free when running on existing infrastructure. |
+| `cloudflare` | Optional Workers/R2/D1/Analytics Engine adapter. | Can stay free inside quotas, but quota and billing risk must be monitored. |
+| `umami` | Optional dashboard mirror for web analytics summaries. | Free when self-hosted, but not the canonical raw warehouse. |
+
+Sanitize obvious secret-like values, cap event size, and make raw IP retention an explicit opt-in. Hashing IPs with a deployment salt is the default compromise when approximate abuse/debugging signal is useful.

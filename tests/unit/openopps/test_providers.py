@@ -129,6 +129,40 @@ async def test_greenhouse_drops_unsafe_public_job_urls():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_greenhouse_accepts_public_api_route_url():
+    settings = OpenOppsSettings(cache_enabled=False)
+    api_url = "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"
+    match = GreenhouseProvider.detect_route(api_url)
+    respx.get(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        params={"content": "false"},
+    ).mock(return_value=httpx.Response(200, json={"jobs": [{"id": 123}]}))
+
+    assert match is not None
+    assert match.token == "acme"
+    assert (
+        GreenhouseProvider.detect_route(
+            "https://boards-api.greenhouse.io/v1/boards/acme"
+        )
+        is None
+    )
+    assert (
+        GreenhouseProvider.detect_route(
+            "https://boards-api.greenhouse.io/v1/boards/acme/jobs/123"
+        )
+        is None
+    )
+
+    async with build_async_client(settings) as client:
+        count = await GreenhouseProvider(settings).check_jobs(
+            client, board(), route("greenhouse", board_url=api_url)
+        )
+
+    assert count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_lever_fetch_jobs():
     settings = OpenOppsSettings(cache_enabled=False)
     respx.get("https://api.lever.co/v0/postings/acme").mock(
@@ -196,6 +230,29 @@ async def test_lever_fetch_jobs():
         "customCategory": "preserved",
     }
     assert jobs[0].raw_listing["customField"] == {"remote": True}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lever_accepts_public_api_route_url():
+    settings = OpenOppsSettings(cache_enabled=False)
+    api_url = "https://api.lever.co/v0/postings/acme?mode=json"
+    match = LeverProvider.detect_route(api_url)
+    respx.get("https://api.lever.co/v0/postings/acme").mock(
+        return_value=httpx.Response(200, json=[{"id": "abc"}])
+    )
+
+    assert match is not None
+    assert match.token == "acme"
+    assert LeverProvider.detect_route("https://api.lever.co/v0/postings") is None
+    assert LeverProvider.detect_route("https://api.lever.co/v1/postings/acme") is None
+
+    async with build_async_client(settings) as client:
+        count = await LeverProvider(settings).check_jobs(
+            client, board(), route("lever", board_url=api_url)
+        )
+
+    assert count == 1
 
 
 @pytest.mark.asyncio
@@ -563,12 +620,34 @@ async def test_workable_fetch_jobs_uses_shared_rate_limiter(monkeypatch):
 def test_workable_route_detection_and_token_derivation():
     hosted = WorkableProvider.detect_route("https://apply.workable.com/acme/")
     api = WorkableProvider.detect_route("https://www.workable.com/api/accounts/acme")
+    listing_api = WorkableProvider.detect_route(
+        "https://apply.workable.com/api/v3/accounts/bravo/jobs"
+    )
+    detail_api = WorkableProvider.detect_route(
+        "https://apply.workable.com/api/v2/accounts/charlie/jobs/abc123"
+    )
 
     assert hosted is not None
     assert hosted.token == "acme"
     assert api is not None
     assert api.token == "acme"
+    assert listing_api is not None
+    assert listing_api.token == "bravo"
+    assert detail_api is not None
+    assert detail_api.token == "charlie"
     assert WorkableProvider.detect_route("https://apply.workable.com/j/abc123") is None
+    assert (
+        WorkableProvider.detect_route(
+            "https://apply.workable.com/api/v3/accounts/bravo"
+        )
+        is None
+    )
+    assert (
+        WorkableProvider.detect_route(
+            "https://apply.workable.com/api/v3/accounts/bravo/jobs/extra"
+        )
+        is None
+    )
     assert workable_token(route("workable", token=" acme ")) == "acme"
     assert (
         workable_token(
@@ -581,6 +660,15 @@ def test_workable_route_detection_and_token_derivation():
             route("workable", board_url="https://apply.workable.com/charlie/")
         )
         == "charlie"
+    )
+    assert (
+        workable_token(
+            route(
+                "workable",
+                board_url="https://apply.workable.com/api/v3/accounts/delta/jobs",
+            )
+        )
+        == "delta"
     )
     assert workable_token(route("workable")) is None
 
@@ -708,6 +796,41 @@ async def test_teamtailor_check_jobs_and_missing_route():
             await TeamtailorProvider(settings).fetch_jobs(
                 client, board(), route("teamtailor")
             )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_teamtailor_check_jobs_uses_cached_rss(tmp_path):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        retry_attempts=1,
+        cache_ttl_seconds=60,
+    )
+    rss_route = respx.get("https://acme.teamtailor.com/jobs.rss").mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+            <rss>
+              <channel>
+                <item><title>One</title></item>
+              </channel>
+            </rss>
+            """,
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        provider = TeamtailorProvider(settings)
+        first = await provider.check_jobs(
+            client, board(), route("teamtailor", token="acme")
+        )
+        second = await provider.check_jobs(
+            client, board(), route("teamtailor", token="acme")
+        )
+
+    assert first == 1
+    assert second == 1
+    assert rss_route.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -1074,7 +1197,7 @@ async def test_wpjobmanager_check_jobs_count_paths_and_invalid_payload():
     rest_url = "https://jobs.example.com/wp-json/wp/v2/job-listings"
     ajax_url = "https://jobs.example.com/jm-ajax/get_listings/"
     respx.get(rest_url, params={"per_page": 1}).mock(
-        return_value=httpx.Response(200, json=[{}])
+        return_value=httpx.Response(200, json=[{}], headers={"x-wp-total": "9"})
     )
     respx.get(ajax_url, params={"page": 1, "per_page": 1}).mock(
         return_value=httpx.Response(200, json={"total": "7", "html": ""})
@@ -1088,7 +1211,7 @@ async def test_wpjobmanager_check_jobs_count_paths_and_invalid_payload():
             await WPJobManagerProvider(settings).check_jobs(
                 client, board(), route("wpjobmanager", board_url=rest_url)
             )
-            == 1
+            == 9
         )
         assert (
             await WPJobManagerProvider(settings).check_jobs(

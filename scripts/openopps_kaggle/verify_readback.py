@@ -4,7 +4,6 @@ import argparse
 import json
 from typing import Any
 
-
 DATASET_ID = "wyattowalsh/openoppsdb"
 TABLES = (
     "sources",
@@ -25,14 +24,14 @@ TABLES = (
 EXPECTED_TABLES = len(TABLES)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Verify live OpenOppsDB readback through KaggleHub."
     )
     parser.add_argument("--dataset", default=DATASET_ID)
     parser.add_argument("--version", type=int, default=None)
     parser.add_argument("--skip-sqlite", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         import kagglehub

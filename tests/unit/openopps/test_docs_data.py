@@ -37,6 +37,7 @@ def test_build_docs_data_matches_provider_counts() -> None:
     assert data["sourceCatalog"] == sorted(
         data["sourceCatalog"], key=lambda source: source["key"]
     )
+    assert all("enabled" not in source for source in data["sourceCatalog"])
 
 
 def test_generated_docs_data_artifact_is_current() -> None:

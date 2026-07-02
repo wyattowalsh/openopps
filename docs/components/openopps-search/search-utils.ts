@@ -1,6 +1,7 @@
-import type { SearchRow } from "./search-types";
+import type { Entity, SearchRow } from "./search-types";
+import type { SearchSuggestion } from "./search-types";
 
-export const SEARCH_VERSION = 3;
+export const SEARCH_VERSION = 4;
 
 export const EXPECTED_PROVIDER_COLUMNS = [
 	"id",
@@ -48,9 +49,14 @@ export const JOB_COLUMN_INDICES = {
 	descriptionSnippet: 20,
 	skillTokens: 21,
 	syncedAt: 22,
+	firstSeenAt: 23,
+	lastSeenAt: 24,
+	closedAt: 25,
+	contentHash: 26,
+	payloadHash: 27,
 } as const;
 
-export const EXPECTED_JOB_COLUMNS = [
+export const LEGACY_JOB_COLUMNS = [
 	"id",
 	"sourceKey",
 	"boardKey",
@@ -76,6 +82,15 @@ export const EXPECTED_JOB_COLUMNS = [
 	"syncedAt",
 ];
 
+export const EXPECTED_JOB_COLUMNS = [
+	...LEGACY_JOB_COLUMNS,
+	"firstSeenAt",
+	"lastSeenAt",
+	"closedAt",
+	"contentHash",
+	"payloadHash",
+];
+
 export const EXPECTED_COLUMNS = {
 	providers: EXPECTED_PROVIDER_COLUMNS,
 	boards: EXPECTED_BOARD_COLUMNS,
@@ -83,6 +98,13 @@ export const EXPECTED_COLUMNS = {
 } as const;
 
 export const J = JOB_COLUMN_INDICES;
+
+export function expectedColumnsFor(entity: Entity, version: number) {
+	if (entity === "jobs" && version === 3) {
+		return LEGACY_JOB_COLUMNS;
+	}
+	return EXPECTED_COLUMNS[entity];
+}
 
 export function text(value: unknown) {
 	if (value === null || value === undefined) {
@@ -97,6 +119,78 @@ export function normalize(value: string) {
 
 export function terms(value: string) {
 	return normalize(value).split(/\s+/).filter(Boolean);
+}
+
+export function normalizeSuggestion(value: string) {
+	return value
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+}
+
+export function rankSuggestions(
+	suggestions: SearchSuggestion[] | undefined,
+	query: string,
+	limit = 12,
+) {
+	const normalizedQuery = normalizeSuggestion(query);
+	const ranked = (suggestions ?? [])
+		.map((suggestion) => ({
+			suggestion,
+			score: suggestionScore(suggestion, normalizedQuery),
+		}))
+		.filter((item) => item.score > 0)
+		.sort(
+			(left, right) =>
+				right.score - left.score ||
+				right.suggestion.count - left.suggestion.count ||
+				compareText(left.suggestion.label, right.suggestion.label),
+		);
+	return ranked.slice(0, limit).map((item) => item.suggestion);
+}
+
+export function suggestionScore(
+	suggestion: SearchSuggestion,
+	normalizedQuery: string,
+) {
+	if (!normalizedQuery) {
+		return 1 + Math.min(suggestion.count, 1000) / 1000;
+	}
+	const candidates = [
+		suggestion.normalized,
+		normalizeSuggestion(suggestion.value),
+		normalizeSuggestion(suggestion.label),
+		...(suggestion.aliases ?? []).map(normalizeSuggestion),
+	].filter(Boolean);
+	let score = 0;
+	for (const candidate of candidates) {
+		if (candidate === normalizedQuery) {
+			score = Math.max(score, 100);
+		} else if (candidate.startsWith(normalizedQuery)) {
+			score = Math.max(score, 80);
+		} else if (candidate.includes(normalizedQuery)) {
+			score = Math.max(score, 60);
+		} else if (subsequenceMatches(candidate, normalizedQuery)) {
+			score = Math.max(score, 30);
+		}
+	}
+	return score + Math.min(suggestion.count, 1000) / 1000;
+}
+
+function subsequenceMatches(value: string, query: string) {
+	if (!query) {
+		return true;
+	}
+	let queryIndex = 0;
+	for (const char of value) {
+		if (char === query[queryIndex]) {
+			queryIndex += 1;
+			if (queryIndex === query.length) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 export function compareText(left: string, right: string) {
@@ -202,4 +296,45 @@ export function detailBucket(jobId: string) {
 
 export function detailPath(root: string, jobId: string) {
 	return `${root}/${detailBucket(jobId)}.json`;
+}
+
+export type SearchLoadErrorCode =
+	| "fetch_failed"
+	| "unsupported_version"
+	| "invalid_manifest"
+	| "invalid_chunk"
+	| "missing_entity_path";
+
+export class SearchLoadError extends Error {
+	readonly code: SearchLoadErrorCode;
+	readonly path?: string;
+
+	constructor(code: SearchLoadErrorCode, message: string, path?: string) {
+		super(message);
+		this.name = "SearchLoadError";
+		this.code = code;
+		this.path = path;
+	}
+}
+
+export function formatLoadError(error: unknown) {
+	if (error instanceof SearchLoadError) {
+		switch (error.code) {
+			case "unsupported_version":
+				return "The committed search snapshot uses an unsupported index version. Regenerate with pnpm data:generate:search.";
+			case "invalid_manifest":
+				return "The search manifest is missing required entity columns. Regenerate the docs search snapshot.";
+			case "invalid_chunk":
+				return "A search index chunk failed validation. Regenerate the docs search snapshot.";
+			case "missing_entity_path":
+				return "The search manifest is missing an entity path. Regenerate the docs search snapshot.";
+			case "fetch_failed":
+			default:
+				return error.message;
+		}
+	}
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return "Unable to load the OpenOpps search index.";
 }

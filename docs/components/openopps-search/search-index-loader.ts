@@ -5,9 +5,15 @@ import type {
 	SearchManifest,
 	SearchRow,
 } from "./search-types";
-import { EXPECTED_COLUMNS, SEARCH_VERSION } from "./search-utils";
+import {
+	EXPECTED_COLUMNS,
+	SEARCH_VERSION,
+	SearchLoadError,
+	expectedColumnsFor,
+} from "./search-utils";
 
 export const SEARCH_MANIFEST_PATH = "/data/openopps-search/manifest.json";
+const SUPPORTED_SEARCH_INDEX_VERSIONS = new Set([3, SEARCH_VERSION]);
 const MAX_CHUNK_FETCHES = 6;
 
 const jsonCache = new Map<string, Promise<unknown>>();
@@ -17,9 +23,19 @@ export async function fetchJson<T>(path: string): Promise<T> {
 	if (!cached) {
 		cached = fetch(path, { cache: "force-cache" }).then(async (response) => {
 			if (!response.ok) {
-				throw new Error(`Unable to load ${path}: ${response.status}`);
+				throw new SearchLoadError(
+					"fetch_failed",
+					`Unable to load ${path}: ${response.status}`,
+					path,
+				);
 			}
 			return response.json() as Promise<unknown>;
+		});
+		cached = cached.catch((caught: unknown) => {
+			if (jsonCache.get(path) === cached) {
+				jsonCache.delete(path);
+			}
+			throw caught;
 		});
 		jsonCache.set(path, cached);
 	}
@@ -49,7 +65,7 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 		const chunks = await loadChunkRefs(entity, details.chunks);
 		const rows = chunks.flatMap((chunk) => chunk.rows);
 		return {
-			version: SEARCH_VERSION,
+			version: manifest.version,
 			entity,
 			columns: details.columns,
 			count: rows.length,
@@ -57,7 +73,10 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 		} satisfies SearchChunk;
 	}
 	if (!details.path) {
-		throw new Error(`Search manifest is missing ${entity} entity path.`);
+		throw new SearchLoadError(
+			"missing_entity_path",
+			`Search manifest is missing ${entity} entity path.`,
+		);
 	}
 	const chunk = await fetchJson<SearchChunk>(details.path);
 	validateSearchChunk(entity, chunk);
@@ -65,26 +84,43 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 }
 
 export function validateSearchManifest(manifest: SearchManifest) {
-	if (manifest.version !== SEARCH_VERSION) {
-		throw new Error(`Unsupported search index version: ${manifest.version}`);
+	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(manifest.version)) {
+		throw new SearchLoadError(
+			"unsupported_version",
+			`Unsupported search index version: ${manifest.version}`,
+		);
 	}
 	for (const entity of Object.keys(EXPECTED_COLUMNS) as Entity[]) {
 		const columns = manifest.entities?.[entity]?.columns;
-		if (!columns || columns.join("\0") !== EXPECTED_COLUMNS[entity].join("\0")) {
-			throw new Error(`Search index manifest columns do not match ${entity}`);
+		const expectedColumns = expectedColumnsFor(entity, manifest.version);
+		if (!columns || columns.join("\0") !== expectedColumns.join("\0")) {
+			throw new SearchLoadError(
+				"invalid_manifest",
+				`Search index manifest columns do not match ${entity}`,
+			);
 		}
 	}
 }
 
 export function validateSearchChunk(entity: Entity, chunk: SearchChunk) {
-	if (chunk.version !== SEARCH_VERSION || chunk.entity !== entity) {
-		throw new Error(`Unsupported ${entity} search index chunk`);
+	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(chunk.version) || chunk.entity !== entity) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			`Unsupported ${entity} search index chunk`,
+		);
 	}
-	if (chunk.columns.join("\0") !== EXPECTED_COLUMNS[entity].join("\0")) {
-		throw new Error(`Search index chunk columns do not match ${entity}`);
+	const expectedColumns = expectedColumnsFor(entity, chunk.version);
+	if (chunk.columns.join("\0") !== expectedColumns.join("\0")) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			`Search index chunk columns do not match ${entity}`,
+		);
 	}
 	if (chunk.count !== chunk.rows.length) {
-		throw new Error(`Search index chunk count does not match ${entity} rows`);
+		throw new SearchLoadError(
+			"invalid_chunk",
+			`Search index chunk count does not match ${entity} rows`,
+		);
 	}
 }
 

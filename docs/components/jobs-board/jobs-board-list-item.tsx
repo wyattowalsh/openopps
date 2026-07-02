@@ -2,6 +2,10 @@
 
 import type { ReactNode } from "react";
 
+import type {
+	JobLifecycleIndicator,
+	JobWorkflowRecord,
+} from "@/components/jobs-board/jobs-board-local-state";
 import type { SearchRow } from "@/components/openopps-search/search-types";
 import {
 	formatLocations,
@@ -16,6 +20,9 @@ export const JOB_ROW_HEIGHT = 56;
 type JobsBoardListItemProps = {
 	row: SearchRow;
 	selected: boolean;
+	focused?: boolean;
+	workflowRecord?: JobWorkflowRecord;
+	lifecycleIndicators?: JobLifecycleIndicator[];
 	onSelect: (jobId: string) => void;
 };
 
@@ -33,6 +40,9 @@ function Chip({ children }: { children: ReactNode }) {
 export function JobsBoardListItem({
 	row,
 	selected,
+	focused = false,
+	workflowRecord,
+	lifecycleIndicators = [],
 	onSelect,
 }: JobsBoardListItemProps) {
 	const jobId = text(row[J.id]);
@@ -41,6 +51,14 @@ export function JobsBoardListItem({
 	const location = formatLocations(row[J.locations]);
 	const remote = text(row[J.remote]);
 	const salary = formatSalary(row);
+	const statusChips = [
+		...lifecycleIndicators,
+		workflowRecord?.viewedAt ? "viewed" : "",
+		workflowRecord?.savedAt ? "saved" : "",
+		workflowRecord?.hiddenAt ? "hidden" : "",
+		workflowRecord?.appliedAt ? "applied" : "",
+		workflowRecord?.notes.trim() ? "notes" : "",
+	].filter(Boolean);
 
 	return (
 		<button
@@ -50,14 +68,22 @@ export function JobsBoardListItem({
 				"opps-table-row flex w-full flex-col justify-center gap-1 px-3 text-left",
 			)}
 			style={{ height: JOB_ROW_HEIGHT }}
-			aria-pressed={selected}
+			aria-current={selected ? "true" : undefined}
 			data-selected={selected ? "true" : "false"}
+			data-focused={focused ? "true" : "false"}
 			aria-label={`${title} at ${company}`}
 		>
 			<div className="flex min-w-0 items-baseline gap-2">
 				<span className="min-w-0 flex-1 truncate font-heading text-sm font-semibold leading-tight">
 					{title}
 				</span>
+				{statusChips.length > 0 ? (
+					<span className="hidden shrink-0 gap-1 sm:inline-flex">
+						{statusChips.map((chip) => (
+							<Chip key={chip}>{chip}</Chip>
+						))}
+					</span>
+				) : null}
 				<span className="shrink-0 truncate text-xs text-muted-foreground">
 					{company}
 				</span>

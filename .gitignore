@@ -76,9 +76,27 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+tmp-log*.md
 
-# local env files
+# local env and credential files
+.env
 .env*.local
+.env.*
+!.env.example
+.envrc
+*.env
+.kaggle/
+**/kaggle.json
+.netrc
+.pypirc
+.npmrc
+.npmrc.local
+*credentials*.json
+*token*.json
+client_secret*.json
+*.key
+*.p12
+*.pfx
 
 # vercel
 .vercel
@@ -162,6 +180,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/test-results/
 
 # PyBuilder
 .pybuilder/
@@ -345,3 +364,4 @@ $RECYCLE.BIN/
 openopps.db*
 openopps.cache.db*
 openoppsdb.sqlite*
+.tmp/*.sqlite*

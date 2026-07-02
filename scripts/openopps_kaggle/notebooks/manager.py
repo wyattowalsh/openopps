@@ -1,0 +1,3 @@
+"""Manager notebook helpers (implemented in _core)."""
+
+from openopps_kaggle._core import *  # noqa: F403

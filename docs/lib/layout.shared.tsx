@@ -19,6 +19,21 @@ export function baseOptions(): BaseLayoutProps {
 				</span>
 			),
 		},
-		githubUrl,
+		links: [
+			{
+				text: "Jobs",
+				url: "/",
+			},
+			{
+				text: "Explorer",
+				url: "/explorer",
+			},
+			{
+				text: "GitHub",
+				url: githubUrl,
+				external: true,
+				active: "none",
+			},
+		],
 	};
 }

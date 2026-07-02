@@ -65,6 +65,10 @@ OPENOPPS_PLUGIN_DISABLED=broken-plugin
 
 Unscoped `jobs sync` targets all persisted ready routes. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs.
 
+The docs [Jobs](/) and [Explorer](/explorer) surfaces read a committed static search snapshot generated from your local `kaggle/openoppsdb.sqlite` export. Refresh it with `just docs-search-index` after updating the database; see [Operations](/docs/operations) for validation commands.
+
+Docs-app telemetry is configured separately from CLI runtime settings. When instrumentation is enabled, keep the sink first-party and env-gated: default to a no-op sink in local development, use a persistent local event lake for canonical raw events, and treat Cloudflare or Umami adapters as optional mirrors. See [Data Model](/docs/data-model#telemetry-event-lake) for the event shape and [Operations](/docs/operations#telemetry-operations) for operating guidance.
+
 ## Flags vs Persistent Settings
 
 Prefer flags for one run and environment variables for durable local policy:

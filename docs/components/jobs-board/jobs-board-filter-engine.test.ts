@@ -62,6 +62,13 @@ describe("jobs-board-filter-engine", () => {
 		expect(sourceKeyMatches(makeRow({ sourceKeys: null }), "a16z")).toBe(true);
 	});
 
+	it("supports fuzzy source key filters", () => {
+		expect(sourceKeyMatches(openRow, "a1")).toBe(true);
+		expect(sourceKeyMatches(makeRow({ sourceKeys: null, source: "climate-tech" }), "clmtech")).toBe(
+			true,
+		);
+	});
+
 	it("falls back to source key when sourceKeys is empty", () => {
 		expect(sourceKeyMatches(makeRow({ sourceKeys: "[]", source: "yc" }), "yc")).toBe(true);
 		expect(sourceKeyMatches(makeRow({ sourceKeys: "[]", source: "yc" }), "a16z")).toBe(false);
@@ -130,6 +137,20 @@ describe("jobs-board-filter-engine", () => {
 				provider: "lever",
 			}),
 		).toBe(false);
+	});
+
+	it("matches provider, location, department, team, employment, and skill fuzzily", () => {
+		expect(
+			jobMatchesFilters(openRow, {
+				...DEFAULT_JOB_BOARD_FILTERS,
+				provider: "grnhse",
+				location: "sfo",
+				department: "eng",
+				team: "plat",
+				employment: "ftime",
+				skill: "kube",
+			}),
+		).toBe(true);
 	});
 
 	it("evaluates salary overlap with both bounds", () => {

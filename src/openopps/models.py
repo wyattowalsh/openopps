@@ -209,6 +209,7 @@ class ExportFormat(StrEnum):
     JSONL = "jsonl"
     CSV = "csv"
     PARQUET = "parquet"
+    SQLITE = "sqlite"
 
 
 class RemoteLevel(StrEnum):
@@ -800,6 +801,22 @@ def _skill_level(record: JobRecord) -> str | None:
 
 class SourceRecord(OpenOppsRecord):
     """A configured source of opportunity-board companies."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_enabled_extra(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            sanitized = dict(data)
+            sanitized.pop("enabled", None)
+            extra_payload = sanitized.get("extra_payload")
+            if isinstance(extra_payload, dict) and "enabled" in extra_payload:
+                sanitized["extra_payload"] = {
+                    key: value
+                    for key, value in extra_payload.items()
+                    if key != "enabled"
+                }
+            return sanitized
+        return data
 
     key: NonEmptyStr = Field(
         description="Stable local identifier for the source.",

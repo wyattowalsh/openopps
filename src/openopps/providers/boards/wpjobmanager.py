@@ -6,7 +6,11 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from openopps.http import retrying_json_request
+from openopps.http import (
+    HttpResponseData,
+    retrying_json_request,
+    retrying_json_response,
+)
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -30,6 +34,7 @@ class WPJobManagerProvider:
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
         self._request_json = retrying_json_request(settings)
+        self._request_json_response = retrying_json_response(settings)
 
     @staticmethod
     def detect_route(url: str) -> ProviderRouteMatch | None:
@@ -73,29 +78,36 @@ class WPJobManagerProvider:
             if not isinstance(data, dict):
                 raise ValueError("WP Job Manager AJAX endpoint returned invalid JSON")
             return _ajax_count(data)
-        data = await self._request_json(client, "GET", endpoint, params={"per_page": 1})
+        response = await self._request_json_response(
+            client, "GET", endpoint, params={"per_page": 1}
+        )
+        data = response.body
         if not isinstance(data, list):
             raise ValueError("WP Job Manager listings endpoint returned invalid JSON")
-        return len(data)
+        return _wp_total(response) or len(data)
 
     async def _fetch_listings(
         self, client: httpx.AsyncClient, endpoint: str
     ) -> list[dict[str, Any]]:
         listings: list[dict[str, Any]] = []
         page = 1
+        per_page = 100
+        total: int | None = None
         while True:
-            data = await self._request_json(
+            response = await self._request_json_response(
                 client,
                 "GET",
                 endpoint,
-                params={"per_page": 100, "page": page},
+                params={"per_page": per_page, "page": page},
             )
+            data = response.body
             if not isinstance(data, list):
                 raise ValueError(
                     "WP Job Manager listings endpoint returned invalid JSON"
                 )
+            total = total if total is not None else _wp_total(response)
             listings.extend(item for item in data if isinstance(item, dict))
-            if len(data) < 100:
+            if (total is not None and len(listings) >= total) or len(data) < per_page:
                 break
             page += 1
         return listings
@@ -237,6 +249,10 @@ def _ajax_count(data: dict[str, Any]) -> int:
     if total is not None:
         return total
     return len(_ajax_listings("", data))
+
+
+def _wp_total(response: HttpResponseData) -> int | None:
+    return _int(response.headers.get("x-wp-total"))
 
 
 def _ajax_has_next_page(data: dict[str, Any], page: int) -> bool:

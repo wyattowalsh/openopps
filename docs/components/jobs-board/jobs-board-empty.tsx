@@ -7,15 +7,31 @@ type JobsBoardEmptyProps = {
 	matchCount: number;
 	activeFilterCount: number;
 	onClearFilters: () => void;
+	loadingFullIndex?: boolean;
 };
 
 export function JobsBoardEmpty({
 	matchCount,
 	activeFilterCount,
 	onClearFilters,
+	loadingFullIndex = false,
 }: JobsBoardEmptyProps) {
+	if (loadingFullIndex) {
+		return (
+			<div className="opps-empty-state">
+				<h2 className="font-heading text-lg font-semibold text-foreground">
+					Loading full jobs index
+				</h2>
+				<p className="mt-2 max-w-md text-sm leading-6">
+					Fetching the committed snapshot so filters and deep links can search every
+					open role.
+				</p>
+			</div>
+		);
+	}
+
 	return (
-		<div className="opps-empty">
+		<div className="opps-empty-state">
 			<SearchX className="mb-4 size-10 text-muted-foreground/70" />
 			<h2 className="font-heading text-lg font-semibold">No open jobs match</h2>
 			<p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">

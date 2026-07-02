@@ -306,6 +306,68 @@ def test_storage_roundtrip_and_export(tmp_path: Path):
     assert parquet_rows[0]["salary_currency"] == "USD"
     assert json.loads(parquet_rows[0]["job_description"])["company"] == "Acme"
 
+    sqlite_output = tmp_path / "jobs.sqlite"
+    assert (
+        export_records(
+            store.list_jobs(),
+            sqlite_output,
+            ExportFormat.SQLITE,
+            sqlite_table="jobs",
+            metadata={"filters": {"status": "open"}},
+        )
+        == 1
+    )
+    with sqlite3.connect(sqlite_output) as conn:
+        conn.row_factory = sqlite3.Row
+        exported = conn.execute("SELECT * FROM jobs").fetchone()
+        metadata = {
+            row["key"]: json.loads(row["value"])
+            for row in conn.execute("SELECT key, value FROM _openopps_export_metadata")
+        }
+    assert exported is not None
+    assert exported["salary_currency"] == "USD"
+    assert json.loads(exported["job_description"])["company"] == "Acme"
+    assert metadata["entity"] == "jobs"
+    assert metadata["row_count"] == 1
+    assert metadata["filters"] == {"status": "open"}
+    assert metadata["export_format"] == "sqlite"
+
+
+def test_source_enabled_extra_does_not_rehydrate_or_export(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+    store.init_db()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (
+                key, url, provider_id, version, raw_metadata, extra_payload, synced_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, NULL)
+            """,
+            (
+                "legacy",
+                "https://jobs.example.com/companies",
+                "getro",
+                json.dumps({}),
+                json.dumps({"collectionId": "8672"}),
+                json.dumps({"enabled": True, "legacyNote": "kept"}),
+            ),
+        )
+
+    source = store.get_source("legacy")
+    assert source is not None
+    source_data = source.model_dump(mode="json")
+    assert "enabled" not in source_data
+    assert source_data["legacyNote"] == "kept"
+
+    jsonl_output = tmp_path / "sources.jsonl"
+    assert export_records([source], jsonl_output, ExportFormat.JSONL) == 1
+    jsonl_row = json.loads(jsonl_output.read_text().strip())
+    assert "enabled" not in jsonl_row
+    assert jsonl_row["legacyNote"] == "kept"
+
 
 def test_job_sync_tracks_versions_raw_drift_and_lifecycle(tmp_path: Path):
     db_path = tmp_path / "openopps.db"

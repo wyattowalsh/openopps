@@ -44,9 +44,7 @@ FORTUNE500_SOURCE = SourceRecord(
 class RankingCsvSourceAdapter:
     provider_id = "ranking_csv"
     provider_label = "Ranking CSV"
-    provider_description = (
-        "CSV ranking source adapter for employer and company lists."
-    )
+    provider_description = "CSV ranking source adapter for employer and company lists."
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings

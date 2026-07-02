@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
+from openopps.http import retrying_text_request
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -31,6 +32,7 @@ class TeamtailorProvider:
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
+        self._request_text = retrying_text_request(settings)
 
     @staticmethod
     def detect_route(url: str) -> ProviderRouteMatch | None:
@@ -65,12 +67,13 @@ class TeamtailorProvider:
         host = teamtailor_host(route)
         if not host:
             raise ValueError("Teamtailor route is missing a public board host")
-        response = await client.get(
+        text = await self._request_text(
+            client,
+            "GET",
             f"https://{host}/jobs.rss",
             headers={"accept": "application/rss+xml, application/xml, text/xml"},
         )
-        response.raise_for_status()
-        return ET.fromstring(response.text)
+        return ET.fromstring(text)
 
     def _normalize(self, board: BoardRecord, item: ET.Element) -> JobRecord:
         raw = _item_payload(item)

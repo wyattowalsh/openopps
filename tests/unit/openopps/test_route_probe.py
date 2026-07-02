@@ -176,6 +176,31 @@ async def test_probe_routes_uses_cached_greenhouse_response(tmp_path: Path):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_probe_routes_uses_cached_teamtailor_response(tmp_path: Path):
+    settings, store = store_with_route(
+        tmp_path, board_record(), route_record(provider_id="teamtailor")
+    )
+    route = respx.get("https://acme.teamtailor.com/jobs.rss").mock(
+        return_value=httpx.Response(
+            200,
+            text="<rss><channel><item><title>Engineer</title></item></channel></rss>",
+        )
+    )
+
+    first = await probe_routes(settings=settings, store=store, provider_id="teamtailor")
+    second = await probe_routes(
+        settings=settings, store=store, provider_id="teamtailor"
+    )
+
+    assert first.matched[0].observed_jobs == 1
+    assert second.matched[0].observed_jobs == 1
+    assert route.call_count == 1
+    assert settings.sqlite_path is not None
+    assert HttpCache(settings.sqlite_path).status()["byNamespace"] == {"route_probe": 1}
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_probe_routes_refresh_bypasses_cached_response(tmp_path: Path):
     settings, store = store_with_route(tmp_path, board_record(), route_record())
     route = respx.get(
@@ -416,7 +441,7 @@ async def test_probe_routes_matches_new_public_board_providers(tmp_path: Path):
         return_value=httpx.Response(200, json={"totalItems": 3, "items": [{}]})
     )
     respx.get("https://jobs.example.com/wp-json/wp/v2/job-listings").mock(
-        return_value=httpx.Response(200, json=[{"id": 1}])
+        return_value=httpx.Response(200, json=[{"id": 1}], headers={"x-wp-total": "4"})
     )
 
     summary = await probe_routes(settings=settings, store=store, apply=True)
@@ -438,6 +463,10 @@ async def test_probe_routes_matches_new_public_board_providers(tmp_path: Path):
         "https://jobs.example.com/wp-json/wp/v2/job-listings"
     )
     assert persisted["wpjobmanager"].token == "https://jobs.example.com"
+    wp_match = next(
+        match for match in summary.matched if match.provider_id == "wpjobmanager"
+    )
+    assert wp_match.observed_jobs == 4
 
 
 @pytest.mark.asyncio

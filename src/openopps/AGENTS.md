@@ -8,7 +8,8 @@ Python package for the OpenOpps CLI.
 - Provider adapters must report or preserve support levels: `detect`, `jobs`, or `unsupported`.
 - Keep firm aggregator board source adapters in `providers/sources/` and per-board job providers in `providers/boards/`; these hierarchies must not share adapter registries. Use `providers/registry.py` for provider definitions and `providers/base.py` for shared provider protocols.
 - Treat `--provider any` and `--provider all` as aliases for no provider filter across job-capable providers.
-- Preserve overlapping board-source records, but dedupe provider requests before probing or syncing jobs.
+- Keep each `SourceRecord.key` owned by exactly one module under `providers/sources/`; migrated or special-case Consider boards belong in `special.py`, not duplicated in `consider.py`.
+- Preserve overlapping company/board observations during ingestion, but dedupe provider requests before probing or syncing jobs.
 - Prefer async HTTPX clients, bounded concurrency, Tenacity retries, streaming JSONL, and batched DB writes for ingestion work.
 - Preserve raw upstream payloads on normalized records for auditability.
 - Keep persisted fields source-scoped where aggregate sources overlap; generated board keys should remain durable identifiers such as `source:slug` while upstream slugs remain available as `remote_slug`.

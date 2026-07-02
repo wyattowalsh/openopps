@@ -1,6 +1,12 @@
-import { HomeLayout } from 'fumadocs-ui/layouts/home';
-import { baseOptions } from '@/lib/layout.shared';
+import { HomeLayout } from "fumadocs-ui/layouts/home";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 
-export default function Layout({ children }: LayoutProps<'/'>) {
-  return <HomeLayout {...baseOptions()}>{children}</HomeLayout>;
+import { baseOptions } from "@/lib/layout.shared";
+
+export default function Layout({ children }: LayoutProps<"/">) {
+	return (
+		<HomeLayout {...baseOptions()}>
+			<NuqsAdapter>{children}</NuqsAdapter>
+		</HomeLayout>
+	);
 }

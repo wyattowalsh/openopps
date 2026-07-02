@@ -22,6 +22,8 @@ INITIAL_JOB_LIMIT = cast(int, _SEARCH_INDEX_NAMESPACE["INITIAL_JOB_LIMIT"])
 PROVIDER_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["PROVIDER_COLUMNS"])
 BOARD_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["BOARD_COLUMNS"])
 JOB_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["JOB_COLUMNS"])
+LEGACY_JOB_COLUMNS = JOB_COLUMNS[:23]
+DETAIL_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["DETAIL_IDS_FILE"])
 detail_bucket = cast(
     "Callable[[str], str]",
     _SEARCH_INDEX_NAMESPACE["_detail_bucket"],
@@ -39,6 +41,10 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     assert manifest["openJobCount"] == 1
     assert "filterSpec" in manifest
     assert "detailShards" in manifest
+    assert manifest["detailShards"]["idIndexPath"] == (
+        "/data/openopps-search/jobs-detail-ids.json"
+    )
+    assert (output_dir / DETAIL_IDS_FILE).exists()
     assert manifest["entities"]["jobs"]["detailPath"]
     assert manifest["defaultEntity"] == "jobs"
     assert manifest["defaultFilters"] == {"jobs": {"status": "open"}}
@@ -49,7 +55,18 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
         "job_versions",
         "job_version_locations",
         "job_version_skills",
+        "job_version_skill_keywords",
     ]
+    assert manifest["counts"]["snapshot"] == {
+        "database": db_path.name,
+        "sourceRows": 0,
+        "providerRoutes": 2,
+        "boards": 2,
+        "jobs": 2,
+        "openJobs": 1,
+    }
+    assert "suggestions" in manifest
+    assert "dashboard" in manifest
     assert {
         entity: details["count"] for entity, details in manifest["entities"].items()
     } == {"providers": 2, "boards": 2, "jobs": 2}
@@ -69,6 +86,11 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
         "descriptionSnippet",
         "skillTokens",
         "syncedAt",
+        "firstSeenAt",
+        "lastSeenAt",
+        "closedAt",
+        "contentHash",
+        "payloadHash",
     ):
         assert column in jobs["columns"]
     for row in jobs["rows"]:
@@ -88,6 +110,11 @@ def test_search_index_uses_current_job_versions(tmp_path: Path) -> None:
     title_index = columns.index("title")
     remote_index = columns.index("remote")
     observed_index = columns.index("latestObservedAt")
+    first_seen_index = columns.index("firstSeenAt")
+    last_seen_index = columns.index("lastSeenAt")
+    closed_index = columns.index("closedAt")
+    content_hash_index = columns.index("contentHash")
+    payload_hash_index = columns.index("payloadHash")
     rows = _read_job_rows(output_dir, manifest)
 
     assert [row[title_index] for row in rows] == [
@@ -99,6 +126,17 @@ def test_search_index_uses_current_job_versions(tmp_path: Path) -> None:
         "2026-02-03T04:05:06.123456Z",
         "2026-01-14T00:00:00.000000Z",
     ]
+    assert [row[first_seen_index] for row in rows] == [
+        "2026-01-01T00:00:00Z",
+        "2026-01-10T00:00:00Z",
+    ]
+    assert [row[last_seen_index] for row in rows] == [
+        "2026-02-03 04:05:06.123456",
+        "2026-01-14T00:00:00Z",
+    ]
+    assert [row[closed_index] for row in rows] == [None, None]
+    assert [row[content_hash_index] for row in rows] == [None, None]
+    assert [row[payload_hash_index] for row in rows] == [None, None]
 
 
 def test_search_index_preserves_nullable_board_counts(tmp_path: Path) -> None:
@@ -122,13 +160,25 @@ def test_search_index_manifest_facets_are_nonblank_and_sorted(tmp_path: Path) ->
 
     manifest = build_search_index(db_path, output_dir)
 
-    assert manifest["facets"]["sources"] == ["a16z", "yc"]
+    assert manifest["facets"]["sources"] == ["a16z", "portfolio", "yc"]
     assert manifest["facets"]["providerIds"] == ["ashbyhq", "greenhouse"]
     assert manifest["facets"]["jobStatuses"] == ["closed", "open"]
     assert manifest["facets"]["supportLevels"] == ["detect", "jobs"]
     assert manifest["facets"]["routeStatuses"] == ["active", "missing_route"]
     assert manifest["facets"]["workplaces"] == ["Full", "Hybrid", "Remote"]
     assert manifest["facets"]["employmentTypes"] == ["Contract", "Full-time"]
+    assert manifest["facets"]["locations"] == ["Canada", "New York", "Remote"]
+    assert manifest["facets"]["departments"] == ["Design", "Engineering"]
+    assert manifest["facets"]["teams"] == ["Platform", "Product"]
+    assert manifest["facets"]["companies"] == ["Acme", "Beta Labs"]
+    assert manifest["facets"]["salaryCurrencies"] == ["USD"]
+    assert manifest["suggestions"]["locations"][0] == {
+        "value": "Canada",
+        "label": "Canada",
+        "count": 1,
+        "normalized": "canada",
+    }
+    assert manifest["dashboard"]["dataQuality"]
 
 
 def test_committed_search_index_artifacts_have_runtime_schema() -> None:
@@ -137,20 +187,24 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
 
     manifest = _read_json(artifact_dir / "manifest.json")
 
-    assert manifest["version"] == SEARCH_INDEX_VERSION
+    artifact_version = manifest["version"]
+    assert artifact_version in {3, SEARCH_INDEX_VERSION}
     assert manifest["defaultEntity"] == "jobs"
     assert "detailShards" in manifest
+    job_columns = (
+        JOB_COLUMNS if artifact_version == SEARCH_INDEX_VERSION else LEGACY_JOB_COLUMNS
+    )
 
     expected_columns = {
         "providers": PROVIDER_COLUMNS,
         "boards": BOARD_COLUMNS,
-        "jobs": JOB_COLUMNS,
+        "jobs": job_columns,
     }
     for entity, columns in expected_columns.items():
         if entity == "jobs":
             continue
         chunk = _read_json(artifact_dir / f"{entity}.json")
-        assert chunk["version"] == SEARCH_INDEX_VERSION
+        assert chunk["version"] == artifact_version
         assert chunk["entity"] == entity
         assert chunk["columns"] == columns
         assert chunk["count"] == len(chunk["rows"])
@@ -163,15 +217,15 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     assert job_entity["initialPath"] == "/data/openopps-search/jobs/latest.json"
     assert job_entity["chunks"]
     latest_jobs = _read_json(artifact_dir / "jobs" / "latest.json")
-    assert latest_jobs["version"] == SEARCH_INDEX_VERSION
+    assert latest_jobs["version"] == artifact_version
     assert latest_jobs["entity"] == "jobs"
-    assert latest_jobs["columns"] == JOB_COLUMNS
+    assert latest_jobs["columns"] == job_columns
     assert latest_jobs["count"] <= INITIAL_JOB_LIMIT
     jobs = {"rows": _read_job_rows(artifact_dir, manifest)}
     assert job_entity["count"] == len(jobs["rows"])
-    assert all(len(row) == len(JOB_COLUMNS) for row in jobs["rows"])
-    id_index = JOB_COLUMNS.index("id")
-    status_index = JOB_COLUMNS.index("status")
+    assert all(len(row) == len(job_columns) for row in jobs["rows"])
+    id_index = job_columns.index("id")
+    status_index = job_columns.index("status")
     open_job_ids = [
         str(row[id_index]) for row in jobs["rows"] if row[status_index] == "open"
     ]
@@ -179,6 +233,10 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     detail_root = artifact_dir / "jobs-details"
     assert detail_shards["root"] == "/data/openopps-search/jobs-details"
     assert detail_shards["format"] == "bucket-map"
+    assert detail_shards["idIndexPath"] == "/data/openopps-search/jobs-detail-ids.json"
+    detail_id_index = _read_json(artifact_dir / detail_shards["idIndexFile"])
+    assert detail_id_index.get("version", artifact_version) == artifact_version
+    assert detail_id_index["count"] == len(detail_id_index["ids"])
     assert detail_shards["count"] == len(open_job_ids) == manifest["openJobCount"]
     assert (
         sum(bucket["count"] for bucket in detail_shards["buckets"].values())
@@ -199,6 +257,7 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
             detail_ids.add(job_id)
     assert not any(detail_root.glob("*/*.json"))
     assert detail_ids == set(open_job_ids)
+    assert set(detail_id_index["ids"]) == detail_ids
     assert len(_artifact_files(artifact_dir)) <= 400
 
 

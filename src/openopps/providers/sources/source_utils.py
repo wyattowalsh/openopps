@@ -8,8 +8,10 @@ from urllib.parse import urlparse
 
 import httpx
 
+from openopps.http import retrying_text_request
 from openopps.models import BoardRecord, JsonDict, SourceRecord
 from openopps.models import normalize_public_website_url, validate_public_https_url
+from openopps.settings import OpenOppsSettings
 from openopps.utils import slugify, source_board_key
 
 
@@ -67,6 +69,15 @@ async def fetch_text(
     validate_public_https_url(url, allow_manual=allow_manual)
     if url.lower().startswith("manual://"):
         raise ValueError(f"Manual source {url} must provide embedded rows or CSV text")
+    settings = getattr(client, "_openopps_settings", None)
+    if isinstance(settings, OpenOppsSettings):
+        return await retrying_text_request(settings)(
+            client,
+            "GET",
+            url,
+            headers={"accept": accept},
+            follow_redirects=True,
+        )
     response = await client.get(url, headers={"accept": accept}, follow_redirects=True)
     response.raise_for_status()
     return response.text

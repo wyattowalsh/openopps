@@ -7,16 +7,67 @@ The explorer reads the committed static search-index snapshot generated from the
 
 <div className="not-prose my-6 rounded-2xl border border-border/75 bg-card/85 p-4 text-sm leading-6 text-muted-foreground">
   Looking for a focused open-jobs view with inline preview and shareable filters? Use the{" "}
-  <a href="/jobs" className="font-semibold text-primary hover:underline">
+  <a href="/" className="font-semibold text-primary hover:underline">
     jobs board
   </a>
   .
 </div>
 
+## Jobs Board vs Explorer
+
+Both surfaces read the same committed static index, but they answer different questions.
+
+<div className="openopps-ref-grid">
+  <div className="openopps-ref-card">
+    <strong>Jobs board</strong>
+    <span>
+      Search open roles, filter by department/team/location/type, and open an
+      inline preview with a shareable job link.
+    </span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Explorer</strong>
+    <span>
+      Pivot across jobs, boards, and providers to analyze source coverage,
+      route health, support levels, and data quality.
+    </span>
+  </div>
+  <div className="openopps-ref-card">
+    <strong>Shared foundation</strong>
+    <span>
+      Both read `docs/public/data/openopps-search/manifest.json` and share
+      URL-driven, shareable, and reload-safe filter state.
+    </span>
+  </div>
+</div>
+
 <OpenOppsSearchExplorer />
+
+## URL Parameters
+
+Explorer filter state is stored in the URL query string so views are shareable and reload-safe. All parameters are optional; omitted keys use their default.
+
+| Key | Applies to | Default | Meaning |
+| --- | ---------- | ------- | ------- |
+| `entity` | all | `jobs` | Active tab: `jobs`, `boards`, or `providers`. |
+| `q` | all | *(empty)* | Free-text query across the active entity's searchable fields. |
+| `source` | jobs, boards | *(empty)* | Filter by source catalog key (`sourceKey`). |
+| `provider` | jobs, providers | *(empty)* | Filter by provider adapter id (`providerId`). |
+| `jobStatus` | jobs | `open` | Job lifecycle filter: `open` or `closed`. |
+| `support` | providers | *(empty)* | Provider support level: `detect`, `jobs`, or `unsupported`. |
+| `routeStatus` | jobs | *(empty)* | Route health filter, for example `route_ready`. |
+| `workplace` | jobs | *(empty)* | Substring match on workplace type. |
+| `employment` | jobs | *(empty)* | Substring match on employment type. |
+| `location` | jobs | *(empty)* | Substring match on job locations. |
+| `sort` | all | entity-specific | Sort key; valid values depend on `entity` (for example `latest`, `relevance`, `title` for jobs; `name`, `source` for boards; `provider`, `support`, `status` for providers). |
+| `page` | all | `1` | 1-based page number over the currently visible rows. |
+
+Copy the address bar URL to share an exact explorer view, including entity, filters, sort, and page.
 
 Refresh the snapshot after regenerating `kaggle/openoppsdb.sqlite`:
 
 ```bash
 cd docs && pnpm data:generate:search
 ```
+
+See [Data Model](/docs/data-model) for the static search-index artifact layout and provenance, and [Jobs](/) for the dedicated open-roles workbench.

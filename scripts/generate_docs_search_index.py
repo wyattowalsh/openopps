@@ -5,17 +5,21 @@ import json
 import re
 import shutil
 import sqlite3
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SEARCH_INDEX_VERSION = 3
+SEARCH_INDEX_VERSION = 4
 DESCRIPTION_SNIPPET_LEN = 200
 SKILL_TOKENS_MAX_LEN = 96
 DETAIL_BUCKET_COUNT = 256
+DETAIL_IDS_FILE = "jobs-detail-ids.json"
 JOB_CHUNK_SIZE = 1000
 INITIAL_JOB_LIMIT = 250
+MAX_DETAIL_PAYLOAD_CHARS = 20_000
+TOP_DASHBOARD_LIMIT = 20
 
 PROVIDER_COLUMNS = [
     "id",
@@ -61,6 +65,11 @@ JOB_COLUMNS = [
     "descriptionSnippet",
     "skillTokens",
     "syncedAt",
+    "firstSeenAt",
+    "lastSeenAt",
+    "closedAt",
+    "contentHash",
+    "payloadHash",
 ]
 
 FILTER_SPEC = {
@@ -106,13 +115,16 @@ def build_search_index(db_path: Path, output_dir: Path) -> dict[str, Any]:
     with sqlite3.connect(db_path) as conn:
         providers = _fetch_rows(conn, _PROVIDERS_SQL)
         boards = _fetch_rows(conn, _BOARDS_SQL)
-        jobs = _normalize_job_timestamp_rows(_fetch_rows(conn, _JOBS_SQL))
+        jobs = _normalize_job_timestamp_rows(_fetch_rows(conn, _jobs_sql(conn)))
+        source_count = _table_count(conn, "sources")
         snapshot_at = _snapshot_at(conn)
         detail_records = _fetch_job_details(conn)
+        payload_snapshots = _fetch_payload_snapshots(conn)
         board_source_keys = _fetch_board_source_keys(conn)
         version_locations = _fetch_version_locations(conn)
         version_skill_tokens = _fetch_version_skill_tokens(conn)
         job_version_ids = _fetch_job_version_ids(conn)
+        source_tables = _source_tables(conn)
 
     jobs = _enrich_job_rows(
         jobs,
@@ -121,6 +133,7 @@ def build_search_index(db_path: Path, output_dir: Path) -> dict[str, Any]:
         version_locations=version_locations,
         version_skill_tokens=version_skill_tokens,
     )
+    _attach_payload_snapshots(detail_records, payload_snapshots)
     jobs = _sort_job_rows(jobs)
     detail_shards = _write_detail_shards(detail_root, detail_records)
 
@@ -148,9 +161,11 @@ def build_search_index(db_path: Path, output_dir: Path) -> dict[str, Any]:
         providers=providers,
         boards=boards,
         jobs=jobs,
+        source_count=source_count,
         open_job_count=open_job_count,
         detail_shards=detail_shards,
         job_chunks=job_chunks,
+        source_tables=source_tables,
     )
     _write_json(output_dir / "manifest.json", manifest, compact=False)
     return manifest
@@ -203,24 +218,28 @@ def _fetch_version_skill_tokens(conn: sqlite3.Connection) -> dict[str, str]:
     rows = conn.execute(
         """
         SELECT
-            s.job_version_id,
-            group_concat(DISTINCT token)
+            ordered_tokens.job_version_id,
+            group_concat(ordered_tokens.token)
         FROM (
-            SELECT job_version_id, lower(trim(name)) AS token
-            FROM job_version_skills
-            WHERE name IS NOT NULL AND trim(name) != ''
-            UNION
-            SELECT job_version_id, lower(trim(level)) AS token
-            FROM job_version_skills
-            WHERE level IS NOT NULL AND trim(level) != ''
-            UNION
-            SELECT s.job_version_id, lower(trim(k.keyword)) AS token
-            FROM job_version_skills AS s
-            JOIN job_version_skill_keywords AS k ON k.skill_id = s.id
-            WHERE k.keyword IS NOT NULL AND trim(k.keyword) != ''
-        ) AS s
-        WHERE token IS NOT NULL AND trim(token) != ''
-        GROUP BY s.job_version_id
+            SELECT DISTINCT job_version_id, token
+            FROM (
+                SELECT job_version_id, lower(trim(name)) AS token
+                FROM job_version_skills
+                WHERE name IS NOT NULL AND trim(name) != ''
+                UNION ALL
+                SELECT job_version_id, lower(trim(level)) AS token
+                FROM job_version_skills
+                WHERE level IS NOT NULL AND trim(level) != ''
+                UNION ALL
+                SELECT s.job_version_id, lower(trim(k.keyword)) AS token
+                FROM job_version_skills AS s
+                JOIN job_version_skill_keywords AS k ON k.skill_id = s.id
+                WHERE k.keyword IS NOT NULL AND trim(k.keyword) != ''
+            ) AS candidate_tokens
+            WHERE token IS NOT NULL AND trim(token) != ''
+            ORDER BY job_version_id, token
+        ) AS ordered_tokens
+        GROUP BY ordered_tokens.job_version_id
         """
     ).fetchall()
     return {str(row[0]): row[1] for row in rows if row[1]}
@@ -308,26 +327,115 @@ def _plain_snippet(value: str) -> str:
 
 
 def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
-    rows = conn.execute(_JOB_DETAILS_SQL).fetchall()
+    rows = conn.execute(_job_details_sql(conn)).fetchall()
     details: dict[str, dict[str, Any]] = {}
     for row in rows:
         job_id = str(row[0])
         details[job_id] = {
             "id": job_id,
             "status": row[1],
-            "description": row[2],
-            "descriptionHtml": row[3],
-            "responsibilities": _parse_json_list(row[4]),
-            "qualifications": _parse_json_list(row[5]),
-            "skills": _parse_json_list(row[6]),
-            "jobDescription": _parse_json_object(row[7]),
-            "compensation": _parse_json_object(row[8]),
-            "experience": row[9],
-            "salary": row[10],
-            "applyUrl": row[11],
-            "postingUrl": row[12],
+            "sourceKey": row[2],
+            "boardKey": row[3],
+            "providerId": row[4],
+            "remoteId": row[5],
+            "title": row[6],
+            "company": row[7],
+            "department": row[8],
+            "team": row[9],
+            "workplaceType": row[10],
+            "remote": row[11],
+            "employmentType": row[12],
+            "locations": _parse_json_list(row[13]),
+            "salaryMin": row[14],
+            "salaryMax": row[15],
+            "salaryCurrency": row[16],
+            "description": row[17],
+            "descriptionHtml": row[18],
+            "responsibilities": _parse_json_list(row[19]),
+            "qualifications": _parse_json_list(row[20]),
+            "skills": _parse_json_list(row[21]),
+            "jobDescription": _parse_json_object(row[22]),
+            "compensation": _parse_json_object(row[23]),
+            "experience": row[24],
+            "salary": row[25],
+            "postingUrl": row[26],
+            "applyUrl": row[27],
+            "postedAt": row[28],
+            "updatedAt": row[29],
+            "versionCreatedAt": row[30],
+            "firstSeenAt": row[31],
+            "lastSeenAt": row[32],
+            "closedAt": row[33],
+            "syncedAt": row[34],
+            "version": row[35],
+            "contentHash": row[36] or row[38],
+            "payloadHash": row[37] or row[39],
+            "jobExtra": _parse_json_object(row[40]),
+            "versionExtra": _parse_json_object(row[41]),
         }
     return details
+
+
+def _job_details_sql(conn: sqlite3.Connection) -> str:
+    job_closed_at = _column_expr(conn, "jobs", "j", "closed_at")
+    job_current_content_hash = _column_expr(
+        conn, "jobs", "j", "current_content_hash"
+    )
+    job_current_payload_hash = _column_expr(conn, "jobs", "j", "current_payload_hash")
+    job_extra = _column_expr(conn, "jobs", "j", "extra_payload")
+    version_number = _column_expr(conn, "job_versions", "v", "version")
+    version_content_hash = _column_expr(conn, "job_versions", "v", "content_hash")
+    version_payload_hash = _column_expr(conn, "job_versions", "v", "payload_hash")
+    version_extra = _column_expr(conn, "job_versions", "v", "extra_payload")
+    return f"""
+    SELECT
+        j.id,
+        j.status,
+        b.source_key,
+        j.board_key,
+        j.provider_id,
+        j.remote_id,
+        v.title,
+        v.company,
+        v.department,
+        v.team,
+        v.workplace_type,
+        v.remote,
+        v.employment_type,
+        v.locations,
+        v.salary_min,
+        v.salary_max,
+        v.salary_currency,
+        v.description,
+        v.description_html,
+        v.responsibilities,
+        v.qualifications,
+        v.skills,
+        v.job_description,
+        v.compensation,
+        v.experience,
+        v.salary,
+        v.posting_url,
+        v.apply_url,
+        v.posted_at,
+        v.updated_at,
+        v.created_at,
+        j.first_seen_at,
+        j.last_seen_at,
+        {job_closed_at},
+        j.synced_at,
+        {version_number},
+        {version_content_hash},
+        {version_payload_hash},
+        {job_current_content_hash},
+        {job_current_payload_hash},
+        {job_extra},
+        {version_extra}
+    FROM jobs AS j
+    JOIN job_versions AS v ON v.id = j.current_version_id
+    LEFT JOIN boards AS b ON b.key = j.board_key
+    ORDER BY j.id
+    """
 
 
 def _parse_json_list(value: Any) -> list[Any]:
@@ -358,6 +466,110 @@ def _parse_json_object(value: Any) -> dict[str, Any] | None:
     return None
 
 
+def _fetch_payload_snapshots(
+    conn: sqlite3.Connection,
+) -> dict[str, list[dict[str, Any]]]:
+    if not _has_table(conn, "job_payload_snapshots"):
+        return {}
+    rows = conn.execute(
+        """
+        SELECT job_id, payload_kind, payload_hash, payload, observed_at
+        FROM job_payload_snapshots
+        ORDER BY job_id, payload_kind, observed_at DESC, id
+        """
+    ).fetchall()
+    snapshots: dict[str, list[dict[str, Any]]] = {}
+    for job_id, kind, payload_hash, payload, observed_at in rows:
+        snapshots.setdefault(str(job_id), []).append(
+            {
+                "kind": kind,
+                "payloadHash": payload_hash,
+                "observedAt": observed_at,
+                **_bounded_payload(payload),
+            }
+        )
+    return snapshots
+
+
+def _attach_payload_snapshots(
+    details: dict[str, dict[str, Any]],
+    snapshots: dict[str, list[dict[str, Any]]],
+) -> None:
+    for job_id, records in snapshots.items():
+        if job_id in details and records:
+            details[job_id]["payloadSnapshots"] = records
+
+
+def _bounded_payload(value: Any) -> dict[str, Any]:
+    parsed = _parse_json_object(value)
+    if parsed is None:
+        parsed = {"value": value} if value not in (None, "") else {}
+    serialized = json.dumps(parsed, ensure_ascii=False, sort_keys=True)
+    if len(serialized) <= MAX_DETAIL_PAYLOAD_CHARS:
+        return {"payload": parsed, "truncated": False}
+    preview = serialized[:MAX_DETAIL_PAYLOAD_CHARS]
+    return {
+        "payload": {"preview": preview},
+        "truncated": True,
+        "originalChars": len(serialized),
+    }
+
+
+def _table_count(conn: sqlite3.Connection, table_name: str) -> int:
+    if not _has_table(conn, table_name):
+        return 0
+    return int(
+        conn.execute(
+            f"SELECT COUNT(*) FROM {_sqlite_identifier(table_name)}"
+        ).fetchone()[0]
+    )
+
+
+def _source_tables(conn: sqlite3.Connection) -> list[str]:
+    table_names = [
+        "sources",
+        "board_providers",
+        "boards",
+        "jobs",
+        "job_versions",
+        "job_version_locations",
+        "job_version_skills",
+        "job_version_skill_keywords",
+        "job_payload_snapshots",
+    ]
+    return [table_name for table_name in table_names if _has_table(conn, table_name)]
+
+
+def _has_table(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _has_column(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    if not _has_table(conn, table_name):
+        return False
+    return any(row[1] == column_name for row in conn.execute(f"PRAGMA table_info({_sqlite_identifier(table_name)})"))
+
+
+def _column_expr(
+    conn: sqlite3.Connection,
+    table_name: str,
+    alias: str,
+    column_name: str,
+    fallback: str = "NULL",
+) -> str:
+    if _has_column(conn, table_name, column_name):
+        return f"{alias}.{_sqlite_identifier(column_name)}"
+    return fallback
+
+
+def _sqlite_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
 def _detail_bucket(job_id: str) -> str:
     hash_value = 0
     for char in job_id:
@@ -376,7 +588,7 @@ def _write_detail_shards(
         }
     detail_root.mkdir(parents=True, exist_ok=True)
     buckets: dict[str, dict[str, dict[str, Any]]] = {}
-    for job_id, payload in records.items():
+    for job_id, payload in sorted(records.items()):
         bucket = _detail_bucket(job_id)
         shard_payload = {
             key: value
@@ -385,7 +597,7 @@ def _write_detail_shards(
         }
         buckets.setdefault(bucket, {})[job_id] = shard_payload
 
-    for bucket, bucket_payload in buckets.items():
+    for bucket, bucket_payload in sorted(buckets.items()):
         path = detail_root / f"{bucket}.json"
         path.write_text(
             json.dumps(bucket_payload, ensure_ascii=False, separators=(",", ":"))
@@ -393,9 +605,21 @@ def _write_detail_shards(
             encoding="utf-8",
         )
 
+    _write_json(
+        detail_root.parent / DETAIL_IDS_FILE,
+        {
+            "version": SEARCH_INDEX_VERSION,
+            "count": len(records),
+            "ids": sorted(records),
+        },
+        compact=True,
+    )
+
     return {
         "root": "/data/openopps-search/jobs-details",
         "format": "bucket-map",
+        "idIndexPath": f"/data/openopps-search/{DETAIL_IDS_FILE}",
+        "idIndexFile": DETAIL_IDS_FILE,
         "bucketCount": DETAIL_BUCKET_COUNT,
         "count": len(records),
         "buckets": {
@@ -436,29 +660,13 @@ def _build_manifest(
     providers: Sequence[Sequence[Any]],
     boards: Sequence[Sequence[Any]],
     jobs: Sequence[Sequence[Any]],
+    source_count: int,
     open_job_count: int,
     detail_shards: dict[str, Any],
     job_chunks: Sequence[dict[str, Any]],
+    source_tables: Sequence[str],
 ) -> dict[str, Any]:
-    provider_ids = sorted(
-        _nonblank_values(
-            [row[PROVIDER_COLUMNS.index("providerId")] for row in providers],
-            [row[JOB_COLUMNS.index("providerId")] for row in jobs],
-        )
-    )
-    sources = sorted(
-        _nonblank_values(
-            [row[PROVIDER_COLUMNS.index("sourceKey")] for row in providers],
-            [row[BOARD_COLUMNS.index("sourceKey")] for row in boards],
-            [row[JOB_COLUMNS.index("sourceKey")] for row in jobs],
-        )
-    )
-    workplaces = sorted(
-        _nonblank_values(
-            [row[JOB_COLUMNS.index("workplaceType")] for row in jobs],
-            [row[JOB_COLUMNS.index("remote")] for row in jobs],
-        )
-    )
+    counters = _manifest_counters(providers=providers, boards=boards, jobs=jobs)
 
     jobs_manifest = {
         "path": "/data/openopps-search/jobs/latest.json",
@@ -475,17 +683,24 @@ def _build_manifest(
         "version": SEARCH_INDEX_VERSION,
         "snapshotAt": snapshot_at,
         "openJobCount": open_job_count,
+        "counts": {
+            "catalog": {
+                "source": "/data/openopps-data.json",
+                "note": "Package catalog counts are generated by scripts/generate_docs_data.py.",
+            },
+            "snapshot": {
+                "database": _stable_path(db_path),
+                "sourceRows": source_count,
+                "providerRoutes": len(providers),
+                "boards": len(boards),
+                "jobs": len(jobs),
+                "openJobs": open_job_count,
+            },
+        },
         "kaggleDatasetId": "wyattowalsh/openoppsdb",
         "source": {
             "database": _stable_path(db_path),
-            "tables": [
-                "board_providers",
-                "boards",
-                "jobs",
-                "job_versions",
-                "job_version_locations",
-                "job_version_skills",
-            ],
+            "tables": list(source_tables),
         },
         "defaultEntity": "jobs",
         "defaultFilters": {"jobs": {"status": "open"}},
@@ -501,28 +716,24 @@ def _build_manifest(
             "jobs": jobs_manifest,
         },
         "facets": {
-            "sources": sources,
-            "providerIds": provider_ids,
-            "jobStatuses": sorted(
-                _nonblank_values([row[JOB_COLUMNS.index("status")] for row in jobs])
-            ),
-            "supportLevels": sorted(
-                _nonblank_values(
-                    [row[PROVIDER_COLUMNS.index("supportLevel")] for row in providers]
-                )
-            ),
-            "routeStatuses": sorted(
-                _nonblank_values(
-                    [row[PROVIDER_COLUMNS.index("lastStatus")] for row in providers]
-                )
-            ),
-            "workplaces": workplaces,
-            "employmentTypes": sorted(
-                _nonblank_values(
-                    [row[JOB_COLUMNS.index("employmentType")] for row in jobs]
-                )
-            ),
+            key: _facet_values(counter)
+            for key, counter in counters["facets"].items()
         },
+        "suggestions": {
+            key: _suggestion_values(counter)
+            for key, counter in counters["suggestions"].items()
+        },
+        "dashboard": _dashboard_payload(
+            snapshot_at=snapshot_at,
+            source_count=source_count,
+            providers=providers,
+            boards=boards,
+            jobs=jobs,
+            open_job_count=open_job_count,
+            detail_shards=detail_shards,
+            job_chunks=job_chunks,
+            counters=counters,
+        ),
     }
 
 
@@ -535,6 +746,245 @@ def _entity_manifest(
         "columns": columns,
         "count": count,
     }
+
+
+def _manifest_counters(
+    *,
+    providers: Sequence[Sequence[Any]],
+    boards: Sequence[Sequence[Any]],
+    jobs: Sequence[Sequence[Any]],
+) -> dict[str, dict[str, Counter[str]]]:
+    source_counter: Counter[str] = Counter()
+    job_source_counter: Counter[str] = Counter()
+    provider_counter: Counter[str] = Counter()
+    location_counter: Counter[str] = Counter()
+    skill_counter: Counter[str] = Counter()
+
+    for row in providers:
+        _add_value(source_counter, row[PROVIDER_COLUMNS.index("sourceKey")])
+        _add_value(provider_counter, row[PROVIDER_COLUMNS.index("providerId")])
+    for row in boards:
+        _add_value(source_counter, row[BOARD_COLUMNS.index("sourceKey")])
+    for row in jobs:
+        source_values = _source_values_from_job(row)
+        for value in source_values:
+            _add_value(source_counter, value)
+            _add_value(job_source_counter, value)
+        _add_value(provider_counter, row[JOB_COLUMNS.index("providerId")])
+        for value in _json_array_values(row[JOB_COLUMNS.index("locations")]):
+            _add_value(location_counter, value)
+        for value in _skill_token_values(row[JOB_COLUMNS.index("skillTokens")]):
+            _add_value(skill_counter, value)
+
+    facets = {
+        "sources": source_counter,
+        "providerIds": provider_counter,
+        "jobStatuses": _counter_from_rows(jobs, JOB_COLUMNS, "status"),
+        "supportLevels": _counter_from_rows(
+            providers, PROVIDER_COLUMNS, "supportLevel"
+        ),
+        "routeStatuses": _counter_from_rows(
+            providers, PROVIDER_COLUMNS, "lastStatus"
+        ),
+        "workplaces": _combined_counter(
+            _counter_from_rows(jobs, JOB_COLUMNS, "workplaceType"),
+            _counter_from_rows(jobs, JOB_COLUMNS, "remote"),
+        ),
+        "employmentTypes": _counter_from_rows(jobs, JOB_COLUMNS, "employmentType"),
+        "locations": location_counter,
+        "departments": _counter_from_rows(jobs, JOB_COLUMNS, "department"),
+        "teams": _counter_from_rows(jobs, JOB_COLUMNS, "team"),
+        "companies": _counter_from_rows(jobs, JOB_COLUMNS, "company"),
+        "skills": skill_counter,
+        "salaryCurrencies": _counter_from_rows(jobs, JOB_COLUMNS, "salaryCurrency"),
+    }
+    suggestions = {
+        "sources": source_counter,
+        "providers": provider_counter,
+        "locations": location_counter,
+        "departments": facets["departments"],
+        "teams": facets["teams"],
+        "companies": facets["companies"],
+        "skills": skill_counter,
+        "workplaces": facets["workplaces"],
+        "employmentTypes": facets["employmentTypes"],
+        "jobStatuses": facets["jobStatuses"],
+        "salaryCurrencies": facets["salaryCurrencies"],
+    }
+    return {
+        "facets": facets,
+        "suggestions": suggestions,
+        "dashboard": {
+            "jobSources": job_source_counter,
+            "providers": provider_counter,
+            "locations": location_counter,
+            "departments": facets["departments"],
+            "teams": facets["teams"],
+            "companies": facets["companies"],
+            "skills": skill_counter,
+            "supportLevels": facets["supportLevels"],
+            "routeStatuses": facets["routeStatuses"],
+        },
+    }
+
+
+def _dashboard_payload(
+    *,
+    snapshot_at: str | None,
+    source_count: int,
+    providers: Sequence[Sequence[Any]],
+    boards: Sequence[Sequence[Any]],
+    jobs: Sequence[Sequence[Any]],
+    open_job_count: int,
+    detail_shards: dict[str, Any],
+    job_chunks: Sequence[dict[str, Any]],
+    counters: dict[str, dict[str, Counter[str]]],
+) -> dict[str, Any]:
+    dashboard = counters["dashboard"]
+    return {
+        "snapshotAt": snapshot_at,
+        "totals": {
+            "sourceRows": source_count,
+            "providerRoutes": len(providers),
+            "boards": len(boards),
+            "jobs": len(jobs),
+            "openJobs": open_job_count,
+        },
+        "top": {
+            "sourcesByJobs": _top_values(dashboard["jobSources"]),
+            "providersByJobs": _top_values(dashboard["providers"]),
+            "locations": _top_values(dashboard["locations"]),
+            "departments": _top_values(dashboard["departments"]),
+            "teams": _top_values(dashboard["teams"]),
+            "companies": _top_values(dashboard["companies"]),
+            "skills": _top_values(dashboard["skills"]),
+        },
+        "dataQuality": _job_quality_metrics(jobs),
+        "routeHealth": {
+            "supportLevels": _top_values(dashboard["supportLevels"], limit=None),
+            "routeStatuses": _top_values(dashboard["routeStatuses"], limit=None),
+        },
+        "artifacts": {
+            "jobChunks": len(job_chunks),
+            "detailShardBuckets": len(detail_shards.get("buckets", {})),
+            "detailShardRecords": detail_shards.get("count", 0),
+        },
+    }
+
+
+def _job_quality_metrics(jobs: Sequence[Sequence[Any]]) -> list[dict[str, Any]]:
+    checks = [
+        ("postingUrl", lambda row: _has_text(row[JOB_COLUMNS.index("postingUrl")])),
+        (
+            "description",
+            lambda row: _has_text(row[JOB_COLUMNS.index("descriptionSnippet")]),
+        ),
+        (
+            "locations",
+            lambda row: bool(_json_array_values(row[JOB_COLUMNS.index("locations")])),
+        ),
+        ("department", lambda row: _has_text(row[JOB_COLUMNS.index("department")])),
+        (
+            "compensation",
+            lambda row: any(
+                _has_text(row[JOB_COLUMNS.index(column)])
+                for column in ("salaryMin", "salaryMax", "salaryCurrency")
+            ),
+        ),
+        ("skills", lambda row: bool(_skill_token_values(row[JOB_COLUMNS.index("skillTokens")]))),
+    ]
+    total = len(jobs)
+    metrics: list[dict[str, Any]] = []
+    for key, predicate in checks:
+        count = sum(1 for row in jobs if predicate(row))
+        metrics.append(
+            {
+                "key": key,
+                "count": count,
+                "total": total,
+                "percentage": round((count / total) * 100, 2) if total else 0,
+            }
+        )
+    return metrics
+
+
+def _counter_from_rows(
+    rows: Sequence[Sequence[Any]], columns: Sequence[str], column: str
+) -> Counter[str]:
+    counter: Counter[str] = Counter()
+    index = columns.index(column)
+    for row in rows:
+        _add_value(counter, row[index])
+    return counter
+
+
+def _combined_counter(*counters: Counter[str]) -> Counter[str]:
+    combined: Counter[str] = Counter()
+    for counter in counters:
+        combined.update(counter)
+    return combined
+
+
+def _add_value(counter: Counter[str], value: Any) -> None:
+    if value is None:
+        return
+    text = str(value).strip()
+    if text:
+        counter[text] += 1
+
+
+def _source_values_from_job(row: Sequence[Any]) -> list[str]:
+    parsed = _json_array_values(row[JOB_COLUMNS.index("sourceKeys")])
+    if parsed:
+        return parsed
+    source = str(row[JOB_COLUMNS.index("sourceKey")] or "").strip()
+    return [source] if source else []
+
+
+def _json_array_values(value: Any) -> list[str]:
+    values = _parse_json_list(value)
+    return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _skill_token_values(value: Any) -> list[str]:
+    if value is None:
+        return []
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
+def _facet_values(counter: Counter[str]) -> list[str]:
+    return sorted(counter, key=lambda value: value.casefold())
+
+
+def _suggestion_values(counter: Counter[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "value": value,
+            "label": value,
+            "count": count,
+            "normalized": _normalized_suggestion(value),
+        }
+        for value, count in sorted(
+            counter.items(), key=lambda item: (-item[1], item[0].casefold())
+        )
+    ]
+
+
+def _top_values(
+    counter: Counter[str], *, limit: int | None = TOP_DASHBOARD_LIMIT
+) -> list[dict[str, Any]]:
+    items = sorted(counter.items(), key=lambda item: (-item[1], item[0].casefold()))
+    if limit is not None:
+        items = items[:limit]
+    return [{"value": value, "count": count} for value, count in items]
+
+
+def _normalized_suggestion(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+
+def _has_text(value: Any) -> bool:
+    return value is not None and str(value).strip() != ""
 
 
 def _write_search_chunk(
@@ -700,66 +1150,60 @@ FROM boards
 ORDER BY lower(coalesce(name, '')), key
 """
 
-_JOBS_SQL = """
-SELECT
-    j.id,
-    b.source_key,
-    j.board_key,
-    j.provider_id,
-    j.status,
-    v.title,
-    v.company,
-    v.department,
-    v.team,
-    v.workplace_type,
-    v.remote,
-    v.employment_type,
-    v.locations,
-    v.salary_min,
-    v.salary_max,
-    v.salary_currency,
-    v.posting_url,
-    v.posted_at,
-    NULL,
-    NULL,
-    coalesce(v.description, v.description_html, ''),
-    '',
-    j.synced_at,
-    v.updated_at,
-    v.created_at,
-    j.synced_at,
-    j.last_seen_at,
-    j.first_seen_at
-FROM jobs AS j
-JOIN job_versions AS v ON v.id = j.current_version_id
-LEFT JOIN boards AS b ON b.key = j.board_key
-ORDER BY
-    CASE j.status WHEN 'open' THEN 0 ELSE 1 END,
-    j.status,
-    lower(coalesce(v.company, '')),
-    lower(coalesce(v.title, '')),
-    j.id
-"""
-
-_JOB_DETAILS_SQL = """
-SELECT
-    j.id,
-    j.status,
-    v.description,
-    v.description_html,
-    v.responsibilities,
-    v.qualifications,
-    v.skills,
-    v.job_description,
-    v.compensation,
-    v.experience,
-    v.salary,
-    v.apply_url,
-    v.posting_url
-FROM jobs AS j
-JOIN job_versions AS v ON v.id = j.current_version_id
-"""
-
+def _jobs_sql(conn: sqlite3.Connection) -> str:
+    job_closed_at = _column_expr(conn, "jobs", "j", "closed_at")
+    job_current_content_hash = _column_expr(
+        conn, "jobs", "j", "current_content_hash"
+    )
+    job_current_payload_hash = _column_expr(conn, "jobs", "j", "current_payload_hash")
+    version_content_hash = _column_expr(conn, "job_versions", "v", "content_hash")
+    version_payload_hash = _column_expr(conn, "job_versions", "v", "payload_hash")
+    return f"""
+    SELECT
+        j.id,
+        b.source_key,
+        j.board_key,
+        j.provider_id,
+        j.status,
+        v.title,
+        v.company,
+        v.department,
+        v.team,
+        v.workplace_type,
+        v.remote,
+        v.employment_type,
+        v.locations,
+        v.salary_min,
+        v.salary_max,
+        v.salary_currency,
+        v.posting_url,
+        v.posted_at,
+        NULL,
+        NULL,
+        coalesce(v.description, v.description_html, ''),
+        '',
+        j.synced_at,
+        j.first_seen_at,
+        j.last_seen_at,
+        {job_closed_at},
+        coalesce({version_content_hash}, {job_current_content_hash}),
+        coalesce({version_payload_hash}, {job_current_payload_hash}),
+        v.updated_at,
+        v.created_at,
+        j.synced_at,
+        j.last_seen_at,
+        j.first_seen_at,
+        {job_closed_at}
+    FROM jobs AS j
+    JOIN job_versions AS v ON v.id = j.current_version_id
+    LEFT JOIN boards AS b ON b.key = j.board_key
+    ORDER BY
+        CASE j.status WHEN 'open' THEN 0 ELSE 1 END,
+        j.status,
+        lower(coalesce(v.company, '')),
+        lower(coalesce(v.title, '')),
+        j.id
+    """
 
 if __name__ == "__main__":
     main()

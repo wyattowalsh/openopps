@@ -186,6 +186,25 @@ def test_status_json_reports_empty_local_state(tmp_path: Path):
     assert "sources" in payload["nextAction"]
 
 
+def test_cli_settings_validation_error_is_redacted_for_json_command():
+    raw_db_url = "openoppsdb.sqlite?password=supersecret"
+
+    result = runner.invoke(
+        app,
+        ["status", "--json"],
+        env={"OPENOPPS_DB_URL": raw_db_url},
+    )
+    output = plain(result.output)
+
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "Invalid OpenOpps configuration" in output
+    assert "OPENOPPS_DB_URL" in output
+    assert raw_db_url not in output
+    assert "supersecret" not in output
+    assert "Traceback" not in output
+
+
 def test_doctor_json_is_parseable_status_output(tmp_path: Path):
     result = invoke(tmp_path, "doctor", "--json")
 
@@ -280,6 +299,15 @@ def test_sources_sync_unknown_source_is_actionable_typer_error(tmp_path: Path):
 
     assert result.exit_code == 2
     assert "Unknown source: definitelymissing" in result.output
+
+
+def test_cli_bad_parameter_errors_stay_distinct(tmp_path: Path):
+    result = invoke(tmp_path, "jobs", "list", "--status", "archived", "--json")
+
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+    assert "--status must be open, closed, or all" in result.output
+    assert "OpenOpps configuration" not in result.output
 
 
 def test_sources_sync_reports_compact_warning_for_skips(tmp_path: Path):
@@ -572,6 +600,20 @@ def test_cli_reports_stale_stamped_database_without_traceback(tmp_path: Path):
     assert "does not match the OpenOpps v0.1.0 schema" in result.output
     assert "Reset that local DB" in result.output
     assert "Traceback" not in result.output
+
+
+def test_admin_db_export_writes_integrity_checked_sqlite_snapshot(tmp_path: Path):
+    seed_result = invoke(tmp_path, "examples", "seed", "--boards", "2", "--json")
+    output = tmp_path / "snapshot.sqlite"
+
+    result = invoke(tmp_path, "admin", "db", "export", "--output", str(output))
+
+    assert seed_result.exit_code == 0
+    assert result.exit_code == 0
+    assert output.exists()
+    with sqlite3.connect(f"file:{output}?mode=ro&immutable=1", uri=True) as conn:
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] > 0
 
 
 def test_cache_purge_json_deletes_selected_namespace(tmp_path: Path):

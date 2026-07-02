@@ -3,36 +3,26 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import csv
+import hashlib
 import json
+import shutil
 from pathlib import Path
 import sqlite3
 import struct
 import sys
 import types
 
+import pytest
+
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
-SCRIPT_PATH = (
-    Path(__file__).resolve().parents[3] / "scripts/generate_kaggle_metadata.py"
-)
-PULLBACK_SCRIPT_PATH = (
-    Path(__file__).resolve().parents[3] / "scripts/verify_kaggle_notebook_pullback.py"
-)
-SPEC = importlib.util.spec_from_file_location("generate_kaggle_metadata", SCRIPT_PATH)
-assert SPEC is not None
-assert SPEC.loader is not None
-gen = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = gen
-SPEC.loader.exec_module(gen)
-PULLBACK_SPEC = importlib.util.spec_from_file_location(
-    "verify_kaggle_notebook_pullback", PULLBACK_SCRIPT_PATH
-)
-assert PULLBACK_SPEC is not None
-assert PULLBACK_SPEC.loader is not None
-pullback = importlib.util.module_from_spec(PULLBACK_SPEC)
-sys.modules[PULLBACK_SPEC.name] = pullback
-PULLBACK_SPEC.loader.exec_module(pullback)
+import openopps_kaggle._core as core
+import openopps_kaggle.generator as gen
+import openopps_kaggle.verify_notebooks as pullback
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+SCRIPT_PATH = REPO_ROOT / "scripts" / "openopps_kaggle" / "_core.py"
 
 
 def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
@@ -160,7 +150,7 @@ def test_kaggle_upload_resources_use_nbadb_style_subset() -> None:
 
 
 def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
     operations = (repo_root / "docs/content/docs/operations.mdx").read_text(
         encoding="utf-8"
@@ -319,12 +309,21 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "**/openoppsdb.sqlite" in source
     assert "/kaggle/working/openoppsdb" in source
     assert "Copied prior OpenOpps DB snapshot" in source
-    assert "OPENOPPS_GENERATOR_SCRIPT_URL" in source
-    assert "OPENOPPS_GENERATOR_SCRIPT_SHA256" in source
+    assert "OPENOPPS_RUNTIME_PACKAGE_SHA256" in source
+    runtime_generator_sha = gen.runtime_generator_script_sha256()
+    assert runtime_generator_sha in source
+    assert "__RUNTIME_PACKAGE_SHA256__" not in source
     assert gen.GENERATOR_SCRIPT_URL in source
-    assert "generate_kaggle_metadata.py" in source
-    assert 'compile(source, str(GENERATOR_SCRIPT), "exec")' in source
-    assert "Downloaded OpenOpps Kaggle metadata generator is incompatible" in source
+    assert "openopps_kaggle" in source
+    assert "RUNTIME_PACKAGE_VERIFIED_SHA256" in source
+    assert "def required_runtime_package_sha256()" in source
+    assert "def verify_runtime_package_manifest()" in source
+    assert "def runtime_probe_env()" in source
+    assert 'key.startswith("KAGGLE_")' in source
+    assert "KAGGLE_CREDENTIAL_ENV_NAMES" in source
+    assert "runtime_probe_env()" in source
+    assert "OPENOPPS_RUNTIME_PACKAGE_SHA256 is required before downloading" in source
+    assert "Downloaded OpenOpps Kaggle runtime package is incompatible" in source
     assert "openopps.kaggle_metadata" not in source
     assert "rehydrates the plain public SQLite snapshot" in source
     assert "bounded `openopps jobs sync" in source
@@ -392,9 +391,9 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "KAGGLE_USERNAME" in source
     assert "KAGGLE_KEY" in source
 
-    assert "def download_generator_script()" in source
-    assert "def run_generator(" in source
-    assert "def try_run_generator(" in source
+    assert "def download_runtime_package()" in source
+    assert "def run_openopps_kaggle(" in source
+    assert "def try_run_openopps_kaggle(" in source
     assert "def emit_disk_usage(" in source
     assert "PUBLIC_UPLOAD_DIR" in source
     for flag in (
@@ -446,10 +445,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
         line.strip() for line in source.splitlines() if line.strip()
     )
     assert (
-        "require_kaggle_credentials()\n"
-        "install_openopps()\n"
-        "download_generator_script()\n"
-        "copy_latest_input_db()"
+        "require_kaggle_credentials()\ninstall_openopps()\ndownload_runtime_package()\ncopy_latest_input_db()"
     ) in compact_source
     assert "def kaggle_dataset_status()" in source
     assert "previous_status = kaggle_dataset_status()" in source
@@ -466,27 +462,47 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     setup_db_init = compact_source.rindex('run(["openopps", "admin", "db", "init"]')
     setup_calls = compact_source[
         compact_source.index(
-            "require_kaggle_credentials()\ninstall_openopps()"
+            "require_kaggle_credentials()\ninstall_openopps()\ndownload_runtime_package()"
         ) : setup_db_init
     ]
     assert setup_calls.index("require_kaggle_credentials()") < setup_calls.index(
         "install_openopps()"
     )
     assert setup_calls.index("install_openopps()") < setup_calls.index(
-        "download_generator_script()"
+        "download_runtime_package()"
     )
-    assert setup_calls.index("download_generator_script()") < setup_calls.index(
+    assert setup_calls.index("download_runtime_package()") < setup_calls.index(
         "copy_latest_input_db()"
     )
     assert (
         compact_source.rindex("rehydrate_public_snapshot_for_openopps(openopps_env)")
         < setup_db_init
     )
-    generator_call = source.index("run_generator(generator_args)")
+    download_fn = source[
+        source.index("def download_runtime_package()") : source.index(
+            "\ndef run_openopps_kaggle(", source.index("def download_runtime_package()")
+        )
+    ]
+    assert download_fn.index("required_runtime_package_sha256()") < download_fn.index(
+        "shutil.copytree"
+    )
+    assert download_fn.index("digest = verify_runtime_package_manifest()") < download_fn.index(
+        '"-m", "openopps_kaggle", "--help"'
+    )
+    assert "runtime_probe_env()" in download_fn
+    run_fn = source[
+        source.index("def run_openopps_kaggle(") : source.index(
+            "\ndef try_run_openopps_kaggle(", source.index("def run_openopps_kaggle(")
+        )
+    ]
+    assert run_fn.index("verify_runtime_package_manifest()") < run_fn.index(
+        '"-m", "openopps_kaggle", *args'
+    )
+    generator_call = source.index("run_openopps_kaggle(generator_args)")
     publish_call = source.index('"datasets"', generator_call)
     assert generator_call < publish_call
     assert '"-p",\nstr(PUBLIC_UPLOAD_DIR)' in compact_source
-    metadata_repair_call = source.rindex("metadata_repair_ok = try_run_generator([")
+    metadata_repair_call = source.rindex("metadata_repair_ok = try_run_openopps_kaggle([")
     assert source.index('"zip"', source.index('"datasets"')) < metadata_repair_call
     assert metadata_repair_call < source.index(
         'run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"]'
@@ -498,7 +514,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert 'emit_disk_usage("after_artifact_export")' in source
     assert 'emit_disk_usage("before_dataset_publish")' in source
     export_disk_call = source.index('emit_disk_usage("before_artifact_export")')
-    export_generator_call = source.index("run_generator(generator_args)")
+    export_generator_call = source.index("run_openopps_kaggle(generator_args)")
     assert export_disk_call < export_generator_call
     publish_disk_call = source.index('emit_disk_usage("before_dataset_publish")')
     publish_command = source.index('"datasets"', export_generator_call)
@@ -923,7 +939,7 @@ def _json_clone(data):
 
 
 def test_generated_kaggle_metadata_artifacts_are_current() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     kaggle_dir = repo_root / "kaggle"
 
     generated_dataset = json.loads(
@@ -964,7 +980,9 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
         spec.slug for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS
     )
     for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
-        assert generated_examples[spec.slug]["kernel"] == gen.public_notebook_kernel_metadata(
+        assert generated_examples[spec.slug][
+            "kernel"
+        ] == gen.public_notebook_kernel_metadata(
             notebook_id=spec.notebook_id,
             title=spec.title,
             code_file=spec.code_file,
@@ -979,7 +997,7 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
 
 
 def test_generated_kaggle_dataset_image_matches_metadata_contract() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     kaggle_dir = repo_root / "kaggle"
     source = repo_root / gen.DATASET_IMAGE_SOURCE
     image = kaggle_dir / gen.DATASET_IMAGE_FILE
@@ -1762,7 +1780,7 @@ def test_sqlite_upload_finalization_skips_vacuum_without_disk_headroom(
 
 
 def test_generated_data_files_are_all_described_when_present() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     kaggle_dir = repo_root / "kaggle"
     data_files = [
         path.relative_to(kaggle_dir).as_posix()
@@ -1780,7 +1798,7 @@ def test_generated_data_files_are_all_described_when_present() -> None:
 
 
 def test_generated_kaggle_upload_root_has_only_public_data_files() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     kaggle_dir = repo_root / "kaggle"
     allowed_public_files = {
         "dataset-cover-image.png",
@@ -1823,7 +1841,10 @@ def test_public_upload_stage_excludes_private_and_manager_files(tmp_path: Path) 
     parquet_dir.mkdir(parents=True)
     (bundle_dir / "dataset-metadata.json").write_text("{}\n", encoding="utf-8")
     (bundle_dir / gen.DATASET_IMAGE_FILE).write_bytes(b"image")
-    (bundle_dir / gen.DB_FILE).write_bytes(b"SQLite format 3\x00")
+    schema_db = tmp_path / "schema.sqlite"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{schema_db}"))
+    store.init_db()
+    shutil.copy2(schema_db, bundle_dir / gen.DB_FILE)
     for table in gen.TABLES:
         (csv_dir / f"{table.name}.csv").write_text("id\njob-1\n", encoding="utf-8")
         (parquet_dir / f"{table.name}.parquet").write_bytes(b"PAR1")
@@ -1886,6 +1907,9 @@ def test_private_upload_prune_removes_runtime_artifacts(tmp_path: Path) -> None:
         path = tmp_path / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}\n", encoding="utf-8")
+    runtime_pkg = tmp_path / gen.RUNTIME_GENERATOR_PACKAGE_DIR
+    runtime_pkg.mkdir(parents=True, exist_ok=True)
+    (runtime_pkg / "runtime_manifest.py").write_text("# runtime\n", encoding="utf-8")
     for relative_dir in gen.PRIVATE_UPLOAD_RUNTIME_DIRS:
         path = tmp_path / relative_dir
         path.mkdir(parents=True, exist_ok=True)
@@ -1906,6 +1930,7 @@ def test_private_upload_prune_removes_runtime_artifacts(tmp_path: Path) -> None:
         assert not (tmp_path / relative_path).exists()
     for relative_dir in gen.PRIVATE_UPLOAD_RUNTIME_DIRS:
         assert not (tmp_path / relative_dir).exists()
+    assert not runtime_pkg.exists()
     for suffix in gen.SQLITE_SIDECAR_SUFFIXES:
         assert not (tmp_path / f"{gen.DB_FILE}{suffix}").exists()
 
@@ -1928,21 +1953,28 @@ def test_runtime_generator_stage_is_minimal(tmp_path: Path) -> None:
         if path.is_file()
     }
     metadata = json.loads((upload_dir / "dataset-metadata.json").read_text())
+    script_sha256 = gen.runtime_generator_script_sha256()
 
-    assert actual_files == {"dataset-metadata.json", gen.RUNTIME_GENERATOR_SCRIPT_FILE}
+    assert "dataset-metadata.json" in actual_files
+    assert gen.RUNTIME_MANIFEST_FILE in actual_files
+    assert any(path.startswith(f"{gen.RUNTIME_GENERATOR_PACKAGE_DIR}/") for path in actual_files)
     assert metadata["id"] == gen.RUNTIME_GENERATOR_DATASET_ID
     assert metadata["isPrivate"] is True
     assert metadata["licenses"] == [{"name": gen.DATASET_LICENSE}]
+    assert script_sha256 in metadata["description"]
     assert metadata["resources"] == [
         {
-            "path": gen.RUNTIME_GENERATOR_SCRIPT_FILE,
+            "path": gen.RUNTIME_MANIFEST_FILE,
             "description": (
                 "OpenOppsDB Kaggle metadata, bundle, quality gate, staging, "
                 "and live metadata repair generator used by the manager "
-                "notebook runtime."
+                "notebook runtime. Expected SHA-256: "
+                f"{script_sha256}."
             ),
         }
     ]
+    assert len(script_sha256) == 64
+    assert set(script_sha256) <= set("0123456789abcdef")
     assert not (actual_files & set(gen.PUBLIC_UPLOAD_DATA_FILES))
     assert not (actual_files & set(gen.PRIVATE_EVIDENCE_FILES))
     assert not (actual_files & set(gen.PRIVATE_METADATA_FILES))
@@ -1961,7 +1993,7 @@ def test_generator_cli_stages_runtime_generator_and_exits(
         sys,
         "argv",
         [
-            "generate_kaggle_metadata.py",
+            "openopps_kaggle",
             "--output-dir",
             str(output_dir),
             "--stage-runtime-generator-dir",
@@ -1969,17 +2001,137 @@ def test_generator_cli_stages_runtime_generator_and_exits(
         ],
     )
 
-    gen.main()
+    from openopps_kaggle.cli import main as cli_main
+    cli_main()
 
     assert not output_dir.exists()
-    assert sorted(path.name for path in upload_dir.iterdir()) == [
-        "dataset-metadata.json",
-        gen.RUNTIME_GENERATOR_SCRIPT_FILE,
+    names = {path.name for path in upload_dir.iterdir()}
+    assert names >= {"dataset-metadata.json", gen.RUNTIME_MANIFEST_FILE, gen.RUNTIME_GENERATOR_PACKAGE_DIR}
+
+
+def test_manager_notebook_generator_probe_env_strips_kaggle_credentials(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    monkeypatch.setenv("OPENOPPS_KEEP_FOR_PROBE", "1")
+    for key in (
+        "KAGGLE_USERNAME",
+        "KAGGLE_KEY",
+        "KAGGLE_API_TOKEN",
+        "KAGGLE_API_V1_TOKEN_PATH",
+        "KAGGLE_CONFIG_DIR",
+        "KAGGLE_URL_BASE",
+        "KAGGLE_USER_SECRETS_TOKEN",
+    ):
+        monkeypatch.setenv(key, f"value-for-{key.lower()}")
+
+    namespace = _notebook_setup_namespace()
+    probe_env = namespace["runtime_probe_env"]()
+
+    assert probe_env["OPENOPPS_KEEP_FOR_PROBE"] == "1"
+    assert not any(key.startswith("KAGGLE_") for key in probe_env)
+    for key in namespace["KAGGLE_CREDENTIAL_ENV_NAMES"]:
+        assert key not in probe_env
+
+
+def test_manager_notebook_download_verifies_before_help_and_scrubs_env(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_dir = tmp_path / "openoppsdb"
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(output_dir))
+    runtime_input = tmp_path / "input"
+    digest = _stage_runtime_input(runtime_input / "openoppsdb-manager-runtime")
+    namespace = _notebook_setup_namespace(runtime_input=runtime_input)
+    namespace["RUNTIME_PACKAGE_SHA256"] = digest
+    namespace["GENERATOR_SCRIPT_SHA256"] = digest
+    seen: dict[str, object] = {}
+
+    class Completed:
+        returncode = 0
+        stdout = "--skip-notebooks --stage-public-upload-dir --quality-report\n"
+        stderr = ""
+
+        def check_returncode(self) -> None:
+            raise AssertionError("download help probe unexpectedly failed")
+
+    def fake_run(command: list[str], **kwargs) -> Completed:
+        seen["command"] = command
+        seen["env"] = kwargs["env"]
+        return Completed()
+
+    monkeypatch.setattr(namespace["subprocess"], "run", fake_run)
+    monkeypatch.setenv("KAGGLE_USERNAME", "user")
+    monkeypatch.setenv("KAGGLE_KEY", "key")
+    monkeypatch.setenv("KAGGLE_API_TOKEN", "token")
+
+    namespace["download_runtime_package"]()
+
+    assert namespace["RUNTIME_PACKAGE_VERIFIED_SHA256"] == digest
+    assert seen["command"] == [
+        sys.executable,
+        "-m",
+        "openopps_kaggle",
+        "--help",
     ]
+    probe_env = seen["env"]
+    assert isinstance(probe_env, dict)
+    assert not any(key.startswith("KAGGLE_") for key in probe_env)
+
+
+def test_manager_notebook_download_rejects_checksum_before_compile(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_dir = tmp_path / "openoppsdb"
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(output_dir))
+    runtime_input = tmp_path / "input"
+    digest = _stage_runtime_input(runtime_input / "openoppsdb-manager-runtime")
+    namespace = _notebook_setup_namespace(runtime_input=runtime_input)
+    namespace["RUNTIME_PACKAGE_SHA256"] = hashlib.sha256(b"expected").hexdigest()
+    namespace["GENERATOR_SCRIPT_SHA256"] = namespace["RUNTIME_PACKAGE_SHA256"]
+
+    def fail_run(*args, **kwargs) -> None:
+        del args, kwargs
+        raise AssertionError("help probe must not run after checksum mismatch")
+
+    monkeypatch.setattr(namespace["subprocess"], "run", fail_run)
+
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
+        namespace["download_runtime_package"]()
+    assert digest != namespace["RUNTIME_PACKAGE_SHA256"]
+
+
+def test_manager_notebook_run_openopps_kaggle_verifies_existing_script_before_execution(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_dir = tmp_path / "openoppsdb"
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(output_dir))
+    runtime_input = tmp_path / "input"
+    digest = _stage_runtime_input(runtime_input / "openoppsdb-manager-runtime")
+    namespace = _notebook_setup_namespace(runtime_input=runtime_input)
+    namespace["RUNTIME_PACKAGE_SHA256"] = digest
+    namespace["GENERATOR_SCRIPT_SHA256"] = digest
+    namespace["download_runtime_package"]()
+    (namespace["RUNTIME_PACKAGE_DIR"] / "cli.py").write_text(
+        "print('tampered')\n",
+        encoding="utf-8",
+    )
+
+    def fail_run(*args, **kwargs) -> None:
+        del args, kwargs
+        raise AssertionError("generator command must not run before verification")
+
+    namespace["run"] = fail_run
+
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
+        namespace["run_openopps_kaggle"](["--skip-notebooks"])
 
 
 def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     justfile = (repo_root / "Justfile").read_text(encoding="utf-8")
 
     assert "--stage-public-upload-dir" in justfile
@@ -2000,13 +2152,13 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     assert "--live-file-metadata-browser-cookies" in justfile
     assert "--with browser-cookie3" in justfile
     assert "kagglehub-live-readback" in justfile
-    assert "scripts/verify_kagglehub_readback.py" in justfile
+    assert "openopps_kaggle verify-readback" in justfile
     assert "kagglehub[polars-datasets]" in justfile
-    assert "kaggle-example-notebooks-push timeout=\"3600\":" in justfile
+    assert 'kaggle-example-notebooks-push timeout="3600":' in justfile
     assert "kaggle-example-notebooks-status:" in justfile
     assert "kaggle-example-notebooks-pull-check:" in justfile
-    assert "kaggle-example-notebooks-files page_size=\"200\":" in justfile
-    assert "scripts/verify_kaggle_notebook_pullback.py" in justfile
+    assert 'kaggle-example-notebooks-files page_size="200":' in justfile
+    assert "openopps_kaggle verify-notebooks" in justfile
     assert "kaggle/examples/advanced-usage" in justfile
     assert "kaggle/examples/hiring-market-map" in justfile
     assert "kaggle/examples/skills-radar" in justfile
@@ -2055,20 +2207,35 @@ def test_generator_cli_orchestrates_manager_runtime_bundle(
 
         return inner
 
-    monkeypatch.setattr(gen, "_write_data_artifacts", record("data"))
-    monkeypatch.setattr(gen, "_write_dataset_image", record("image"))
-    monkeypatch.setattr(gen, "_write_snapshot_quality_report", record("quality"))
-    monkeypatch.setattr(gen, "_prune_private_upload_files", record("prune"))
-    monkeypatch.setattr(gen, "_stage_public_upload_dir", record("stage"))
-    monkeypatch.setattr(gen, "_wait_live_dataset_ready", record("wait"))
-    monkeypatch.setattr(gen, "_update_live_file_metadata", record("live"))
-    monkeypatch.setattr(gen, "_write_manager_notebook", record("manager"))
-    monkeypatch.setattr(gen, "_write_starter_notebook", record("starter"))
+    monkeypatch.setattr(core, "_write_data_artifacts", record("data"))
+    monkeypatch.setattr(core, "_write_dataset_image", record("image"))
+    monkeypatch.setattr(core, "_write_snapshot_quality_report", record("quality"))
+    monkeypatch.setattr(core, "_prune_private_evidence_files", record("evidence_prune"))
+    monkeypatch.setattr(core, "_prune_private_upload_files", record("prune"))
+    monkeypatch.setattr(core, "_stage_public_upload_dir", record("stage"))
+    monkeypatch.setattr(core, "_wait_live_dataset_ready", record("wait"))
+    monkeypatch.setattr(core, "_update_live_file_metadata", record("live"))
+    monkeypatch.setattr(core, "_write_manager_notebook", record("manager"))
+    monkeypatch.setattr(core, "_write_starter_notebook", record("starter"))
+
+    import openopps_kaggle.cli as cli
+
+    monkeypatch.setattr(cli, "_write_data_artifacts", record("data"))
+    monkeypatch.setattr(cli, "_write_dataset_image", record("image"))
+    monkeypatch.setattr(cli, "_write_snapshot_quality_report", record("quality"))
+    monkeypatch.setattr(cli, "_prune_private_evidence_files", record("evidence_prune"))
+    monkeypatch.setattr(cli, "_prune_private_upload_files", record("prune"))
+    monkeypatch.setattr(cli, "_stage_public_upload_dir", record("stage"))
+    monkeypatch.setattr(cli, "_wait_live_dataset_ready", record("wait"))
+    monkeypatch.setattr(cli, "_update_live_file_metadata", record("live"))
+    monkeypatch.setattr(cli, "_write_manager_notebook", record("manager"))
+    monkeypatch.setattr(cli, "_write_starter_notebook", record("starter"))
+    monkeypatch.setattr(cli, "require_disk_headroom", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         sys,
         "argv",
         [
-            "generate_kaggle_metadata.py",
+            "openopps_kaggle",
             "--output-dir",
             str(output_dir),
             "--data-db",
@@ -2102,7 +2269,8 @@ def test_generator_cli_orchestrates_manager_runtime_bundle(
         ],
     )
 
-    gen.main()
+    from openopps_kaggle.cli import main as cli_main
+    cli_main()
 
     names = [name for name, _, _ in calls]
     assert names == ["data", "image", "quality", "prune", "stage", "wait", "live"]
@@ -2228,7 +2396,7 @@ def test_live_file_metadata_can_use_kaggle_auth_repair(
         )
 
     monkeypatch.setattr(
-        gen,
+        core,
         "_update_live_databundle_metadata_with_kaggle_auth",
         fake_kaggle_auth,
     )
@@ -2354,7 +2522,7 @@ def test_live_file_metadata_skips_unauthenticated_kaggle_auth_after_official_upd
         )
 
     monkeypatch.setattr(
-        gen,
+        core,
         "_update_live_databundle_metadata_with_kaggle_auth",
         fake_kaggle_auth,
     )
@@ -2493,11 +2661,11 @@ def test_wait_live_dataset_ready_requires_next_ready_version(monkeypatch) -> Non
     sleeps: list[float] = []
 
     monkeypatch.setattr(
-        gen,
+        core,
         "_kaggle_dataset_status",
         lambda dataset_id: next(statuses),
     )
-    monkeypatch.setattr(gen.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(core.time, "sleep", lambda seconds: sleeps.append(seconds))
 
     status = gen._wait_live_dataset_ready(
         gen.DATASET_ID,
@@ -2593,9 +2761,7 @@ def test_snapshot_quality_report_blocks_null_required_relationships(
     )
 
     assert "jobs.board_key->boards.key:1" in sqlite_report["orphanErrors"]
-    assert (
-        "sqlite_orphan_error:jobs.board_key->boards.key:1" in report["hardBlockers"]
-    )
+    assert "sqlite_orphan_error:jobs.board_key->boards.key:1" in report["hardBlockers"]
 
 
 def test_snapshot_quality_report_blocks_null_public_sqlite_primary_keys(
@@ -2673,6 +2839,44 @@ def test_snapshot_quality_report_passes_for_complete_snapshot(tmp_path: Path) ->
     assert report["status"] == "pass"
     assert report["hardBlockers"] == []
     assert report["counts"]["currentJobs"] == 1
+
+
+def test_snapshot_quality_report_passes_for_parquet_only_exports(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, job_versions=1)
+    parquet_dir = tmp_path / gen.PARQUET_DIR
+    gen.pl.DataFrame({"row_id": [1]}).write_parquet(
+        parquet_dir / "job_version_skills.parquet"
+    )
+    gen.pl.DataFrame({"row_id": [1]}).write_parquet(
+        parquet_dir / "job_version_skill_keywords.parquet"
+    )
+    for table in gen.TABLES:
+        csv_path = tmp_path / gen.CSV_DIR / f"{table.name}.csv"
+        if csv_path.is_file():
+            csv_path.unlink()
+    csv_dir = tmp_path / gen.CSV_DIR
+    if csv_dir.exists() and not any(csv_dir.iterdir()):
+        csv_dir.rmdir()
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "pass"
+    assert report["hardBlockers"] == []
+    required_paths = {check["path"] for check in report["requiredFiles"]}
+    assert not any(path.endswith(".csv") for path in required_paths)
+    assert all(
+        (tmp_path / path).is_file()
+        for path in required_paths
+        if path.endswith(".parquet")
+    )
 
 
 def test_snapshot_quality_report_blocks_structurally_unusable_snapshot(
@@ -2959,12 +3163,34 @@ def _write_required_quality_files(output_dir: Path) -> None:
         path.write_text("{}\n", encoding="utf-8")
 
 
-def _notebook_setup_namespace() -> dict[str, object]:
+def _notebook_setup_namespace(
+    *,
+    runtime_input: Path | None = None,
+) -> dict[str, object]:
     setup_source = gen._notebook_setup_source()
     setup_defs = setup_source.split("\nrequire_kaggle_credentials()\n", 1)[0]
     namespace: dict[str, object] = {}
     exec(setup_defs, namespace)
+    if runtime_input is not None:
+        namespace["KAGGLE_INPUT_DIR"] = runtime_input
     return namespace
+
+
+def _stage_runtime_input(runtime_input: Path) -> str:
+    staging_dir = runtime_input.parent / "_staging"
+    gen._stage_runtime_generator_dir(staging_dir)
+    if runtime_input.exists():
+        shutil.rmtree(runtime_input)
+    shutil.copytree(
+        staging_dir,
+        runtime_input,
+        ignore=shutil.ignore_patterns("dataset-metadata.json"),
+    )
+    shutil.rmtree(staging_dir)
+    manifest = json.loads(
+        (runtime_input / gen.RUNTIME_MANIFEST_FILE).read_text(encoding="utf-8")
+    )
+    return str(manifest["sha256"])
 
 
 def _insert_representative_app_rows(db_path: Path) -> None:

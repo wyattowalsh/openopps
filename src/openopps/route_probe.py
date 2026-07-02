@@ -11,7 +11,13 @@ from urllib.parse import urlparse
 import httpx
 from loguru import logger
 
-from openopps.http import build_async_client, retrying_json_request
+from openopps.http import (
+    HttpResponseData,
+    build_async_client,
+    retrying_json_request,
+    retrying_json_response,
+    retrying_text_response,
+)
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport, utc_now
 from openopps.models import host_matches, validate_provider_host
 from openopps.providers.boards.workable import wait_for_workable_rate_limit
@@ -54,6 +60,7 @@ _MISS_STATUS_CODES = {400, 401, 403, 404}
 _ROUTE_PROBE_CACHE_NAMESPACE = "route_probe"
 
 JsonRequester = Callable[..., Awaitable[dict[str, Any] | list[Any]]]
+ResponseRequester = Callable[..., Awaitable[HttpResponseData]]
 
 
 @dataclass(frozen=True)
@@ -202,6 +209,8 @@ async def probe_routes(
     semaphore = asyncio.Semaphore(settings.provider_concurrency)
     async with build_async_client(settings) as client:
         request_json = retrying_json_request(settings)
+        request_json_response = retrying_json_response(settings)
+        request_text_response = retrying_text_response(settings)
 
         async def run(route: BoardProviderRecord) -> None:
             board = boards.get(route.board_key)
@@ -213,6 +222,8 @@ async def probe_routes(
                     match, unknown = await _probe_route(
                         client,
                         request_json,
+                        request_json_response,
+                        request_text_response,
                         board,
                         route,
                         max_candidates=max_candidates,
@@ -300,6 +311,8 @@ def _probe_error_reason(exc: Exception) -> str:
 async def _probe_route(
     client: httpx.AsyncClient,
     request_json: JsonRequester,
+    request_json_response: ResponseRequester,
+    request_text_response: ResponseRequester,
     board: BoardRecord,
     route: BoardProviderRecord,
     *,
@@ -317,6 +330,7 @@ async def _probe_route(
         return await _probe_token_provider(
             client,
             request_json,
+            request_text_response,
             board,
             route,
             max_candidates=max_candidates,
@@ -325,7 +339,9 @@ async def _probe_route(
     if route.provider_id == "workday":
         return await _probe_workday(client, request_json, board, route)
     if route.provider_id == "wpjobmanager":
-        return await _probe_wpjobmanager(client, request_json, board, route)
+        return await _probe_wpjobmanager(
+            client, request_json, request_json_response, board, route
+        )
     return None, ProbeUnknown(
         board_key=board.key,
         provider_id=route.provider_id,
@@ -337,6 +353,7 @@ async def _probe_route(
 async def _probe_token_provider(
     client: httpx.AsyncClient,
     request_json: JsonRequester,
+    request_text_response: ResponseRequester,
     board: BoardRecord,
     route: BoardProviderRecord,
     *,
@@ -354,7 +371,7 @@ async def _probe_token_provider(
         elif provider_id == "workable":
             result = await _try_workable(client, request_json, token)
         elif provider_id == "teamtailor":
-            result = await _try_teamtailor(client, token)
+            result = await _try_teamtailor(client, request_text_response, token)
         elif provider_id == "bamboohr":
             result = await _try_bamboohr(client, request_json, token)
         elif provider_id == "rippling":
@@ -493,18 +510,21 @@ async def _try_workable(
     return None
 
 
-async def _try_teamtailor(client: httpx.AsyncClient, token: str) -> int | None:
-    try:
-        response = await client.get(
-            f"https://{token}.teamtailor.com/jobs.rss",
-            headers={"accept": "application/rss+xml, application/xml, text/xml"},
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code in _MISS_STATUS_CODES:
-            return None
-        raise
-    root = ET.fromstring(response.text)
+async def _try_teamtailor(
+    client: httpx.AsyncClient, request_text_response: ResponseRequester, token: str
+) -> int | None:
+    text = await _route_probe_text_or_none(
+        client,
+        request_text_response,
+        "GET",
+        f"https://{token}.teamtailor.com/jobs.rss",
+        headers={"accept": "application/rss+xml, application/xml, text/xml"},
+        provider_id="teamtailor",
+        route_key=token,
+    )
+    if text is None:
+        return None
+    root = ET.fromstring(text)
     channel = root.find("channel")
     return len(channel.findall("item")) if channel is not None else 0
 
@@ -646,12 +666,15 @@ async def _try_workday(
 async def _probe_wpjobmanager(
     client: httpx.AsyncClient,
     request_json: JsonRequester,
+    request_json_response: ResponseRequester,
     board: BoardRecord,
     route: BoardProviderRecord,
 ) -> tuple[ProbeMatch | None, ProbeUnknown | None]:
     endpoints = _wpjobmanager_endpoint_candidates(route, board)
     for endpoint in endpoints:
-        count = await _try_wpjobmanager(client, request_json, endpoint)
+        count = await _try_wpjobmanager(
+            client, request_json, request_json_response, endpoint
+        )
         if count is None:
             continue
         parsed = urlparse(endpoint)
@@ -696,7 +719,10 @@ def _wpjobmanager_endpoint_candidates(
 
 
 async def _try_wpjobmanager(
-    client: httpx.AsyncClient, request_json: JsonRequester, endpoint: str
+    client: httpx.AsyncClient,
+    request_json: JsonRequester,
+    request_json_response: ResponseRequester,
+    endpoint: str,
 ) -> int | None:
     if wpjobmanager_is_ajax_endpoint(endpoint):
         data = await _route_probe_json_or_none(
@@ -714,15 +740,21 @@ async def _try_wpjobmanager(
             return 0
         html = data.get("html")
         return 1 if isinstance(html, str) and "job_listing" in html else 0
-    data = await _route_probe_json_or_none(
+    response = await _route_probe_json_response_or_none(
         client,
-        request_json,
+        request_json_response,
         "GET",
         endpoint,
         params={"per_page": 1},
         provider_id="wpjobmanager",
         route_key=endpoint,
     )
+    if response is None:
+        return None
+    data = response.body
+    total = _int(response.headers.get("x-wp-total"))
+    if total is not None:
+        return total
     return len(data) if isinstance(data, list) else None
 
 
@@ -749,3 +781,67 @@ async def _route_probe_json_or_none(
         if exc.response.status_code in _MISS_STATUS_CODES:
             return None
         raise
+
+
+async def _route_probe_json_response_or_none(
+    client: httpx.AsyncClient,
+    request_json_response: ResponseRequester,
+    method: str,
+    url: str,
+    *,
+    provider_id: str,
+    route_key: str,
+    **kwargs: Any,
+) -> HttpResponseData | None:
+    try:
+        return await request_json_response(
+            client,
+            method,
+            url,
+            **kwargs,
+            cache_namespace=_ROUTE_PROBE_CACHE_NAMESPACE,
+            cache_identity={"provider": provider_id, "route": route_key},
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in _MISS_STATUS_CODES:
+            return None
+        raise
+
+
+async def _route_probe_text_or_none(
+    client: httpx.AsyncClient,
+    request_text_response: ResponseRequester,
+    method: str,
+    url: str,
+    *,
+    provider_id: str,
+    route_key: str,
+    **kwargs: Any,
+) -> str | None:
+    try:
+        response = await request_text_response(
+            client,
+            method,
+            url,
+            **kwargs,
+            cache_namespace=_ROUTE_PROBE_CACHE_NAMESPACE,
+            cache_identity={"provider": provider_id, "route": route_key},
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in _MISS_STATUS_CODES:
+            return None
+        raise
+    return response.body if isinstance(response.body, str) else None
+
+
+def _int(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None

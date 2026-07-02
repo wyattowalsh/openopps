@@ -2,6 +2,7 @@ import type { SearchRow } from "@/components/openopps-search/search-types";
 import {
 	J,
 	normalize,
+	normalizeSuggestion,
 	parseSourceKeys,
 	text,
 } from "@/components/openopps-search/search-utils";
@@ -50,6 +51,38 @@ function textContains(value: string | null | undefined, needle: string) {
 
 function textEquals(value: string | null | undefined, needle: string) {
 	return normalize(value ?? "") === normalize(needle);
+}
+
+function subsequenceMatches(value: string, query: string) {
+	if (!query) {
+		return true;
+	}
+	let queryIndex = 0;
+	for (const char of value) {
+		if (char === query[queryIndex]) {
+			queryIndex += 1;
+			if (queryIndex === query.length) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+function textFuzzyMatches(value: string | null | undefined, needle: string) {
+	if (!needle) {
+		return true;
+	}
+	const normalizedValue = normalizeSuggestion(value ?? "");
+	const normalizedNeedle = normalizeSuggestion(needle);
+	if (!normalizedNeedle) {
+		return true;
+	}
+	return (
+		normalizedValue === normalizedNeedle ||
+		normalizedValue.includes(normalizedNeedle) ||
+		subsequenceMatches(normalizedValue, normalizedNeedle)
+	);
 }
 
 function dateKey(value: string | null | undefined) {
@@ -118,7 +151,7 @@ export function skillMatches(row: SearchRow, needle: string) {
 	if (!needle) {
 		return true;
 	}
-	return textContains(text(row[J.skillTokens]), needle);
+	return textFuzzyMatches(text(row[J.skillTokens]), needle);
 }
 
 export function postedAtInRange(
@@ -184,16 +217,19 @@ export function sourceKeyMatches(row: SearchRow, sourceKey: string) {
 	}
 	const keys = parseSourceKeys(row[J.sourceKeys]);
 	if (keys.length > 0) {
-		return keys.includes(sourceKey);
+		return (
+			keys.includes(sourceKey) ||
+			keys.some((key) => textFuzzyMatches(key, sourceKey))
+		);
 	}
-	return text(row[J.source]) === sourceKey;
+	return textFuzzyMatches(text(row[J.source]), sourceKey);
 }
 
 export function locationMatches(row: SearchRow, location: string) {
 	if (!location) {
 		return true;
 	}
-	return textContains(formatLocationsForQuery(row[J.locations]), location);
+	return textFuzzyMatches(formatLocationsForQuery(row[J.locations]), location);
 }
 
 export function jobMatchesFilters(row: SearchRow, filters: JobBoardFilters) {
@@ -203,29 +239,36 @@ export function jobMatchesFilters(row: SearchRow, filters: JobBoardFilters) {
 	if (!sourceKeyMatches(row, filters.source)) {
 		return false;
 	}
-	if (filters.provider && text(row[J.provider]) !== filters.provider) {
+	if (filters.provider && !textFuzzyMatches(text(row[J.provider]), filters.provider)) {
 		return false;
 	}
 	if (!locationMatches(row, filters.location)) {
 		return false;
 	}
-	if (filters.department && !textContains(text(row[J.department]), filters.department)) {
+	if (
+		filters.department &&
+		!textFuzzyMatches(text(row[J.department]), filters.department)
+	) {
 		return false;
 	}
-	if (filters.team && !textContains(text(row[J.team]), filters.team)) {
+	if (filters.team && !textFuzzyMatches(text(row[J.team]), filters.team)) {
 		return false;
 	}
 	if (
 		filters.workplace &&
-		!textContains(text(row[J.workplace]), filters.workplace) &&
-		!textContains(text(row[J.remote]), filters.workplace)
+		!textFuzzyMatches(text(row[J.workplace]), filters.workplace) &&
+		!textFuzzyMatches(text(row[J.remote]), filters.workplace)
 	) {
 		return false;
 	}
-	if (filters.remote && !textEquals(text(row[J.remote]), filters.remote)) {
+	if (
+		filters.remote &&
+		!textEquals(text(row[J.remote]), filters.remote) &&
+		!textFuzzyMatches(text(row[J.remote]), filters.remote)
+	) {
 		return false;
 	}
-	if (filters.employment && !textContains(text(row[J.type]), filters.employment)) {
+	if (filters.employment && !textFuzzyMatches(text(row[J.type]), filters.employment)) {
 		return false;
 	}
 	const salaryMin = filters.salaryMin ? Number(filters.salaryMin) : null;

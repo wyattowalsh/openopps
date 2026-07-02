@@ -1,0 +1,5 @@
+from openopps_kaggle.cli import main
+
+
+if __name__ == "__main__":
+    main()

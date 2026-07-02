@@ -1,0 +1,343 @@
+"use client";
+
+import { Download, Loader2, Settings2, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import type {
+	JobsLocalSettings,
+	JobsLocalStorageStatus,
+	JobsLocalSummary,
+	JobsRetentionMonths,
+} from "@/components/jobs-board/jobs-board-local-state";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+type ClearCategory =
+	| "all"
+	| "applied"
+	| "details"
+	| "hidden"
+	| "notes"
+	| "saved"
+	| "savedSearches"
+	| "viewed";
+
+type JobsBoardLocalDataPanelProps = {
+	open: boolean;
+	settings: JobsLocalSettings;
+	storageStatus: JobsLocalStorageStatus;
+	summary: JobsLocalSummary;
+	onClose: () => void;
+	onSettingsChange: (patch: Partial<JobsLocalSettings>) => void;
+	onClearCategory: (category: ClearCategory) => Promise<void> | void;
+	onExport: () => string;
+	onImport: (
+		raw: string,
+		mode: "merge" | "replace",
+	) => Promise<{ ok: boolean; errors?: string[] }>;
+};
+
+const RETENTION_OPTIONS: Array<{
+	value: JobsRetentionMonths;
+	label: string;
+}> = [
+	{ value: 1, label: "1 month" },
+	{ value: 3, label: "3 months" },
+	{ value: 6, label: "6 months" },
+	{ value: 12, label: "12 months" },
+	{ value: "forever", label: "Forever" },
+];
+
+export function JobsBoardLocalDataPanel({
+	open,
+	settings,
+	storageStatus,
+	summary,
+	onClose,
+	onSettingsChange,
+	onClearCategory,
+	onExport,
+	onImport,
+}: JobsBoardLocalDataPanelProps) {
+	const [exportText, setExportText] = useState("");
+	const [importText, setImportText] = useState("");
+	const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+	const [importMessage, setImportMessage] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!open) {
+			return;
+		}
+		const previous = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		function closeFromEscape(event: KeyboardEvent) {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				onClose();
+			}
+		}
+		document.addEventListener("keydown", closeFromEscape);
+		return () => {
+			document.body.style.overflow = previous;
+			document.removeEventListener("keydown", closeFromEscape);
+		};
+	}, [onClose, open]);
+
+	if (!open) {
+		return null;
+	}
+
+	const exportData = () => {
+		setExportText(onExport());
+	};
+
+	const importData = async () => {
+		const result = await onImport(importText, importMode);
+		if (result.ok) {
+			setImportMessage("Import completed.");
+			setImportText("");
+			return;
+		}
+		setImportMessage(result.errors?.join(" ") || "Import failed.");
+	};
+
+	const clearCategory = async (category: ClearCategory, label: string) => {
+		if (!window.confirm(`Clear ${label}? This only changes local browser data.`)) {
+			return;
+		}
+		await onClearCategory(category);
+	};
+
+	return (
+		<div className="fixed inset-0 z-50">
+			<button
+				type="button"
+				className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+				aria-label="Close local data settings"
+				tabIndex={-1}
+				onClick={onClose}
+			/>
+			<div
+				className={cn(
+					"absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-border/75 bg-card shadow-[0_24px_80px_color-mix(in_oklab,var(--foreground)_16%,transparent)]",
+					"motion-safe:animate-in motion-safe:slide-in-from-right motion-safe:duration-300",
+				)}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="openopps-local-data-title"
+				onKeyDown={(event) => {
+					if (event.key === "Escape") {
+						event.preventDefault();
+						onClose();
+					}
+				}}
+			>
+				<header className="flex items-start justify-between gap-3 border-b border-border/70 p-4">
+					<div>
+						<div className="flex items-center gap-2">
+							<Settings2 className="size-4 text-primary" />
+							<h2
+								id="openopps-local-data-title"
+								className="font-heading text-lg font-semibold"
+							>
+								App Settings
+							</h2>
+						</div>
+						<p className="mt-1 text-sm text-muted-foreground">
+							Local workflow data stays in this browser.
+						</p>
+					</div>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						onClick={onClose}
+						aria-label="Close app settings"
+					>
+						<X className="size-4" />
+					</Button>
+				</header>
+
+				<div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+					<section className="space-y-3">
+						<div className="flex flex-wrap items-center gap-2">
+							<Badge variant={storageStatus === "available" ? "success" : "warning"}>
+								{storageStatus === "loading" ? (
+									<Loader2 className="size-3 animate-spin" />
+								) : null}
+								{storageStatus}
+							</Badge>
+							<Badge variant="outline">
+								~{Math.ceil(summary.approximateBytes / 1024)} KB local data
+							</Badge>
+						</div>
+						<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+							<SummaryCard label="Viewed" value={summary.viewed} />
+							<SummaryCard label="Saved" value={summary.saved} />
+							<SummaryCard label="Hidden" value={summary.hidden} />
+							<SummaryCard label="Applied" value={summary.applied} />
+							<SummaryCard label="Notes" value={summary.noted} />
+							<SummaryCard label="Searches" value={summary.savedSearches} />
+							<SummaryCard label="Details" value={summary.retainedDetails} />
+							<SummaryCard label="Stale" value={summary.staleDurableJobs} />
+						</div>
+					</section>
+
+					<section className="space-y-3 border-t border-border/70 pt-4">
+						<h3 className="font-mono text-xs font-semibold text-muted-foreground">
+							Retention
+						</h3>
+						<label className="grid gap-1.5 text-sm">
+							<span className="font-semibold">Hold stale full details</span>
+							<select
+								className="opps-input h-8"
+								value={String(settings.fullDetailRetentionMonths)}
+								onChange={(event) => {
+									const value = event.target.value;
+									onSettingsChange({
+										fullDetailRetentionMonths:
+											value === "forever"
+												? "forever"
+												: (Number(value) as JobsRetentionMonths),
+									});
+								}}
+							>
+								{RETENTION_OPTIONS.map((option) => (
+									<option key={String(option.value)} value={String(option.value)}>
+										{option.label}
+									</option>
+								))}
+							</select>
+						</label>
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={settings.showHidden}
+								onChange={(event) =>
+									onSettingsChange({ showHidden: event.target.checked })
+								}
+							/>
+							Show hidden jobs in results
+						</label>
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={settings.hideViewed}
+								onChange={(event) =>
+									onSettingsChange({ hideViewed: event.target.checked })
+								}
+							/>
+							Hide viewed jobs in results
+						</label>
+					</section>
+
+					<section className="space-y-3 border-t border-border/70 pt-4">
+						<h3 className="font-mono text-xs font-semibold text-muted-foreground">
+							Export / import
+						</h3>
+						<div className="flex flex-wrap gap-2">
+							<Button type="button" variant="outline" size="sm" onClick={exportData}>
+								<Download className="size-3.5" />
+								Export JSON
+							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={importData}
+								disabled={!importText.trim()}
+							>
+								<Upload className="size-3.5" />
+								Import JSON
+							</Button>
+							<select
+								className="opps-input h-7 w-auto text-xs"
+								value={importMode}
+								onChange={(event) =>
+									setImportMode(event.target.value === "replace" ? "replace" : "merge")
+								}
+								aria-label="Import mode"
+							>
+								<option value="merge">Merge by updated date</option>
+								<option value="replace">Replace local data</option>
+							</select>
+						</div>
+						<textarea
+							className="opps-input min-h-28 w-full font-mono text-xs"
+							value={exportText}
+							onChange={(event) => setExportText(event.target.value)}
+							placeholder="Exported JSON appears here."
+							aria-label="Exported local data JSON"
+							spellCheck={false}
+						/>
+						<textarea
+							className="opps-input min-h-28 w-full font-mono text-xs"
+							value={importText}
+							onChange={(event) => {
+								setImportText(event.target.value);
+								setImportMessage(null);
+							}}
+							placeholder="Paste an OpenOpps local data backup to import."
+							aria-label="Import local data JSON"
+							spellCheck={false}
+						/>
+						{importMessage ? (
+							<p className="text-sm text-muted-foreground">{importMessage}</p>
+						) : null}
+					</section>
+
+					<section className="space-y-3 border-t border-border/70 pt-4">
+						<h3 className="font-mono text-xs font-semibold text-muted-foreground">
+							Clear local data
+						</h3>
+						<div className="grid gap-2 sm:grid-cols-2">
+							<ClearButton label="viewed state" onClick={() => clearCategory("viewed", "viewed state")} />
+							<ClearButton label="saved jobs" onClick={() => clearCategory("saved", "saved jobs")} />
+							<ClearButton label="hidden jobs" onClick={() => clearCategory("hidden", "hidden jobs")} />
+							<ClearButton label="applied flags" onClick={() => clearCategory("applied", "applied flags")} />
+							<ClearButton label="notes" onClick={() => clearCategory("notes", "notes")} />
+							<ClearButton label="saved searches" onClick={() => clearCategory("savedSearches", "saved searches")} />
+							<ClearButton label="retained details" onClick={() => clearCategory("details", "retained details")} />
+							<ClearButton label="all local data" destructive onClick={() => clearCategory("all", "all local data")} />
+						</div>
+					</section>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function SummaryCard({ label, value }: { label: string; value: number }) {
+	return (
+		<div className="rounded-[var(--opps-radius-md)] border border-border/70 bg-background/70 p-3">
+			<div className="font-mono text-[0.65rem] font-semibold text-muted-foreground">
+				{label}
+			</div>
+			<div className="mt-1 text-lg font-semibold">{value}</div>
+		</div>
+	);
+}
+
+function ClearButton({
+	label,
+	destructive = false,
+	onClick,
+}: {
+	label: string;
+	destructive?: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<Button
+			type="button"
+			variant={destructive ? "destructive" : "outline"}
+			size="sm"
+			onClick={onClick}
+			className="justify-start"
+		>
+			<Trash2 className="size-3.5" />
+			Clear {label}
+		</Button>
+	);
+}

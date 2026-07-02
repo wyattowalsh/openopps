@@ -1,0 +1,116 @@
+---
+title: Contributing
+description: Local setup, validation, docs generation, source-batch rules, and review expectations.
+---
+
+OpenOpps changes should keep the CLI, docs, generated artifacts, OpenSpec, and validation recipes aligned. The project is pre-release, but the local workflow should still be reproducible and reviewable.
+
+## Local Setup
+
+```bash
+uv sync
+just --list
+uv run openopps --help
+cd docs && pnpm install
+```
+
+Use `uv run openopps ...` inside the repository checkout. Install the editable tool only when you want the `openopps` command available directly:
+
+```bash
+uv tool install -e .
+openopps status
+```
+
+## Validation
+
+Use `just` from the repository root for local parity with GitHub Actions:
+
+```bash
+just quick
+just ci
+just lock-check
+just openspec-validate-all
+just docs-check
+just docs-test
+just cli-help
+```
+
+The underlying commands remain direct and scriptable:
+
+```bash
+uv run pytest
+uv run pytest --cov=openopps --cov-report=term-missing
+uv lock --check
+rtk npx -y @fission-ai/openspec@latest validate --all --strict
+cd docs && pnpm types:check
+cd docs && pnpm build
+cd docs && pnpm lint
+cd docs && pnpm test
+just docs-search-index-check
+```
+
+`just ci` includes lock-file checks, docs tests, docs lint, OpenSpec validation, coverage, Kaggle metadata generation, CLI help smoke checks, and formatting checks. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not part of the default CI recipe.
+
+## Docs Workflow
+
+Docs content lives in `docs/content/docs/*.mdx`, and navigation order lives in `docs/content/docs/meta.json`.
+
+```bash
+cd docs
+pnpm data:generate
+pnpm types:check
+pnpm build
+pnpm lint
+pnpm test
+```
+
+`pnpm data:generate` refreshes package-derived source/provider/export metadata. `pnpm types:check` also regenerates that metadata before Fumadocs MDX artifacts, Next.js route types, and TypeScript checks.
+
+The static jobs/explorer index is separate because it requires the ignored local SQLite snapshot:
+
+```bash
+just docs-search-index
+just docs-search-index-check
+```
+
+Run the search-index check before release when refreshing `docs/public/data/openopps-search/`.
+
+## Public Workflow Changes
+
+Use OpenSpec for non-trivial changes to public workflows, generated asset formats, downstream agent tooling, docs generation, or validation behavior:
+
+```bash
+rtk npx -y @fission-ai/openspec@latest list --json
+rtk npx -y @fission-ai/openspec@latest status --change prepare-v0-1-release --json
+rtk npx -y @fission-ai/openspec@latest validate --all --strict
+```
+
+When commands, workflows, or generated surfaces change, update the relevant MDX page, root README, nested `AGENTS.md`, `Justfile`, CI workflow, and OpenSpec change in the same logical workstream.
+
+## Source and Provider Changes
+
+Source adapters discover candidate company boards. Provider adapters detect or fetch postings from public job-board providers.
+
+- Keep source adapters low-side-effect and explicit about upstream access.
+- Preserve source provenance in durable board records.
+- Keep route probing dry-run-first; persist with `--apply` only after matched routes are reviewed.
+- Add semantic tests for provider support and normalized output.
+- Use `providers coverage`, `providers audit`, and `admin sources yield` to evaluate persisted coverage before changing public claims.
+
+Installed Python plugins are not sandboxed and run in the same process as OpenOpps. Use `OPENOPPS_PLUGIN_ALLOWED` for trusted plugin entry points and `OPENOPPS_PLUGIN_AUTOLOAD=true` only in controlled environments.
+
+## Data and Telemetry Contributions
+
+Export and static-index changes must keep the data contract clear:
+
+- Update [Data Model](/docs/data-model) when entities, export formats, search-index fields, facets, suggestions, or telemetry events change.
+- Prefer generated counts and generated manifests over copied prose counts.
+- Keep SQLite, CSV, Parquet, and JSONL export semantics aligned.
+- Keep telemetry first-party, env-gated, size-capped, and sanitized.
+- Treat the local event lake as the canonical telemetry sink; optional dashboards or hosted adapters are mirrors.
+
+## Secret Hygiene
+
+Keep credentials local. `.env`, `.env.*`, `.envrc`, Kaggle `kaggle.json`, local package-registry credential files, `.netrc`, key bundles, and token or credential JSON files are ignored; `.env.example` remains the tracked non-secret template.
+
+Do not print credentials in logs, docs, CI output, generated artifacts, or screenshots. Live Kaggle publishing remains a maintainer-only local action and is intentionally outside CI.

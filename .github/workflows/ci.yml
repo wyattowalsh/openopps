@@ -33,6 +33,9 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Check uv lockfile
+        run: uv lock --check
+
       - name: Install dependencies
         run: uv sync --frozen --all-extras --dev
 
@@ -105,6 +108,20 @@ jobs:
         working-directory: docs
         run: pnpm build
 
+      - name: Test docs
+        working-directory: docs
+        run: pnpm test
+
+      - name: Install Playwright browser
+        working-directory: docs
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser-test docs
+        working-directory: docs
+        env:
+          OPENOPPS_E2E_WEB_SERVER_COMMAND: pnpm exec next start -p 3211
+        run: pnpm exec playwright test --project=chromium
+
       - name: Lint docs
         working-directory: docs
         run: pnpm lint
@@ -128,7 +145,7 @@ jobs:
         run: uv sync --frozen --all-extras --dev
 
       - name: Generate Kaggle metadata
-        run: uv run python scripts/generate_kaggle_metadata.py
+        run: PYTHONPATH=scripts uv run python -m openopps_kaggle
 
       - name: Smoke CLI help
         run: |

@@ -81,6 +81,126 @@ def test_route_request_key_prefers_provider_tokens_and_workday_cxs_fields():
     )
 
 
+def test_route_request_key_extracts_known_provider_api_url_tokens():
+    board = board_record()
+
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="greenhouse",
+                board_url="https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+            ),
+        )
+        == "greenhouse:token:acme"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="lever",
+                board_url="https://api.lever.co/v0/postings/acme?mode=json",
+            ),
+        )
+        == "lever:token:acme"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="workable",
+                board_url="https://apply.workable.com/api/v3/accounts/acme/jobs",
+            ),
+        )
+        == "workable:token:acme"
+    )
+
+
+def test_route_request_key_uses_provider_hosts_and_origins():
+    board = board_record()
+
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="teamtailor",
+                board_url="https://acme.teamtailor.com/jobs",
+            ),
+        )
+        == "teamtailor:host:acme.teamtailor.com"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="teamtailor",
+                board_url="https://bravo.teamtailor.com/jobs",
+            ),
+        )
+        == "teamtailor:host:bravo.teamtailor.com"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="bamboohr",
+                board_url="https://acme.bamboohr.com/careers",
+            ),
+        )
+        == "bamboohr:host:acme.bamboohr.com"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="bamboohr",
+                board_url="https://bravo.bamboohr.com/careers",
+            ),
+        )
+        == "bamboohr:host:bravo.bamboohr.com"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="rippling",
+                board_url="https://ats.rippling.com/api/v2/board/acme/jobs",
+            ),
+        )
+        == "rippling:host:ats.rippling.com:acme"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="rippling",
+                board_url="https://ats.rippling.com/bravo/jobs",
+            ),
+        )
+        == "rippling:host:ats.rippling.com:bravo"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="wpjobmanager",
+                board_url="https://jobs.example.com/wp-json/wp/v2/job-listings",
+            ),
+        )
+        == "wpjobmanager:rest:https://jobs.example.com/wp-json/wp/v2/job-listings"
+    )
+    assert (
+        route_request_key(
+            board,
+            route_record(
+                provider_id="wpjobmanager",
+                board_url="https://careers.example.com/jm-ajax/get_listings/",
+            ),
+        )
+        == "wpjobmanager:ajax:https://careers.example.com/jm-ajax/get_listings"
+    )
+
+
 def test_route_request_key_falls_back_to_url_domain_and_board_slug():
     board = board_record()
 
@@ -117,3 +237,29 @@ def test_dedupe_routes_preserves_missing_boards_and_splits_duplicate_requests():
 
     assert unique == [primary, missing_board]
     assert duplicates == [duplicate]
+
+
+def test_dedupe_routes_preserves_same_origin_wpjobmanager_rest_and_ajax_routes():
+    board = board_record()
+    rest = route_record(
+        id="rest",
+        provider_id="wpjobmanager",
+        board_url="https://jobs.example.com/wp-json/wp/v2/job-listings",
+    )
+    ajax = route_record(
+        id="ajax",
+        provider_id="wpjobmanager",
+        board_url="https://jobs.example.com/jm-ajax/get_listings/",
+    )
+    duplicate_rest = route_record(
+        id="duplicate-rest",
+        provider_id="wpjobmanager",
+        board_url="https://jobs.example.com/wp-json/wp/v2/job-listings?per_page=100",
+    )
+
+    unique, duplicates = dedupe_routes(
+        [rest, ajax, duplicate_rest], {board.key: board}
+    )
+
+    assert unique == [rest, ajax]
+    assert duplicates == [duplicate_rest]

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from openopps.settings import OpenOppsSettings
+from openopps.settings import OpenOppsSettings, format_settings_validation_error
 
 
 def test_settings_schema_describes_every_config_field() -> None:
@@ -20,6 +20,21 @@ def test_settings_schema_describes_every_config_field() -> None:
 def test_settings_rejects_non_url_database_value() -> None:
     with pytest.raises(ValidationError, match="SQLAlchemy-style URL"):
         OpenOppsSettings(db_url="openoppsdb.sqlite")
+
+
+def test_settings_validation_error_message_is_redacted() -> None:
+    raw_db_url = "openoppsdb.sqlite?password=supersecret"
+
+    with pytest.raises(ValidationError) as exc_info:
+        OpenOppsSettings(db_url=raw_db_url, max_connections=0)
+
+    message = format_settings_validation_error(exc_info.value)
+
+    assert message.startswith("Invalid OpenOpps configuration:")
+    assert "OPENOPPS_DB_URL" in message
+    assert "OPENOPPS_MAX_CONNECTIONS" in message
+    assert raw_db_url not in message
+    assert "supersecret" not in message
 
 
 def test_settings_normalizes_plugin_filter_values() -> None:

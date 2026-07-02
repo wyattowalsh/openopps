@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
@@ -8,10 +9,21 @@ from pydantic import (
     AfterValidator,
     Field,
     StringConstraints,
+    ValidationError,
     computed_field,
     field_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+MAX_SETTINGS_ERROR_DETAILS = 3
+_URL_USERINFO_RE = re.compile(
+    r"([A-Za-z][A-Za-z0-9+.-]*://)([^/\s:@]+)(?::([^@\s/]+))?@"
+)
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"\b(password|passwd|secret|token|api[_-]?key|access[_-]?key|credential)=([^&\s]+)",
+    re.IGNORECASE,
+)
 
 
 def _validate_db_url(value: str) -> str:
@@ -298,3 +310,46 @@ class OpenOppsSettings(BaseSettings):
 
 def _comma_separated(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def format_settings_validation_error(error: ValidationError) -> str:
+    """Build a CLI-safe settings error without Pydantic input values."""
+
+    details = [
+        f"{_settings_error_location(item.get('loc', ()))}: "
+        f"{_settings_error_message(str(item.get('msg') or 'invalid value'))}"
+        for item in error.errors(
+            include_context=False,
+            include_input=False,
+            include_url=False,
+        )
+    ]
+    if not details:
+        return "Invalid OpenOpps configuration."
+
+    visible = details[:MAX_SETTINGS_ERROR_DETAILS]
+    if len(details) > MAX_SETTINGS_ERROR_DETAILS:
+        visible.append(f"{len(details) - MAX_SETTINGS_ERROR_DETAILS} more error(s)")
+    return "Invalid OpenOpps configuration: " + "; ".join(visible)
+
+
+def _settings_error_location(loc: object) -> str:
+    if not loc:
+        return "OPENOPPS_*"
+    if isinstance(loc, (list, tuple)):
+        field_name = str(loc[0]) if loc else "*"
+    else:
+        field_name = str(loc)
+    env_prefix = str(OpenOppsSettings.model_config.get("env_prefix") or "")
+    return f"{env_prefix}{field_name}".upper()
+
+
+def _settings_error_message(message: str) -> str:
+    if message.startswith("Value error, "):
+        message = message.removeprefix("Value error, ")
+    return _redact_sensitive_text(message)
+
+
+def _redact_sensitive_text(value: str) -> str:
+    value = _URL_USERINFO_RE.sub(r"\1<redacted>@", value)
+    return _SECRET_ASSIGNMENT_RE.sub(r"\1=<redacted>", value)

@@ -264,10 +264,12 @@ pnpm data:generate
 pnpm dev
 pnpm types:check
 pnpm build
-rtk lint
+pnpm lint
+pnpm test
 ```
 
 Documentation content lives in `docs/content/docs/`; Fumadocs navigation is curated by `docs/content/docs/meta.json`.
+The docs IA is organized as `/docs`, `/docs/cli`, `/docs/configuration`, `/docs/data-model`, `/docs/providers`, `/docs/operations`, and `/docs/contributing`; the jobs workbench lives at `/`, and the data dashboard lives at `/explorer`.
 
 ## Contributor Workflow
 
@@ -276,8 +278,10 @@ Use `just` for local parity with GitHub Actions:
 ```bash
 just quick
 just ci
+just lock-check
 just openspec-validate-all
 just docs-check
+just docs-test
 just cli-help
 ```
 
@@ -286,12 +290,20 @@ The underlying commands remain direct and scriptable:
 ```bash
 uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
+uv lock --check
 rtk npx -y @fission-ai/openspec@latest validate --all --strict
 cd docs && pnpm types:check
 cd docs && pnpm build
+cd docs && pnpm test
+just docs-search-index-check
 just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
+
+`just ci` includes `uv lock --check`, docs tests, docs lint, OpenSpec validation, coverage, Kaggle metadata generation, CLI help smoke checks, and diff formatting. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not silently skipped inside the CI recipe.
+`just docs-search-index-check` is the explicit maintainer release gate for the committed static docs search snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `docs/public/data/openopps-search/`, and fails on remaining snapshot drift.
+
+Renovate is configured in `renovate.json` for Python `pyproject.toml`/`uv.lock` and docs `package.json`/`pnpm-lock.yaml` maintenance. Review dependency PRs with the same `just ci` path used for local release validation.
 
 Public workflow, CLI, docs-generation, CI, or validation behavior changes must update OpenSpec, README/docs, nested `AGENTS.md`, CI, and `Justfile` in the same logical change. Use OpenSpec JSON/status commands for agent-readable state:
 
@@ -306,11 +318,14 @@ rtk npx -y @fission-ai/openspec@latest instructions --change prepare-v0-1-releas
 ```bash
 uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
-uv run python scripts/generate_kaggle_metadata.py
-uv run python scripts/generate_kaggle_metadata.py --data-db kaggle/openoppsdb.sqlite
+uv lock --check
+PYTHONPATH=scripts uv run python -m openopps_kaggle
+PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite
 cd docs && pnpm types:check
 cd docs && pnpm build
-cd docs && rtk lint
+cd docs && pnpm lint
+cd docs && pnpm test
+just docs-rtk-lint
 rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
 ```
 
@@ -321,7 +336,7 @@ The generated Kaggle bundle lives in `kaggle/`. It contains dataset metadata (`d
 ```bash
 OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps admin db init
 OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps sync --metrics-json --refresh-cache
-uv run python scripts/generate_kaggle_metadata.py --data-db .tmp/openoppsdb-operational.sqlite
+PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db .tmp/openoppsdb-operational.sqlite
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 just kaggle-dataset-version "OpenOppsDB daily snapshot"
 just kaggle-runtime-generator-version "OpenOppsDB manager runtime generator"
@@ -332,11 +347,17 @@ just kaggle-example-notebooks-pull-check
 just kaggle-live-verify
 ```
 
-Public example notebooks are generated from `scripts/generate_kaggle_metadata.py` as repo-owned Kaggle kernel bundles: `wyattowalsh/openoppsdb-starter-notebook`, `wyattowalsh/openoppsdb-advanced-usage`, `wyattowalsh/openoppsdb-hiring-market-map`, and `wyattowalsh/openoppsdb-skills-radar`. They are read-only, internet-disabled, credential-free, and attached only to `wyattowalsh/openoppsdb`. Use `just kaggle-example-notebooks-pull-check` to pull and verify the live source bundles after pushing; `just kaggle-example-notebooks-files page_size=200` lists output files emitted by those notebook runs.
+Public example notebooks are generated from `PYTHONPATH=scripts uv run python -m openopps_kaggle` as repo-owned Kaggle kernel bundles: `wyattowalsh/openoppsdb-starter-notebook`, `wyattowalsh/openoppsdb-advanced-usage`, `wyattowalsh/openoppsdb-hiring-market-map`, and `wyattowalsh/openoppsdb-skills-radar`. They are read-only, internet-disabled, credential-free, and attached only to `wyattowalsh/openoppsdb`. Use `just kaggle-example-notebooks-pull-check` to pull and verify the live source bundles after pushing; `just kaggle-example-notebooks-files page_size=200` lists output files emitted by those notebook runs.
 
-Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use one daily cron cadence such as `0 6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` for public snapshot input and `wyattowalsh/openoppsdb-manager-runtime` for the private generator script, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, downloads a compatible `scripts/generate_kaggle_metadata.py` from `OPENOPPS_GENERATOR_SCRIPT_URL`, copies the newest `/kaggle/input/**/openoppsdb.sqlite` snapshot into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, restores projected large columns from the prior Parquet exports, rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed, and syncs active jobs with bounded `openopps jobs sync --metrics-json --freshness-seconds --limit` so versions and observations accumulate across daily runs. It writes private `sync_metrics.json`, `status.json`, and `coverage.json` evidence, then delegates skill-table backfill, metadata regeneration, public SQLite metadata tables, CSV/Parquet exports, private `snapshot-quality.json`, evidence pruning, public upload staging, and best-effort live Kaggle file metadata repair to the generator script. Run `just kaggle-live-file-metadata` from a browser-authenticated local maintainer environment after live publishes when the Kaggle DataBundle checklist or column-description score must be repaired authoritatively. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`; refresh the private runtime dataset with the current generator before pushing the manager, and set `OPENOPPS_GENERATOR_SCRIPT_SHA256` to pin the downloaded generator when using an override. The manager seeds Kaggle runtime defaults for source freshness, job-route freshness, route limits, concurrency, connection limits, timeouts, and retries; set the corresponding `OPENOPPS_` variables in the notebook environment to override those defaults.
+Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/openoppsdb-manager`; use one daily cron cadence such as `0 6 * * *` and keep internet enabled so the notebook can install and run the OpenOpps CLI. The notebook is connected to `wyattowalsh/openoppsdb` for public snapshot input and `wyattowalsh/openoppsdb-manager-runtime` for the private `openopps_kaggle` runtime package, installs OpenOpps from `OPENOPPS_PACKAGE_SPEC`, verifies the runtime package from the manager-runtime input, runs `python -m openopps_kaggle` with `PYTHONPATH` pointed at the copied package, copies the newest `/kaggle/input/**/openoppsdb.sqlite` snapshot into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, restores projected large columns from the prior Parquet exports, rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed, and syncs active jobs with bounded `openopps jobs sync --metrics-json --freshness-seconds --limit` so versions and observations accumulate across daily runs. It writes private `sync_metrics.json`, `status.json`, and `coverage.json` evidence, then delegates skill-table backfill, metadata regeneration, public SQLite metadata tables, CSV/Parquet exports, private `snapshot-quality.json`, evidence pruning, public upload staging, and best-effort live Kaggle file metadata repair to the generator script. Run `just kaggle-live-file-metadata` from a browser-authenticated local maintainer environment after live publishes when the Kaggle DataBundle checklist or column-description score must be repaired authoritatively. `OPENOPPS_PACKAGE_SPEC` defaults to `git+https://github.com/wyattowalsh/openopps.git@main`; refresh the private runtime dataset with the current generator before pushing the manager, and set `OPENOPPS_GENERATOR_SCRIPT_SHA256` to pin the downloaded generator when using an override. The manager seeds Kaggle runtime defaults for source freshness, job-route freshness, route limits, concurrency, connection limits, timeouts, and retries; set the corresponding `OPENOPPS_` variables in the notebook environment to override those defaults.
 
 The manager must have Kaggle API credentials available inside the scheduled Kaggle notebook environment before it starts. Configure `KAGGLE_USERNAME` and `KAGGLE_KEY`, or `KAGGLE_API_TOKEN`, as Kaggle notebook secrets/environment variables; otherwise the manager fails fast before running the expensive sync.
 
 Use `just kaggle-dataset-create` instead of `just kaggle-dataset-version` for the first public upload, and `just kaggle-runtime-generator-create` instead of `just kaggle-runtime-generator-version` only for the first private manager-runtime upload. The live write recipes stage temporary upload directories and run through the Kaggle CLI, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail before upload when Kaggle credentials are missing and do not run in CI.
 `just kaggle-notebook-push` and `just kaggle-example-notebooks-push` pass a one-hour Kaggle kernel timeout by default; override their `timeout` argument only for an intentional longer maintenance run.
+
+## Secret Hygiene
+
+Keep local credentials out of the repository. `.env`, `.env.*`, `.envrc`, Kaggle `kaggle.json`, local registry credentials such as `.npmrc` and `.pypirc`, `.netrc`, key bundles, and token or credential JSON files are ignored by default. `.env.example` stays tracked as the non-secret template.
+
+Do not print credentials in logs or docs. Live Kaggle publishing remains a maintainer-only local action; CI and Renovate validation paths do not require Kaggle secrets.

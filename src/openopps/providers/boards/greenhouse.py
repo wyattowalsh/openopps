@@ -18,6 +18,7 @@ from openopps.models import (
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.boards.tokens import greenhouse_token_from_url
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
@@ -34,12 +35,8 @@ class GreenhouseProvider:
     @staticmethod
     def detect_route(url: str) -> ProviderRouteMatch | None:
         validate_public_https_url(url)
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower()
-        if not host_matches(host, "greenhouse.io"):
-            return None
-        path_parts = [part for part in parsed.path.split("/") if part]
-        return ProviderRouteMatch(token=path_parts[0] if path_parts else None)
+        token = _token_from_url(url)
+        return ProviderRouteMatch(token=token) if token else None
 
     async def fetch_jobs(
         self,
@@ -123,6 +120,12 @@ def _greenhouse_public_url(value: object) -> str | None:
 
 def _token_from_route(route: BoardProviderRecord) -> str | None:
     token = route.token
-    if not token and route.board_url:
-        token = route.board_url.rstrip("/").split("/")[-1]
-    return token
+    if token:
+        return token.strip()
+    if route.board_url:
+        return _token_from_url(route.board_url)
+    return None
+
+
+def _token_from_url(url: str) -> str | None:
+    return greenhouse_token_from_url(url)

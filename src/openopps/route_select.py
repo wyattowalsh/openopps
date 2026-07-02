@@ -3,6 +3,12 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from openopps.models import BoardProviderRecord, BoardRecord
+from openopps.providers.boards.tokens import (
+    ashby_token_from_url,
+    greenhouse_token_from_url,
+    lever_token_from_url,
+    workable_token_from_url,
+)
 from openopps.utils import slugify
 
 
@@ -54,21 +60,24 @@ def dedupe_routes(
 
 def route_request_key(board: BoardRecord, route: BoardProviderRecord) -> str:
     provider = route.provider_id.lower()
+    if provider == "teamtailor":
+        host = _teamtailor_host(route)
+        if host:
+            return f"teamtailor:host:{host}"
+    if provider == "bamboohr":
+        host = _bamboohr_host(route)
+        if host:
+            return f"bamboohr:host:{host}"
+    if provider == "rippling":
+        key = _rippling_route_key(route)
+        if key:
+            return f"rippling:host:{key}"
+    if provider == "wpjobmanager":
+        key = _wpjobmanager_route_key(route)
+        if key:
+            return key
     token = _route_token(route)
-    if (
-        provider
-        in {
-            "greenhouse",
-            "lever",
-            "ashbyhq",
-            "workable",
-            "teamtailor",
-            "bamboohr",
-            "rippling",
-            "wpjobmanager",
-        }
-        and token
-    ):
+    if provider in {"greenhouse", "lever", "ashbyhq", "workable"} and token:
         return f"{provider}:token:{token}"
     if provider == "workday":
         if route.host and route.tenant and route.site:
@@ -86,14 +95,22 @@ def route_request_key(board: BoardRecord, route: BoardProviderRecord) -> str:
     return f"{provider}:board:{fallback}"
 
 
+_BOARD_TOKEN_PARSERS = {
+    "greenhouse": greenhouse_token_from_url,
+    "lever": lever_token_from_url,
+    "workable": workable_token_from_url,
+    "ashbyhq": ashby_token_from_url,
+}
+
+
 def _route_token(route: BoardProviderRecord) -> str | None:
     if route.token:
         return route.token.strip().lower()
     if route.board_url:
-        parsed = urlparse(route.board_url)
-        parts = [part for part in parsed.path.split("/") if part]
-        if parts:
-            return parts[0].strip().lower()
+        parser = _BOARD_TOKEN_PARSERS.get(route.provider_id.lower())
+        if parser:
+            token = parser(route.board_url)
+            return token.strip().lower() if token else None
     return None
 
 
@@ -112,3 +129,109 @@ def _normalize_url(url: str) -> str:
     host = parsed.netloc.lower().removeprefix("www.")
     path = parsed.path.rstrip("/")
     return f"{host}{path}".lower()
+
+
+def _host(value: str | None) -> str | None:
+    if not value:
+        return None
+    host = value.strip().lower().rstrip(".")
+    return host or None
+
+
+def _host_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    parsed = urlparse(url)
+    return _host(parsed.hostname)
+
+
+def _origin_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return None
+    scheme = parsed.scheme.lower() or "https"
+    netloc = parsed.netloc.lower().rstrip("/")
+    return f"{scheme}://{netloc}"
+
+
+def _teamtailor_host(route: BoardProviderRecord) -> str | None:
+    if route.host:
+        host = _host(route.host)
+        if host and host.endswith(".teamtailor.com"):
+            return host
+    host = _host_from_url(route.board_url)
+    if host and host.endswith(".teamtailor.com"):
+        return host
+    if route.token:
+        token = route.token.strip().lower()
+        if token:
+            return f"{token}.teamtailor.com"
+    return None
+
+
+def _bamboohr_host(route: BoardProviderRecord) -> str | None:
+    if route.host:
+        host = _host(route.host)
+        if host and host.endswith(".bamboohr.com"):
+            return host
+    host = _host_from_url(route.board_url)
+    if host and host.endswith(".bamboohr.com"):
+        return host
+    tenant = (route.tenant or route.token or "").strip().lower()
+    if tenant:
+        return f"{tenant}.bamboohr.com"
+    return None
+
+
+def _rippling_route_key(route: BoardProviderRecord) -> str | None:
+    slug = _rippling_slug(route)
+    host = _host(route.host) or _host_from_url(route.board_url)
+    if not host and slug:
+        host = "ats.rippling.com"
+    if host and slug:
+        return f"{host}:{slug}"
+    return None
+
+
+def _rippling_slug(route: BoardProviderRecord) -> str | None:
+    for value in (route.tenant, route.token):
+        if value and value.strip():
+            return value.strip().lower()
+    if not route.board_url:
+        return None
+    parsed = urlparse(route.board_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if parts[:3] == ["api", "v2", "board"] and len(parts) > 3:
+        return parts[3].strip().lower()
+    if len(parts) >= 2 and parts[1] == "jobs":
+        return parts[0].strip().lower()
+    return None
+
+
+def _wpjobmanager_route_key(route: BoardProviderRecord) -> str | None:
+    for value in (route.board_url, route.token):
+        if value and value.strip().lower().startswith("https://"):
+            key = _wpjobmanager_url_key(value)
+            if key:
+                return key
+    host = _host(route.host)
+    if host:
+        return f"wpjobmanager:rest:https://{host}/wp-json/wp/v2/job-listings"
+    return None
+
+
+def _wpjobmanager_url_key(url: str) -> str | None:
+    origin = _origin_from_url(url)
+    if not origin:
+        return None
+    if _wpjobmanager_is_ajax_endpoint(url):
+        return f"wpjobmanager:ajax:{origin}/jm-ajax/get_listings"
+    return f"wpjobmanager:rest:{origin}/wp-json/wp/v2/job-listings"
+
+
+def _wpjobmanager_is_ajax_endpoint(url: str) -> bool:
+    parsed = urlparse(url)
+    parts = [part for part in parsed.path.split("/") if part]
+    return parsed.scheme == "https" and parts[:2] == ["jm-ajax", "get_listings"]

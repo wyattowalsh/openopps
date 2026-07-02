@@ -63,7 +63,8 @@ def test_job_content_hash_ignores_json_resume_last_modified():
 
     assert left.job_description is not None
     assert right.job_description is not None
-    assert left.job_description.meta["lastModified"] != right.job_description.meta[
-        "lastModified"
-    ]
+    assert (
+        left.job_description.meta["lastModified"]
+        != right.job_description.meta["lastModified"]
+    )
     assert job_content_hash(left) == job_content_hash(right)

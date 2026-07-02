@@ -1,0 +1,10 @@
+- [x] Define OpenSpec requirements for SQLite exports, manifest v4, route migration, docs IA, and telemetry.
+- [x] Add filtered SQLite record exports and full SQLite DB snapshot export.
+- [x] Extend generated search artifacts to manifest v4 with facets, suggestions, dashboard aggregates, and detail shards.
+- [x] Update TypeScript runtime search schema and loader tests for manifest v4.
+- [x] Add no-op/default first-party telemetry and local event-lake sink.
+- [x] Refresh docs IA, design tokens, and compact UI primitives.
+- [ ] Move jobs workbench to `/` and remove `/jobs` routes.
+- [ ] Move explorer dashboard to `/explorer` and remove `/docs/explorer`.
+- [ ] Regenerate docs data and search artifacts where local prerequisites exist.
+- [ ] Run focused Python/docs tests and final validation gates.

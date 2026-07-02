@@ -11,6 +11,7 @@ import {
 	EXPECTED_BOARD_COLUMNS,
 	EXPECTED_JOB_COLUMNS,
 	EXPECTED_PROVIDER_COLUMNS,
+	LEGACY_JOB_COLUMNS,
 	SEARCH_VERSION,
 } from "./search-utils";
 
@@ -18,6 +19,16 @@ const manifest: SearchManifest = {
 	version: SEARCH_VERSION,
 	snapshotAt: "2026-01-01T00:00:00Z",
 	openJobCount: 2,
+	counts: {
+		snapshot: {
+			database: "kaggle/openoppsdb.sqlite",
+			sourceRows: 2,
+			providerRoutes: 1,
+			boards: 1,
+			jobs: 2,
+			openJobs: 2,
+		},
+	},
 	source: { database: "kaggle/openoppsdb.sqlite", tables: [] },
 	defaultEntity: "jobs",
 	defaultFilters: { jobs: { status: "open" } },
@@ -71,6 +82,22 @@ const manifest: SearchManifest = {
 		routeStatuses: [],
 		workplaces: [],
 		employmentTypes: [],
+		locations: [],
+		departments: [],
+		teams: [],
+		companies: [],
+		skills: [],
+		salaryCurrencies: [],
+	},
+	suggestions: {
+		locations: [
+			{
+				value: "Remote",
+				label: "Remote",
+				count: 2,
+				normalized: "remote",
+			},
+		],
 	},
 };
 
@@ -131,6 +158,70 @@ describe("search index loader", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
+	it("evicts failed fetches so the next request can retry", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: async () => manifest,
+			});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(loadSearchManifest()).rejects.toThrow(
+			"Unable to load /data/openopps-search/manifest.json: 503",
+		);
+		await expect(loadSearchManifest()).resolves.toEqual(manifest);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("rejects unsupported manifest versions with typed errors", async () => {
+		stubFetch({
+			"/data/openopps-search/manifest.json": {
+				...manifest,
+				version: 2,
+			},
+		});
+
+		await expect(loadSearchManifest()).rejects.toMatchObject({
+			name: "SearchLoadError",
+			code: "unsupported_version",
+		});
+	});
+
+	it("loads committed v3 artifacts while v4 generation requires a local database", async () => {
+		const legacyManifest: SearchManifest = {
+			...manifest,
+			version: 3,
+			counts: undefined,
+			suggestions: undefined,
+			dashboard: undefined,
+			entities: {
+				...manifest.entities,
+				jobs: {
+					...manifest.entities.jobs,
+					columns: LEGACY_JOB_COLUMNS,
+				},
+			},
+		};
+		const legacyBoards = chunk("boards", EXPECTED_BOARD_COLUMNS, [["board"]], 3);
+		const legacyJobs = chunk("jobs", LEGACY_JOB_COLUMNS, [["legacy"]], 3);
+		stubFetch({
+			"/data/openopps-search/manifest.json": legacyManifest,
+			"/data/openopps-search/boards.json": legacyBoards,
+			"/data/openopps-search/jobs/latest.json": legacyJobs,
+		});
+
+		await expect(loadSearchManifest()).resolves.toEqual(legacyManifest);
+		await expect(loadEntityChunk(legacyManifest, "boards")).resolves.toEqual(
+			legacyBoards,
+		);
+		await expect(loadInitialJobsChunk(legacyManifest)).resolves.toEqual(
+			legacyJobs,
+		);
+	});
+
 	it("loads the bounded initial jobs chunk", async () => {
 		const fetchMock = stubFetch({
 			"/data/openopps-search/jobs/latest.json": latestJobs,
@@ -148,9 +239,10 @@ function chunk(
 	entity: SearchChunk["entity"],
 	columns: string[],
 	rows: SearchChunk["rows"],
+	version = SEARCH_VERSION,
 ): SearchChunk {
 	return {
-		version: SEARCH_VERSION,
+		version,
 		entity,
 		columns,
 		count: rows.length,

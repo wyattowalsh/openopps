@@ -1,0 +1,22 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["pep621", "npm"],
+  "dependencyDashboard": true,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on monday"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["pep621"],
+      "groupName": "Python dependencies"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchFileNames": ["docs/package.json"],
+      "groupName": "docs npm dependencies"
+    }
+  ]
+}

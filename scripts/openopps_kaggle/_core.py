@@ -1,12 +1,13 @@
+
+"""OpenOpps Kaggle implementation core."""
 from __future__ import annotations
 
 import argparse
 import base64
 import csv
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
-from hashlib import sha1
+from hashlib import sha1, sha256
 import json
 import os
 from pathlib import Path
@@ -18,8 +19,8 @@ import subprocess
 import sys
 import time
 import types
-from typing import Annotated, Any, Callable, Literal, Union, get_args, get_origin
 import urllib.request
+from typing import Annotated, Any, Callable, Literal, Union, get_args, get_origin
 
 import polars as pl
 from pydantic import BaseModel, Field
@@ -41,779 +42,21 @@ from openopps.models import (
     extract_job_skills,
 )
 from openopps.utils import stable_id, slugify
+from openopps_kaggle.constants import *  # noqa: F403
 
 
-@dataclass(frozen=True)
-class Table:
-    name: str
-    model: type[BaseModel]
-    description: str
+def _file_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-@dataclass(frozen=True)
-class Resource:
-    name: str
-    path: str
-    description: str
-    format: str
-    mediatype: str
-    model: type[BaseModel] | None = None
-    tables: tuple[Table, ...] = ()
-
-
-@dataclass(frozen=True)
-class PublicNotebookSpec:
-    slug: str
-    notebook_id: str
-    title: str
-    code_file: str
-    notebook_factory: Callable[[], dict[str, Any]]
-
-
-class OpenOppsTableRow(BaseModel):
-    table_name: str = Field(description="SQLite table name.")
-    table_title: str = Field(description="Human-readable table label.")
-    table_description: str = Field(description="Plain-language table description.")
-    csv_path: str = Field(description="CSV export path for this SQLite table.")
-    parquet_path: str = Field(description="Parquet export path for this SQLite table.")
-
-
-class OpenOppsColumnRow(BaseModel):
-    table_name: str = Field(description="SQLite table that owns this column.")
-    column_name: str = Field(description="SQLite column name.")
-    column_title: str = Field(description="Human-readable column label.")
-    column_description: str = Field(description="Plain-language column description.")
-    logical_type: str = Field(description="Python or typing-level logical type label.")
-    json_schema_type: str = Field(
-        description="JSON Schema type derived from the model field."
-    )
-    required: bool = Field(
-        description="Whether the Pydantic boundary model marks the field as required."
-    )
-    operational_nullable: bool = Field(
-        description="Whether the operational SQLite schema allows NULL for this column."
-    )
-    public_sqlite_value_status: str = Field(
-        description=(
-            "How the public SQLite value is represented: full, projected_null, "
-            "preview_truncated_when_long, or generated_metadata."
-        )
-    )
-    full_export_paths_json: str | None = Field(
-        default=None,
-        description="JSON array of CSV/Parquet export paths containing full column values.",
-    )
-    relationship_json: str | None = Field(
-        default=None,
-        description="JSON object describing primary-key and join relationships, when known.",
-    )
-    source_name: str | None = Field(
-        default=None,
-        description="Original source alias when it differs from the column name.",
-    )
-    format: str | None = Field(
-        default=None, description="JSON Schema format hint, when available."
-    )
-    enum_json: str | None = Field(
-        default=None, description="JSON array of allowed values, when available."
-    )
-    examples_json: str | None = Field(
-        default=None, description="JSON array of example values, when available."
-    )
-    default_json: str | None = Field(
-        default=None, description="JSON-encoded default value, when available."
-    )
-
-
-DATASET_ID = "wyattowalsh/openoppsdb"
-RUNTIME_GENERATOR_DATASET_ID = "wyattowalsh/openoppsdb-manager-runtime"
-RUNTIME_GENERATOR_DATASET_SLUG = "openoppsdb-manager-runtime"
-RUNTIME_GENERATOR_SCRIPT_FILE = "generate_kaggle_metadata.py"
-DATASET_LICENSE = "CC0-1.0"
-DB_FILE = "openoppsdb.sqlite"
-CSV_DIR = "exports/csv"
-PARQUET_DIR = "exports/parquet"
-SYNC_METRICS_FILE = "sync_metrics.json"
-STATUS_FILE = "status.json"
-COVERAGE_FILE = "coverage.json"
-SNAPSHOT_QUALITY_FILE = "snapshot-quality.json"
-SYNC_STDERR_FILE = "sync_stderr.txt"
-DATAPACKAGE_FILE = "datapackage.json"
-EXPOSED_DATAPACKAGE_FILE = "metadata/datapackage.json"
-NB_FILE = "openoppsdb-manager.ipynb"
-NB_ID = "wyattowalsh/openoppsdb-manager"
-STARTER_NB_FILE = "openoppsdb-starter.ipynb"
-STARTER_NB_ID = "wyattowalsh/openoppsdb-starter-notebook"
-ADVANCED_NB_FILE = "openoppsdb-advanced-usage.ipynb"
-ADVANCED_NB_ID = "wyattowalsh/openoppsdb-advanced-usage"
-HIRING_MARKET_NB_FILE = "openoppsdb-hiring-market-map.ipynb"
-HIRING_MARKET_NB_ID = "wyattowalsh/openoppsdb-hiring-market-map"
-SKILLS_RADAR_NB_FILE = "openoppsdb-skills-radar.ipynb"
-SKILLS_RADAR_NB_ID = "wyattowalsh/openoppsdb-skills-radar"
-DATASET_IMAGE_FILE = "dataset-cover-image.png"
-DATASET_IMAGE_SOURCE = Path("docs/public/social/openoppsdb.png")
-DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[1] / "kaggle"
-DEFAULT_MANAGER_DIR = DEFAULT_DATASET_DIR
-DEFAULT_STARTER_DIR = DEFAULT_DATASET_DIR / "starter"
-DEFAULT_EXAMPLES_DIR = DEFAULT_DATASET_DIR / "examples"
-GENERATOR_SCRIPT_URL = (
-    f"file:///kaggle/input/{RUNTIME_GENERATOR_DATASET_SLUG}/"
-    f"{RUNTIME_GENERATOR_SCRIPT_FILE}"
-)
-DATASET_IMAGE_URL = (
-    "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
-    "docs/public/social/openoppsdb.png"
-)
-SQLITE_SIDECAR_SUFFIXES = ("-journal", "-shm", "-wal")
-SQLITE_PREVIEW_TEXT_MAX_CHARS = 512
-SQLITE_PREVIEW_TEXT_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("boards", "description"),
-    ("boards", "locations"),
-    ("boards", "markets"),
-    ("boards", "source_board_keys"),
-    ("job_version_bullets", "text"),
-    ("job_version_locations", "label"),
-    ("job_versions", "locations"),
-    ("sources", "raw_metadata"),
-)
-SQLITE_UPLOAD_PROJECTED_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("boards", "raw_payload"),
-    ("job_versions", "description"),
-    ("job_versions", "description_html"),
-    ("job_versions", "job_description"),
-    ("job_versions", "responsibilities"),
-    ("job_versions", "qualifications"),
-    ("job_versions", "skills"),
-    ("job_versions", "compensation"),
-    ("job_payload_snapshots", "payload"),
-)
-SQLITE_UPLOAD_PROJECTED_COLUMN_SET = frozenset(SQLITE_UPLOAD_PROJECTED_COLUMNS)
-SQLITE_PREVIEW_TEXT_COLUMN_SET = frozenset(SQLITE_PREVIEW_TEXT_COLUMNS)
-SQLITE_DERIVED_CHILD_TABLES: tuple[str, ...] = (
-    "job_version_locations",
-    "job_version_skills",
-    "job_version_skill_keywords",
-    "job_version_bullets",
-)
-PUBLIC_SQLITE_VALUE_STATUSES = frozenset(
-    {"full", "projected_null", "preview_truncated_when_long", "generated_metadata"}
-)
-APP_PRIMARY_KEY_COLUMNS: dict[str, tuple[str, ...]] = {
-    "sources": ("key",),
-    "boards": ("key",),
-    "board_providers": ("id",),
-    "jobs": ("id",),
-    "job_versions": ("id",),
-    "job_version_locations": ("id",),
-    "job_version_skills": ("id",),
-    "job_version_skill_keywords": ("id",),
-    "job_version_bullets": ("id",),
-    "job_payload_snapshots": ("id",),
-    "job_sync_runs": ("id",),
-    "job_sync_observations": ("id",),
-    "openopps_tables": ("table_name",),
-    "openopps_columns": ("table_name", "column_name"),
-}
-RELATIONSHIP_REFERENCES: dict[tuple[str, str], tuple[dict[str, object], ...]] = {
-    ("boards", "source_key"): (
-        {"table": "sources", "column": "key", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("board_providers", "source_key"): (
-        {"table": "sources", "column": "key", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("board_providers", "board_key"): (
-        {"table": "boards", "column": "key", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("jobs", "board_key"): (
-        {"table": "boards", "column": "key", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("jobs", "current_version_id"): (
-        {"table": "job_versions", "column": "id", "nullable": True, "onDelete": None},
-    ),
-    ("job_versions", "job_id"): (
-        {"table": "jobs", "column": "id", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("job_version_locations", "job_version_id"): (
-        {
-            "table": "job_versions",
-            "column": "id",
-            "nullable": False,
-            "onDelete": "CASCADE",
-        },
-    ),
-    ("job_version_skills", "job_version_id"): (
-        {
-            "table": "job_versions",
-            "column": "id",
-            "nullable": False,
-            "onDelete": "CASCADE",
-        },
-    ),
-    ("job_version_skill_keywords", "skill_id"): (
-        {
-            "table": "job_version_skills",
-            "column": "id",
-            "nullable": False,
-            "onDelete": "CASCADE",
-        },
-    ),
-    ("job_version_bullets", "job_version_id"): (
-        {
-            "table": "job_versions",
-            "column": "id",
-            "nullable": False,
-            "onDelete": "CASCADE",
-        },
-    ),
-    ("job_payload_snapshots", "job_id"): (
-        {"table": "jobs", "column": "id", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("job_sync_runs", "board_key"): (
-        {"table": "boards", "column": "key", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("job_sync_observations", "sync_run_id"): (
-        {
-            "table": "job_sync_runs",
-            "column": "id",
-            "nullable": False,
-            "onDelete": "CASCADE",
-        },
-    ),
-    ("job_sync_observations", "job_id"): (
-        {"table": "jobs", "column": "id", "nullable": False, "onDelete": "CASCADE"},
-    ),
-    ("job_sync_observations", "job_version_id"): (
-        {
-            "table": "job_versions",
-            "column": "id",
-            "nullable": True,
-            "onDelete": "SET NULL",
-        },
-    ),
-    ("openopps_columns", "table_name"): (
-        {
-            "table": "openopps_tables",
-            "column": "table_name",
-            "nullable": False,
-            "onDelete": "CASCADE",
-        },
-    ),
-}
-ENUM_VALUES_BY_COLUMN: dict[tuple[str, str], tuple[str, ...]] = {
-    ("board_providers", "support_level"): ("detect", "jobs", "unsupported"),
-    ("jobs", "status"): ("open", "closed"),
-    ("job_payload_snapshots", "payload_kind"): ("listing", "detail"),
-    ("job_sync_observations", "observation_kind"): (
-        "new",
-        "unchanged",
-        "changed",
-        "reopened",
-        "closed",
-    ),
-    ("job_versions", "remote"): ("Full", "Hybrid", "None"),
-    ("job_version_bullets", "kind"): ("responsibility", "qualification"),
-}
-JOIN_HINTS_BY_COLUMN: dict[tuple[str, str], str] = {
-    (
-        "jobs",
-        "current_version_id",
-    ): "Join jobs.current_version_id to job_versions.id for the current content snapshot.",
-    (
-        "job_versions",
-        "job_id",
-    ): "Join job_versions.job_id to jobs.id for all content versions of a job.",
-    (
-        "job_sync_observations",
-        "sync_run_id",
-    ): "Join job_sync_observations.sync_run_id to job_sync_runs.id for route run context.",
-    (
-        "job_sync_observations",
-        "job_version_id",
-    ): "Join non-null job_version_id values to job_versions.id for observed content.",
-}
-MAX_COLUMN_DESCRIPTION_LENGTH = 160
-NOTEBOOK_SYNC_ENV_DEFAULTS: dict[str, str] = {
-    "OPENOPPS_SOURCE_FRESHNESS_SECONDS": "86400",
-    "OPENOPPS_SOURCE_CONCURRENCY": "40",
-    "OPENOPPS_PROVIDER_CONCURRENCY": "80",
-    "OPENOPPS_BOARD_CONCURRENCY": "80",
-    "OPENOPPS_JOB_ROUTE_TIMEOUT_SECONDS": "180",
-    "OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS": "86400",
-    "OPENOPPS_MAX_CONNECTIONS": "120",
-    "OPENOPPS_SOURCE_TIMEOUT_SECONDS": "120",
-    "OPENOPPS_HTTP_TIMEOUT": "20",
-    "OPENOPPS_RETRY_ATTEMPTS": "2",
-}
-NOTEBOOK_SYNC_TIMEOUT_SECONDS = 3300
-NOTEBOOK_JOB_ROUTE_LIMIT = 120
-
-
-DATA_TABLES: tuple[Table, ...] = (
-    Table(
-        name="sources",
-        model=SourceRow,
-        description="Durable source catalogs that discover company boards.",
-    ),
-    Table(
-        name="boards",
-        model=BoardRow,
-        description="Durable normalized company or organization hiring boards.",
-    ),
-    Table(
-        name="board_providers",
-        model=BoardProviderRow,
-        description="Durable provider routes that connect boards to upstream systems.",
-    ),
-    Table(
-        name="jobs",
-        model=JobRow,
-        description="Stable job identities and lifecycle state.",
-    ),
-    Table(
-        name="job_versions",
-        model=JobVersionRow,
-        description="Versioned normalized job content snapshots.",
-    ),
-    Table(
-        name="job_version_locations",
-        model=JobVersionLocationRow,
-        description="Indexed location labels for each normalized job version.",
-    ),
-    Table(
-        name="job_version_skills",
-        model=JobVersionSkillRow,
-        description="Indexed skill groups for each normalized job version.",
-    ),
-    Table(
-        name="job_version_skill_keywords",
-        model=JobVersionSkillKeywordRow,
-        description="Indexed skill keywords for each normalized job version skill.",
-    ),
-    Table(
-        name="job_version_bullets",
-        model=JobVersionBulletRow,
-        description="Indexed responsibility and qualification bullets for each job version.",
-    ),
-    Table(
-        name="job_payload_snapshots",
-        model=JobPayloadSnapshotRow,
-        description="Raw upstream payload snapshots for audit and replay.",
-    ),
-    Table(
-        name="job_sync_runs",
-        model=JobSyncRunRow,
-        description="Provider route sync attempts and aggregate change counts.",
-    ),
-    Table(
-        name="job_sync_observations",
-        model=JobSyncObservationRow,
-        description="Per-job observations recorded during provider route syncs.",
-    ),
-)
-
-METADATA_TABLES: tuple[Table, ...] = (
-    Table(
-        name="openopps_tables",
-        model=OpenOppsTableRow,
-        description="In-database table labels and descriptions for openoppsdb.sqlite.",
-    ),
-    Table(
-        name="openopps_columns",
-        model=OpenOppsColumnRow,
-        description="In-database column labels, descriptions, and schema hints for openoppsdb.sqlite.",
-    ),
-)
-
-TABLES: tuple[Table, ...] = DATA_TABLES + METADATA_TABLES
-PUBLIC_SQLITE_TABLE_NAMES: tuple[str, ...] = tuple(table.name for table in TABLES)
-PUBLIC_SQLITE_TABLE_NAME_SET = frozenset(PUBLIC_SQLITE_TABLE_NAMES)
-EXPORT_ORDER_COLUMNS: dict[str, tuple[str, ...]] = {
-    "sources": ("key",),
-    "boards": ("key",),
-    "board_providers": ("source_key", "board_key", "provider_id", "id"),
-    "jobs": ("board_key", "provider_id", "remote_id", "id"),
-    "job_versions": ("job_id", "version", "id"),
-    "job_version_locations": ("job_version_id", "ordinal", "label", "id"),
-    "job_version_skills": ("job_version_id", "ordinal", "id"),
-    "job_version_skill_keywords": ("skill_id", "ordinal", "keyword", "id"),
-    "job_version_bullets": ("job_version_id", "kind", "ordinal", "text", "id"),
-    "job_payload_snapshots": ("job_id", "payload_kind", "payload_hash", "id"),
-    "job_sync_runs": ("synced_at", "board_key", "provider_id", "id"),
-    "job_sync_observations": ("observed_at", "sync_run_id", "job_id", "id"),
-    "openopps_tables": ("table_name",),
-    "openopps_columns": ("table_name", "column_name"),
-}
-
-
-DATA_RESOURCES: tuple[Resource, ...] = (
-    (
-        Resource(
-            name="openopps_database",
-            path=DB_FILE,
-            description=(
-                "OpenOppsDB SQLite database file with source, board, provider "
-                "route, job lifecycle, version history, sync observations, and "
-                "in-database openopps_tables/openopps_columns metadata. Kaggle "
-                "column metadata is attached to the CSV and Parquet exports."
-            ),
-            format="sqlite",
-            mediatype="application/vnd.sqlite3",
-            tables=TABLES,
-        ),
-    )
-    + tuple(
-        Resource(
-            name=f"{table.name}_csv",
-            path=f"{CSV_DIR}/{table.name}.csv",
-            description=f"Full CSV table export for {table.description}",
-            format="csv",
-            mediatype="text/csv",
-            model=table.model,
-        )
-        for table in TABLES
-    )
-    + tuple(
-        Resource(
-            name=f"{table.name}_parquet",
-            path=f"{PARQUET_DIR}/{table.name}.parquet",
-            description=f"Full Parquet table export for {table.description}",
-            format="parquet",
-            mediatype="application/vnd.apache.parquet",
-            model=table.model,
-        )
-        for table in TABLES
-    )
-)
-
-EVIDENCE_RESOURCES: tuple[Resource, ...] = (
-    Resource(
-        name="sync_metrics",
-        path=SYNC_METRICS_FILE,
-        description=(
-            "JSON metrics emitted by the bounded `openopps jobs sync "
-            "--metrics-json --freshness-seconds --limit` manager run, "
-            "including provider error summaries."
-        ),
-        format="json",
-        mediatype="application/json",
-    ),
-    Resource(
-        name="status",
-        path=STATUS_FILE,
-        description=(
-            "JSON `openopps status --json` report captured after the manager sync, "
-            "including persisted counts and route readiness evidence."
-        ),
-        format="json",
-        mediatype="application/json",
-    ),
-    Resource(
-        name="coverage",
-        path=COVERAGE_FILE,
-        description=(
-            "JSON `openopps providers coverage --json` report captured from the "
-            "persisted snapshot after syncing."
-        ),
-        format="json",
-        mediatype="application/json",
-    ),
-    Resource(
-        name="snapshot_quality",
-        path=SNAPSHOT_QUALITY_FILE,
-        description=(
-            "Pre-publish quality gate report with pass/fail status, blockers, "
-            "warnings, counts, required file checks, and provider error summaries."
-        ),
-        format="json",
-        mediatype="application/json",
-    ),
-)
-
-RESOURCES: tuple[Resource, ...] = DATA_RESOURCES
-PRIVATE_EVIDENCE_FILES: tuple[str, ...] = (
-    SYNC_METRICS_FILE,
-    STATUS_FILE,
-    COVERAGE_FILE,
-    SNAPSHOT_QUALITY_FILE,
-    SYNC_STDERR_FILE,
-)
-PRIVATE_METADATA_FILES: tuple[str, ...] = (
-    DATAPACKAGE_FILE,
-    EXPOSED_DATAPACKAGE_FILE,
-)
-PRIVATE_UPLOAD_RUNTIME_FILES: tuple[str, ...] = (
-    NB_FILE,
-    STARTER_NB_FILE,
-    "kernel-metadata.json",
-    "generate_kaggle_metadata.py",
-)
-PRIVATE_UPLOAD_RUNTIME_DIRS: tuple[str, ...] = (
-    ".ipynb_checkpoints",
-    "examples",
-    "notebooks",
-    "starter",
-    "public-upload",
-)
-PUBLIC_UPLOAD_CONTROL_FILES: tuple[str, ...] = (
-    "dataset-metadata.json",
-    DATASET_IMAGE_FILE,
-)
-PUBLIC_UPLOAD_DATA_FILES: tuple[str, ...] = (
-    (DB_FILE,)
-    + tuple(f"{CSV_DIR}/{table.name}.csv" for table in TABLES)
-    + tuple(f"{PARQUET_DIR}/{table.name}.parquet" for table in TABLES)
-)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate Kaggle dataset metadata from OpenOpps package models."
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_DATASET_DIR,
-        help="Directory to receive Kaggle dataset metadata and data artifacts.",
-    )
-    parser.add_argument(
-        "--manager-dir",
-        type=Path,
-        default=DEFAULT_MANAGER_DIR,
-        help="Directory to receive the connected Kaggle manager notebook.",
-    )
-    parser.add_argument(
-        "--starter-dir",
-        type=Path,
-        default=DEFAULT_STARTER_DIR,
-        help="Directory to receive the public Kaggle starter notebook.",
-    )
-    parser.add_argument(
-        "--examples-dir",
-        type=Path,
-        default=DEFAULT_EXAMPLES_DIR,
-        help="Directory to receive public Kaggle example notebooks.",
-    )
-    parser.add_argument(
-        "--skip-notebooks",
-        action="store_true",
-        help=(
-            "Skip writing manager, starter, and example notebook artifacts. "
-            "Intended for Kaggle manager runtime calls that only build "
-            "data/metadata outputs."
-        ),
-    )
-    parser.add_argument(
-        "--stage-runtime-generator-dir",
-        type=Path,
-        default=None,
-        help=(
-            "Write the private manager-runtime Kaggle dataset bundle containing "
-            "only dataset-metadata.json and generate_kaggle_metadata.py, then exit."
-        ),
-    )
-    parser.add_argument(
-        "--data-db",
-        type=Path,
-        default=None,
-        help=f"Existing SQLite DB to copy as {DB_FILE} and export alongside tables.",
-    )
-    parser.add_argument(
-        "--mutate-data-db-for-upload",
-        action="store_true",
-        help=(
-            "Mutate --data-db in place when it is the output openoppsdb.sqlite. "
-            "Private Kaggle manager disk-pressure optimization."
-        ),
-    )
-    parser.add_argument(
-        "--sync-metrics",
-        type=Path,
-        default=None,
-        help=(
-            "JSON metrics file from the bounded manager "
-            "`openopps jobs sync --metrics-json --freshness-seconds --limit` run."
-        ),
-    )
-    parser.add_argument(
-        "--status-json",
-        type=Path,
-        default=None,
-        help="JSON status file from `openopps status --json`.",
-    )
-    parser.add_argument(
-        "--coverage-json",
-        type=Path,
-        default=None,
-        help="JSON coverage file from `openopps providers coverage --json`.",
-    )
-    parser.add_argument(
-        "--quality-report",
-        type=Path,
-        default=None,
-        help=(
-            f"Write {SNAPSHOT_QUALITY_FILE} and fail when the snapshot is not "
-            "publishable."
-        ),
-    )
-    parser.add_argument(
-        "--prune-private-upload-files",
-        action="store_true",
-        help=(
-            "Remove private manager evidence files from the upload directory "
-            "after validation so the public dataset contains only SQLite, CSV, "
-            "and Parquet data files."
-        ),
-    )
-    parser.add_argument(
-        "--stage-public-upload-dir",
-        type=Path,
-        default=None,
-        help=(
-            "Copy only Kaggle dataset control files plus public SQLite, CSV, "
-            "and Parquet data artifacts into this temporary upload directory."
-        ),
-    )
-    parser.add_argument(
-        "--update-live-file-metadata",
-        action="store_true",
-        help=(
-            "Update Kaggle's live per-file descriptions and column metadata "
-            "from generated dataset-metadata.json. Requires the kaggle package "
-            "and Kaggle API credentials."
-        ),
-    )
-    parser.add_argument(
-        "--live-file-metadata-browser-cookies",
-        action="store_true",
-        help=(
-            "Also repair Kaggle's live databundle metadata checklist using "
-            "the logged-in local Chrome session. Requires browser-cookie3 and "
-            "is intended for local publish verification."
-        ),
-    )
-    parser.add_argument(
-        "--live-file-metadata-kaggle-auth",
-        action="store_true",
-        help=(
-            "Attempt Kaggle's live databundle metadata checklist repair using "
-            "KAGGLE_USERNAME/KAGGLE_KEY basic auth. This is best-effort in "
-            "Kaggle notebook manager runs; use --live-file-metadata-browser-cookies "
-            "from a local browser-authenticated environment for the authoritative "
-            "post-publish databundle repair."
-        ),
-    )
-    parser.add_argument(
-        "--live-file-metadata-sqlite-timeout-seconds",
-        type=float,
-        default=120.0,
-        help=(
-            "Seconds to wait for Kaggle to expose sqliteInfo.tables when "
-            "attempting best-effort nested SQLite table metadata repair."
-        ),
-    )
-    parser.add_argument(
-        "--live-file-metadata-sqlite-poll-seconds",
-        type=float,
-        default=15.0,
-        help="Polling interval for best-effort live SQLite table metadata repair.",
-    )
-    parser.add_argument(
-        "--wait-live-dataset-ready",
-        action="store_true",
-        help=(
-            "Wait until the live Kaggle dataset status is ready before running "
-            "other requested live operations."
-        ),
-    )
-    parser.add_argument(
-        "--wait-live-dataset-min-version",
-        type=int,
-        default=None,
-        help="Minimum live Kaggle dataset version required by --wait-live-dataset-ready.",
-    )
-    parser.add_argument(
-        "--wait-live-dataset-timeout-seconds",
-        type=float,
-        default=1800.0,
-        help="Seconds to wait for the live Kaggle dataset to become ready.",
-    )
-    parser.add_argument(
-        "--wait-live-dataset-poll-seconds",
-        type=float,
-        default=30.0,
-        help="Polling interval for --wait-live-dataset-ready.",
-    )
-    parser.add_argument(
-        "--empty-snapshot-explanation",
-        default=None,
-        help=(
-            "Documented first-run or upstream-outage explanation when a snapshot "
-            "has no current jobs."
-        ),
-    )
-    args = parser.parse_args()
-
-    if args.stage_runtime_generator_dir is not None:
-        _stage_runtime_generator_dir(args.stage_runtime_generator_dir)
-        return
-
-    output_dir: Path = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if args.data_db is not None:
-        _write_data_artifacts(
-            output_dir,
-            args.data_db,
-            mutate_data_db_for_upload=args.mutate_data_db_for_upload,
-        )
-    _write_dataset_image(output_dir)
-    _remove_dataset_notebooks(output_dir)
-    if args.quality_report is None:
-        _prune_private_upload_files(output_dir)
-
-    _write_json(output_dir / "dataset-metadata.json", dataset_metadata())
-
-    if args.quality_report is not None:
-        if args.sync_metrics is None or args.status_json is None:
-            parser.error("--quality-report requires --sync-metrics and --status-json")
-        _write_snapshot_quality_report(
-            output_dir=output_dir,
-            db_path=output_dir / DB_FILE,
-            report_path=args.quality_report,
-            sync_metrics=_read_json(args.sync_metrics),
-            status=_read_json(args.status_json),
-            coverage=_read_json(args.coverage_json) if args.coverage_json else None,
-            empty_snapshot_explanation=args.empty_snapshot_explanation,
-        )
-        if args.prune_private_upload_files:
-            _prune_private_upload_files(output_dir)
-
-    if not args.skip_notebooks:
-        manager_dir: Path = args.manager_dir
-        _write_manager_notebook(manager_dir)
-        starter_dir: Path = args.starter_dir
-        _write_starter_notebook(starter_dir)
-        examples_dir: Path = args.examples_dir
-        _write_example_notebooks(examples_dir)
-
-    if args.stage_public_upload_dir is not None:
-        _stage_public_upload_dir(output_dir, args.stage_public_upload_dir)
-    if args.wait_live_dataset_ready:
-        _wait_live_dataset_ready(
-            DATASET_ID,
-            min_version=args.wait_live_dataset_min_version,
-            timeout_seconds=args.wait_live_dataset_timeout_seconds,
-            poll_seconds=args.wait_live_dataset_poll_seconds,
-        )
-    if args.update_live_file_metadata:
-        _update_live_file_metadata(
-            output_dir / "dataset-metadata.json",
-            use_browser_cookies=args.live_file_metadata_browser_cookies,
-            use_kaggle_auth=args.live_file_metadata_kaggle_auth,
-            sqlite_index_timeout_seconds=(
-                args.live_file_metadata_sqlite_timeout_seconds
-            ),
-            sqlite_index_poll_seconds=args.live_file_metadata_sqlite_poll_seconds,
-        )
+@lru_cache(maxsize=1)
+def runtime_generator_script_sha256() -> str:
+    from openopps_kaggle.runtime_manifest import runtime_generator_script_sha256 as _pkg_sha
+    return _pkg_sha()
 
 
 def dataset_metadata() -> dict[str, Any]:
@@ -837,6 +80,7 @@ def dataset_metadata() -> dict[str, Any]:
 
 
 def runtime_generator_dataset_metadata() -> dict[str, Any]:
+    script_sha256 = runtime_generator_script_sha256()
     return {
         "id": RUNTIME_GENERATOR_DATASET_ID,
         "title": "openoppsdb manager runtime",
@@ -844,19 +88,21 @@ def runtime_generator_dataset_metadata() -> dict[str, Any]:
         "description": (
             "Private Kaggle dataset used only by the scheduled "
             "`openoppsdb-manager` notebook. It carries the exact "
-            "`scripts/generate_kaggle_metadata.py` runtime that the notebook "
+            "`openopps_kaggle` runtime package that the notebook "
             "downloads, compile-checks, and uses to build the public "
-            "OpenOppsDB SQLite/CSV/Parquet bundle after syncing."
+            "OpenOppsDB SQLite/CSV/Parquet bundle after syncing. The manager "
+            f"must verify the script SHA-256 before use: `{script_sha256}`."
         ),
         "licenses": [{"name": DATASET_LICENSE}],
         "isPrivate": True,
         "resources": [
             {
-                "path": RUNTIME_GENERATOR_SCRIPT_FILE,
+                "path": RUNTIME_MANIFEST_FILE,
                 "description": (
                     "OpenOppsDB Kaggle metadata, bundle, quality gate, staging, "
                     "and live metadata repair generator used by the manager "
-                    "notebook runtime."
+                    "notebook runtime. Expected SHA-256: "
+                    f"{script_sha256}."
                 ),
             }
         ],
@@ -876,7 +122,7 @@ OpenOppsDB is a versioned public hiring-board ledger generated by the OpenOpps C
 
 ## How updates work
 
-The connected Kaggle notebook `openoppsdb-manager` is intended to run once per day on a Kaggle cron schedule. Each run installs OpenOpps from GitHub, copies the current public `openoppsdb.sqlite` snapshot from this dataset, restores projected large columns and derived child tables from the prior Parquet exports, rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed, runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit`, and captures private run evidence for the quality gate. It then invokes `scripts/generate_kaggle_metadata.py` to backfill derived skill tables, export every SQLite table to CSV and Parquet, regenerate Kaggle field metadata, write the public SQLite metadata tables, prune private manager evidence, stage the public upload directory, and attempt best-effort live Kaggle file metadata repair after publish. Local maintainer runs of `just kaggle-live-file-metadata` use browser-authenticated cookies for the authoritative Kaggle DataBundle checklist and column-score repair. The public file surface is intentionally limited to `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`.
+The connected Kaggle notebook `openoppsdb-manager` is intended to run once per day on a Kaggle cron schedule. Each run installs OpenOpps from GitHub, copies the current public `openoppsdb.sqlite` snapshot from this dataset, restores projected large columns and derived child tables from the prior Parquet exports, rehydrates the plain public SQLite snapshot into a fresh operational Alembic schema when needed, runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit`, and captures private run evidence for the quality gate. It then invokes `python -m openopps_kaggle` to backfill derived skill tables, export every SQLite table to CSV and Parquet, regenerate Kaggle field metadata, write the public SQLite metadata tables, prune private manager evidence, stage the public upload directory, and attempt best-effort live Kaggle file metadata repair after publish. Local maintainer runs of `just kaggle-live-file-metadata` use browser-authenticated cookies for the authoritative Kaggle DataBundle checklist and column-score repair. The public file surface is intentionally limited to `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`.
 
 ## Quick start
 
@@ -973,7 +219,7 @@ def notebook() -> dict[str, Any]:
                 "Alembic schema when needed, runs bounded `openopps jobs sync "
                 "--metrics-json --freshness-seconds --limit`, captures status "
                 "and coverage evidence for the private quality gate, then invokes "
-                "`scripts/generate_kaggle_metadata.py` to backfill derived skill "
+                "then invokes `python -m openopps_kaggle` to backfill derived skill "
                 "tables, prepare SQLite/CSV/Parquet artifacts, write in-database "
                 "table and column metadata, prune private evidence, stage the "
                 "public upload directory, deploy a new dataset version only after "
@@ -1226,7 +472,7 @@ def hiring_market_map_notebook() -> dict[str, Any]:
                 "This topical notebook maps current open roles by company, "
                 "provider, location, and remote/workplace signal.",
             ),
-            _code_cell("setup", _public_notebook_setup_source()),
+            _code_cell("setup", _public_notebook_setup_source(include_matplotlib=True)),
             _code_cell(
                 "market_tables",
                 """with sqlite3.connect(DB_URI, uri=True) as conn:
@@ -1320,7 +566,7 @@ def skills_radar_notebook() -> dict[str, Any]:
                 "This topical notebook explores skill groups, keywords, role "
                 "slices, and skill-pair co-occurrence in current open roles.",
             ),
-            _code_cell("setup", _public_notebook_setup_source()),
+            _code_cell("setup", _public_notebook_setup_source(include_matplotlib=True)),
             _code_cell(
                 "skill_tables",
                 """with sqlite3.connect(DB_URI, uri=True) as conn:
@@ -1430,12 +676,20 @@ else:
     )
 
 
-def _public_notebook_setup_source() -> str:
-    return """from pathlib import Path
+def _public_notebook_setup_source(*, include_matplotlib: bool = False) -> str:
+    imports = """from pathlib import Path
 import sqlite3
 
-import matplotlib.pyplot as plt
 import pandas as pd
+"""
+    if include_matplotlib:
+        imports = imports.replace(
+            "import pandas as pd\n",
+            "import matplotlib.pyplot as plt\nimport pandas as pd\n",
+        )
+    return (
+        imports
+        + """
 
 db_candidates = sorted(Path("/kaggle/input").glob("**/openoppsdb.sqlite"))
 if not db_candidates:
@@ -1445,6 +699,7 @@ DATASET_DIR = DB_PATH.parent
 DB_URI = f"file:{DB_PATH}?mode=ro&immutable=1"
 print(f"Reading OpenOppsDB snapshot from {DB_PATH}")
 """
+    )
 
 
 def _public_notebook_document(cells: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1504,7 +759,7 @@ def datapackage() -> dict[str, Any]:
         "description": (
             "Package-derived Kaggle data dictionary for the full OpenOpps SQLite "
             "ledger and full table exports. Do not edit by hand; regenerate "
-            "with scripts/generate_kaggle_metadata.py."
+            "with `python -m openopps_kaggle`."
         ),
         "resources": [_resource_metadata(resource) for resource in RESOURCES],
     }
@@ -1609,6 +864,7 @@ def _write_data_artifacts(
         output_dir / PARQUET_DIR,
     )
     _backfill_sqlite_version_child_tables(build_db)
+    _prune_private_upload_non_evidence_files(output_dir)
     _clean_data_artifacts(output_dir, preserve=source_db)
     try:
         _drop_private_sqlite_tables(build_db)
@@ -1620,6 +876,8 @@ def _write_data_artifacts(
         _checkpoint_sqlite(build_db)
 
         _write_full_table_exports(output_dir, build_db)
+        from openopps_kaggle.bundle.disk import require_disk_headroom, MIN_FREE_BYTES_FOR_SQLITE_MUTATION
+        require_disk_headroom("before_sqlite_projection", min_free_bytes=MIN_FREE_BYTES_FOR_SQLITE_MUTATION, path=build_db.parent)
         _project_sqlite_for_public_upload(build_db)
         _truncate_sqlite_text_for_public_upload(build_db)
         _normalize_sqlite_schema_for_public_upload(build_db)
@@ -1660,13 +918,11 @@ def _clean_notebooks(notebooks_dir: Path) -> None:
 
 
 def _write_full_table_exports(output_dir: Path, db_path: Path) -> None:
-    csv_dir = output_dir / CSV_DIR
     parquet_dir = output_dir / PARQUET_DIR
-    csv_dir.mkdir(parents=True, exist_ok=True)
     parquet_dir.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         for table in TABLES:
-            csv_path = csv_dir / f"{table.name}.csv"
+            csv_path = output_dir / f".{table.name}.export.csv"
             parquet_path = parquet_dir / f"{table.name}.parquet"
             print(f"Exporting {table.name}...", flush=True)
             _write_table_csv(conn, table, csv_path)
@@ -1677,6 +933,7 @@ def _write_full_table_exports(output_dir: Path, db_path: Path) -> None:
                 low_memory=True,
                 try_parse_dates=True,
             ).sink_parquet(parquet_path)
+            csv_path.unlink(missing_ok=True)
 
 
 def _configure_sqlite_upload_mutation(conn: sqlite3.Connection) -> None:
@@ -3037,7 +2294,6 @@ def _required_file_checks(
     ]
     if include_quality_file:
         paths.append(SNAPSHOT_QUALITY_FILE)
-    paths.extend(f"{CSV_DIR}/{table.name}.csv" for table in TABLES)
     paths.extend(f"{PARQUET_DIR}/{table.name}.parquet" for table in TABLES)
     checks = []
     for relative_path in paths:
@@ -3052,12 +2308,17 @@ def _required_file_checks(
     return checks
 
 
-def _prune_private_upload_files(output_dir: Path) -> None:
-    for relative_path in (
-        PRIVATE_EVIDENCE_FILES + PRIVATE_METADATA_FILES + PRIVATE_UPLOAD_RUNTIME_FILES
-    ):
+def _prune_private_evidence_files(output_dir: Path) -> None:
+    for relative_path in PRIVATE_EVIDENCE_FILES:
         path = output_dir / relative_path
-        if path.exists():
+        if path.is_file():
+            path.unlink()
+
+
+def _prune_private_upload_non_evidence_files(output_dir: Path) -> None:
+    for relative_path in PRIVATE_METADATA_FILES + PRIVATE_UPLOAD_RUNTIME_FILES:
+        path = output_dir / relative_path
+        if path.is_file():
             path.unlink()
     for relative_dir in PRIVATE_UPLOAD_RUNTIME_DIRS:
         path = output_dir / relative_dir
@@ -3065,11 +2326,16 @@ def _prune_private_upload_files(output_dir: Path) -> None:
             shutil.rmtree(path)
     for suffix in SQLITE_SIDECAR_SUFFIXES:
         sidecar = output_dir / f"{DB_FILE}{suffix}"
-        if sidecar.exists():
+        if sidecar.is_file():
             sidecar.unlink()
     metadata_dir = output_dir / "metadata"
     if metadata_dir.exists() and not any(metadata_dir.iterdir()):
         metadata_dir.rmdir()
+
+
+def _prune_private_upload_files(output_dir: Path) -> None:
+    _prune_private_evidence_files(output_dir)
+    _prune_private_upload_non_evidence_files(output_dir)
 
 
 def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
@@ -3081,11 +2347,29 @@ def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
         shutil.rmtree(upload_dir)
     upload_dir.mkdir(parents=True)
 
+    db_path = dataset_dir / DB_FILE
+
     for relative_path in PUBLIC_UPLOAD_CONTROL_FILES + PUBLIC_UPLOAD_DATA_FILES:
         source = dataset_dir / relative_path
+        target = upload_dir / relative_path
+        if (
+            not source.is_file()
+            and relative_path.startswith(f"{CSV_DIR}/")
+            and relative_path.endswith(".csv")
+            and db_path.is_file()
+        ):
+            table_name = Path(relative_path).stem
+            table = next((item for item in TABLES if item.name == table_name), None)
+            if table is None:
+                raise FileNotFoundError(
+                    f"Public upload source file is missing: {source}"
+                )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(db_path) as conn:
+                _write_table_csv(conn, table, target)
+            continue
         if not source.is_file():
             raise FileNotFoundError(f"Public upload source file is missing: {source}")
-        target = upload_dir / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             target.hardlink_to(source)
@@ -3094,25 +2378,8 @@ def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
 
 
 def _stage_runtime_generator_dir(upload_dir: Path) -> None:
-    upload_dir = upload_dir.expanduser().resolve()
-    script_path = Path(__file__).resolve()
-    protected_dirs = {
-        script_path.parent,
-        script_path.parent.parent,
-        DEFAULT_DATASET_DIR.resolve(),
-    }
-    if upload_dir in protected_dirs:
-        raise ValueError(
-            "Runtime generator staging directory must be a temporary upload dir"
-        )
-    if upload_dir.exists():
-        shutil.rmtree(upload_dir)
-    upload_dir.mkdir(parents=True)
-
-    _write_json(
-        upload_dir / "dataset-metadata.json", runtime_generator_dataset_metadata()
-    )
-    shutil.copy2(script_path, upload_dir / RUNTIME_GENERATOR_SCRIPT_FILE)
+    from openopps_kaggle.runtime_manifest import stage_runtime_package
+    stage_runtime_package(upload_dir)
 
 
 def _assert_public_sqlite_table_allowlist(db_path: Path) -> dict[str, list[str]]:
@@ -3879,6 +3146,7 @@ def _cell_lines(source: str) -> list[str]:
 
 def _notebook_setup_source() -> str:
     sync_env_defaults = json.dumps(NOTEBOOK_SYNC_ENV_DEFAULTS, indent=4, sort_keys=True)
+    runtime_generator_sha256 = runtime_generator_script_sha256()
     app_table_names = pformat(
         tuple(table.name for table in DATA_TABLES),
         sort_dicts=True,
@@ -3940,15 +3208,31 @@ OUTPUT_DIR = Path(
 )
 DB_PATH = OUTPUT_DIR / "openoppsdb.sqlite"
 PUBLIC_UPLOAD_DIR = OUTPUT_DIR / "public-upload"
-GENERATOR_SCRIPT = OUTPUT_DIR / "generate_kaggle_metadata.py"
-GENERATOR_SCRIPT_URL = os.environ.get(
-    "OPENOPPS_GENERATOR_SCRIPT_URL",
-    "__GENERATOR_SCRIPT_URL__",
+RUNTIME_PACKAGE_DIR = OUTPUT_DIR / "openopps_kaggle"
+RUNTIME_MANIFEST_PATH = OUTPUT_DIR / "runtime-manifest.json"
+GENERATOR_SCRIPT = RUNTIME_PACKAGE_DIR
+RUNTIME_PACKAGE_URL = os.environ.get(
+    "OPENOPPS_RUNTIME_PACKAGE_URL",
+    "__RUNTIME_PACKAGE_URL__",
 )
-GENERATOR_SCRIPT_SHA256 = os.environ.get(
-    "OPENOPPS_GENERATOR_SCRIPT_SHA256",
-    "",
+GENERATOR_SCRIPT_URL = RUNTIME_PACKAGE_URL
+RUNTIME_PACKAGE_SHA256 = os.environ.get(
+    "OPENOPPS_RUNTIME_PACKAGE_SHA256",
+    "__RUNTIME_PACKAGE_SHA256__",
 ).strip().lower()
+GENERATOR_SCRIPT_SHA256 = RUNTIME_PACKAGE_SHA256
+GENERATOR_SCRIPT_VERIFIED_SHA256 = None
+RUNTIME_PACKAGE_VERIFIED_SHA256 = None
+KAGGLE_CREDENTIAL_ENV_NAMES = {
+    "KAGGLE_API_TOKEN",
+    "KAGGLE_API_V1_TOKEN_PATH",
+    "KAGGLE_CONFIG_DIR",
+    "KAGGLE_IAP_TOKEN",
+    "KAGGLE_KEY",
+    "KAGGLE_URL_BASE",
+    "KAGGLE_USERNAME",
+    "KAGGLE_USER_SECRETS_TOKEN",
+}
 KAGGLE_INPUT_DIR = Path("/kaggle/input")
 INPUT_DB_GLOB = "**/openoppsdb.sqlite"
 INPUT_SOURCES_PARQUET_GLOB = "**/exports/parquet/sources.parquet"
@@ -3996,7 +3280,7 @@ KAGGLE_JOB_ROUTE_LIMIT = int(
     )
 )
 KAGGLE_METADATA_WAIT_SECONDS = float(
-    os.environ.get("OPENOPPS_KAGGLE_METADATA_WAIT_SECONDS", "900")
+    os.environ.get("OPENOPPS_KAGGLE_METADATA_WAIT_SECONDS", "120")
 )
 KAGGLE_METADATA_POLL_SECONDS = float(
     os.environ.get("OPENOPPS_KAGGLE_METADATA_POLL_SECONDS", "30")
@@ -4277,19 +3561,86 @@ def install_openopps() -> None:
     run([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", PACKAGE_SPEC, "kaggle"])
 
 
-def download_generator_script() -> None:
-    print(f"Downloading OpenOpps Kaggle metadata generator from {GENERATOR_SCRIPT_URL}")
-    urllib.request.urlretrieve(GENERATOR_SCRIPT_URL, GENERATOR_SCRIPT)
-    source = GENERATOR_SCRIPT.read_text(encoding="utf-8")
-    compile(source, str(GENERATOR_SCRIPT), "exec")
-    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
-    if GENERATOR_SCRIPT_SHA256 and digest != GENERATOR_SCRIPT_SHA256:
+def required_runtime_package_sha256() -> str:
+    if not GENERATOR_SCRIPT_SHA256:
         raise RuntimeError(
-            "OpenOpps Kaggle metadata generator checksum mismatch: "
-            f"expected={GENERATOR_SCRIPT_SHA256} actual={digest}"
+            "OPENOPPS_RUNTIME_PACKAGE_SHA256 is required before downloading "
+            "the OpenOpps Kaggle runtime package."
         )
+    if len(GENERATOR_SCRIPT_SHA256) != 64 or any(
+        character not in "0123456789abcdef" for character in GENERATOR_SCRIPT_SHA256
+    ):
+        raise RuntimeError(
+            "OPENOPPS_RUNTIME_PACKAGE_SHA256 must be a lowercase SHA-256 hex digest."
+        )
+    return GENERATOR_SCRIPT_SHA256
+
+
+def verify_runtime_package_manifest() -> str:
+    global GENERATOR_SCRIPT_VERIFIED_SHA256, RUNTIME_PACKAGE_VERIFIED_SHA256
+    expected_digest = required_runtime_package_sha256()
+    manifest = json.loads(RUNTIME_MANIFEST_PATH.read_text(encoding="utf-8"))
+    actual_digest = str(manifest.get("sha256") or "")
+    if actual_digest != expected_digest:
+        raise RuntimeError(
+            "OpenOpps Kaggle runtime package checksum mismatch: "
+            f"expected={expected_digest} actual={actual_digest}"
+        )
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise RuntimeError("runtime-manifest.json missing files map")
+    for rel, digest in sorted(files.items()):
+        if rel.startswith("openopps_kaggle/"):
+            path = RUNTIME_PACKAGE_DIR / rel.removeprefix("openopps_kaggle/")
+        elif rel == "runtime-manifest.json":
+            path = RUNTIME_MANIFEST_PATH
+        else:
+            path = OUTPUT_DIR / rel
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing runtime package file: {path}")
+        file_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if file_digest != digest:
+            raise RuntimeError(
+                f"Runtime package file checksum mismatch for {rel}: "
+                f"expected={digest} actual={file_digest}"
+            )
+    GENERATOR_SCRIPT_VERIFIED_SHA256 = actual_digest
+    RUNTIME_PACKAGE_VERIFIED_SHA256 = actual_digest
+    return actual_digest
+
+
+def runtime_probe_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("KAGGLE_") or key in KAGGLE_CREDENTIAL_ENV_NAMES:
+            env.pop(key, None)
+    return env
+
+
+generator_probe_env = runtime_probe_env
+
+
+def download_runtime_package() -> None:
+    required_runtime_package_sha256()
+    runtime_input = next(
+        (path for path in KAGGLE_INPUT_DIR.glob("**/openoppsdb-manager-runtime") if path.is_dir()),
+        KAGGLE_INPUT_DIR / "openoppsdb-manager-runtime",
+    )
+    manifest_source = runtime_input / "runtime-manifest.json"
+    package_source = runtime_input / "openopps_kaggle"
+    if not manifest_source.is_file() or not package_source.is_dir():
+        raise RuntimeError(
+            "Runtime package must be attached via openoppsdb-manager-runtime input; "
+            f"expected {manifest_source} and {package_source}"
+        )
+    shutil.copy2(manifest_source, RUNTIME_MANIFEST_PATH)
+    if RUNTIME_PACKAGE_DIR.exists():
+        shutil.rmtree(RUNTIME_PACKAGE_DIR)
+    shutil.copytree(package_source, RUNTIME_PACKAGE_DIR)
+    digest = verify_runtime_package_manifest()
     completed = subprocess.run(
-        [sys.executable, str(GENERATOR_SCRIPT), "--help"],
+        [sys.executable, "-m", "openopps_kaggle", "--help"],
+        env={**runtime_probe_env(), "PYTHONPATH": str(OUTPUT_DIR)},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -4307,38 +3658,43 @@ def download_generator_script() -> None:
     missing_flags = [flag for flag in required_flags if flag not in help_text]
     if missing_flags:
         raise RuntimeError(
-            "Downloaded OpenOpps Kaggle metadata generator is incompatible; "
+            "Downloaded OpenOpps Kaggle runtime package is incompatible; "
             f"missing CLI flags: {', '.join(missing_flags)}"
         )
     print(
-        "OpenOpps Kaggle metadata generator ready:",
+        "OpenOpps Kaggle runtime package ready:",
         json.dumps(
             {
-                "path": str(GENERATOR_SCRIPT),
+                "manifest": str(RUNTIME_MANIFEST_PATH),
+                "package": str(RUNTIME_PACKAGE_DIR),
                 "sha256": digest,
-                "url": GENERATOR_SCRIPT_URL,
             },
             sort_keys=True,
         ),
     )
 
 
-def run_generator(
+def run_openopps_kaggle(
     args: list[str],
     *,
     timeout_seconds: float | None = None,
 ) -> None:
-    if not GENERATOR_SCRIPT.exists():
-        download_generator_script()
+    if not RUNTIME_PACKAGE_DIR.exists():
+        download_runtime_package()
+    else:
+        verify_runtime_package_manifest()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(RUNTIME_PACKAGE_DIR.parent)
     run(
-        [sys.executable, str(GENERATOR_SCRIPT), *args],
+        [sys.executable, "-m", "openopps_kaggle", *args],
+        env=env,
         timeout_seconds=timeout_seconds,
     )
 
 
-def try_run_generator(args: list[str]) -> bool:
+def try_run_openopps_kaggle(args: list[str]) -> bool:
     try:
-        run_generator(args)
+        run_openopps_kaggle(args)
     except Exception as exc:
         print(
             "Kaggle live metadata repair failed after successful dataset publish; "
@@ -4867,9 +4223,10 @@ def restore_projected_sqlite_columns_from_input_exports() -> None:
 
 require_kaggle_credentials()
 install_openopps()
-download_generator_script()
+download_runtime_package()
 copy_latest_input_db()
-""".replace("__GENERATOR_SCRIPT_URL__", GENERATOR_SCRIPT_URL)
+""".replace("__RUNTIME_PACKAGE_URL__", GENERATOR_SCRIPT_URL)
+        .replace("__RUNTIME_PACKAGE_SHA256__", runtime_generator_sha256)
         .replace(
             "__OPENOPPS_SYNC_ENV_DEFAULTS__",
             sync_env_defaults,
@@ -4975,6 +4332,7 @@ coverage = run_json(
     OUTPUT_DIR / "coverage.json",
     env=openopps_env,
 )
+emit_disk_usage("after_sync")
 """
 
 
@@ -5002,7 +4360,7 @@ generator_args = [
 empty_snapshot_explanation = os.environ.get("OPENOPPS_EMPTY_SNAPSHOT_EXPLANATION")
 if empty_snapshot_explanation:
     generator_args.extend(["--empty-snapshot-explanation", empty_snapshot_explanation])
-run_generator(generator_args)
+run_openopps_kaggle(generator_args)
 emit_disk_usage("after_artifact_export")
 
 for path in sorted(PUBLIC_UPLOAD_DIR.rglob("*")):
@@ -5036,7 +4394,7 @@ run([
     "zip",
 ])
 expected_version = previous_version + 1
-metadata_repair_ok = try_run_generator([
+metadata_repair_ok = try_run_openopps_kaggle([
     "--output-dir",
     str(OUTPUT_DIR),
     "--skip-notebooks",
@@ -5212,7 +4570,7 @@ def _update_live_file_metadata(
     except Exception as exc:  # pragma: no cover - exercised in Kaggle runtime.
         raise RuntimeError(
             "Updating live Kaggle file metadata requires the kaggle package. "
-            "Run with `uv run --with kaggle python scripts/generate_kaggle_metadata.py "
+            "Run with `uv run --with kaggle python -m openopps_kaggle "
             "--update-live-file-metadata` or from the Kaggle manager notebook."
         ) from exc
 
@@ -6145,6 +5503,3 @@ def _enum_values(field_schema: dict[str, Any]) -> list[Any]:
 def _title_from_name(field_name: str) -> str:
     return field_name.replace("_", " ").title()
 
-
-if __name__ == "__main__":
-    main()

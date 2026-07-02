@@ -322,9 +322,9 @@ def build_source_yield_report(
             routes_by_source.setdefault(route.source_key, []).append(route)
 
     board_source_keys = {board.key: _board_source_keys(board) for board in boards}
-    jobs_by_source_board_provider: dict[
-        str, dict[tuple[str, str], int]
-    ] = {key: {} for key in selected_source_keys}
+    jobs_by_source_board_provider: dict[str, dict[tuple[str, str], int]] = {
+        key: {} for key in selected_source_keys
+    }
     for (board_key, provider_id), count in jobs_by_board_provider.items():
         for key in board_source_keys.get(board_key, set()) & selected_source_keys:
             jobs_by_source_board_provider.setdefault(key, {})[

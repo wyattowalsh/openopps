@@ -1,22 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
 import re
 import sys
 import types
 
+import pytest
 
-SCRIPT_PATH = (
-    Path(__file__).resolve().parents[3] / "scripts/verify_kagglehub_readback.py"
-)
-SPEC = importlib.util.spec_from_file_location("verify_kagglehub_readback", SCRIPT_PATH)
-assert SPEC is not None
-assert SPEC.loader is not None
-readback = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = readback
-SPEC.loader.exec_module(readback)
+import openopps_kaggle.verify_readback as readback
 
 
 class FakeFrame:
@@ -45,9 +36,8 @@ def test_kagglehub_readback_checks_all_public_surfaces(monkeypatch, capsys) -> N
         return FakeFrame(height=counts[_table_from_path(path)])
 
     _install_fake_kagglehub(monkeypatch, dataset_load)
-    monkeypatch.setattr(sys, "argv", ["verify_kagglehub_readback.py"])
 
-    readback.main()
+    readback.main([])
 
     output = json.loads(capsys.readouterr().out)
     assert output["dataset"] == readback.DATASET_ID
@@ -72,14 +62,9 @@ def test_kagglehub_readback_blocks_surface_row_count_drift(monkeypatch) -> None:
         return FakeFrame(height=rows)
 
     _install_fake_kagglehub(monkeypatch, dataset_load)
-    monkeypatch.setattr(sys, "argv", ["verify_kagglehub_readback.py"])
 
-    try:
-        readback.main()
-    except AssertionError as exc:
-        assert "sources row counts differ" in str(exc)
-    else:
-        raise AssertionError("Expected row-count drift to fail readback")
+    with pytest.raises(AssertionError, match="sources row counts differ"):
+        readback.main([])
 
 
 def _counts() -> dict[str, int]:

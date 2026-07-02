@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ImageResponse } from "next/og";
 import { appName } from "@/lib/shared";
 import { readFile } from "node:fs/promises";
+import { docsOgPageSlug } from "./route-utils";
 
 export const revalidate = false;
 export const runtime = "nodejs";
@@ -17,6 +18,8 @@ const palette = {
 	brass: "#d99629",
 	border: "#cfc1a6",
 };
+
+const fontFamily = '"Monaspace Neon", "Monaspace Argon", ui-monospace, monospace';
 
 function pngDataUrl(file: string) {
 	return readFile(new URL(`../../../../public/${file}`, import.meta.url)).then(
@@ -31,7 +34,9 @@ export async function GET(
 	{ params }: RouteContext<"/og/docs/[...slug]">,
 ) {
 	const { slug } = await params;
-	const page = source.getPage(slug.slice(0, -1));
+	const pageSlug = docsOgPageSlug(slug);
+	if (!pageSlug) notFound();
+	const page = source.getPage(pageSlug);
 	if (!page) notFound();
 	const logoSrc = await logo;
 	const description =
@@ -48,7 +53,7 @@ export async function GET(
 				overflow: "hidden",
 				background: palette.paper,
 				color: palette.ink,
-				fontFamily: "Arial, sans-serif",
+				fontFamily,
 			}}
 		>
 			<svg
@@ -179,7 +184,7 @@ export async function GET(
 						<div
 							style={{
 								color: palette.pine,
-								fontFamily: "Arial, sans-serif",
+								fontFamily,
 								fontSize: 26,
 								letterSpacing: 2,
 							}}
@@ -189,7 +194,7 @@ export async function GET(
 						<div
 							style={{
 								color: palette.ink,
-								fontFamily: "Arial, sans-serif",
+								fontFamily,
 								fontSize: 20,
 							}}
 						>
@@ -201,10 +206,10 @@ export async function GET(
 				<div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 					<div
 						style={{
-							fontFamily: "Arial, sans-serif",
+							fontFamily,
 							fontSize: 72,
 							fontWeight: 700,
-							letterSpacing: -3,
+							letterSpacing: 0,
 							lineHeight: 0.96,
 						}}
 					>
@@ -214,7 +219,7 @@ export async function GET(
 						style={{
 							maxWidth: 540,
 							color: palette.ink,
-							fontFamily: "Arial, sans-serif",
+							fontFamily,
 							fontSize: 30,
 							lineHeight: 1.25,
 						}}
@@ -231,7 +236,7 @@ export async function GET(
 						borderTop: `2px solid ${palette.border}`,
 						paddingTop: 20,
 						color: palette.pine,
-						fontFamily: "Arial, sans-serif",
+						fontFamily,
 						fontSize: 22,
 					}}
 				>

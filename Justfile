@@ -2,6 +2,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 openspec := env_var_or_default("OPENOPPS_OPENSPEC", "npx -y @fission-ai/openspec@latest")
 kaggle := "uv run --with kaggle kaggle"
+kaggle-gen := "PYTHONPATH=scripts uv run python -m openopps_kaggle"
 
 default:
     @just --list
@@ -15,7 +16,11 @@ setup:
 quick: cli-help test-cli openspec-status
 
 # Full local validation graph matching CI lanes.
-ci: diff-check openspec-validate-all test-cov docs-check docs-build docs-lint kaggle-meta cli-help
+ci: diff-check lock-check openspec-validate-all test-cov docs-check docs-build docs-test docs-e2e docs-lint kaggle-meta cli-help
+
+# Check that uv.lock is current for pyproject.toml.
+lock-check:
+    uv lock --check
 
 # Run the full pytest suite.
 test:
@@ -37,51 +42,76 @@ docs-generate:
 docs-search-index:
     cd docs && pnpm data:generate:search
 
+# Require the committed docs search-index snapshot to match a local Kaggle SQLite DB.
+docs-search-index-check:
+    @if [ ! -f kaggle/openoppsdb.sqlite ]; then echo "Missing kaggle/openoppsdb.sqlite; refresh or download the local snapshot before running docs-search-index-check."; exit 1; fi
+    cd docs && pnpm data:generate:search
+    git diff --exit-code -- docs/public/data/openopps-search
+
 # Generate docs data, MDX output, Next route types, and TypeScript checks.
 docs-check:
     cd docs && pnpm types:check
 
 # Build the Fumadocs/Next.js docs site.
 docs-build:
-    @if [ "$(uname -s)" = "Darwin" ]; then zsh -lc 'cd docs && CI=true pnpm build'; else cd docs && CI=true pnpm build; fi
+    cd docs && NEXT_TELEMETRY_DISABLED=1 CI=true pnpm build
+
+# Run docs unit tests.
+docs-test:
+    cd docs && pnpm test
+
+# Run browser E2E checks for the production-built public docs and jobs board surface.
+docs-e2e: docs-build
+    cd docs && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium
+
+# Run focused browser accessibility checks against the production build.
+docs-a11y: docs-build
+    cd docs && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium accessibility.spec.ts
+
+# Run focused SEO/static-route browser checks against the production build.
+docs-seo-check: docs-build
+    cd docs && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium seo-static.spec.ts seo-job-detail.spec.ts routes.spec.ts
 
 # Run docs lint surfaces.
 docs-lint:
     cd docs && pnpm lint
-    @if command -v rtk >/dev/null 2>&1; then cd docs && rtk lint; else echo "rtk not found; skipped docs rtk lint"; fi
+
+# Run optional maintainer docs lint that requires rtk locally.
+docs-rtk-lint:
+    cd docs && rtk lint
 
 # Generate deterministic Kaggle metadata without bundling local data files.
 kaggle-meta:
-    uv run python scripts/generate_kaggle_metadata.py
+    {{ kaggle-gen }}
 
 # Generate Kaggle metadata and table exports from an existing SQLite DB.
 kaggle-bundle db="kaggle/openoppsdb.sqlite":
-    @db="{{ db }}"; uv run python scripts/generate_kaggle_metadata.py --data-db "${db#db=}"
+    @db="{{ db }}"; {{ kaggle-gen }} --data-db "${db#db=}"
 
 # Validate generated Kaggle metadata and optional SQLite/CSV/Parquet bundle surfaces locally.
 kaggle-bundle-check db="kaggle/openoppsdb.sqlite":
-    @db="{{ db }}"; db="${db#db=}"; if [ -f "$db" ]; then uv run python scripts/generate_kaggle_metadata.py --data-db "$db"; else echo "No SQLite DB at $db; validating metadata-only Kaggle bundle."; uv run python scripts/generate_kaggle_metadata.py; fi
-    uv run pytest tests/unit/openopps/test_kaggle_metadata.py -q
+    @db="{{ db }}"; db="${db#db=}"; if [ -f "$db" ]; then {{ kaggle-gen }} --data-db "$db"; else echo "No SQLite DB at $db; validating metadata-only Kaggle bundle."; {{ kaggle-gen }}; fi
+    uv run pytest tests/unit/openopps/kaggle/ -q
 
 # Create the private OpenOppsDB manager runtime generator Kaggle dataset.
 kaggle-runtime-generator-create:
-    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" -q -t -r zip
+    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; {{ kaggle-gen }} --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" -q -t -r zip
 
 # Version the private OpenOppsDB manager runtime generator Kaggle dataset.
 kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator":
-    @message="{{ message }}"; message="${message#message=}"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip
+    @message="{{ message }}"; message="${message#message=}"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; {{ kaggle-gen }} --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip
 
 # Create the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-create:
-    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" --public -q -t -r zip
+    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; {{ kaggle-gen }} --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" --public -q -t -r zip
 
 # Version the public OpenOppsDB Kaggle dataset from a staged data-only bundle.
 kaggle-dataset-version message="OpenOppsDB snapshot":
-    @message="{{ message }}"; message="${message#message=}"; current_version="$({{ kaggle }} datasets status wyattowalsh/openoppsdb --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["current_version_number"])')"; next_version="$((current_version + 1))"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; uv run python scripts/generate_kaggle_metadata.py --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip; uv run --with kaggle --with browser-cookie3 --with requests python scripts/generate_kaggle_metadata.py --wait-live-dataset-ready --wait-live-dataset-min-version "$next_version" --update-live-file-metadata --live-file-metadata-browser-cookies
+    @message="{{ message }}"; message="${message#message=}"; current_version="$({{ kaggle }} datasets status wyattowalsh/openoppsdb --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["current_version_number"])')"; next_version="$((current_version + 1))"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; {{ kaggle-gen }} --stage-public-upload-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip; PYTHONPATH=scripts uv run --with kaggle --with browser-cookie3 --with requests python -m openopps_kaggle --wait-live-dataset-ready --wait-live-dataset-min-version "$next_version" --update-live-file-metadata --live-file-metadata-browser-cookies
 
 # Update live OpenOppsDB file descriptions and column metadata on Kaggle.
 kaggle-live-file-metadata:
-    uv run --with kaggle --with browser-cookie3 --with requests python scripts/generate_kaggle_metadata.py --update-live-file-metadata --live-file-metadata-browser-cookies
+    PYTHONPATH=scripts uv run --with kaggle --with browser-cookie3 --with requests python -m openopps_kaggle --update-live-file-metadata --live-file-metadata-browser-cookies
 
 # Push the connected OpenOppsDB manager notebook to Kaggle.
 kaggle-notebook-push timeout="3600":
@@ -105,7 +135,7 @@ kaggle-live-files page_size="200":
 
 # Verify live OpenOppsDB readback through KaggleHub adapters.
 kagglehub-live-readback dataset="wyattowalsh/openoppsdb" version="":
-    @dataset="{{ dataset }}"; version="{{ version }}"; if [[ "$dataset" == dataset=* ]]; then dataset="${dataset#dataset=}"; fi; if [[ "$dataset" == version=* ]]; then version="${dataset#version=}"; dataset="wyattowalsh/openoppsdb"; fi; if [[ "$version" == version=* ]]; then version="${version#version=}"; fi; version_arg=""; if [ -n "$version" ]; then version_arg="--version $version"; fi; uv run --with 'kagglehub[polars-datasets]' python scripts/verify_kagglehub_readback.py --dataset "$dataset" $version_arg
+    @dataset="{{ dataset }}"; version="{{ version }}"; if [[ "$dataset" == dataset=* ]]; then dataset="${dataset#dataset=}"; fi; if [[ "$dataset" == version=* ]]; then version="${dataset#version=}"; dataset="wyattowalsh/openoppsdb"; fi; if [[ "$version" == version=* ]]; then version="${version#version=}"; fi; version_arg=""; if [ -n "$version" ]; then version_arg="--version $version"; fi; PYTHONPATH=scripts uv run --with 'kagglehub[polars-datasets]' python -m openopps_kaggle verify-readback --dataset "$dataset" $version_arg
 
 # Download live OpenOppsDB dataset metadata from Kaggle.
 kaggle-live-metadata output="/tmp/openoppsdb-kaggle-metadata":
@@ -129,7 +159,7 @@ kaggle-example-notebooks-status:
 
 # Pull and verify live OpenOppsDB public example notebook source bundles from Kaggle.
 kaggle-example-notebooks-pull-check:
-    @tmp_dir="$(mktemp -d)"; trap 'rm -rf "$tmp_dir"' EXIT; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do slug="${kernel#*/}"; mkdir -p "$tmp_dir/$slug"; {{ kaggle }} kernels pull "$kernel" -p "$tmp_dir/$slug" -m >/dev/null; done; uv run python scripts/verify_kaggle_notebook_pullback.py "$tmp_dir"
+    @tmp_dir="$(mktemp -d)"; trap 'rm -rf "$tmp_dir"' EXIT; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do slug="${kernel#*/}"; mkdir -p "$tmp_dir/$slug"; {{ kaggle }} kernels pull "$kernel" -p "$tmp_dir/$slug" -m >/dev/null; done; PYTHONPATH=scripts uv run python -m openopps_kaggle verify-notebooks "$tmp_dir"
 
 # List output files emitted by live OpenOppsDB public example notebook runs.
 kaggle-example-notebooks-files page_size="200":
