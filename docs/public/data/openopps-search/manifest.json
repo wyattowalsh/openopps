@@ -27,9 +27,9 @@
         "total": 88800
       },
       {
-        "count": 0,
+        "count": 88766,
         "key": "description",
-        "percentage": 0.0,
+        "percentage": 99.96,
         "total": 88800
       },
       {
@@ -1706,7 +1706,7 @@
     "format": "bucket-map",
     "idIndexFile": "jobs-detail-ids.json",
     "idIndexPath": "/data/openopps-search/jobs-detail-ids.json",
-    "indexableCount": 0,
+    "indexableCount": 64739,
     "indexableIdIndexFile": "jobs-indexable-ids.json",
     "indexableIdIndexPath": "/data/openopps-search/jobs-indexable-ids.json",
     "root": "/data/openopps-search/jobs-details"
