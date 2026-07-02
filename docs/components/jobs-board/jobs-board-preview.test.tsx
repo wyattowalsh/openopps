@@ -26,10 +26,33 @@ describe("JobsBoardPreview", () => {
 		expect(
 			screen.getByRole("button", { name: /close job preview/i }),
 		).toBeTruthy();
-	});
+	}, 15_000);
+
+	it("omits javascript apply and posting links", () => {
+		render(
+			<JobsBoardPreview
+				row={jobRow("")}
+				selectedJobId="job-1"
+				detail={{
+					id: "job-1",
+					status: "open",
+					title: "Designer",
+					company: "Acme",
+					applyUrl: "javascript:alert(1)",
+					postingUrl: "data:text/html,unsafe",
+					descriptionHtml: '<img src=x onerror="alert(1)">',
+				}}
+				loading={false}
+				error={null}
+			/>,
+		);
+
+		expect(screen.queryByRole("link", { name: /^apply$/i })).toBeNull();
+		expect(screen.queryByRole("link", { name: /^posting$/i })).toBeNull();
+	}, 15_000);
 });
 
-function jobRow(): SearchRow {
+function jobRow(url = "https://example.test/jobs/1"): SearchRow {
 	return [
 		"job-1",
 		"manual",
@@ -47,7 +70,7 @@ function jobRow(): SearchRow {
 		null,
 		null,
 		null,
-		"https://example.test/jobs/1",
+		url,
 		"2026-01-01",
 		"2026-01-01",
 		'["manual"]',

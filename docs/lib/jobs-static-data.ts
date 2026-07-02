@@ -8,15 +8,25 @@ import type {
 	SearchManifest,
 } from "@/components/openopps-search/search-types";
 import { detailBucket } from "@/components/openopps-search/search-utils";
+import { cleanText, safeJobExternalUrl } from "@/lib/job-url";
 import { siteUrl } from "@/lib/shared";
+
+export { cleanText, safeJobExternalUrl } from "@/lib/job-url";
 
 export const JOB_SITEMAP_PAGE_SIZE = 45_000;
 
 const SEARCH_DATA_DIR = path.join(process.cwd(), "public", "data", "openopps-search");
 const JOB_DETAIL_DIR = path.join(SEARCH_DATA_DIR, "jobs-details");
 const JOB_DETAIL_IDS_FILE = path.join(SEARCH_DATA_DIR, "jobs-detail-ids.json");
+const JOB_INDEXABLE_IDS_FILE = path.join(SEARCH_DATA_DIR, "jobs-indexable-ids.json");
 
 type JobDetailIdIndex = {
+	version?: number;
+	count: number;
+	ids: string[];
+};
+
+type JobIndexableIdIndex = {
 	version?: number;
 	count: number;
 	ids: string[];
@@ -79,14 +89,22 @@ export function getIndexableJobDetailIds() {
 	if (!indexableJobIdsCache) {
 		if (!staticSnapshotCanContainIndexableJobDetails()) {
 			indexableJobIdsCache = [];
+		} else if (getStaticSearchManifest().version >= 4) {
+			indexableJobIdsCache = readPrecomputedIndexableJobIds();
 		} else {
-			indexableJobIdsCache = getStaticJobDetailIds().filter((jobId) => {
-				const detail = getStaticJobDetail(jobId);
-				return detail ? isIndexableJobDetail(detail) : false;
-			});
+			indexableJobIdsCache = scanIndexableJobDetailIds();
 		}
 	}
 	return indexableJobIdsCache;
+}
+
+export function serializeJsonLdScript(value: unknown) {
+	return JSON.stringify(value)
+		.replace(/</g, "\\u003c")
+		.replace(/>/g, "\\u003e")
+		.replace(/&/g, "\\u0026")
+		.replace(/\u2028/g, "\\u2028")
+		.replace(/\u2029/g, "\\u2029");
 }
 
 function staticSnapshotCanContainIndexableJobDetails() {
@@ -119,22 +137,6 @@ export function jobDescriptionText(detail: JobDetail, maxLength = 240) {
 
 export function jobDetailDescriptionText(detail: JobDetail) {
 	return cleanText(detail.description) || cleanText(stripHtml(detail.descriptionHtml ?? ""));
-}
-
-export function safeJobExternalUrl(value: unknown) {
-	const raw = cleanText(value);
-	if (!raw) {
-		return null;
-	}
-	try {
-		const parsed = new URL(raw);
-		if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-			return parsed.toString();
-		}
-	} catch {
-		return null;
-	}
-	return null;
 }
 
 export function primaryJobExternalUrl(detail: JobDetail) {
@@ -220,10 +222,6 @@ export function shouldNoIndexDeployment() {
 	);
 }
 
-export function cleanText(value: unknown) {
-	return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-}
-
 function stripHtml(value: string) {
 	return value.replace(/<[^>]*>/g, " ");
 }
@@ -252,6 +250,23 @@ function readJobDetailIdIndex() {
 		}
 	}
 	return listDetailShardFiles().flatMap(readTopLevelObjectKeys);
+}
+
+function readPrecomputedIndexableJobIds() {
+	if (fs.existsSync(JOB_INDEXABLE_IDS_FILE)) {
+		const index = readJson<JobIndexableIdIndex>(JOB_INDEXABLE_IDS_FILE);
+		if (index.count === index.ids.length) {
+			return index.ids;
+		}
+	}
+	return scanIndexableJobDetailIds();
+}
+
+function scanIndexableJobDetailIds() {
+	return getStaticJobDetailIds().filter((jobId) => {
+		const detail = getStaticJobDetail(jobId);
+		return detail ? isIndexableJobDetail(detail) : false;
+	});
 }
 
 function readTopLevelObjectKeys(file: string) {

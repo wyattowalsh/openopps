@@ -29,38 +29,9 @@ import {
 } from "@/components/openopps-search/search-utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { safeJobExternalUrl } from "@/lib/job-url";
+import { sanitizeJobDescriptionHtml } from "@/lib/sanitize-html";
 import { trackTelemetry } from "@/lib/telemetry";
-
-const ALLOWED_DESCRIPTION_TAGS = new Set([
-	"a",
-	"b",
-	"blockquote",
-	"br",
-	"code",
-	"div",
-	"em",
-	"h2",
-	"h3",
-	"h4",
-	"i",
-	"li",
-	"ol",
-	"p",
-	"pre",
-	"span",
-	"strong",
-	"u",
-	"ul",
-]);
-const REMOVE_DESCRIPTION_TAGS = new Set([
-	"iframe",
-	"link",
-	"meta",
-	"object",
-	"script",
-	"style",
-	"template",
-]);
 
 type JobsBoardPreviewProps = {
 	row: SearchRow | null;
@@ -234,7 +205,7 @@ function useSanitizedHtml(value: string | null | undefined) {
 			return;
 		}
 		const timeout = window.setTimeout(() => {
-			setSanitized({ source, html: sanitizeDescriptionHtml(source) });
+			setSanitized({ source, html: sanitizeJobDescriptionHtml(source) });
 		}, 0);
 		return () => {
 			window.clearTimeout(timeout);
@@ -245,63 +216,6 @@ function useSanitizedHtml(value: string | null | undefined) {
 		return "";
 	}
 	return sanitized.source === source ? sanitized.html : "";
-}
-
-function sanitizeDescriptionHtml(source: string) {
-	if (typeof DOMParser === "undefined" || typeof NodeFilter === "undefined") {
-		return "";
-	}
-	const document = new DOMParser().parseFromString(source, "text/html");
-	const walker = document.createTreeWalker(
-		document.body,
-		NodeFilter.SHOW_ELEMENT,
-	);
-	const elements: Element[] = [];
-	while (walker.nextNode()) {
-		elements.push(walker.currentNode as Element);
-	}
-
-	for (const element of elements) {
-		const tagName = element.tagName.toLowerCase();
-		if (REMOVE_DESCRIPTION_TAGS.has(tagName)) {
-			element.remove();
-			continue;
-		}
-		if (!ALLOWED_DESCRIPTION_TAGS.has(tagName)) {
-			element.replaceWith(...Array.from(element.childNodes));
-			continue;
-		}
-		for (const attribute of Array.from(element.attributes)) {
-			const name = attribute.name.toLowerCase();
-			if (name.startsWith("on")) {
-				element.removeAttribute(attribute.name);
-				continue;
-			}
-			if (tagName === "a" && name === "href") {
-				if (isSafeDescriptionUrl(attribute.value)) {
-					element.setAttribute("target", "_blank");
-					element.setAttribute("rel", "noopener noreferrer");
-				} else {
-					element.removeAttribute(attribute.name);
-				}
-				continue;
-			}
-			if (tagName === "a" && name === "title") {
-				continue;
-			}
-			element.removeAttribute(attribute.name);
-		}
-	}
-	return document.body.innerHTML;
-}
-
-function isSafeDescriptionUrl(value: string) {
-	try {
-		const url = new URL(value, window.location.origin);
-		return url.protocol === "http:" || url.protocol === "https:";
-	} catch {
-		return false;
-	}
 }
 
 export function JobsBoardPreview({
@@ -335,8 +249,9 @@ export function JobsBoardPreview({
 		(row ? text(row[J.title]) || "Untitled role" : `Job ${selectedJobId}`);
 	const company =
 		text(detail?.company) || (row ? text(row[J.company]) || text(row[J.board]) : "");
-	const applyUrl = text(detail?.applyUrl);
-	const postingUrl = text(detail?.postingUrl) || (row ? text(row[J.url]) : "");
+	const applyUrl = safeJobExternalUrl(detail?.applyUrl);
+	const postingUrl =
+		safeJobExternalUrl(detail?.postingUrl) ?? safeJobExternalUrl(row ? text(row[J.url]) : "");
 	const descriptionSnippet = row ? text(row[J.descriptionSnippet]) : "";
 	const sourceKeys = row ? parseSourceKeys(row[J.sourceKeys]) : [];
 	const responsibilities = (detail?.responsibilities ?? []).map(text).filter(Boolean);

@@ -11,13 +11,17 @@ const config = {
   experimental: {
     cpus: 1,
   },
-  // `pnpm types:check` is the explicit docs type gate. Skipping Next's duplicate
-  // in-build type pass keeps production builds under local/CI memory ceilings.
+  // `pnpm types:check` is the explicit docs type gate before production builds.
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   async redirects() {
     return [
+      {
+        source: '/jobs',
+        destination: '/',
+        permanent: true,
+      },
       {
         source: '/docs/explorer',
         destination: '/explorer',

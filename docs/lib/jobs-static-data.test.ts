@@ -12,6 +12,7 @@ import {
 	isIndexableJobDetail,
 	jobPostingJsonLd,
 	jobPostingJsonLdEnabled,
+	serializeJsonLdScript,
 	safeJobExternalUrl,
 	shouldEmitJobPostingJsonLd,
 	shouldNoIndexDeployment,
@@ -102,6 +103,18 @@ describe("jobs static data", () => {
 		);
 		expect(safeJobExternalUrl("/jobs/1")).toBeNull();
 		expect(safeJobExternalUrl("javascript:alert(1)")).toBeNull();
+	});
+
+	it("serializes JSON-LD without script breakouts", () => {
+		const malicious = {
+			"@context": "https://schema.org",
+			"@type": "JobPosting",
+			title: '</script><script>alert(1)</script>',
+			description: "Safe body",
+		};
+		const serialized = serializeJsonLdScript(malicious);
+		expect(serialized).not.toContain("</script>");
+		expect(serialized).toContain("\\u003c/script\\u003e");
 	});
 
 	it("detects preview/noindex deployment mode", () => {
