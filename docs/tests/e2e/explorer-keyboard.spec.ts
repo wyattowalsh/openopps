@@ -5,11 +5,13 @@ test("explorer row inspector supports keyboard navigation and activation", async
 }) => {
 	await page.goto("/explorer");
 	await page.getByRole("button", { name: /inspect rows/i }).click();
+	await page.getByRole("button", { name: /show boards/i }).click();
 
-	const list = page.getByRole("list", { name: /jobs results/i });
+	const list = page.getByRole("list", { name: /boards results/i });
 	await expect(list.getByRole("listitem").first()).toBeVisible({
 		timeout: 30_000,
 	});
+	await expect(list.getByRole("link", { name: /open board/i }).first()).toBeVisible();
 
 	await list.focus();
 	await page.keyboard.press("ArrowDown");
