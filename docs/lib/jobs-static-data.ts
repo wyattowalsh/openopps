@@ -87,15 +87,22 @@ export function getJobSitemapUrls(id: number): MetadataRoute.Sitemap {
 
 export function getIndexableJobDetailIds() {
 	if (!indexableJobIdsCache) {
-		if (!staticSnapshotCanContainIndexableJobDetails()) {
-			indexableJobIdsCache = [];
-		} else if (getStaticSearchManifest().version >= 4) {
+		if (getStaticSearchManifest().version >= 4) {
 			indexableJobIdsCache = readPrecomputedIndexableJobIds();
+		} else if (!staticSnapshotCanContainIndexableJobDetails()) {
+			indexableJobIdsCache = [];
 		} else {
 			indexableJobIdsCache = scanIndexableJobDetailIds();
 		}
 	}
 	return indexableJobIdsCache;
+}
+
+export function clearStaticJobDataCachesForTests() {
+	manifestCache = null;
+	jobIdsCache = null;
+	indexableJobIdsCache = null;
+	detailBucketCache.clear();
 }
 
 export function serializeJsonLdScript(value: unknown) {
@@ -136,7 +143,10 @@ export function jobDescriptionText(detail: JobDetail, maxLength = 240) {
 }
 
 export function jobDetailDescriptionText(detail: JobDetail) {
-	return cleanText(detail.description) || cleanText(stripHtml(detail.descriptionHtml ?? ""));
+	return (
+		cleanText(stripHtml(detail.description ?? "")) ||
+		cleanText(stripHtml(detail.descriptionHtml ?? ""))
+	);
 }
 
 export function primaryJobExternalUrl(detail: JobDetail) {
@@ -223,7 +233,67 @@ export function shouldNoIndexDeployment() {
 }
 
 function stripHtml(value: string) {
-	return value.replace(/<[^>]*>/g, " ");
+	return removeHtmlMarkup(decodeHtmlEntities(removeHtmlMarkup(value)));
+}
+
+function removeHtmlMarkup(value: string) {
+	return value
+		.replace(
+			/<span\b(?=[\s\S]{0,8000}?data-sheets-value=)[\s\S]{0,8000}?data-sheets-userformat="[\s\S]{0,2000}?">/gi,
+			" ",
+		)
+		.replace(/<!--[\s\S]*?-->/g, " ")
+		.replace(/<\/?[A-Za-z][A-Za-z0-9:-]*(?:\s[^>]*)?\/?>/g, " ")
+		.replace(/<\/?[A-Za-z][A-Za-z0-9:-]*(?:\s[\s\S]*)?$/g, " ");
+}
+
+const HTML_NAMED_ENTITIES: Record<string, string> = {
+	amp: "&",
+	apos: "'",
+	gt: ">",
+	lt: "<",
+	nbsp: " ",
+	quot: '"',
+};
+
+function decodeHtmlEntities(value: string) {
+	let decoded = value;
+	for (let index = 0; index < 5; index += 1) {
+		const next = decodeHtmlEntitiesOnce(decoded);
+		if (next === decoded) {
+			return next;
+		}
+		decoded = next;
+	}
+	return decoded;
+}
+
+function decodeHtmlEntitiesOnce(value: string) {
+	return value.replace(
+		/&(#x[0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g,
+		(match, entity: string) => {
+			const normalized = entity.toLowerCase();
+			if (normalized.startsWith("#x")) {
+				return decodeHtmlCodePoint(match, normalized.slice(2), 16);
+			}
+			if (normalized.startsWith("#")) {
+				return decodeHtmlCodePoint(match, normalized.slice(1), 10);
+			}
+			return HTML_NAMED_ENTITIES[normalized] ?? match;
+		},
+	);
+}
+
+function decodeHtmlCodePoint(match: string, value: string, radix: number) {
+	const codePoint = Number.parseInt(value, radix);
+	if (!Number.isFinite(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+		return match;
+	}
+	try {
+		return String.fromCodePoint(codePoint);
+	} catch {
+		return match;
+	}
 }
 
 function dateOrUndefined(value: string | null | undefined) {

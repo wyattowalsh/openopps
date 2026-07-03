@@ -795,15 +795,23 @@ def _skill_level(record: JobRecord) -> str | None:
     return derive_seniority(record) or record.experience
 
 
-def derive_seniority(record: JobRecord) -> str | None:
+def derive_seniority_from_fields(
+    title: str | None, experience: str | None
+) -> str | None:
     """Derive a normalized seniority label from title and experience text."""
 
-    text = _normalized_skill_text([record.experience, record.title])
+    text = _normalized_skill_text([experience, title])
     text_tokens = frozenset(text.split())
     for label, single_tokens, phrases in _compiled_level_aliases():
         if _has_compiled_skill_alias(text, text_tokens, single_tokens, phrases):
             return label
     return None
+
+
+def derive_seniority(record: JobRecord) -> str | None:
+    """Derive a normalized seniority label from title and experience text."""
+
+    return derive_seniority_from_fields(record.title, record.experience)
 
 
 class SourceRecord(OpenOppsRecord):

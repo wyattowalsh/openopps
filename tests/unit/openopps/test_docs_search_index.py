@@ -70,6 +70,154 @@ def test_detail_shards_use_tiered_payloads(tmp_path: Path) -> None:
     assert manifest["detailShards"]["tierCounts"] == {"T1": 1, "T2": 1}
 
 
+def test_detail_shards_clean_full_html_before_bounding(tmp_path: Path) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    html = "<span></span>" * 300 + (" " * 100) + "<p>Build platform systems.</p>"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET description = NULL, description_html = ?
+            WHERE id = 'version-rich'
+            """,
+            (html,),
+        )
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    records = _read_detail_records(output_dir)
+    indexable_ids = _read_json(output_dir / INDEXABLE_IDS_FILE)
+    assert indexable_ids["ids"] == ["job-rich"]
+    assert records["job-rich"]["detailTier"] == "T2"
+    assert records["job-rich"]["description"] == "Build platform systems."
+    assert "descriptionHtml" not in records["job-rich"]
+
+
+def test_detail_shards_decode_html_entities_before_writing_plain_text(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    html = (
+        "&amp;lt;p&amp;gt;Build&nbsp;R&amp;amp;D tools for latency &amp;lt;60 ms "
+        "and memory &amp;gt;1GB. &amp;#39;Ship&amp;#39; "
+        "&amp;#x27;fast&amp;#x27;.&amp;lt;/p&amp;gt;"
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET description = NULL, description_html = ?
+            WHERE id = 'version-rich'
+            """,
+            (html,),
+        )
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    expected = "Build R&D tools for latency <60 ms and memory >1GB. 'Ship' 'fast'."
+    records = _read_detail_records(output_dir)
+    assert records["job-rich"]["description"] == expected
+
+    columns = manifest["entities"]["jobs"]["columns"]
+    snippet_index = columns.index("descriptionSnippet")
+    id_index = columns.index("id")
+    rows = _read_job_rows(output_dir, manifest)
+    rich_row = next(row for row in rows if row[id_index] == "job-rich")
+    assert rich_row[snippet_index] == expected
+
+
+def test_detail_shards_decode_plain_description_entities_without_stripping_comparisons(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    description = "Latency &lt;60 ms &amp; memory &gt;1GB. <div class=\"title"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET description = ?, description_html = NULL
+            WHERE id = 'version-rich'
+            """,
+            (description,),
+        )
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    rich = _read_detail_records(output_dir)["job-rich"]
+    assert rich["description"] == "Latency <60 ms & memory >1GB."
+
+
+def test_detail_shards_do_not_emit_partial_html_fragments(tmp_path: Path) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    html = "<span></span>" * 400 + "<p>Build platform systems.</p>"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET description = NULL, description_html = ?
+            WHERE id = 'version-rich'
+            """,
+            (html,),
+        )
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    rich = _read_detail_records(output_dir)["job-rich"]
+    assert rich["detailTier"] == "T2"
+    assert rich["description"] == "Build platform systems."
+    assert "<" not in rich["description"]
+
+
+def test_detail_shards_strip_dangling_source_html_tags(tmp_path: Path) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    description = 'Build platform systems. <span data-sheets-value="{"1":2,"2":"At <b"'
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET description = ?, description_html = NULL
+            WHERE id = 'version-rich'
+            """,
+            (description,),
+        )
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    rich = _read_detail_records(output_dir)["job-rich"]
+    assert rich["description"] == "Build platform systems."
+
+
+def test_detail_shards_strip_raw_tags_before_decoding_attribute_entities(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    description = (
+        'Build platform systems. <span data-sheets-value="{&quot;2&quot;:'
+        '&quot;Use <insert base pay range> &gt;95% uptime&quot;}" '
+        'data-sheets-userformat="{&quot;2&quot;:769}">attribute body</span>'
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET description = ?, description_html = NULL
+            WHERE id = 'version-rich'
+            """,
+            (description,),
+        )
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    rich = _read_detail_records(output_dir)["job-rich"]
+    assert rich["description"] == "Build platform systems. attribute body"
+
+
 def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     db_path = _write_search_index_db(tmp_path)
     output_dir = tmp_path / "public" / "data" / "openopps-search"
@@ -242,6 +390,40 @@ def test_search_index_derives_seniority_when_extra_payload_missing(tmp_path: Pat
     open_row = next(row for row in rows if row[columns.index("status")] == "open")
     assert open_row[seniority_index] == "Principal"
     assert "Principal" in manifest["facets"]["seniorities"]
+
+
+def test_snapshot_at_includes_current_version_timestamps(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET updated_at = '2026-05-01T00:00:00Z'
+            WHERE id = 'version-current'
+            """
+        )
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    assert manifest["snapshotAt"] == "2026-05-01T00:00:00.000000Z"
+
+
+def test_snapshot_at_ignores_newer_historical_versions(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET updated_at = '2026-08-01T00:00:00Z'
+            WHERE id = 'version-old'
+            """
+        )
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    assert manifest["snapshotAt"] == "2026-02-03T04:05:06.123456Z"
 
 
 def test_is_indexable_job_detail_matches_docs_runtime_rules() -> None:
@@ -460,6 +642,14 @@ def _read_job_rows(artifact_dir: Path, manifest: dict[str, Any]) -> list[list[An
         assert payload["count"] == len(payload["rows"])
         rows.extend(payload["rows"])
     return rows
+
+
+def _read_detail_records(artifact_dir: Path) -> dict[str, dict[str, Any]]:
+    detail_root = artifact_dir / "jobs-details"
+    records: dict[str, dict[str, Any]] = {}
+    for bucket_path in detail_root.glob("*.json"):
+        records.update(_read_json(bucket_path))
+    return records
 
 
 def _artifact_files(artifact_dir: Path) -> set[Path]:

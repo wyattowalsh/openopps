@@ -12,11 +12,12 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from openopps.models import JobRecord, derive_seniority
+from openopps.models import derive_seniority_from_fields
 
 SEARCH_INDEX_VERSION = 5
 DESCRIPTION_SNIPPET_LEN = 200
@@ -379,10 +380,7 @@ def _fetch_board_source_keys(conn: sqlite3.Connection) -> dict[str, list[str]]:
 
 
 def _snippet_source(detail: dict[str, Any]) -> str:
-    value = detail.get("description") or detail.get("descriptionHtml") or ""
-    if not isinstance(value, str):
-        return ""
-    return value[:DESCRIPTION_SNIPPET_SOURCE_LEN]
+    return _job_detail_description_text(detail)[:DESCRIPTION_SNIPPET_SOURCE_LEN]
 
 
 def _fetch_job_version_ids(conn: sqlite3.Connection) -> dict[str, str]:
@@ -390,6 +388,18 @@ def _fetch_job_version_ids(conn: sqlite3.Connection) -> dict[str, str]:
         "SELECT id, current_version_id FROM jobs WHERE current_version_id IS NOT NULL"
     ).fetchall()
     return {str(row[0]): str(row[1]) for row in rows}
+
+
+def _current_version_id_values(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT current_version_id
+        FROM jobs
+        WHERE current_version_id IS NOT NULL
+          AND current_version_id != ''
+        """
+    )
+    return {str(row[0]) for row in rows}
 
 
 def _fetch_version_locations(
@@ -568,12 +578,7 @@ def _enrich_job_rows(
             experience = experience_by_version.get(version_id)
             experience_text = str(experience).strip() if experience else None
             if title or experience_text:
-                seniority = derive_seniority(
-                    JobRecord.model_construct(
-                        title=title or " ",
-                        experience=experience_text,
-                    )
-                )
+                seniority = derive_seniority_from_fields(title, experience_text)
         if seniority:
             next_row[seniority_index] = str(seniority).strip()
         first_seen = _parse_timestamp(next_row[first_seen_index])
@@ -609,9 +614,7 @@ def _sort_job_rows(jobs: list[list[Any]]) -> list[list[Any]]:
 
 
 def _plain_snippet(value: str) -> str:
-    text = re.sub(r"<[^>]+>", " ", value)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:DESCRIPTION_SNIPPET_LEN]
+    return _description_source_text(value)[:DESCRIPTION_SNIPPET_LEN]
 
 
 def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
@@ -648,7 +651,6 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
         """
     ).fetchall()
     current_version_ids = {str(row[5]) for row in job_rows if row[5]}
-
     _progress("fetch job details: boards")
     board_sources = {
         str(key): source_key
@@ -671,8 +673,8 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
             v.salary_min,
             v.salary_max,
             v.salary_currency,
-            substr(v.description, 1, {DETAIL_DESCRIPTION_MAX_LEN}),
-            substr(v.description_html, 1, {DETAIL_DESCRIPTION_MAX_LEN}),
+            v.description,
+            v.description_html,
             NULL,
             NULL,
             NULL,
@@ -891,14 +893,44 @@ def _clean_text(value: Any) -> str:
 
 
 def _strip_html(value: str) -> str:
-    return re.sub(r"<[^>]*>", " ", value)
+    text = _remove_html_markup(value)
+    text = _decode_html_entities(text)
+    return _remove_html_markup(text)
+
+
+def _remove_html_markup(value: str) -> str:
+    text = value
+    text = re.sub(
+        r'(?is)<span\b(?=[\s\S]{0,8000}?data-sheets-value=)[\s\S]{0,8000}?data-sheets-userformat="[\s\S]{0,2000}?">',
+        " ",
+        text,
+    )
+    text = re.sub(r"(?s)<!--.*?-->", " ", text)
+    text = re.sub(r"</?[A-Za-z][A-Za-z0-9:-]*(?:\s[^>]*)?/?>", " ", text)
+    return re.sub(r"(?s)</?[A-Za-z][A-Za-z0-9:-]*(?:\s.*)?$", " ", text)
+
+
+def _decode_html_entities(value: str) -> str:
+    text = value
+    for _ in range(5):
+        decoded = unescape(text)
+        if decoded == text:
+            return decoded
+        text = decoded
+    return text
+
+
+def _description_source_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return _clean_text(_strip_html(value))
 
 
 def _job_detail_description_text(detail: dict[str, Any]) -> str:
-    description = _clean_text(detail.get("description"))
+    description = _description_source_text(detail.get("description"))
     if description:
         return description
-    return _clean_text(_strip_html(str(detail.get("descriptionHtml") or "")))
+    return _description_source_text(detail.get("descriptionHtml"))
 
 
 def _safe_job_external_url(value: Any) -> str | None:
@@ -969,9 +1001,7 @@ def _write_indexable_job_ids(output_dir: Path, job_ids: Sequence[str]) -> None:
 
 
 def _bounded_detail_description(payload: dict[str, Any]) -> str:
-    description = _clean_text(_strip_html(str(payload.get("description") or "")))
-    if not description:
-        description = _clean_text(_strip_html(str(payload.get("descriptionHtml") or "")))
+    description = _job_detail_description_text(payload)
     if len(description) <= DETAIL_DESCRIPTION_MAX_LEN:
         return description
     return description[: DETAIL_DESCRIPTION_MAX_LEN - 3].rstrip() + "..."
@@ -1576,6 +1606,7 @@ def _snapshot_at(conn: sqlite3.Connection) -> str | None:
         ("job_versions", "updated_at"),
         ("job_versions", "created_at"),
     )
+    current_version_columns = ("updated_at", "created_at")
 
     for table_name, column_name in primary_columns:
         if not _has_column(conn, table_name, column_name):
@@ -1591,6 +1622,12 @@ def _snapshot_at(conn: sqlite3.Connection) -> str | None:
         ).fetchone()
         if row and row[0]:
             candidates.append(row[0])
+    for column_name in current_version_columns:
+        if not _has_column(conn, "job_versions", column_name):
+            continue
+        candidate = _current_version_snapshot_column_candidate(conn, column_name)
+        if candidate:
+            candidates.append(candidate)
     if candidates:
         return _latest_timestamp_value(candidates)
 
@@ -1602,6 +1639,42 @@ def _snapshot_at(conn: sqlite3.Connection) -> str | None:
         if candidate:
             candidates.append(candidate)
     return _latest_timestamp_value(candidates)
+
+
+def _current_version_snapshot_column_candidate(
+    conn: sqlite3.Connection, column_name: str
+) -> str | None:
+    if not _has_column(conn, "jobs", "current_version_id"):
+        return None
+    current_version_ids = _current_version_id_values(conn)
+    if not current_version_ids:
+        return None
+    column = _sqlite_identifier(column_name)
+    latest: datetime | None = None
+    scanned = 0
+    _progress(f"compute snapshot timestamp: current job_versions.{column_name}")
+    for version_id, value in conn.execute(
+        f"""
+        SELECT id, {column}
+        FROM job_versions
+        WHERE {column} IS NOT NULL
+          AND {column} != ''
+        """
+    ):
+        scanned += 1
+        if str(version_id) in current_version_ids:
+            parsed = _parse_timestamp(value)
+            if parsed and (latest is None or parsed > latest):
+                latest = parsed
+        if scanned % 25_000 == 0:
+            _progress(
+                f"compute snapshot timestamp: current job_versions.{column_name} scanned {scanned}"
+            )
+    if scanned:
+        _progress(
+            f"compute snapshot timestamp: current job_versions.{column_name} scanned {scanned}"
+        )
+    return _format_utc_timestamp(latest) if latest else None
 
 
 def _snapshot_column_candidate(
