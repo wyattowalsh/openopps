@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-import { getJobSitemapCount, shouldNoIndexDeployment } from "@/lib/jobs-static-data";
+import { getJobSitemapCount, shouldNoIndexDeployment } from "@/lib/jobs-sitemap-data";
 import { siteUrl } from "@/lib/shared";
 
 export default function robots(): MetadataRoute.Robots {

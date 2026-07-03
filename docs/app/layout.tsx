@@ -1,7 +1,7 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import "./global.css";
 import { TelemetryProvider } from "@/components/telemetry-provider";
-import { shouldNoIndexDeployment } from "@/lib/jobs-static-data";
+import { shouldNoIndexDeployment } from "@/lib/job-detail-utils";
 import { appName, siteUrl, socialImages } from "@/lib/shared";
 import type { Metadata } from "next";
 

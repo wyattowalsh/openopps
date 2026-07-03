@@ -1,10 +1,11 @@
 /* eslint-disable @next/next/no-img-element */
 
-import { getPageImage, source } from "@/lib/source";
+import { getDocsOgPage, getDocsOgPages } from "@/lib/docs-og-data";
 import { notFound } from "next/navigation";
 import { ImageResponse } from "next/og";
 import { appName } from "@/lib/shared";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { docsOgPageSlug } from "./route-utils";
 
 export const revalidate = false;
@@ -21,13 +22,9 @@ const palette = {
 
 const fontFamily = '"Monaspace Neon", "Monaspace Argon", ui-monospace, monospace';
 
-function pngDataUrl(file: string) {
-	return readFile(new URL(`../../../../public/${file}`, import.meta.url)).then(
-		(buffer) => `data:image/png;base64,${buffer.toString("base64")}`,
-	);
-}
-
-const logo = pngDataUrl("brand/openopps-logo.png");
+const logo = readFile(
+	path.join(process.cwd(), "public", "brand", "openopps-logo.png"),
+).then((buffer) => `data:image/png;base64,${buffer.toString("base64")}`);
 
 export async function GET(
 	_req: Request,
@@ -36,11 +33,11 @@ export async function GET(
 	const { slug } = await params;
 	const pageSlug = docsOgPageSlug(slug);
 	if (!pageSlug) notFound();
-	const page = source.getPage(pageSlug);
+	const page = getDocsOgPage(pageSlug);
 	if (!page) notFound();
 	const logoSrc = await logo;
 	const description =
-		page.data.description ??
+		page.description ??
 		"Public hiring board docs, provider checks, storage, and export workflows for OpenOpps.";
 
 	return new ImageResponse(
@@ -213,7 +210,7 @@ export async function GET(
 							lineHeight: 0.96,
 						}}
 					>
-						{page.data.title}
+						{page.title}
 					</div>
 					<div
 						style={{
@@ -253,7 +250,7 @@ export async function GET(
 }
 
 export function generateStaticParams() {
-	return source.getPages().map((page) => ({
-		slug: getPageImage(page).segments,
+	return getDocsOgPages().map((page) => ({
+		slug: [...page.slug, "image.png"],
 	}));
 }

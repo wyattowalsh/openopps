@@ -4,7 +4,7 @@ import {
 	getJobSitemapCount,
 	getJobSitemapUrls,
 	shouldNoIndexDeployment,
-} from "@/lib/jobs-static-data";
+} from "@/lib/jobs-sitemap-data";
 
 export function generateSitemaps() {
 	if (shouldNoIndexDeployment()) {

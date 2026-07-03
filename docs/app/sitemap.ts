@@ -1,6 +1,9 @@
 import type { MetadataRoute } from "next";
 
-import { getStaticSearchManifest, shouldNoIndexDeployment } from "@/lib/jobs-static-data";
+import {
+	getSitemapSearchManifest,
+	shouldNoIndexDeployment,
+} from "@/lib/jobs-sitemap-data";
 import { siteUrl } from "@/lib/shared";
 
 const DOC_ROUTES = [
@@ -20,7 +23,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 	if (shouldNoIndexDeployment()) {
 		return [];
 	}
-	const snapshotAt = getStaticSearchManifest().snapshotAt;
+	const snapshotAt = getSitemapSearchManifest().snapshotAt;
 	const lastModified = snapshotAt ? new Date(snapshotAt) : new Date();
 	return [
 		{
