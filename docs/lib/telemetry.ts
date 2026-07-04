@@ -87,14 +87,6 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	],
 	"jobs.filters_changed": ["hasSelection", "keys"],
 	"jobs.filters_cleared": ["activeFilterCount", "hasSelection"],
-	"jobs.full_index_error": ["message"],
-	"jobs.full_index_confirmed": [
-		"activeFilterCount",
-		"hasSelection",
-		"jobCount",
-	],
-	"jobs.full_index_loaded": ["reason", "rows"],
-	"jobs.full_index_retry": ["activeFilterCount", "hasSelection"],
 	"jobs.index_error": ["message"],
 	"jobs.index_loaded": ["initialRows", "manifestVersion", "totalRows"],
 	"jobs.local_clear_clicked": ["category"],
@@ -114,6 +106,9 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	"jobs.saved_search_deleted": [],
 	"jobs.saved_search_restored": ["newMatchBucket"],
 	"jobs.saved_search_reviewed": ["matchBucket"],
+	"jobs.search_error": ["message"],
+	"jobs.search_loaded": ["rows", "totalMatches", "truncated"],
+	"jobs.search_retry": ["activeFilterCount", "hasSelection"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type TelemetryEventName = keyof typeof TELEMETRY_EVENT_PROPERTY_ALLOWLIST;

@@ -18,9 +18,6 @@ build_search_index = cast(
     _SEARCH_INDEX_NAMESPACE["build_search_index"],
 )
 SEARCH_INDEX_VERSION = cast(int, _SEARCH_INDEX_NAMESPACE["SEARCH_INDEX_VERSION"])
-DETAIL_DESCRIPTION_MAX_LEN = cast(
-    int, _SEARCH_INDEX_NAMESPACE["DETAIL_DESCRIPTION_MAX_LEN"]
-)
 INITIAL_JOB_LIMIT = cast(int, _SEARCH_INDEX_NAMESPACE["INITIAL_JOB_LIMIT"])
 PROVIDER_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["PROVIDER_COLUMNS"])
 BOARD_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["BOARD_COLUMNS"])
@@ -42,7 +39,9 @@ detail_bucket = cast(
 )
 
 
-def test_detail_shards_use_tiered_payloads(tmp_path: Path) -> None:
+def test_detail_shards_use_tiered_full_public_posting_payloads(
+    tmp_path: Path,
+) -> None:
     db_path = _write_tiered_shard_db(tmp_path)
     output_dir = tmp_path / "index"
 
@@ -56,12 +55,16 @@ def test_detail_shards_use_tiered_payloads(tmp_path: Path) -> None:
     thin = records["job-thin"]
     assert rich["detailTier"] == "T2"
     assert thin["detailTier"] == "T1"
-    assert rich["description"]
-    assert len(rich["description"]) <= DETAIL_DESCRIPTION_MAX_LEN
-    assert "<" not in rich["description"]
-    assert "descriptionHtml" not in rich
-    assert "description" not in thin
-    assert "descriptionHtml" not in thin
+    assert "description" not in rich
+    assert rich["descriptionHtml"] == "<p>Build platform systems.</p>"
+    assert rich["responsibilities"] == ["Build platform systems"]
+    assert rich["qualifications"] == ["Operate reliable services"]
+    assert rich["skills"] == [{"name": "Python", "level": "advanced"}]
+    assert rich["jobDescription"] == {"summary": "Build"}
+    assert rich["compensation"] == {"currency": "USD"}
+    assert rich["experience"] == "Senior"
+    assert rich["salary"] == "$140k-$180k"
+    assert rich["versionExtra"] == {"seniority": "Senior"}
     assert "payloadSnapshots" not in rich
     assert thin["status"] == "open"
     assert rich["status"] == "open"
@@ -90,8 +93,7 @@ def test_detail_shards_clean_full_html_before_bounding(tmp_path: Path) -> None:
     indexable_ids = _read_json(output_dir / INDEXABLE_IDS_FILE)
     assert indexable_ids["ids"] == ["job-rich"]
     assert records["job-rich"]["detailTier"] == "T2"
-    assert records["job-rich"]["description"] == "Build platform systems."
-    assert "descriptionHtml" not in records["job-rich"]
+    assert records["job-rich"]["descriptionHtml"] == html
 
 
 def test_detail_shards_decode_html_entities_before_writing_plain_text(
@@ -118,7 +120,8 @@ def test_detail_shards_decode_html_entities_before_writing_plain_text(
 
     expected = "Build R&D tools for latency <60 ms and memory >1GB. 'Ship' 'fast'."
     records = _read_detail_records(output_dir)
-    assert records["job-rich"]["description"] == expected
+    assert "description" not in records["job-rich"]
+    assert records["job-rich"]["descriptionHtml"] == html
 
     columns = manifest["entities"]["jobs"]["columns"]
     snippet_index = columns.index("descriptionSnippet")
@@ -168,8 +171,8 @@ def test_detail_shards_do_not_emit_partial_html_fragments(tmp_path: Path) -> Non
 
     rich = _read_detail_records(output_dir)["job-rich"]
     assert rich["detailTier"] == "T2"
-    assert rich["description"] == "Build platform systems."
-    assert "<" not in rich["description"]
+    assert "description" not in rich
+    assert rich["descriptionHtml"] == html
 
 
 def test_detail_shards_strip_dangling_source_html_tags(tmp_path: Path) -> None:
@@ -1144,24 +1147,24 @@ def _write_tiered_shard_db(tmp_path: Path) -> Path:
                     "Acme",
                     "Full-time",
                     "Full",
-                    "<p>" + ("Build platform systems. " * 300) + "</p>",
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
+                    "Build platform systems.",
+                    "<p>Build platform systems.</p>",
+                    '["Build platform systems"]',
+                    '["Operate reliable services"]',
+                    '[{"name":"Python","level":"advanced"}]',
+                    '{"summary":"Build","description":"Build platform systems."}',
+                    '{"currency":"USD"}',
+                    "Senior",
+                    "$140k-$180k",
+                    140000,
+                    180000,
+                    "USD",
                     "https://acme.example/jobs/rich",
                     None,
                     "2026-01-01T00:00:00Z",
                     "2026-02-01T00:00:00Z",
                     "2026-02-01T00:00:00Z",
-                    None,
+                    '{"seniority":"Senior"}',
                 ),
                 (
                     "version-thin",

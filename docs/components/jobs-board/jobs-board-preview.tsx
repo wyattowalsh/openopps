@@ -196,6 +196,22 @@ function formatDetailSalary(row: SearchRow | null, detail: JobDetail | null) {
 	return row ? formatSalary(row) : "";
 }
 
+function structuredJobDescriptionText(detail: JobDetail | null | undefined) {
+	const value = detail?.jobDescription?.description;
+	if (typeof value !== "string") {
+		return "";
+	}
+	const raw = text(value);
+	if (!raw) {
+		return "";
+	}
+	return /<\/?[A-Za-z][^>]*>/.test(raw) ? stripTags(raw) : raw;
+}
+
+function stripTags(value: string) {
+	return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function useSanitizedHtml(value: string | null | undefined) {
 	const source = value ?? "";
 	const [sanitized, setSanitized] = useState({ source: "", html: "" });
@@ -251,7 +267,8 @@ export function JobsBoardPreview({
 	const postingUrl =
 		safeJobExternalUrl(detail?.postingUrl) ?? safeJobExternalUrl(row ? text(row[J.url]) : "");
 	const descriptionSnippet = row ? text(row[J.descriptionSnippet]) : "";
-	const descriptionText = text(detail?.description);
+	const descriptionText =
+		text(detail?.description) || structuredJobDescriptionText(detail);
 	const sourceKeys = row ? parseSourceKeys(row[J.sourceKeys]) : [];
 	const responsibilities = (detail?.responsibilities ?? []).map(text).filter(Boolean);
 	const qualifications = (detail?.qualifications ?? []).map(text).filter(Boolean);

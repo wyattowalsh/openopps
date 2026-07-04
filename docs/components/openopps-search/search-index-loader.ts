@@ -1,10 +1,15 @@
 import type {
 	Entity,
+	JobsSearchResponse,
 	SearchChunk,
 	SearchChunkRef,
 	SearchManifest,
 	SearchRow,
 } from "./search-types";
+import type {
+	JobBoardFilters,
+	JobSortKey,
+} from "@/components/jobs-board/jobs-board-filter-engine";
 import {
 	EXPECTED_COLUMNS,
 	SEARCH_VERSION,
@@ -13,6 +18,7 @@ import {
 } from "./search-utils";
 
 export const SEARCH_MANIFEST_PATH = "/data/openopps-search/manifest.json";
+export const JOBS_SEARCH_PATH = "/api/jobs/search";
 const SUPPORTED_SEARCH_INDEX_VERSIONS = new Set([3, SEARCH_VERSION]);
 const MAX_CHUNK_FETCHES = 6;
 
@@ -83,6 +89,48 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 	return chunk;
 }
 
+export async function loadJobsSearchResults(
+	filters: JobBoardFilters,
+	sortKey: JobSortKey,
+	options: { limit?: number; signal?: AbortSignal } = {},
+) {
+	const params = new URLSearchParams();
+	appendParam(params, "q", filters.query);
+	appendBooleanParam(params, "wide", filters.wide);
+	appendParam(params, "source", filters.source);
+	appendParam(params, "provider", filters.provider);
+	appendParam(params, "location", filters.location);
+	appendParam(params, "department", filters.department);
+	appendParam(params, "team", filters.team);
+	appendParam(params, "workplace", filters.workplace);
+	appendParam(params, "remote", filters.remote);
+	appendParam(params, "employment", filters.employment);
+	appendParam(params, "skill", filters.skill);
+	appendParam(params, "salaryMin", filters.salaryMin);
+	appendParam(params, "salaryMax", filters.salaryMax);
+	appendParam(params, "postedAfter", filters.postedAfter);
+	appendParam(params, "postedBefore", filters.postedBefore);
+	appendParam(params, "sort", sortKey);
+	if (options.limit) {
+		appendParam(params, "limit", String(options.limit));
+	}
+	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
+	const response = await fetch(path, {
+		cache: "force-cache",
+		signal: options.signal,
+	});
+	if (!response.ok) {
+		throw new SearchLoadError(
+			"fetch_failed",
+			`Unable to load ${JOBS_SEARCH_PATH}: ${response.status}`,
+			JOBS_SEARCH_PATH,
+		);
+	}
+	const payload = (await response.json()) as JobsSearchResponse;
+	validateJobsSearchResponse(payload);
+	return payload;
+}
+
 export function validateSearchManifest(manifest: SearchManifest) {
 	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(manifest.version)) {
 		throw new SearchLoadError(
@@ -120,6 +168,20 @@ export function validateSearchChunk(entity: Entity, chunk: SearchChunk) {
 		throw new SearchLoadError(
 			"invalid_chunk",
 			`Search index chunk count does not match ${entity} rows`,
+		);
+	}
+}
+
+export function validateJobsSearchResponse(response: JobsSearchResponse) {
+	validateSearchChunk("jobs", response);
+	if (
+		typeof response.totalMatches !== "number" ||
+		typeof response.limit !== "number" ||
+		typeof response.truncated !== "boolean"
+	) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			"Jobs search response is missing result metadata.",
 		);
 	}
 }
@@ -164,5 +226,18 @@ function validateCachedJson<T>(
 	} catch (caught) {
 		jsonCache.delete(path);
 		throw caught;
+	}
+}
+
+function appendParam(params: URLSearchParams, key: string, value: string) {
+	const trimmed = value.trim();
+	if (trimmed) {
+		params.set(key, trimmed);
+	}
+}
+
+function appendBooleanParam(params: URLSearchParams, key: string, value: boolean) {
+	if (value) {
+		params.set(key, "1");
 	}
 }

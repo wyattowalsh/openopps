@@ -83,3 +83,23 @@ test("jobs board results support keyboard preview activation", async ({ page }) 
 		page.getByRole("button", { name: /close job preview/i }),
 	).toBeVisible();
 });
+
+test("jobs board searches without browser chunk downloads", async ({ page }) => {
+	let browserChunkRequests = 0;
+	await page.route("**/data/openopps-search/jobs/chunks/*.json", async (route) => {
+		browserChunkRequests += 1;
+		await route.continue();
+	});
+
+	await page.goto("/");
+	await waitForFirstJob(page);
+
+	const searchResponse = page.waitForResponse(
+		(response) => response.url().includes("/api/jobs/search") && response.ok(),
+		{ timeout: 30_000 },
+	);
+	await page.getByLabel("Search jobs").fill("platform");
+	await searchResponse;
+
+	expect(browserChunkRequests).toBe(0);
+});

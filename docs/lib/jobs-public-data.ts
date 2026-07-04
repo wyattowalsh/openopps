@@ -31,7 +31,7 @@ async function fetchPublicJson<T>(baseUrl: string, pathname: string) {
 	}
 	try {
 		const response = await fetch(url, {
-			cache: "force-cache",
+			cache: "no-store",
 		});
 		if (!response.ok) {
 			return null;

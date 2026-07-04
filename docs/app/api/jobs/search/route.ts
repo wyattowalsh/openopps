@@ -1,0 +1,53 @@
+import { NextResponse } from "next/server";
+
+import type { JobBoardFilters } from "@/components/jobs-board/jobs-board-filter-engine";
+import {
+	normalizeJobsSearchFilters,
+	normalizeJobsSearchSortKey,
+	normalizeLimit,
+	searchPublicJobsIndex,
+} from "@/lib/jobs-search-service";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+	const url = new URL(request.url);
+	const filters = filtersFromSearchParams(url.searchParams);
+	const sortKey = normalizeJobsSearchSortKey(url.searchParams.get("sort"), filters);
+	const result = await searchPublicJobsIndex({
+		baseUrl: url,
+		filters,
+		sortKey,
+		limit: normalizeLimit(url.searchParams.get("limit")),
+	});
+
+	return NextResponse.json(result, {
+		headers: {
+			"Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+		},
+	});
+}
+
+function filtersFromSearchParams(params: URLSearchParams): JobBoardFilters {
+	return normalizeJobsSearchFilters({
+		query: params.get("q") ?? "",
+		wide: parseBooleanParam(params.get("wide")),
+		source: params.get("source") ?? "",
+		provider: params.get("provider") ?? "",
+		location: params.get("location") ?? "",
+		department: params.get("department") ?? "",
+		team: params.get("team") ?? "",
+		workplace: params.get("workplace") ?? "",
+		remote: params.get("remote") ?? "",
+		employment: params.get("employment") ?? "",
+		skill: params.get("skill") ?? "",
+		salaryMin: params.get("salaryMin") ?? "",
+		salaryMax: params.get("salaryMax") ?? "",
+		postedAfter: params.get("postedAfter") ?? "",
+		postedBefore: params.get("postedBefore") ?? "",
+	});
+}
+
+function parseBooleanParam(value: string | null) {
+	return value === "1" || value === "true";
+}

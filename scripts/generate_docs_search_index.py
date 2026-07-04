@@ -22,7 +22,6 @@ from openopps.models import derive_seniority_from_fields
 SEARCH_INDEX_VERSION = 5
 DESCRIPTION_SNIPPET_LEN = 200
 DESCRIPTION_SNIPPET_SOURCE_LEN = 2048
-DETAIL_DESCRIPTION_MAX_LEN = 4000
 SKILL_TOKENS_MAX_LEN = 96
 DETAIL_BUCKET_COUNT = 256
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
@@ -121,8 +120,19 @@ DETAIL_TIER1_KEYS = frozenset(
 DETAIL_TIER2_BODY_KEYS = frozenset(
     {
         "description",
+        "descriptionHtml",
+        "responsibilities",
+        "qualifications",
+        "skills",
+        "jobDescription",
+        "compensation",
+        "experience",
+        "salary",
+        "jobExtra",
+        "versionExtra",
     }
 )
+DETAIL_PUBLIC_KEYS = DETAIL_TIER1_KEYS | DETAIL_TIER2_BODY_KEYS
 DETAIL_EXCLUDED_KEYS = frozenset({"payloadSnapshots"})
 
 FILTER_SPEC = {
@@ -627,7 +637,18 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     version_number = _column_expr(conn, "job_versions", "v", "version")
     version_content_hash = _column_expr(conn, "job_versions", "v", "content_hash")
     version_payload_hash = _column_expr(conn, "job_versions", "v", "payload_hash")
-    version_extra = "NULL"
+    version_responsibilities = _column_expr(
+        conn, "job_versions", "v", "responsibilities"
+    )
+    version_qualifications = _column_expr(
+        conn, "job_versions", "v", "qualifications"
+    )
+    version_skills = _column_expr(conn, "job_versions", "v", "skills")
+    version_job_description = _column_expr(
+        conn, "job_versions", "v", "job_description"
+    )
+    version_compensation = _column_expr(conn, "job_versions", "v", "compensation")
+    version_extra = _column_expr(conn, "job_versions", "v", "extra_payload")
 
     _progress("fetch job details: jobs")
     job_rows = conn.execute(
@@ -675,11 +696,11 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
             v.salary_currency,
             v.description,
             v.description_html,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
-            NULL,
+            {version_responsibilities},
+            {version_qualifications},
+            {version_skills},
+            {version_job_description},
+            {version_compensation},
             v.experience,
             v.salary,
             v.posting_url,
@@ -1000,11 +1021,24 @@ def _write_indexable_job_ids(output_dir: Path, job_ids: Sequence[str]) -> None:
     )
 
 
-def _bounded_detail_description(payload: dict[str, Any]) -> str:
-    description = _job_detail_description_text(payload)
-    if len(description) <= DETAIL_DESCRIPTION_MAX_LEN:
-        return description
-    return description[: DETAIL_DESCRIPTION_MAX_LEN - 3].rstrip() + "..."
+def _public_detail_description(payload: dict[str, Any]) -> str:
+    return _job_detail_description_text(payload)
+
+
+def _public_job_description(value: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    if "description" not in value:
+        return value
+    has_canonical_description = bool(
+        _clean_text(payload.get("descriptionHtml"))
+        or _public_detail_description(payload)
+    )
+    if not has_canonical_description:
+        return value
+    compact = dict(value)
+    compact.pop("description", None)
+    return compact or None
 
 
 def _detail_bucket(job_id: str) -> str:
@@ -1017,23 +1051,28 @@ def _detail_bucket(job_id: str) -> str:
 def _detail_shard_payload(
     payload: dict[str, Any], *, indexable: bool
 ) -> dict[str, Any]:
-    allowed_keys = DETAIL_TIER1_KEYS | (DETAIL_TIER2_BODY_KEYS if indexable else set())
     shard_payload: dict[str, Any] = {
         "detailTier": "T2" if indexable else "T1",
     }
     for key, value in payload.items():
-        if key == "description":
-            continue
         if key in DETAIL_EXCLUDED_KEYS:
             continue
-        if key not in allowed_keys:
+        if key not in DETAIL_PUBLIC_KEYS:
+            continue
+        if key == "description":
+            if _clean_text(payload.get("descriptionHtml")):
+                continue
+            description = _public_detail_description(payload)
+            if description:
+                shard_payload[key] = description
+            continue
+        if key == "jobDescription":
+            job_description = _public_job_description(value, payload)
+            if job_description:
+                shard_payload[key] = job_description
             continue
         if value not in (None, "", [], {}):
             shard_payload[key] = value
-    if indexable:
-        description = _bounded_detail_description(payload)
-        if description:
-            shard_payload["description"] = description
     return shard_payload
 
 

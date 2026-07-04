@@ -177,6 +177,14 @@ export type SearchChunk = {
 	rows: SearchRow[];
 };
 
+/** Bounded jobs-board search response returned by the server route. */
+export type JobsSearchResponse = SearchChunk & {
+	entity: "jobs";
+	totalMatches: number;
+	limit: number;
+	truncated: boolean;
+};
+
 /** Job detail shard payload for preview sheets and deep links. */
 export type JobDetail = {
 	id: string;

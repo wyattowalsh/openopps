@@ -4,6 +4,7 @@ import {
 	clearSearchIndexLoaderCacheForTests,
 	loadEntityChunk,
 	loadInitialJobsChunk,
+	loadJobsSearchResults,
 	loadSearchManifest,
 } from "./search-index-loader";
 import type { SearchChunk, SearchManifest } from "./search-types";
@@ -315,6 +316,47 @@ describe("search index loader", () => {
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/data/openopps-search/jobs/latest.json",
 			{ cache: "force-cache" },
+		);
+	});
+
+	it("loads bounded jobs search results from the API route", async () => {
+		const response = {
+			...chunk("jobs", EXPECTED_JOB_COLUMNS, [["job-a"]]),
+			totalMatches: 42,
+			limit: 1,
+			truncated: true,
+		};
+		const fetchMock = stubFetch({
+			"/api/jobs/search?q=platform&wide=1&source=a16z&sort=relevance&limit=1":
+				response,
+		});
+
+		await expect(
+			loadJobsSearchResults(
+				{
+					query: "platform",
+					wide: true,
+					source: "a16z",
+					provider: "",
+					location: "",
+					department: "",
+					team: "",
+					workplace: "",
+					remote: "",
+					employment: "",
+					skill: "",
+					salaryMin: "",
+					salaryMax: "",
+					postedAfter: "",
+					postedBefore: "",
+				},
+				"relevance",
+				{ limit: 1 },
+			),
+		).resolves.toEqual(response);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/jobs/search?q=platform&wide=1&source=a16z&sort=relevance&limit=1",
+			{ cache: "force-cache", signal: undefined },
 		);
 	});
 });

@@ -31,6 +31,23 @@ test("job detail routes remain addressable under /jobs/:id", async ({ page }) =>
 	expect(new URL(page.url()).pathname).toBe(firstJobPath);
 });
 
+test("job detail API returns one rich posting record", async ({ request }) => {
+	const jobId = decodeURIComponent(firstJobPath.replace("/jobs/", ""));
+	const response = await request.get(
+		`/api/jobs/detail?id=${encodeURIComponent(jobId)}`,
+	);
+	expect(response.ok()).toBe(true);
+	const detail = (await response.json()) as {
+		id: string;
+		description?: string;
+		descriptionHtml?: string;
+		payloadSnapshots?: unknown;
+	};
+	expect(detail.id).toBe(jobId);
+	expect(detail.description || detail.descriptionHtml).toBeTruthy();
+	expect(detail.payloadSnapshots).toBeUndefined();
+});
+
 test("legacy docs explorer route redirects to the canonical explorer", async ({
 	request,
 	baseURL,

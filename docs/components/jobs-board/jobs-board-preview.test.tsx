@@ -70,6 +70,28 @@ describe("JobsBoardPreview", () => {
 
 		expect(screen.getByText("Plain generated posting description.")).toBeTruthy();
 	}, 15_000);
+
+	it("renders structured job description text when it is the only full body", () => {
+		render(
+			<JobsBoardPreview
+				row={jobRow()}
+				selectedJobId="job-1"
+				detail={{
+					id: "job-1",
+					status: "open",
+					title: "Designer",
+					company: "Acme",
+					jobDescription: {
+						description: "<p>Structured posting body only.</p>",
+					},
+				}}
+				loading={false}
+				error={null}
+			/>,
+		);
+
+		expect(screen.getByText("Structured posting body only.")).toBeTruthy();
+	}, 15_000);
 });
 
 function jobRow(url = "https://example.test/jobs/1"): SearchRow {

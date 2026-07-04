@@ -19,11 +19,7 @@ import {
 	type SavedSearchRecord,
 } from "@/components/jobs-board/jobs-board-local-state";
 import { JobsBoardLocalDataPanel } from "@/components/jobs-board/jobs-board-local-data-panel";
-import {
-	needsFullJobsIndexConfirmation,
-	resolveSelectedJobRow,
-	shouldLoadFullJobsIndex,
-} from "@/components/jobs-board/jobs-board-load-state";
+import { resolveSelectedJobRow } from "@/components/jobs-board/jobs-board-load-state";
 import { JobsBoardEmpty } from "@/components/jobs-board/jobs-board-empty";
 import { JobsBoardList } from "@/components/jobs-board/jobs-board-list";
 import { JobsBoardMetrics } from "@/components/jobs-board/jobs-board-metrics";
@@ -31,8 +27,8 @@ import { JobsBoardPreview } from "@/components/jobs-board/jobs-board-preview";
 import { JobsBoardPreviewSheet } from "@/components/jobs-board/jobs-board-preview-sheet";
 import { JobsBoardToolbar } from "@/components/jobs-board/jobs-board-toolbar";
 import {
-	loadEntityChunk,
 	loadInitialJobsChunk,
+	loadJobsSearchResults,
 	loadSearchManifest,
 } from "@/components/openopps-search/search-index-loader";
 import type {
@@ -41,13 +37,12 @@ import type {
 	SearchRow,
 } from "@/components/openopps-search/search-types";
 import {
-	detailPath,
+	formatCount,
 	formatLoadError,
 	J,
 	text,
 } from "@/components/openopps-search/search-utils";
 import { Button } from "@/components/ui/button";
-import { safeJobExternalUrl } from "@/lib/job-url";
 import { trackTelemetry } from "@/lib/telemetry";
 
 type JobsBoardProps = {
@@ -60,13 +55,18 @@ function errorMessage(error: unknown) {
 
 export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const [manifest, setManifest] = useState<SearchManifest | null>(null);
-	const [rows, setRows] = useState<SearchRow[]>([]);
-	const [fullRowsLoaded, setFullRowsLoaded] = useState(false);
+	const [initialRows, setInitialRows] = useState<SearchRow[]>([]);
+	const [searchRows, setSearchRows] = useState<SearchRow[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [loadingFullIndex, setLoadingFullIndex] = useState(false);
+	const [searchLoading, setSearchLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [fullIndexError, setFullIndexError] = useState<string | null>(null);
-	const [fullIndexConfirmed, setFullIndexConfirmed] = useState(false);
+	const [searchError, setSearchError] = useState<string | null>(null);
+	const [searchRetryKey, setSearchRetryKey] = useState(0);
+	const [searchMeta, setSearchMeta] = useState<{
+		totalMatches: number;
+		truncated: boolean;
+		limit: number;
+	} | null>(null);
 	const [detail, setDetail] = useState<JobDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [detailError, setDetailError] = useState<string | null>(null);
@@ -74,8 +74,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const [activeSavedSearchId, setActiveSavedSearchId] = useState<string | null>(
 		null,
 	);
-	const fullIndexRequestIdRef = useRef(0);
-	const fullIndexInFlightRef = useRef(false);
+	const searchRequestIdRef = useRef(0);
 	const mountedRef = useRef(false);
 	const reconciledSnapshotKeyRef = useRef<string | null>(null);
 	const localState = useJobsLocalState();
@@ -97,8 +96,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		mountedRef.current = true;
 		return () => {
 			mountedRef.current = false;
-			fullIndexRequestIdRef.current += 1;
-			fullIndexInFlightRef.current = false;
+			searchRequestIdRef.current += 1;
 		};
 	}, []);
 
@@ -117,12 +115,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				const initialChunk = await loadInitialJobsChunk(nextManifest);
 				if (mounted) {
 					setManifest(nextManifest);
-					setRows(initialChunk.rows);
-					setFullRowsLoaded(
-						initialChunk.count >= nextManifest.entities.jobs.count,
-					);
+					setInitialRows(initialChunk.rows);
 					setError(null);
-					setFullIndexError(null);
+					setSearchError(null);
 					trackTelemetry("jobs.index_loaded", {
 						initialRows: initialChunk.count,
 						totalRows: nextManifest.entities.jobs.count,
@@ -149,77 +144,62 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	}, []);
 
 	const jobCount = manifest?.entities.jobs.count ?? 0;
-
-	const needsFullIndex = shouldLoadFullJobsIndex({
-		activeFilterCount,
-		rows,
-		selectedJobId,
-		fullIndexError,
-		jobCount,
-		fullIndexConfirmed,
-	});
-
-	const pendingFullIndexConfirmation = needsFullJobsIndexConfirmation({
-		activeFilterCount,
-		rows,
-		selectedJobId,
-		fullIndexError,
-		jobCount,
-		fullIndexConfirmed,
-	});
+	const sortKey: JobSortKey = deferredFilters.query ? "relevance" : "latest";
+	const searchActive = activeFilterCount > 0;
+	const rows = searchActive ? searchRows : initialRows;
+	const fullRowsLoaded = initialRows.length > 0 && initialRows.length >= jobCount;
 
 	useEffect(() => {
-		if (
-			!manifest ||
-			!needsFullIndex ||
-			fullRowsLoaded ||
-			fullIndexInFlightRef.current
-		) {
+		if (!manifest || !searchActive) {
 			return;
 		}
-		const currentManifest = manifest;
-		const requestId = fullIndexRequestIdRef.current + 1;
-		fullIndexRequestIdRef.current = requestId;
-		fullIndexInFlightRef.current = true;
+		const requestId = searchRequestIdRef.current + 1;
+		searchRequestIdRef.current = requestId;
+		const controller = new AbortController();
 
-		async function loadFullIndex() {
-			setLoadingFullIndex(true);
+		async function loadSearchResults() {
+			setSearchLoading(true);
 			try {
-				const fullChunk = await loadEntityChunk(currentManifest, "jobs");
-				if (
-					mountedRef.current &&
-					fullIndexRequestIdRef.current === requestId
-				) {
-					setRows(fullChunk.rows);
-					setFullRowsLoaded(true);
+				const result = await loadJobsSearchResults(deferredFilters, sortKey, {
+					signal: controller.signal,
+				});
+				if (mountedRef.current && searchRequestIdRef.current === requestId) {
+					setSearchRows(result.rows);
 					setError(null);
-					setFullIndexError(null);
-					trackTelemetry("jobs.full_index_loaded", {
-						rows: fullChunk.rows.length,
-						reason: selectedJobId ? "selected_job" : "filters",
+					setSearchError(null);
+					setSearchMeta({
+						totalMatches: result.totalMatches,
+						truncated: result.truncated,
+						limit: result.limit,
+					});
+					trackTelemetry("jobs.search_loaded", {
+						rows: result.rows.length,
+						totalMatches: result.totalMatches,
+						truncated: result.truncated,
 					});
 				}
 			} catch (caught) {
 				if (
 					mountedRef.current &&
-					fullIndexRequestIdRef.current === requestId
+					searchRequestIdRef.current === requestId &&
+					!controller.signal.aborted
 				) {
 					const message = errorMessage(caught);
-					setFullIndexError(message);
-					trackTelemetry("jobs.full_index_error", { message });
+					setSearchError(message);
+					trackTelemetry("jobs.search_error", { message });
 				}
 			} finally {
-				if (fullIndexRequestIdRef.current === requestId) {
-					fullIndexInFlightRef.current = false;
-					if (mountedRef.current) {
-						setLoadingFullIndex(false);
-					}
+				if (searchRequestIdRef.current === requestId && mountedRef.current) {
+					setSearchLoading(false);
 				}
 			}
-	}
+		}
 
-	void loadFullIndex();
-}, [fullRowsLoaded, manifest, needsFullIndex, selectedJobId]);
+		void loadSearchResults();
+		return () => {
+			controller.abort();
+		};
+	}, [deferredFilters, manifest, searchActive, searchRetryKey, sortKey]);
 
 	useEffect(() => {
 		if (!manifest || !fullRowsLoaded || rows.length === 0) {
@@ -236,8 +216,6 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		reconciledSnapshotKeyRef.current = reconciliationKey;
 		reconcileSnapshot(rows, manifest);
 	}, [fullRowsLoaded, manifest, reconcileSnapshot, rows]);
-
-	const sortKey: JobSortKey = deferredFilters.query ? "relevance" : "latest";
 
 	const rowsWithLocalRetainedJobs = useMemo(() => {
 		const currentJobIds = new Set(rows.map((row) => text(row[J.id])).filter(Boolean));
@@ -286,7 +264,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		sortKey,
 	]);
 
-	const selectedRow = useMemo(
+	const baseSelectedRow = useMemo(
 		() => resolveSelectedJobRow(visibleRows, rowsWithLocalRetainedJobs, selectedJobId),
 		[rowsWithLocalRetainedJobs, selectedJobId, visibleRows],
 	);
@@ -296,6 +274,16 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const selectedRetainedDetail = selectedJobId
 		? localState.retainedJobDetails[selectedJobId]?.detail ?? null
 		: null;
+	const activeDetail =
+		selectedJobId && detail?.id === selectedJobId
+			? detail
+			: selectedRetainedDetail?.id === selectedJobId
+				? selectedRetainedDetail
+				: null;
+	const selectedRow = useMemo(
+		() => baseSelectedRow ?? (activeDetail ? detailRowSnapshot(activeDetail) : null),
+		[activeDetail, baseSelectedRow],
+	);
 	const activeSavedSearch = useMemo(
 		() =>
 			activeSavedSearchId
@@ -363,9 +351,6 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		[localState.savedSearches, rowsForSavedSearch],
 	);
 
-	const detailRoot =
-		manifest?.detailShards?.root ?? "/data/openopps-search/jobs-details";
-
 	useEffect(() => {
 		if (!selectedJobId) {
 			return;
@@ -379,19 +364,17 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 			setDetailLoading(true);
 			setDetailError(null);
 			try {
-				const path = detailPath(detailRoot, jobId);
-				const response = await fetch(path, {
-					signal: controller.signal,
-					cache: "force-cache",
-				});
+				const response = await fetch(
+					`/api/jobs/detail?id=${encodeURIComponent(jobId)}`,
+					{
+						signal: controller.signal,
+						cache: "force-cache",
+					},
+				);
 				if (!response.ok) {
-					throw new Error(`Detail bucket not found (${response.status})`);
+					throw new Error(`Job detail not found (${response.status})`);
 				}
-				const payload = (await response.json()) as Record<string, JobDetail>;
-				const nextDetail = payload[jobId];
-				if (!nextDetail) {
-					throw new Error("Detail record not found in bucket.");
-				}
+				const nextDetail = (await response.json()) as JobDetail;
 				if (mounted) {
 					setDetail(nextDetail);
 					trackTelemetry("jobs.detail_loaded", {
@@ -426,16 +409,16 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 			mounted = false;
 			controller.abort();
 		};
-	}, [detailRoot, selectedJobId]);
+	}, [selectedJobId]);
 
-	const clearFullIndexError = () => {
-		if (fullIndexError) {
-			setFullIndexError(null);
+	const clearSearchError = () => {
+		if (searchError) {
+			setSearchError(null);
 		}
 	};
 
 	const handleFiltersChange = (nextFilters: Parameters<typeof setFilters>[0]) => {
-		clearFullIndexError();
+		clearSearchError();
 		setActiveSavedSearchId(null);
 		trackTelemetry("jobs.filters_changed", {
 			keys: Object.keys(nextFilters),
@@ -445,7 +428,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	};
 
 	const handleClearFilters = () => {
-		clearFullIndexError();
+		clearSearchError();
 		setActiveSavedSearchId(null);
 		trackTelemetry("jobs.filters_cleared", {
 			activeFilterCount,
@@ -454,25 +437,17 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		clearFilters();
 	};
 
-	const confirmFullIndexLoad = () => {
-		trackTelemetry("jobs.full_index_confirmed", {
-			jobCount,
+	const retrySearch = () => {
+		trackTelemetry("jobs.search_retry", {
 			activeFilterCount,
 			hasSelection: Boolean(selectedJobId),
 		});
-		setFullIndexConfirmed(true);
-	};
-
-	const retryFullIndex = () => {
-		trackTelemetry("jobs.full_index_retry", {
-			activeFilterCount,
-			hasSelection: Boolean(selectedJobId),
-		});
-		setFullIndexError(null);
+		setSearchError(null);
+		setSearchRetryKey((value) => value + 1);
 	};
 
 	const handleSelectJob = (jobId: string) => {
-		clearFullIndexError();
+		clearSearchError();
 		trackTelemetry("jobs.result_selected", {
 			hadPreviousSelection: Boolean(selectedJobId),
 		});
@@ -480,19 +455,13 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	};
 
 	const handleClosePreview = () => {
-		clearFullIndexError();
+		clearSearchError();
 		trackTelemetry("jobs.preview_closed", {
 			hadSelection: Boolean(selectedJobId),
 		});
 		void setSelectedJobId(null);
 	};
 
-	const activeDetail =
-		selectedJobId && detail?.id === selectedJobId
-			? detail
-			: selectedRetainedDetail?.id === selectedJobId
-				? selectedRetainedDetail
-				: null;
 	const activeDetailError = selectedJobId && !selectedRetainedDetail ? detailError : null;
 	const activeDetailLoading = Boolean(
 		selectedJobId && (detailLoading || (!activeDetail && !activeDetailError)),
@@ -573,7 +542,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	};
 
 	const handleRestoreSavedSearch = (record: SavedSearchRecord) => {
-		clearFullIndexError();
+		clearSearchError();
 		setActiveSavedSearchId(record.id);
 		localState.updateSavedSearch({
 			...record,
@@ -604,25 +573,29 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		trackTelemetry("jobs.saved_search_deleted");
 	};
 
-	const indexNote =
-		needsFullIndex && loadingFullIndex
-			? "Loading the full static jobs index for global matches."
-			: fullIndexError
-				? "Showing the latest open jobs. Retry the full index for global matches."
-			: !fullRowsLoaded
-				? "Showing the latest open jobs. Search, filter, or open a deep link to load the full index."
-				: null;
+	const activeSearchMeta = searchActive ? searchMeta : null;
+	const activeSearchError = searchActive ? searchError : null;
+	const displayedMatchCount = activeSearchMeta?.totalMatches ?? visibleRows.length;
+	const indexNote = searchActive && searchLoading
+		? "Searching open jobs..."
+		: activeSearchError
+			? "Showing current results. Retry search for fresh matches."
+			: activeSearchMeta?.truncated
+				? `Showing ${formatCount(visibleRows.length)} of ${formatCount(activeSearchMeta.totalMatches)} matches. Narrow filters for more.`
+				: !fullRowsLoaded && !searchActive
+					? "Showing latest open jobs."
+					: null;
 
 	return (
 		<section className="not-prose mx-auto w-full max-w-[96rem] px-3 py-4 sm:px-5 lg:px-6">
 			<div className="opps-ledger-shell">
-				<JobsBoardMetrics manifest={manifest} matchCount={visibleRows.length} />
+				<JobsBoardMetrics manifest={manifest} matchCount={displayedMatchCount} />
 
 				<div className="mt-4">
 					<JobsBoardToolbar
 						filters={filters}
 						manifest={manifest}
-						matchCount={visibleRows.length}
+						matchCount={displayedMatchCount}
 						activeFilterCount={activeFilterCount}
 						showHidden={localState.settings.showHidden}
 						savedSearches={savedSearchSummaries}
@@ -650,33 +623,16 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 					</div>
 				) : null}
 
-				{pendingFullIndexConfirmation ? (
-					<div className="opps-error-banner mt-4 flex flex-wrap items-center justify-between gap-3">
-						<span>
-							This snapshot has {jobCount.toLocaleString()} jobs. Loading the full
-							index in your browser may use significant memory.
-						</span>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={confirmFullIndexLoad}
-						>
-							Load full jobs index
-						</Button>
-					</div>
-				) : null}
-
-				{fullIndexError ? (
+				{activeSearchError ? (
 					<div className="opps-error-banner mt-4">
-						<span>{fullIndexError}</span>
+						<span>{activeSearchError}</span>
 						<Button
 							type="button"
 							variant="outline"
 							size="sm"
-							onClick={retryFullIndex}
+							onClick={retrySearch}
 						>
-							Retry full jobs index
+							Retry search
 						</Button>
 					</div>
 				) : null}
@@ -688,31 +644,31 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 					</div>
 				) : null}
 
-				{!loading && !error ? (
-					<div className="mt-4">
-						{visibleRows.length === 0 && !hasPreviewSelection ? (
-							<JobsBoardEmpty
-								matchCount={visibleRows.length}
-								activeFilterCount={activeFilterCount}
-								onClearFilters={handleClearFilters}
-								loadingFullIndex={loadingFullIndex && needsFullIndex}
-							/>
-						) : (
-							<div
-								className={
+					{!loading && !error ? (
+						<div className="mt-4">
+							{visibleRows.length === 0 && !hasPreviewSelection ? (
+								<JobsBoardEmpty
+									matchCount={displayedMatchCount}
+									activeFilterCount={activeFilterCount}
+									onClearFilters={handleClearFilters}
+									loadingResults={searchLoading && searchActive}
+								/>
+							) : (
+								<div
+									className={
 									hasPreviewSelection
 										? "grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
 										: "grid gap-4"
 								}
-							>
-								{visibleRows.length === 0 ? (
-									<JobsBoardEmpty
-										matchCount={visibleRows.length}
-										activeFilterCount={activeFilterCount}
-										onClearFilters={handleClearFilters}
-										loadingFullIndex={loadingFullIndex && needsFullIndex}
-									/>
-								) : (
+								>
+									{visibleRows.length === 0 ? (
+										<JobsBoardEmpty
+											matchCount={displayedMatchCount}
+											activeFilterCount={activeFilterCount}
+											onClearFilters={handleClearFilters}
+											loadingResults={searchLoading && searchActive}
+										/>
+									) : (
 									<JobsBoardList
 										rows={visibleRows}
 										selectedJobId={selectedJobId ?? ""}
@@ -811,4 +767,71 @@ function retainedRowSnapshot(record: RetainedJobDetailRecord): SearchRow {
 	row[J.contentHash] = row[J.contentHash] || record.detail.contentHash || "";
 	row[J.payloadHash] = row[J.payloadHash] || record.detail.payloadHash || "";
 	return row;
+}
+
+function detailRowSnapshot(detail: JobDetail): SearchRow {
+	const row = new Array(J.daysOpen + 1).fill(null);
+	row[J.id] = detail.id;
+	row[J.source] = detail.sourceKey || "";
+	row[J.board] = detail.boardKey || "";
+	row[J.provider] = detail.providerId || "";
+	row[J.status] = detail.status || "open";
+	row[J.title] = detail.title || "Untitled role";
+	row[J.company] = detail.company || detail.boardKey || "";
+	row[J.department] = detail.department || "";
+	row[J.team] = detail.team || "";
+	row[J.workplace] = detail.workplaceType || "";
+	row[J.remote] = detail.remote || "";
+	row[J.type] = detail.employmentType || "";
+	row[J.locations] = JSON.stringify(detail.locations ?? []);
+	row[J.salaryMin] = detail.salaryMin ?? null;
+	row[J.salaryMax] = detail.salaryMax ?? null;
+	row[J.currency] = detail.salaryCurrency || "";
+	row[J.url] = detail.postingUrl || detail.applyUrl || "";
+	row[J.posted] = detail.postedAt || "";
+	row[J.latestObserved] =
+		detail.lastSeenAt ||
+		detail.updatedAt ||
+		detail.versionCreatedAt ||
+		detail.syncedAt ||
+		"";
+	row[J.sourceKeys] = JSON.stringify([detail.sourceKey].filter(Boolean));
+	row[J.descriptionSnippet] = detailDescriptionSnippet(detail);
+	row[J.skillTokens] = (detail.skills ?? [])
+		.flatMap((skill) => [skill.name, skill.level, ...(skill.keywords ?? [])])
+		.map(text)
+		.filter(Boolean)
+		.join(",");
+	row[J.syncedAt] = detail.syncedAt || "";
+	row[J.firstSeenAt] = detail.firstSeenAt || "";
+	row[J.lastSeenAt] = detail.lastSeenAt || "";
+	row[J.closedAt] = detail.closedAt || "";
+	row[J.contentHash] = detail.contentHash || "";
+	row[J.payloadHash] = detail.payloadHash || "";
+	row[J.seniority] = detail.experience || "";
+	return row;
+}
+
+function detailDescriptionSnippet(detail: JobDetail) {
+	const value =
+		text(detail.description) ||
+		stripTags(detail.descriptionHtml ?? "") ||
+		structuredJobDescriptionText(detail);
+	return value.slice(0, 200);
+}
+
+function structuredJobDescriptionText(detail: JobDetail) {
+	const value = detail.jobDescription?.description;
+	if (typeof value !== "string") {
+		return "";
+	}
+	const raw = text(value);
+	if (!raw) {
+		return "";
+	}
+	return /<\/?[A-Za-z][^>]*>/.test(raw) ? stripTags(raw) : raw;
+}
+
+function stripTags(value: string) {
+	return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
