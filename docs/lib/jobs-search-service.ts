@@ -1,7 +1,3 @@
-import fs from "node:fs";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import {
 	DEFAULT_JOB_BOARD_FILTERS,
 	filterAndSortJobs,
@@ -27,7 +23,6 @@ export const MAX_JOBS_SEARCH_LIMIT = 1000;
 export const DEFAULT_JOBS_SEARCH_PAGE_SIZE = 50;
 export const MAX_JOBS_SEARCH_PAGE_SIZE = 100;
 const MAX_CHUNK_FETCHES = 6;
-const PUBLIC_DIR = path.join(process.cwd(), "public");
 
 type SearchPublicJobsIndexOptions = {
 	baseUrl: URL | string;
@@ -168,10 +163,6 @@ async function fetchPublicJson<T>(
 	path: string,
 	signal?: AbortSignal,
 ): Promise<T> {
-	const fsPayload = await readPublicJsonFromFile<T>(path);
-	if (fsPayload) {
-		return fsPayload;
-	}
 	const response = await fetch(new URL(path, baseUrl), {
 		cache: "no-store",
 		signal,
@@ -184,20 +175,6 @@ async function fetchPublicJson<T>(
 		);
 	}
 	return response.json() as Promise<T>;
-}
-
-async function readPublicJsonFromFile<T>(publicPath: string): Promise<T | null> {
-	if (process.env.NODE_ENV === "test" || process.env.VITEST) {
-		return null;
-	}
-	if (!publicPath.startsWith("/")) {
-		return null;
-	}
-	const filePath = path.normalize(path.join(PUBLIC_DIR, publicPath));
-	if (!filePath.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(filePath)) {
-		return null;
-	}
-	return JSON.parse(await readFile(filePath, "utf8")) as T;
 }
 
 function normalizeBaseUrl(baseUrl: URL | string) {
