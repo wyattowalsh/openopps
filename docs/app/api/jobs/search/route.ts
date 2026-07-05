@@ -5,6 +5,8 @@ import {
 	normalizeJobsSearchFilters,
 	normalizeJobsSearchSortKey,
 	normalizeLimit,
+	normalizePage,
+	normalizePageSize,
 	searchPublicJobsIndex,
 } from "@/lib/jobs-search-service";
 
@@ -19,6 +21,10 @@ export async function GET(request: Request) {
 		filters,
 		sortKey,
 		limit: normalizeLimit(url.searchParams.get("limit")),
+		page: normalizePage(url.searchParams.get("page")),
+		pageSize: normalizePageSize(
+			url.searchParams.get("pageSize") ?? url.searchParams.get("limit"),
+		),
 	});
 
 	return NextResponse.json(result, {
@@ -32,6 +38,7 @@ function filtersFromSearchParams(params: URLSearchParams): JobBoardFilters {
 	return normalizeJobsSearchFilters({
 		query: params.get("q") ?? "",
 		wide: parseBooleanParam(params.get("wide")),
+		includeAllIndexed: parseBooleanParam(params.get("all")),
 		source: params.get("source") ?? "",
 		provider: params.get("provider") ?? "",
 		location: params.get("location") ?? "",

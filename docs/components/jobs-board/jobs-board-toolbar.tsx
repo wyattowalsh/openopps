@@ -43,6 +43,7 @@ type JobsBoardToolbarProps = {
 	filters: JobBoardFilters;
 	manifest: SearchManifest | null;
 	matchCount: number;
+	searchActive: boolean;
 	activeFilterCount: number;
 	showHidden: boolean;
 	savedSearches: Array<{
@@ -73,6 +74,7 @@ type FilterChip = {
 const FILTER_LABELS = {
 	query: "Search",
 	wide: "Wide",
+	includeAllIndexed: "All indexed",
 	source: "Source",
 	provider: "Provider",
 	location: "Location",
@@ -264,6 +266,7 @@ export function JobsBoardToolbar({
 	filters,
 	manifest,
 	matchCount,
+	searchActive,
 	activeFilterCount,
 	showHidden,
 	savedSearches,
@@ -334,6 +337,25 @@ export function JobsBoardToolbar({
 							<TooltipContent id={JOBS_BOARD_WIDE_SEARCH_DESC_ID}>
 								Search department, team, locations, provider, board, and source
 								fields too.
+							</TooltipContent>
+						</Tooltip>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									type="button"
+									variant={filters.includeAllIndexed ? "secondary" : "outline"}
+									size="sm"
+									onClick={() =>
+										onChange({ includeAllIndexed: !filters.includeAllIndexed })
+									}
+									aria-pressed={filters.includeAllIndexed}
+								>
+									<Filter className="size-3.5" />
+									All
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>
+								Include closed and non-open indexed jobs in results.
 							</TooltipContent>
 						</Tooltip>
 						<Tooltip>
@@ -474,7 +496,10 @@ export function JobsBoardToolbar({
 				<div className="flex flex-col gap-3 border-t border-border/70 pt-3 md:flex-row md:items-start md:justify-between">
 					<div className="min-w-0 flex-1 space-y-2">
 						<div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-							<Badge variant="outline">{formatCount(matchCount)} matches</Badge>
+							<Badge variant="outline">
+								{formatCount(matchCount)}{" "}
+								{searchActive ? "matches" : filters.includeAllIndexed ? "indexed jobs" : "open jobs"}
+							</Badge>
 							{activeFilterCount > 0 ? (
 								<Badge variant="secondary">
 									{activeFilterCount} active filters

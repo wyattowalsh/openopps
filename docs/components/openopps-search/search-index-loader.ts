@@ -1,6 +1,7 @@
 import type {
 	Entity,
 	JobsSearchResponse,
+	LineageAggregate,
 	SearchChunk,
 	SearchChunkRef,
 	SearchManifest,
@@ -19,6 +20,7 @@ import {
 
 export const SEARCH_MANIFEST_PATH = "/data/openopps-search/manifest.json";
 export const JOBS_SEARCH_PATH = "/api/jobs/search";
+export const LINEAGE_AGGREGATE_PATH = "/data/openopps-search/lineage-aggregate.json";
 const SUPPORTED_SEARCH_INDEX_VERSIONS = new Set([3, SEARCH_VERSION]);
 const MAX_CHUNK_FETCHES = 6;
 
@@ -89,14 +91,22 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 	return chunk;
 }
 
+export async function loadLineageAggregate(manifest: SearchManifest) {
+	const path = manifest.lineageAggregate?.path ?? LINEAGE_AGGREGATE_PATH;
+	const aggregate = await fetchJson<LineageAggregate>(path);
+	validateCachedJson(path, aggregate, validateLineageAggregate);
+	return aggregate;
+}
+
 export async function loadJobsSearchResults(
 	filters: JobBoardFilters,
 	sortKey: JobSortKey,
-	options: { limit?: number; signal?: AbortSignal } = {},
+	options: { limit?: number; page?: number; pageSize?: number; signal?: AbortSignal } = {},
 ) {
 	const params = new URLSearchParams();
 	appendParam(params, "q", filters.query);
 	appendBooleanParam(params, "wide", filters.wide);
+	appendBooleanParam(params, "all", filters.includeAllIndexed);
 	appendParam(params, "source", filters.source);
 	appendParam(params, "provider", filters.provider);
 	appendParam(params, "location", filters.location);
@@ -113,6 +123,12 @@ export async function loadJobsSearchResults(
 	appendParam(params, "sort", sortKey);
 	if (options.limit) {
 		appendParam(params, "limit", String(options.limit));
+	}
+	if (options.page) {
+		appendParam(params, "page", String(options.page));
+	}
+	if (options.pageSize) {
+		appendParam(params, "pageSize", String(options.pageSize));
 	}
 	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
 	const response = await fetch(path, {
@@ -177,11 +193,41 @@ export function validateJobsSearchResponse(response: JobsSearchResponse) {
 	if (
 		typeof response.totalMatches !== "number" ||
 		typeof response.limit !== "number" ||
+		typeof response.page !== "number" ||
+		typeof response.pageSize !== "number" ||
+		typeof response.totalPages !== "number" ||
+		typeof response.hasNextPage !== "boolean" ||
+		typeof response.hasPreviousPage !== "boolean" ||
 		typeof response.truncated !== "boolean"
 	) {
 		throw new SearchLoadError(
 			"invalid_chunk",
 			"Jobs search response is missing result metadata.",
+		);
+	}
+}
+
+export function validateLineageAggregate(aggregate: LineageAggregate) {
+	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(aggregate.version)) {
+		throw new SearchLoadError(
+			"unsupported_version",
+			`Unsupported lineage aggregate version: ${aggregate.version}`,
+		);
+	}
+	if (
+		!aggregate.counts ||
+		!aggregate.nodes ||
+		!aggregate.edges ||
+		!Array.isArray(aggregate.nodes.sources) ||
+		!Array.isArray(aggregate.nodes.providers) ||
+		!Array.isArray(aggregate.nodes.boards) ||
+		!Array.isArray(aggregate.edges.sourceProviders) ||
+		!Array.isArray(aggregate.edges.sourceBoards) ||
+		!Array.isArray(aggregate.edges.providerBoards)
+	) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			"Lineage aggregate is missing required nodes or edges.",
 		);
 	}
 }

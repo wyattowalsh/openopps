@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import httpx
 
 from openopps.http import retrying_json_request
@@ -93,7 +95,7 @@ class LeverProvider:
             locations=locations,
             department=posting.categories.department,
             team=posting.categories.team,
-            workplace_type=posting.categories.commitment,
+            workplace_type=None,
             company=board.name,
             employment_type=posting.categories.commitment,
             description=posting.description_plain or strip_html(description_html),
@@ -189,7 +191,9 @@ def _lever_timestamp(value: str | int | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, int):
-        return str(value)
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+    if isinstance(value, str) and value.isdigit() and len(value) >= 11:
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc).isoformat()
     return value
 
 

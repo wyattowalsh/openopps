@@ -22,10 +22,12 @@ import { ExplorerToolbar } from "@/components/openopps-search/explorer-toolbar";
 import {
 	loadEntityChunk,
 	loadInitialJobsChunk,
+	loadLineageAggregate,
 	loadSearchManifest,
 } from "@/components/openopps-search/search-index-loader";
 import type {
 	Entity,
+	LineageAggregate,
 	SearchChunk,
 	SearchManifest,
 } from "@/components/openopps-search/search-types";
@@ -63,6 +65,7 @@ function OpenOppsSearchExplorerInner() {
 		resetPage,
 	} = useExplorerFilterState();
 	const [manifest, setManifest] = useState<SearchManifest | null>(null);
+	const [lineage, setLineage] = useState<LineageAggregate | null>(null);
 	const [chunks, setChunks] = useState<Partial<Record<Entity, SearchChunk>>>({});
 	const [fullJobsLoaded, setFullJobsLoaded] = useState(false);
 	const [fullJobsRequested, setFullJobsRequested] = useState(false);
@@ -85,6 +88,7 @@ function OpenOppsSearchExplorerInner() {
 				const nextManifest = await loadSearchManifest();
 				if (mounted) {
 					setManifest(nextManifest);
+					setLineage(null);
 					setChunks({});
 					setFullJobsLoaded(false);
 					setFullJobsRequested(false);
@@ -120,6 +124,40 @@ function OpenOppsSearchExplorerInner() {
 			mounted = false;
 		};
 	}, [manifestRetryKey]);
+
+	useEffect(() => {
+		if (!manifest?.lineageAggregate) {
+			setLineage(null);
+			return;
+		}
+		const currentManifest = manifest;
+		let mounted = true;
+		async function loadLineage() {
+			try {
+				const nextLineage = await loadLineageAggregate(currentManifest);
+				if (mounted) {
+					setLineage(nextLineage);
+					trackTelemetry("explorer.lineage_loaded", {
+						sources: nextLineage.counts.sources,
+						providers: nextLineage.counts.providers,
+						boards: nextLineage.counts.boards,
+						jobs: nextLineage.counts.jobs,
+					});
+				}
+			} catch (caught) {
+				if (mounted) {
+					setLineage(null);
+					trackTelemetry("explorer.lineage_error", {
+						message: formatLoadError(caught),
+					});
+				}
+			}
+		}
+		void loadLineage();
+		return () => {
+			mounted = false;
+		};
+	}, [manifest]);
 
 	const activeChunk = chunks[entity];
 	const activeFilters = activeFilterCount(entity, filters);
@@ -322,6 +360,7 @@ function OpenOppsSearchExplorerInner() {
 			<div className="opps-ledger-shell">
 				<ExplorerDashboard
 					manifest={manifest}
+					lineage={lineage}
 					loading={loadingManifest}
 					warning={error && !manifest ? error : null}
 					onInspectRows={openInspector}

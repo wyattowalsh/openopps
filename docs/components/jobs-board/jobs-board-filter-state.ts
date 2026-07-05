@@ -17,6 +17,7 @@ import {
 export const jobBoardQueryParsers = {
 	q: parseAsString.withDefault(""),
 	wide: parseAsBoolean.withDefault(false),
+	all: parseAsBoolean.withDefault(false),
 	source: parseAsString.withDefault(""),
 	provider: parseAsString.withDefault(""),
 	location: parseAsString.withDefault(""),
@@ -35,6 +36,7 @@ export const jobBoardQueryParsers = {
 export type JobBoardQueryState = {
 	q: string;
 	wide: boolean;
+	all: boolean;
 	source: string;
 	provider: string;
 	location: string;
@@ -56,6 +58,7 @@ export function filtersFromQueryState(
 	return {
 		query: state.q,
 		wide: state.wide,
+		includeAllIndexed: state.all,
 		source: state.source,
 		provider: state.provider,
 		location: state.location,
@@ -76,6 +79,7 @@ export function countActiveFilters(filters: JobBoardFilters) {
 	let count = 0;
 	if (filters.query) count += 1;
 	if (filters.wide) count += 1;
+	if (filters.includeAllIndexed) count += 1;
 	if (filters.source) count += 1;
 	if (filters.provider) count += 1;
 	if (filters.location) count += 1;
@@ -130,6 +134,7 @@ export function useJobBoardFilterState() {
 			setState((current) => ({
 				q: next.query ?? current.q,
 				wide: next.wide ?? current.wide,
+				all: next.includeAllIndexed ?? current.all,
 				source: next.source ?? current.source,
 				provider: next.provider ?? current.provider,
 				location: next.location ?? current.location,
@@ -152,6 +157,7 @@ export function useJobBoardFilterState() {
 		setState({
 			q: DEFAULT_JOB_BOARD_FILTERS.query,
 			wide: DEFAULT_JOB_BOARD_FILTERS.wide,
+			all: DEFAULT_JOB_BOARD_FILTERS.includeAllIndexed,
 			source: DEFAULT_JOB_BOARD_FILTERS.source,
 			provider: DEFAULT_JOB_BOARD_FILTERS.provider,
 			location: DEFAULT_JOB_BOARD_FILTERS.location,

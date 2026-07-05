@@ -1,6 +1,11 @@
+import fs from "node:fs";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import {
 	DEFAULT_JOB_BOARD_FILTERS,
 	filterAndSortJobs,
+	jobMatchesFilters,
 	type JobBoardFilters,
 	type JobSortKey,
 } from "@/components/jobs-board/jobs-board-filter-engine";
@@ -19,13 +24,18 @@ import { SearchLoadError } from "@/components/openopps-search/search-utils";
 
 export const DEFAULT_JOBS_SEARCH_LIMIT = 250;
 export const MAX_JOBS_SEARCH_LIMIT = 1000;
+export const DEFAULT_JOBS_SEARCH_PAGE_SIZE = 50;
+export const MAX_JOBS_SEARCH_PAGE_SIZE = 100;
 const MAX_CHUNK_FETCHES = 6;
+const PUBLIC_DIR = path.join(process.cwd(), "public");
 
 type SearchPublicJobsIndexOptions = {
 	baseUrl: URL | string;
 	filters: JobBoardFilters;
 	sortKey: JobSortKey;
 	limit?: number;
+	page?: number;
+	pageSize?: number;
 	signal?: AbortSignal;
 };
 
@@ -34,9 +44,12 @@ export async function searchPublicJobsIndex({
 	filters,
 	sortKey,
 	limit = DEFAULT_JOBS_SEARCH_LIMIT,
+	page,
+	pageSize,
 	signal,
 }: SearchPublicJobsIndexOptions): Promise<JobsSearchResponse> {
-	const normalizedLimit = normalizeLimit(limit);
+	const normalizedPage = normalizePage(page);
+	const normalizedPageSize = normalizePageSize(pageSize ?? limit);
 	const base = normalizeBaseUrl(baseUrl);
 	const manifest = await fetchPublicJson<SearchManifest>(
 		base,
@@ -69,7 +82,9 @@ export async function searchPublicJobsIndex({
 			cursor += 1;
 			const chunk = await fetchPublicJson<SearchChunk>(base, ref.path, signal);
 			validateSearchChunk("jobs", chunk);
-			const chunkMatches = filterAndSortJobs(chunk.rows, filters, sortKey);
+			const chunkMatches = chunk.rows.filter((row) =>
+				jobMatchesFilters(row, filters),
+			);
 			totalMatches += chunkMatches.length;
 			matchedRows.push(...chunkMatches);
 		}
@@ -81,10 +96,11 @@ export async function searchPublicJobsIndex({
 	);
 	await Promise.all(workers);
 
-	const rows = filterAndSortJobs(matchedRows, filters, sortKey).slice(
-		0,
-		normalizedLimit,
-	);
+	const sortedRows = filterAndSortJobs(matchedRows, filters, sortKey);
+	const totalPages = Math.max(1, Math.ceil(totalMatches / normalizedPageSize));
+	const safePage = Math.min(normalizedPage, totalPages);
+	const start = (safePage - 1) * normalizedPageSize;
+	const rows = sortedRows.slice(start, start + normalizedPageSize);
 	return {
 		version: manifest.version,
 		entity: "jobs",
@@ -92,7 +108,12 @@ export async function searchPublicJobsIndex({
 		count: rows.length,
 		rows,
 		totalMatches,
-		limit: normalizedLimit,
+		limit: normalizedPageSize,
+		page: safePage,
+		pageSize: normalizedPageSize,
+		totalPages,
+		hasNextPage: safePage < totalPages,
+		hasPreviousPage: safePage > 1,
 		truncated: totalMatches > rows.length,
 	};
 }
@@ -104,6 +125,7 @@ export function normalizeJobsSearchFilters(
 		...DEFAULT_JOB_BOARD_FILTERS,
 		...filters,
 		wide: Boolean(filters.wide),
+		includeAllIndexed: Boolean(filters.includeAllIndexed),
 	};
 }
 
@@ -125,11 +147,31 @@ export function normalizeLimit(value: number | string | null | undefined) {
 	return Math.min(Math.max(Math.trunc(numeric), 1), MAX_JOBS_SEARCH_LIMIT);
 }
 
+export function normalizePage(value: number | string | null | undefined) {
+	const numeric = typeof value === "number" ? value : Number(value);
+	if (!Number.isFinite(numeric)) {
+		return 1;
+	}
+	return Math.max(Math.trunc(numeric), 1);
+}
+
+export function normalizePageSize(value: number | string | null | undefined) {
+	const numeric = typeof value === "number" ? value : Number(value);
+	if (!Number.isFinite(numeric)) {
+		return DEFAULT_JOBS_SEARCH_PAGE_SIZE;
+	}
+	return Math.min(Math.max(Math.trunc(numeric), 1), MAX_JOBS_SEARCH_PAGE_SIZE);
+}
+
 async function fetchPublicJson<T>(
 	baseUrl: URL,
 	path: string,
 	signal?: AbortSignal,
 ): Promise<T> {
+	const fsPayload = await readPublicJsonFromFile<T>(path);
+	if (fsPayload) {
+		return fsPayload;
+	}
 	const response = await fetch(new URL(path, baseUrl), {
 		cache: "no-store",
 		signal,
@@ -142,6 +184,20 @@ async function fetchPublicJson<T>(
 		);
 	}
 	return response.json() as Promise<T>;
+}
+
+async function readPublicJsonFromFile<T>(publicPath: string): Promise<T | null> {
+	if (process.env.NODE_ENV === "test" || process.env.VITEST) {
+		return null;
+	}
+	if (!publicPath.startsWith("/")) {
+		return null;
+	}
+	const filePath = path.normalize(path.join(PUBLIC_DIR, publicPath));
+	if (!filePath.startsWith(PUBLIC_DIR + path.sep) || !fs.existsSync(filePath)) {
+		return null;
+	}
+	return JSON.parse(await readFile(filePath, "utf8")) as T;
 }
 
 function normalizeBaseUrl(baseUrl: URL | string) {

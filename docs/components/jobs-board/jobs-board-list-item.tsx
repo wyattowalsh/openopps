@@ -8,6 +8,7 @@ import type {
 } from "@/components/jobs-board/jobs-board-local-state";
 import type { SearchRow } from "@/components/openopps-search/search-types";
 import {
+	formatDate,
 	formatLocations,
 	formatSalary,
 	J,
@@ -15,7 +16,7 @@ import {
 } from "@/components/openopps-search/search-utils";
 import { cn } from "@/lib/utils";
 
-export const JOB_ROW_HEIGHT = 56;
+export const JOB_ROW_HEIGHT = 68;
 
 type JobsBoardListItemProps = {
 	id: string;
@@ -57,6 +58,13 @@ export function JobsBoardListItem({
 	const location = formatLocations(row[J.locations]);
 	const remote = text(row[J.remote]);
 	const salary = formatSalary(row);
+	const team = [text(row[J.department]), text(row[J.team])]
+		.filter(Boolean)
+		.join(" / ");
+	const lineage = [text(row[J.source]), text(row[J.provider])]
+		.filter(Boolean)
+		.join(" / ");
+	const posted = formatDate(row[J.posted]);
 	const statusChips = [
 		...lifecycleIndicators,
 		workflowRecord?.viewedAt ? "viewed" : "",
@@ -73,7 +81,7 @@ export function JobsBoardListItem({
 			tabIndex={-1}
 			onClick={() => onSelect(jobId)}
 			className={cn(
-				"opps-table-row flex w-full cursor-pointer flex-col justify-center gap-1 px-3 text-left",
+				"opps-table-row flex w-full cursor-pointer flex-col justify-center gap-1 overflow-hidden px-3 text-left",
 			)}
 			style={{ height: JOB_ROW_HEIGHT }}
 			aria-selected={selected}
@@ -102,6 +110,9 @@ export function JobsBoardListItem({
 				<Chip>{location || "Location TBD"}</Chip>
 				{remote ? <Chip>{remote}</Chip> : null}
 				{salary ? <Chip>{salary}</Chip> : null}
+				{team ? <Chip>{team}</Chip> : null}
+				{lineage ? <Chip>{lineage}</Chip> : null}
+				{posted ? <Chip>posted {posted}</Chip> : null}
 			</div>
 		</div>
 	);

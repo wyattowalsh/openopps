@@ -4,6 +4,7 @@ import {
 	clearSearchIndexLoaderCacheForTests,
 	loadEntityChunk,
 	loadInitialJobsChunk,
+	loadLineageAggregate,
 	loadJobsSearchResults,
 	loadSearchManifest,
 } from "./search-index-loader";
@@ -38,6 +39,19 @@ const manifest: SearchManifest = {
 		format: "bucket-map",
 		bucketCount: 256,
 		count: 2,
+	},
+	lineageAggregate: {
+		path: "/data/openopps-search/lineage-aggregate.json",
+		file: "lineage-aggregate.json",
+		count: {
+			sourceRows: 0,
+			sources: 1,
+			providerRoutes: 1,
+			providers: 1,
+			boards: 1,
+			jobs: 2,
+			openJobs: 2,
+		},
 	},
 	entities: {
 		jobs: {
@@ -106,6 +120,29 @@ const latestJobs = chunk("jobs", EXPECTED_JOB_COLUMNS, [["latest"]]);
 const firstJobs = chunk("jobs", EXPECTED_JOB_COLUMNS, [["first"]]);
 const secondJobs = chunk("jobs", EXPECTED_JOB_COLUMNS, [["second"]]);
 const boards = chunk("boards", EXPECTED_BOARD_COLUMNS, [["board"]]);
+const lineageAggregate = {
+	version: SEARCH_VERSION,
+	snapshotAt: "2026-01-01T00:00:00Z",
+	counts: {
+		sourceRows: 0,
+		sources: 1,
+		providerRoutes: 1,
+		providers: 1,
+		boards: 1,
+		jobs: 2,
+		openJobs: 2,
+	},
+	nodes: {
+		sources: [{ id: "a16z", jobs: 2, openJobs: 2 }],
+		providers: [{ id: "greenhouse", jobs: 2, openJobs: 2 }],
+		boards: [{ id: "a16z:acme", jobs: 2, openJobs: 2 }],
+	},
+	edges: {
+		sourceProviders: [{ sourceKey: "a16z", providerId: "greenhouse", jobs: 2, openJobs: 2 }],
+		sourceBoards: [{ sourceKey: "a16z", boardKey: "a16z:acme", jobs: 2, openJobs: 2 }],
+		providerBoards: [{ providerId: "greenhouse", boardKey: "a16z:acme", jobs: 2, openJobs: 2 }],
+	},
+};
 
 beforeEach(() => {
 	clearSearchIndexLoaderCacheForTests();
@@ -324,10 +361,15 @@ describe("search index loader", () => {
 			...chunk("jobs", EXPECTED_JOB_COLUMNS, [["job-a"]]),
 			totalMatches: 42,
 			limit: 1,
+			page: 2,
+			pageSize: 1,
+			totalPages: 42,
+			hasNextPage: true,
+			hasPreviousPage: true,
 			truncated: true,
 		};
 		const fetchMock = stubFetch({
-			"/api/jobs/search?q=platform&wide=1&source=a16z&sort=relevance&limit=1":
+			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&limit=1&page=2&pageSize=1":
 				response,
 		});
 
@@ -336,6 +378,7 @@ describe("search index loader", () => {
 				{
 					query: "platform",
 					wide: true,
+					includeAllIndexed: true,
 					source: "a16z",
 					provider: "",
 					location: "",
@@ -351,12 +394,26 @@ describe("search index loader", () => {
 					postedBefore: "",
 				},
 				"relevance",
-				{ limit: 1 },
+				{ limit: 1, page: 2, pageSize: 1 },
 			),
 		).resolves.toEqual(response);
 		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/jobs/search?q=platform&wide=1&source=a16z&sort=relevance&limit=1",
+			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&limit=1&page=2&pageSize=1",
 			{ cache: "force-cache", signal: undefined },
+		);
+	});
+
+	it("loads and validates lineage aggregates", async () => {
+		const fetchMock = stubFetch({
+			"/data/openopps-search/lineage-aggregate.json": lineageAggregate,
+		});
+
+		await expect(loadLineageAggregate(manifest)).resolves.toEqual(
+			lineageAggregate,
+		);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/data/openopps-search/lineage-aggregate.json",
+			{ cache: "force-cache" },
 		);
 	});
 });

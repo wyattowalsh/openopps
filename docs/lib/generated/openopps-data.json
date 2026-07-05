@@ -267,6 +267,12 @@
       "url": "https://apply.workable.com/1871/"
     },
     {
+      "key": "1inchnetwork",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/1inch-network"
+    },
+    {
       "key": "1kx",
       "providerId": "public_page",
       "taxonomy": {
@@ -280,6 +286,12 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://1kx.network/portfolio"
+    },
+    {
+      "key": "1x",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/1x"
     },
     {
       "key": "2048vc",
@@ -537,6 +549,18 @@
       "url": "https://jobs.adverb.vc/companies"
     },
     {
+      "key": "aegisaisecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/aegis-ai-security"
+    },
+    {
+      "key": "affirm",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/affirm"
+    },
+    {
       "key": "aforecapital",
       "providerId": "public_page",
       "taxonomy": {
@@ -562,6 +586,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://age1.board.staging.consider.com/companies"
+    },
+    {
+      "key": "agoda",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/agoda"
     },
     {
       "key": "aifund",
@@ -609,6 +639,12 @@
       "url": "https://jobs.airtree.vc/companies"
     },
     {
+      "key": "aivf",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/aivf"
+    },
+    {
       "key": "aixventures",
       "providerId": "consider",
       "taxonomy": {},
@@ -621,10 +657,22 @@
       "url": "https://aix-ventures.board.staging.consider.com/companies"
     },
     {
+      "key": "akaritherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/akari-therapeutics"
+    },
+    {
       "key": "akmazocapital",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.akmazocapital.com/companies"
+    },
+    {
+      "key": "albertinvent",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/albert-invent"
     },
     {
       "key": "albumvc",
@@ -652,6 +700,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.aldrichcap.com/companies"
+    },
+    {
+      "key": "alifsemiconductor",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/alif-semiconductor"
     },
     {
       "key": "alignedclimatecapital",
@@ -709,6 +763,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.alphapartners.com/companies"
+    },
+    {
+      "key": "alpinedefi",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/alpine-defi"
     },
     {
       "key": "alpinesg",
@@ -780,6 +840,18 @@
       "url": "https://jobs.americanunderground.com/companies"
     },
     {
+      "key": "amogy",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/amogy"
+    },
+    {
+      "key": "amperos",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/amperos"
+    },
+    {
       "key": "amplifyla",
       "providerId": "consider",
       "taxonomy": {},
@@ -810,6 +882,24 @@
       "url": "https://careers.amplitudevc.com/companies"
     },
     {
+      "key": "anairaai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/anaira-ai"
+    },
+    {
+      "key": "ancoraeducation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ancora-education"
+    },
+    {
+      "key": "andyai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/andy-ai"
+    },
+    {
       "key": "angelesinvestors",
       "providerId": "getro",
       "taxonomy": {},
@@ -831,6 +921,18 @@
       "url": "https://www.angelpad.com/companies"
     },
     {
+      "key": "angleprotocol",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/angle-protocol"
+    },
+    {
+      "key": "anglerai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/angler-ai"
+    },
+    {
       "key": "animocabrands",
       "providerId": "getro",
       "taxonomy": {},
@@ -841,6 +943,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.anitab.org/companies"
+    },
+    {
+      "key": "anjunasecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/anjuna-security"
     },
     {
       "key": "annarborusa",
@@ -885,6 +993,18 @@
       "url": "https://consider.com/boards/co/apfusion"
     },
     {
+      "key": "appliedatomics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/applied-atomics"
+    },
+    {
+      "key": "appomni",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/appomni"
+    },
+    {
       "key": "appwrite",
       "providerId": "consider",
       "taxonomy": {},
@@ -915,6 +1035,12 @@
       "url": "https://careers.ar.ca/companies"
     },
     {
+      "key": "arcadia",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/arcadia"
+    },
+    {
       "key": "archetype",
       "providerId": "getro",
       "taxonomy": {},
@@ -925,6 +1051,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/archetype-ai"
+    },
+    {
+      "key": "archiveresale",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/archive-resale"
     },
     {
       "key": "archventure",
@@ -954,6 +1086,18 @@
       "url": "https://consider.com/boards/co/arctis-ai"
     },
     {
+      "key": "arctusaerospace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/arctus-aerospace"
+    },
+    {
+      "key": "ardoq",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ardoq"
+    },
+    {
       "key": "arena",
       "providerId": "getro",
       "taxonomy": {},
@@ -970,6 +1114,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.arsenalgrowth.com/companies"
+    },
+    {
+      "key": "arundoanalytics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/arundo-analytics"
     },
     {
       "key": "ascendvc",
@@ -990,10 +1140,22 @@
       "url": "https://jobs.astanor.com/companies"
     },
     {
+      "key": "astarnetwork",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/astar-network"
+    },
+    {
       "key": "asugsvsummit",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.asugsvsummit.com/companies"
+    },
+    {
+      "key": "atlan",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/atlan"
     },
     {
       "key": "atlasventure",
@@ -1032,6 +1194,12 @@
       "url": "https://jobs.av.vc/companies"
     },
     {
+      "key": "avantosai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/avantos.ai"
+    },
+    {
       "key": "avax",
       "providerId": "getro",
       "taxonomy": {},
@@ -1042,6 +1210,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.avemaria.edu/companies"
+    },
+    {
+      "key": "avenuebiosciences",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/avenue-biosciences"
     },
     {
       "key": "avp",
@@ -1078,6 +1252,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://talent.backed.vc/companies"
+    },
+    {
+      "key": "backmarket",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/back-market"
+    },
+    {
+      "key": "baesystems",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bae-systems"
     },
     {
       "key": "baincapital",
@@ -1182,6 +1368,12 @@
       "url": "https://jobs.bdb.org/companies"
     },
     {
+      "key": "bebop",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bebop"
+    },
+    {
       "key": "becocapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -1203,10 +1395,28 @@
       "url": "https://bedrockcap.com/investments"
     },
     {
+      "key": "bedrockdata",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bedrock-data"
+    },
+    {
       "key": "bedrockrobotics",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/bedrock-robotics"
+    },
+    {
+      "key": "beekeeperai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/beekeeperai"
+    },
+    {
+      "key": "beekin",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/beekin"
     },
     {
       "key": "beemok",
@@ -1251,6 +1461,18 @@
       "url": "https://jobs.better.vc/companies"
     },
     {
+      "key": "betterworks",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/betterworks"
+    },
+    {
+      "key": "beyondtrust",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/beyondtrust"
+    },
+    {
       "key": "bezerocarbon",
       "providerId": "consider",
       "taxonomy": {},
@@ -1276,6 +1498,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/biatech-corporation"
+    },
+    {
+      "key": "biobat",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/biobat"
     },
     {
       "key": "biobuzz",
@@ -1314,6 +1542,12 @@
       "url": "https://careers.bioct.org/"
     },
     {
+      "key": "bioptimus",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bioptimus"
+    },
+    {
       "key": "bipventures",
       "providerId": "consider",
       "taxonomy": {},
@@ -1324,6 +1558,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.bitkraft.vc/companies"
+    },
+    {
+      "key": "biztripai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/biztrip-ai"
     },
     {
       "key": "blackbird",
@@ -1374,6 +1614,12 @@
       "url": "https://careers.blackwood.vc/companies"
     },
     {
+      "key": "blendfinancialservices",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/blend-financial-services"
+    },
+    {
       "key": "blindspot",
       "providerId": "getro",
       "taxonomy": {},
@@ -1395,10 +1641,22 @@
       "url": "https://www.blingcapital.com/portfolio"
     },
     {
+      "key": "blockchain",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/blockchain"
+    },
+    {
       "key": "blockchaincapital",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.blockchaincapital.com/companies"
+    },
+    {
+      "key": "bloomenergy",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bloom-energy"
     },
     {
       "key": "bluebearcap",
@@ -1470,10 +1728,28 @@
       "url": "https://jobs.blume.vc/companies"
     },
     {
+      "key": "blushiftaerospace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/blushift-aerospace"
+    },
+    {
       "key": "bnbchain",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.bnbchain.org/companies"
+    },
+    {
+      "key": "boeing",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/boeing"
+    },
+    {
+      "key": "boldsecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bold-security"
     },
     {
       "key": "boldstart",
@@ -1638,6 +1914,12 @@
       "url": "https://www.btv.vc/portfolio"
     },
     {
+      "key": "builderai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/builder-ai"
+    },
+    {
       "key": "buildingventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -1698,10 +1980,40 @@
       "url": "https://careers.byld.vc/companies"
     },
     {
+      "key": "bytelearn",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/bytelearn"
+    },
+    {
+      "key": "c10labs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/c10-labs"
+    },
+    {
       "key": "cabalettabio",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/cabaletta-bio"
+    },
+    {
+      "key": "cactos",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cactos"
+    },
+    {
+      "key": "cahilltech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cahill-tech"
+    },
+    {
+      "key": "calderatherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/caldera-therapeutics"
     },
     {
       "key": "calibratevc",
@@ -1788,6 +2100,18 @@
       "url": "https://capitaloneventures.com/portfolio"
     },
     {
+      "key": "capstacktechnologies",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/capstack-technologies"
+    },
+    {
+      "key": "carboncollective",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/carbon-collective"
+    },
+    {
       "key": "carbonsifr",
       "providerId": "consider",
       "taxonomy": {},
@@ -1860,6 +2184,12 @@
       "url": "https://cathayinnovation.com/portfolio/"
     },
     {
+      "key": "catonetworks",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cato-networks"
+    },
+    {
       "key": "cdfms",
       "providerId": "getro",
       "taxonomy": {},
@@ -1884,10 +2214,22 @@
       "url": "https://consider.com/boards/co/cellsbin"
     },
     {
+      "key": "cenostherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cenos-therapeutics"
+    },
+    {
       "key": "cerberus",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://portfoliojobs.cerberus.com/companies"
+    },
+    {
+      "key": "certora",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/certora"
     },
     {
       "key": "cervinventures",
@@ -1908,6 +2250,12 @@
       "url": "https://jobs.charlestoncareers.org/companies"
     },
     {
+      "key": "charmindustrial",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/charm-industrial"
+    },
+    {
       "key": "chemstars",
       "providerId": "getro",
       "taxonomy": {},
@@ -1924,6 +2272,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.chicagoquantum.org/companies"
+    },
+    {
+      "key": "chime",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/chime"
     },
     {
       "key": "chiratae",
@@ -1951,6 +2305,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.choosemketech.org/companies"
+    },
+    {
+      "key": "chronosphere",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/chronosphere"
     },
     {
       "key": "cintrifuse",
@@ -2013,16 +2373,40 @@
       "url": "https://consider.com/boards/co/civ-robotics"
     },
     {
+      "key": "claap",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/claap"
+    },
+    {
       "key": "claltech",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.claltech.com/companies"
     },
     {
+      "key": "clarify",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/clarify"
+    },
+    {
+      "key": "clarion",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/clarion"
+    },
+    {
       "key": "clarksvilleishiring",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.clarksvilleishiring.com/companies"
+    },
+    {
+      "key": "classroomchampions",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/classroom-champions"
     },
     {
       "key": "cleanenergyventures",
@@ -2070,6 +2454,12 @@
       "url": "https://www.climatecapital.co/portfolio"
     },
     {
+      "key": "climatedefiance",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/climate-defiance"
+    },
+    {
       "key": "climatedraft",
       "providerId": "getro",
       "taxonomy": {},
@@ -2092,6 +2482,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/climate-robotics"
+    },
+    {
+      "key": "clockwork",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/clockwork"
     },
     {
       "key": "closedlooppartners",
@@ -2157,6 +2553,18 @@
       "url": "https://consider.com/boards/co/coco"
     },
     {
+      "key": "coderabbit",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/coderabbit"
+    },
+    {
+      "key": "codeyam",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/codeyam"
+    },
+    {
       "key": "coefficientcap",
       "providerId": "getro",
       "taxonomy": {},
@@ -2167,6 +2575,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://coinbase.getro.com/companies"
+    },
+    {
+      "key": "coinbax",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/coinbax"
     },
     {
       "key": "coinfund",
@@ -2205,6 +2619,18 @@
       "url": "https://jobs.collidecap.com/companies"
     },
     {
+      "key": "collinearai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/collinear-ai"
+    },
+    {
+      "key": "collinsaerospace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/collins-aerospace"
+    },
+    {
       "key": "colorintech",
       "providerId": "getro",
       "taxonomy": {},
@@ -2215,6 +2641,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://portfoliojobs.comcastventures.com/companies"
+    },
+    {
+      "key": "comento",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/comento"
     },
     {
       "key": "cometa",
@@ -2310,6 +2742,12 @@
       "url": "https://www.conviction.com/"
     },
     {
+      "key": "cookiefinance",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cookie-finance"
+    },
+    {
       "key": "copilotkit",
       "providerId": "consider",
       "taxonomy": {},
@@ -2326,6 +2764,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.correlationvc.com/companies"
+    },
+    {
+      "key": "corvic",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/corvic"
+    },
+    {
+      "key": "cosmosvideo",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cosmos-video"
     },
     {
       "key": "costanoavc",
@@ -2359,6 +2809,12 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.cowboy.vc/portfolio?sector=Fintech"
+    },
+    {
+      "key": "crackenagi",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/crackenagi"
     },
     {
       "key": "cradle",
@@ -2415,6 +2871,24 @@
       "url": "https://careers.crosscut.vc/companies"
     },
     {
+      "key": "crossmint",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/crossmint"
+    },
+    {
+      "key": "crossriver",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cross-river"
+    },
+    {
+      "key": "crowdstrike",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/crowdstrike"
+    },
+    {
       "key": "crv",
       "providerId": "consider",
       "taxonomy": {},
@@ -2433,10 +2907,22 @@
       "url": "https://careers.ctinnovations.com/companies"
     },
     {
+      "key": "cuezen",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cuezen"
+    },
+    {
       "key": "cultivationcapital",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://portfoliojobs.cultivationcapital.com/companies"
+    },
+    {
+      "key": "curiebio",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/curie-bio"
     },
     {
       "key": "curipod",
@@ -2451,16 +2937,40 @@
       "url": "https://consider.com/boards/co/cursor"
     },
     {
+      "key": "cvector",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cvector"
+    },
+    {
       "key": "cventures",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.cventures.vc/companies"
     },
     {
+      "key": "cyberark",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cyberark"
+    },
+    {
+      "key": "cyberconnect",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cyberconnect"
+    },
+    {
       "key": "cyberfund",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://talent.cyber.fund/companies"
+    },
+    {
+      "key": "cyrisma",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/cyrisma"
     },
     {
       "key": "daphni",
@@ -2499,6 +3009,12 @@
       "url": "https://www.databricks.com/databricks-ventures"
     },
     {
+      "key": "datamasque",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/datamasque"
+    },
+    {
       "key": "datapowerventures",
       "providerId": "consider",
       "taxonomy": {},
@@ -2509,6 +3025,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.dawncapital.com/companies"
+    },
+    {
+      "key": "daydreaming",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/daydream-ing"
+    },
+    {
+      "key": "dazz",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/dazz"
     },
     {
       "key": "dcedc",
@@ -2667,6 +3195,12 @@
       "url": "https://careers.diagram.ca/companies"
     },
     {
+      "key": "dianthustherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/dianthus-therapeutics"
+    },
+    {
       "key": "differentialvc",
       "providerId": "getro",
       "taxonomy": {},
@@ -2695,6 +3229,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.discovertechnata.com/companies"
+    },
+    {
+      "key": "dishaai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/disha-ai"
     },
     {
       "key": "dlcda",
@@ -2740,6 +3280,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.draperstartuphouse.com/companies"
+    },
+    {
+      "key": "dreamlitai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/dreamlit-ai"
     },
     {
       "key": "drivecapital",
@@ -2805,6 +3351,12 @@
       "url": "https://www.earthshot.vc/companies"
     },
     {
+      "key": "ebg",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ebg"
+    },
+    {
       "key": "echelon",
       "providerId": "getro",
       "taxonomy": {},
@@ -2851,6 +3403,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://edomarketplace.getro.com/companies"
+    },
+    {
+      "key": "educatetexas",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/educate-texas"
+    },
+    {
+      "key": "egra",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/egra"
     },
     {
       "key": "eifo",
@@ -2901,6 +3465,12 @@
       "url": "https://www.elefund.com/portfolio"
     },
     {
+      "key": "element5",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/element5"
+    },
+    {
       "key": "elementalimpact",
       "providerId": "getro",
       "taxonomy": {},
@@ -2926,6 +3496,24 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.elevationcapital.com/portfolio"
+    },
+    {
+      "key": "elion",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/elion"
+    },
+    {
+      "key": "elise",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/elise"
+    },
+    {
+      "key": "ellipsislabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ellipsis-labs"
     },
     {
       "key": "elsewherepartners",
@@ -3000,6 +3588,12 @@
       "url": "https://www.endiya.com/portfolio"
     },
     {
+      "key": "enduranceenergy",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/endurance-energy"
+    },
+    {
       "key": "enduratherapeutics",
       "providerId": "consider",
       "taxonomy": {},
@@ -3024,10 +3618,22 @@
       "url": "https://jobs.engine.xyz/companies"
     },
     {
+      "key": "enhancedradar",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/enhanced-radar"
+    },
+    {
       "key": "eniac",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.eniac.vc/companies"
+    },
+    {
+      "key": "entendrefinance",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/entendre-finance"
     },
     {
       "key": "enterai",
@@ -3081,6 +3687,12 @@
       "url": "https://eqtgroup.com/about/current-portfolio"
     },
     {
+      "key": "ethenalabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ethena-labs"
+    },
+    {
       "key": "etherealventures",
       "providerId": "consider",
       "taxonomy": {},
@@ -3099,6 +3711,18 @@
       "url": "https://ethicsinsociety.getro.com/companies"
     },
     {
+      "key": "eulerlabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/euler-labs"
+    },
+    {
+      "key": "eurekarobotics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/eureka-robotics"
+    },
+    {
       "key": "evanwalden",
       "providerId": "getro",
       "taxonomy": {},
@@ -3115,6 +3739,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/evp/companies"
+    },
+    {
+      "key": "excelenciaineducation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/excelencia-in-education"
     },
     {
       "key": "expa",
@@ -3141,6 +3771,12 @@
       "url": "https://talent.faber.vc/companies"
     },
     {
+      "key": "fablesecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/fable-security"
+    },
+    {
       "key": "fabricvc",
       "providerId": "consider",
       "taxonomy": {},
@@ -3151,6 +3787,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.fannindevelopment.com/companies"
+    },
+    {
+      "key": "farfetch",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/farfetch"
     },
     {
       "key": "fast",
@@ -3210,10 +3852,34 @@
       "url": "https://careers.fenbushicapital.vc/companies"
     },
     {
+      "key": "feonenergy",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/feon-energy"
+    },
+    {
+      "key": "fever",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/fever"
+    },
+    {
       "key": "ffwd",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.ffwd.org/companies"
+    },
+    {
+      "key": "field",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/field"
+    },
+    {
+      "key": "fiercebiotech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/fierce-biotech"
     },
     {
       "key": "fiftyyears",
@@ -3238,6 +3904,18 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.fin.capital/companies"
+    },
+    {
+      "key": "finsterai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/finster-ai"
+    },
+    {
+      "key": "fintary",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/fintary"
     },
     {
       "key": "fintech",
@@ -3420,6 +4098,12 @@
       "url": "https://jobs.flourishventures.com/companies"
     },
     {
+      "key": "flutterwave",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/flutterwave"
+    },
+    {
       "key": "flybridge",
       "providerId": "public_page",
       "taxonomy": {
@@ -3573,6 +4257,12 @@
       "url": "https://consider.com/boards/co/foundry-robotics"
     },
     {
+      "key": "fountainplatform",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/fountain-platform"
+    },
+    {
       "key": "fov",
       "providerId": "getro",
       "taxonomy": {},
@@ -3619,6 +4309,18 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/frodobots-ai"
+    },
+    {
+      "key": "frontlineeducation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/frontline-education"
+    },
+    {
+      "key": "fruitful",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/fruitful"
     },
     {
       "key": "fulcrumep",
@@ -3679,6 +4381,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/galvanize-climate-solutions/companies"
+    },
+    {
+      "key": "gandeevatherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/gandeeva-therapeutics"
     },
     {
       "key": "garuda",
@@ -3759,6 +4467,18 @@
       "url": "https://www.generalcatalyst.com/portfolio"
     },
     {
+      "key": "generaldynamicsinformationtechnology",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/general-dynamics-information-technology"
+    },
+    {
+      "key": "genesisai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/genesis-ai"
+    },
+    {
       "key": "genoa",
       "providerId": "consider",
       "taxonomy": {},
@@ -3793,6 +4513,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.get2knownoke.com/companies"
+    },
+    {
+      "key": "getinsured",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/getinsured"
     },
     {
       "key": "getro",
@@ -3831,10 +4557,22 @@
       "url": "https://gigascale.board.staging.consider.com/companies"
     },
     {
+      "key": "glance",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/glance"
+    },
+    {
       "key": "glasswing",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.glasswing.vc/companies"
+    },
+    {
+      "key": "glean",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/glean"
     },
     {
       "key": "globalfounderscapital",
@@ -3870,10 +4608,34 @@
       "url": "https://consider.com/boards/co/glyphic-biotechnologies"
     },
     {
+      "key": "goat",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/goat"
+    },
+    {
+      "key": "godofintech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/godo-fintech"
+    },
+    {
       "key": "goldenventures",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.golden.ventures/companies"
+    },
+    {
+      "key": "goodfin",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/goodfin"
+    },
+    {
+      "key": "goodleap",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/goodleap"
     },
     {
       "key": "goodwatercap",
@@ -3937,6 +4699,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.greathillpartners.com/companies"
+    },
+    {
+      "key": "greendotcorporation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/green-dot-corporation"
     },
     {
       "key": "greenfieldcapital",
@@ -4041,6 +4809,12 @@
       "url": "https://jobs.gtrlink.org/companies"
     },
     {
+      "key": "guardrailsai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/guardrails-ai"
+    },
+    {
       "key": "gumloop",
       "providerId": "consider",
       "taxonomy": {},
@@ -4080,10 +4854,22 @@
       "url": "https://consider.com/boards/co/haffner-energy"
     },
     {
+      "key": "hammerheadai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/hammerhead-ai"
+    },
+    {
       "key": "hannahgrey",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://hannahgrey.getro.com/companies"
+    },
+    {
+      "key": "happyrobot",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/happyrobot"
     },
     {
       "key": "hardyaka",
@@ -4143,6 +4929,12 @@
       "url": "https://talent.headline.com/companies"
     },
     {
+      "key": "healthplusai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/healthplus-ai"
+    },
+    {
       "key": "healthxventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -4176,6 +4968,12 @@
       "url": "https://careers.hedera.community/companies"
     },
     {
+      "key": "helicityspace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/helicity-space"
+    },
+    {
       "key": "hellokoru",
       "providerId": "getro",
       "taxonomy": {},
@@ -4198,6 +4996,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://portcojobs.hgventures.com/companies"
+    },
+    {
+      "key": "hidebiotech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/hide-biotech"
     },
     {
       "key": "highalpha",
@@ -4263,6 +5067,12 @@
       "url": "https://hopelab.getro.com/companies"
     },
     {
+      "key": "hopper",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/hopper"
+    },
+    {
       "key": "hortiheroes",
       "providerId": "getro",
       "taxonomy": {},
@@ -4279,6 +5089,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.hub71.com/companies"
+    },
+    {
+      "key": "huggingface",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/hugging-face"
     },
     {
       "key": "humanvc",
@@ -4395,6 +5211,12 @@
       "url": "https://jobs.illuminatefinancial.com/companies"
     },
     {
+      "key": "imagentechnologies",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/imagen-technologies"
+    },
+    {
       "key": "imaginablefutures",
       "providerId": "getro",
       "taxonomy": {},
@@ -4470,6 +5292,12 @@
       "url": "https://consider.com/boards/co/inertia"
     },
     {
+      "key": "infilla",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/infilla"
+    },
+    {
       "key": "inflection",
       "providerId": "getro",
       "taxonomy": {},
@@ -4516,6 +5344,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.innovationworks.org/companies"
+    },
+    {
+      "key": "inorbitaerospace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/in-orbit-aerospace"
     },
     {
       "key": "inovait",
@@ -4611,10 +5445,22 @@
       "url": "https://consider.com/boards/co/iorganbio"
     },
     {
+      "key": "ironmist",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ironmist"
+    },
+    {
       "key": "ironspring",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.ironspring.com/companies"
+    },
+    {
+      "key": "irthsolutions",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/irth-solutions"
     },
     {
       "key": "isaachealth",
@@ -4674,6 +5520,12 @@
       "url": "https://consider.com/boards/co/jamsocket"
     },
     {
+      "key": "januaryai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/january-ai"
+    },
+    {
       "key": "januarycapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -4705,6 +5557,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.jdssports.co/companies"
+    },
+    {
+      "key": "jelouai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/jelou-ai"
     },
     {
       "key": "jenniferbangoura",
@@ -4857,6 +5715,12 @@
       "url": "https://consider.com/boards/co/kai"
     },
     {
+      "key": "kaipodlearning",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/kaipod-learning"
+    },
+    {
       "key": "kaporcapital",
       "providerId": "getro",
       "taxonomy": {},
@@ -4897,6 +5761,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.kdtvc.com/companies"
+    },
+    {
+      "key": "kenaidefense",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/kenai-defense"
     },
     {
       "key": "kerriganrobotics",
@@ -4950,6 +5820,12 @@
       "url": "https://jobs.kingriver.co/companies"
     },
     {
+      "key": "kintsugi",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/kintsugi"
+    },
+    {
       "key": "kleinerperkins",
       "providerId": "consider",
       "taxonomy": {},
@@ -4966,6 +5842,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.knoxtech.org/companies"
+    },
+    {
+      "key": "kodiakrobotics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/kodiak-robotics"
     },
     {
       "key": "kompas",
@@ -4990,6 +5872,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/lakestar/companies"
+    },
+    {
+      "key": "larkhealth",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/lark-health"
     },
     {
       "key": "larq",
@@ -5046,6 +5934,12 @@
       "url": "https://learncapital.getro.com/companies"
     },
     {
+      "key": "learnplatform",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/learnplatform"
+    },
+    {
       "key": "leedsilluminate",
       "providerId": "getro",
       "taxonomy": {},
@@ -5076,6 +5970,12 @@
       "url": "https://consider.com/boards/vc/leo-portfolio/companies"
     },
     {
+      "key": "leptonai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/lepton-ai"
+    },
+    {
       "key": "lererhippeau",
       "providerId": "getro",
       "taxonomy": {},
@@ -5086,6 +5986,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://portfoliocareers.levelequity.com/companies"
+    },
+    {
+      "key": "lgndai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/lgnd-ai"
     },
     {
       "key": "lhh",
@@ -5133,6 +6039,12 @@
       "url": "https://jobs.limitlessdecatur.com/companies"
     },
     {
+      "key": "lincpayments",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/linc-payments"
+    },
+    {
       "key": "linkventures",
       "providerId": "consider",
       "taxonomy": {},
@@ -5149,6 +6061,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/lmarena"
+    },
+    {
+      "key": "lnkenergies",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/lnk-energies"
     },
     {
       "key": "localglobeall",
@@ -5181,6 +6099,12 @@
       "url": "https://jobs.logoslabs.com/companies"
     },
     {
+      "key": "logrock",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/logrock"
+    },
+    {
       "key": "longgame",
       "providerId": "consider",
       "taxonomy": {},
@@ -5199,10 +6123,22 @@
       "url": "https://jobs.longjourney.vc/companies"
     },
     {
+      "key": "longshotspacetechnologiescorporation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/longshot-space-technologies-corporation"
+    },
+    {
       "key": "lool",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://opportunities.lool.vc/companies"
+    },
+    {
+      "key": "loopco2",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/loop-co2"
     },
     {
       "key": "lorimerventures",
@@ -5284,6 +6220,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://careers.m1c.vc/companies"
+    },
+    {
+      "key": "m2pfintech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/m2p-fintech"
     },
     {
       "key": "mach37",
@@ -5403,6 +6345,12 @@
       "url": "https://jobs.marvinvc.com/companies"
     },
     {
+      "key": "masonai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/mason-ai"
+    },
+    {
       "key": "masscybercenter",
       "providerId": "getro",
       "taxonomy": {},
@@ -5442,6 +6390,12 @@
       "url": "https://matrix.vc/"
     },
     {
+      "key": "mavenrobotics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/maven-robotics"
+    },
+    {
       "key": "mavenventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -5452,6 +6406,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.maveron.com/companies"
+    },
+    {
+      "key": "mavvrik",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/mavvrik"
     },
     {
       "key": "maxinsights",
@@ -5490,6 +6450,12 @@
       "url": "https://jobs.mcj.vc/companies"
     },
     {
+      "key": "mclagandataanalytics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/mclagan-data-analytics"
+    },
+    {
       "key": "mechanicalorchard",
       "providerId": "consider",
       "taxonomy": {},
@@ -5506,6 +6472,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.mehi.masstech.org/companies"
+    },
+    {
+      "key": "memorang",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/memorang"
     },
     {
       "key": "menlovc",
@@ -5553,6 +6525,12 @@
       "url": "https://www.meritechcapital.com/companies"
     },
     {
+      "key": "merlynmind",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/merlyn-mind"
+    },
+    {
       "key": "meron",
       "providerId": "getro",
       "taxonomy": {},
@@ -5563,6 +6541,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://network.merylbreidbart.com/companies"
+    },
+    {
+      "key": "metacampus",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/metacampus"
     },
     {
       "key": "metaprop",
@@ -5581,6 +6565,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.mevp.com/companies"
+    },
+    {
+      "key": "midasapp",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/midas-app"
+    },
+    {
+      "key": "miden",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/miden"
     },
     {
       "key": "midweststartups",
@@ -5623,6 +6619,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://portfoliocareers.moderneventures.com/companies"
+    },
+    {
+      "key": "monaco",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/monaco"
     },
     {
       "key": "monad",
@@ -5685,6 +6687,12 @@
       "url": "https://positions.moonfire.com/companies"
     },
     {
+      "key": "moonpay",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/moonpay"
+    },
+    {
       "key": "morestartshere",
       "providerId": "getro",
       "taxonomy": {},
@@ -5695,6 +6703,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.morpheus.com/companies"
+    },
+    {
+      "key": "morpheusspace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/morpheus-space"
     },
     {
       "key": "mosaicventures",
@@ -5710,6 +6724,12 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.mosaicventures.com/portfolio"
+    },
+    {
+      "key": "motherduck",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/motherduck"
     },
     {
       "key": "motherventures",
@@ -5742,10 +6762,22 @@
       "url": "https://consider.com/boards/co/motorq"
     },
     {
+      "key": "motorway",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/motorway"
+    },
+    {
       "key": "movementlabs",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://ecosystem.movementlabs.xyz/companies"
+    },
+    {
+      "key": "movius",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/movius"
     },
     {
       "key": "moxiebeauty",
@@ -5805,6 +6837,12 @@
       "url": "https://jobs.multicoin.capital/companies"
     },
     {
+      "key": "mundane",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/mundane"
+    },
+    {
       "key": "munichreventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -5851,6 +6889,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://au.mystartupgig.com/companies"
+    },
+    {
+      "key": "n26",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/n26"
     },
     {
       "key": "namespace",
@@ -5920,6 +6964,18 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.necessary.vc/companies"
+    },
+    {
+      "key": "nemedio",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/nemedio"
+    },
+    {
+      "key": "netskope",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/netskope"
     },
     {
       "key": "newfundcap",
@@ -6018,6 +7074,18 @@
       "url": "https://nobic.board.staging.consider.com/companies"
     },
     {
+      "key": "nodaai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/noda-ai"
+    },
+    {
+      "key": "noibu",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/noibu"
+    },
+    {
       "key": "nolavateblack",
       "providerId": "getro",
       "taxonomy": {},
@@ -6040,6 +7108,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.norrsken.org/companies"
+    },
+    {
+      "key": "northropgrummancorporation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/northrop-grumman-corporation"
     },
     {
       "key": "northwoodspace",
@@ -6078,6 +7152,18 @@
       "url": "https://consider.com/boards/co/nourishedrx"
     },
     {
+      "key": "nousresearch",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/nous-research"
+    },
+    {
+      "key": "novakid",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/novakid"
+    },
+    {
       "key": "npowermedicine",
       "providerId": "consider",
       "taxonomy": {},
@@ -6088,6 +7174,24 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.nucleus-capital.com/companies"
+    },
+    {
+      "key": "nuquantum",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/nu-quantum"
+    },
+    {
+      "key": "nuvemshop",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/nuvemshop"
+    },
+    {
+      "key": "nuvolos",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/nuvolos"
     },
     {
       "key": "nv",
@@ -6121,6 +7225,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.nyca.com/companies"
+    },
+    {
+      "key": "nyneai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/nyne.ai"
     },
     {
       "key": "nzero",
@@ -6231,6 +7341,18 @@
       "url": "https://jobs.omnivore.vc/companies"
     },
     {
+      "key": "onehouse",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/onehouse"
+    },
+    {
+      "key": "oneleet",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/oneleet"
+    },
+    {
       "key": "onepeak",
       "providerId": "consider",
       "taxonomy": {},
@@ -6267,6 +7389,12 @@
       "url": "https://consider.com/boards/co/openevidence"
     },
     {
+      "key": "openfort",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/openfort"
+    },
+    {
       "key": "openocean",
       "providerId": "getro",
       "taxonomy": {},
@@ -6294,6 +7422,12 @@
       "url": "https://jobs.optimism.io/companies"
     },
     {
+      "key": "oraichainlabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/oraichain-labs"
+    },
+    {
       "key": "orbitmit",
       "providerId": "getro",
       "taxonomy": {},
@@ -6304,6 +7438,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/orbit-startups/companies"
+    },
+    {
+      "key": "orcasecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/orca-security"
     },
     {
       "key": "oregonventurefund",
@@ -6366,6 +7506,24 @@
       "url": "https://careers.owlvc.com/companies"
     },
     {
+      "key": "paces",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/paces"
+    },
+    {
+      "key": "pacificfusion",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pacific-fusion"
+    },
+    {
+      "key": "palantir",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/palantir"
+    },
+    {
       "key": "paleblue",
       "providerId": "public_page",
       "taxonomy": {
@@ -6379,6 +7537,18 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.pale.blue/portfolio"
+    },
+    {
+      "key": "pallandotherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pallando-therapeutics"
+    },
+    {
+      "key": "palmetto",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/palmetto"
     },
     {
       "key": "panache",
@@ -6411,10 +7581,22 @@
       "url": "https://jobs.parameter.vc/companies"
     },
     {
+      "key": "paravel",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/paravel"
+    },
+    {
       "key": "paretoai",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/pareto.ai"
+    },
+    {
+      "key": "paretocredit",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pareto-credit"
     },
     {
       "key": "partechpartners",
@@ -6427,6 +7609,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/partners-group/companies"
+    },
+    {
+      "key": "pasqal",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pasqal"
     },
     {
       "key": "passioncapital",
@@ -6519,6 +7707,12 @@
       "url": "https://jobs.peoria.org/companies"
     },
     {
+      "key": "pepsales",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pepsales"
+    },
+    {
       "key": "perotjain",
       "providerId": "getro",
       "taxonomy": {},
@@ -6543,10 +7737,22 @@
       "url": "https://jobs.pfgrowth.com/companies"
     },
     {
+      "key": "phantomspace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/phantom-space"
+    },
+    {
       "key": "phoenixcourt",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.phoenixcourt.vc/companies"
+    },
+    {
+      "key": "photomath",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/photomath"
     },
     {
       "key": "photonjobs",
@@ -6565,6 +7771,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/physical-intelligence"
+    },
+    {
+      "key": "pictorlabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pictorlabs"
     },
     {
       "key": "picuscap",
@@ -6609,6 +7821,12 @@
       "url": "https://jobs.pillar.vc/companies"
     },
     {
+      "key": "pixaera",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pixaera"
+    },
+    {
       "key": "placeholder",
       "providerId": "getro",
       "taxonomy": {},
@@ -6642,6 +7860,12 @@
       "url": "https://www.planetary.vc/portfolio"
     },
     {
+      "key": "planetpayment",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/planet-payment"
+    },
+    {
       "key": "playfair",
       "providerId": "consider",
       "taxonomy": {},
@@ -6658,6 +7882,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.play.vc/companies"
+    },
+    {
+      "key": "plextrac",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/plextrac"
     },
     {
       "key": "plugandplayfoundation",
@@ -6738,6 +7968,18 @@
       "url": "https://ecosystemjobs.polygon.technology/companies"
     },
     {
+      "key": "polymerlabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/polymer-labs"
+    },
+    {
+      "key": "ponder",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ponder"
+    },
+    {
       "key": "portageinvest",
       "providerId": "public_page",
       "taxonomy": {
@@ -6765,6 +8007,12 @@
       "url": "https://jobs.portmuskogee.com/companies"
     },
     {
+      "key": "poweredbylight",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/powered-by-light"
+    },
+    {
       "key": "powerhouseventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -6781,6 +8029,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.praxis.co/companies"
+    },
+    {
+      "key": "prediqttechnologies",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/prediqt-technologies"
     },
     {
       "key": "prefaceventures",
@@ -6813,6 +8067,30 @@
       "url": "https://jobs.primary.vc/companies"
     },
     {
+      "key": "probably",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/probably"
+    },
+    {
+      "key": "procaveabiotech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/procavea-biotech"
+    },
+    {
+      "key": "prodege",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/prodege"
+    },
+    {
+      "key": "profitmind",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/profitmind"
+    },
+    {
       "key": "profluentbio",
       "providerId": "consider",
       "taxonomy": {},
@@ -6834,6 +8112,12 @@
       "url": "https://www.project-a.vc/companies"
     },
     {
+      "key": "projectb",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/project-b."
+    },
+    {
       "key": "prophecy",
       "providerId": "consider",
       "taxonomy": {},
@@ -6850,6 +8134,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/prospect/companies"
+    },
+    {
+      "key": "prosperai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/prosper-ai"
     },
     {
       "key": "protagonist",
@@ -6882,6 +8172,12 @@
       "url": "https://jobs.prudence.vc/companies"
     },
     {
+      "key": "psiquantum",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/psiquantum"
+    },
+    {
       "key": "psl",
       "providerId": "consider",
       "taxonomy": {},
@@ -6904,6 +8200,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://purdueinnovates.getro.com/companies"
+    },
+    {
+      "key": "pydantic",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/pydantic"
     },
     {
       "key": "qai",
@@ -6933,10 +8235,22 @@
       "url": "https://qualgro.com/portfolio/"
     },
     {
+      "key": "quantumart",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/quantum-art"
+    },
+    {
       "key": "queertech",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://queertech.getro.com/companies"
+    },
+    {
+      "key": "quickplay",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/quickplay"
     },
     {
       "key": "qumracapital",
@@ -6945,16 +8259,34 @@
       "url": "https://jobs.qumracapital.com/companies"
     },
     {
+      "key": "quolum",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/quolum"
+    },
+    {
       "key": "quona",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.quona.com/companies"
     },
     {
+      "key": "qureai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/qure.ai"
+    },
+    {
       "key": "racap",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://open-positions.racap.com/companies"
+    },
+    {
+      "key": "radianaerospace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/radian-aerospace"
     },
     {
       "key": "radiancapital",
@@ -6984,6 +8316,30 @@
       "url": "https://raed.vc/portfolio/"
     },
     {
+      "key": "rafay",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/rafay"
+    },
+    {
+      "key": "raffleai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/raffle.ai"
+    },
+    {
+      "key": "rainai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/rain-ai"
+    },
+    {
+      "key": "rainbowstandard",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/rainbow-standard"
+    },
+    {
       "key": "raleighfounded",
       "providerId": "getro",
       "taxonomy": {},
@@ -6994,6 +8350,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.rallydaypartners.com/companies"
+    },
+    {
+      "key": "rallyuxr",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/rally-uxr"
     },
     {
       "key": "rallyventures",
@@ -7071,6 +8433,12 @@
       "url": "https://jobs.redseaventures.com/companies"
     },
     {
+      "key": "reevoai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/reevoai"
+    },
+    {
       "key": "regeneration",
       "providerId": "public_page",
       "taxonomy": {
@@ -7086,6 +8454,12 @@
       "url": "https://regeneration.vc/portfolio"
     },
     {
+      "key": "relation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/relation"
+    },
+    {
       "key": "relevanceventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -7096,6 +8470,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/vc/remotely/companies"
+    },
+    {
+      "key": "renttherunway",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/rent-the-runway"
     },
     {
       "key": "resolutionventures",
@@ -7158,6 +8538,12 @@
       "url": "https://jobs.rho.com/companies"
     },
     {
+      "key": "ricursiveintelligence",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ricursive-intelligence"
+    },
+    {
       "key": "ridgeline",
       "providerId": "getro",
       "taxonomy": {},
@@ -7204,6 +8590,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/rohirrim"
+    },
+    {
+      "key": "roninnetwork",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/ronin-network"
     },
     {
       "key": "rootventures",
@@ -7272,6 +8664,12 @@
       "url": "https://consider.com/boards/co/rune-technologies"
     },
     {
+      "key": "runlayer",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/runlayer"
+    },
+    {
       "key": "runwayml",
       "providerId": "consider",
       "taxonomy": {},
@@ -7335,6 +8733,12 @@
       "url": "https://jobs.saintjoseph.com/companies"
     },
     {
+      "key": "sakubiosciences",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/saku-biosciences"
+    },
+    {
       "key": "salesforceventures",
       "providerId": "public_page",
       "taxonomy": {
@@ -7366,6 +8770,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.sandscapitalventures.com/companies"
+    },
+    {
+      "key": "sanity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/sanity"
     },
     {
       "key": "sante",
@@ -7440,10 +8850,22 @@
       "url": "https://consider.com/boards/co/schoolai"
     },
     {
+      "key": "sciforium",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/sciforium"
+    },
+    {
       "key": "scribblevc",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.scribble.vc/companies"
+    },
+    {
+      "key": "scroll",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/scroll"
     },
     {
       "key": "seaeventures",
@@ -7483,6 +8905,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.senovo.vc/companies"
+    },
+    {
+      "key": "sentiment",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/sentiment"
     },
     {
       "key": "sequel",
@@ -7584,6 +9012,12 @@
       "url": "https://shi-europe.getro.com/companies"
     },
     {
+      "key": "shikho",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/shikho"
+    },
+    {
       "key": "shima",
       "providerId": "consider",
       "taxonomy": {},
@@ -7603,6 +9037,12 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://www.shorooq.com/portfolio"
+    },
+    {
+      "key": "showroomprive",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/showroomprive"
     },
     {
       "key": "shrug",
@@ -7632,10 +9072,22 @@
       "url": "https://careers.sierraventures.com/companies"
     },
     {
+      "key": "signai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/sign-ai"
+    },
+    {
       "key": "signalfire",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.signalfire.com/companies"
+    },
+    {
+      "key": "silencetherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/silence-therapeutics"
     },
     {
       "key": "silverlake",
@@ -7734,6 +9186,12 @@
       "url": "https://www.snowflake.com/en/why-snowflake/startup-program/snowflake-ventures/"
     },
     {
+      "key": "snv",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/snv"
+    },
+    {
       "key": "soarky",
       "providerId": "getro",
       "taxonomy": {},
@@ -7786,6 +9244,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/soter-analytics"
+    },
+    {
+      "key": "soundhound",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/soundhound"
     },
     {
       "key": "southparkcommons",
@@ -7854,6 +9318,12 @@
       "url": "https://consider.com/boards/co/spacelift"
     },
     {
+      "key": "spaceperspective",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/space-perspective"
+    },
+    {
       "key": "sparkcapital",
       "providerId": "public_page",
       "taxonomy": {
@@ -7908,16 +9378,46 @@
       "url": "https://careers.spidercapital.com/companies"
     },
     {
+      "key": "spinorenergy",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/spinor-energy"
+    },
+    {
+      "key": "spiraltherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/spiral-therapeutics"
+    },
+    {
       "key": "spirittechcollective",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.spirit-tech-collective.com/companies"
     },
     {
+      "key": "splashfinancial",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/splash-financial"
+    },
+    {
       "key": "sporebio",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/spore.bio"
+    },
+    {
+      "key": "spotonix",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/spotonix"
+    },
+    {
+      "key": "spreetail",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/spreetail"
     },
     {
       "key": "springtide",
@@ -7960,6 +9460,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.stage2.capital/companies"
+    },
+    {
+      "key": "standardnuclear",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/standard-nuclear"
     },
     {
       "key": "stanfordclimateventures",
@@ -8055,10 +9561,28 @@
       "url": "https://consider.com/boards/vc/sterling-partners/companies"
     },
     {
+      "key": "stopthemoneypipeline",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/stop-the-money-pipeline"
+    },
+    {
       "key": "story",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.story.foundation/companies"
+    },
+    {
+      "key": "strala",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/strala"
+    },
+    {
+      "key": "stripe",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/stripe"
     },
     {
       "key": "stripes",
@@ -8085,6 +9609,12 @@
       "url": "https://careers.stventureslab.com/companies"
     },
     {
+      "key": "subscript",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/subscript"
+    },
+    {
       "key": "suffolktech",
       "providerId": "getro",
       "taxonomy": {},
@@ -8109,10 +9639,34 @@
       "url": "https://jobs.summitpartners.com/companies"
     },
     {
+      "key": "sundial",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/sundial"
+    },
+    {
+      "key": "sundialai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/sundial-ai"
+    },
+    {
+      "key": "suno",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/suno"
+    },
+    {
       "key": "supabase",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/supabase"
+    },
+    {
+      "key": "superagi",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/superagi"
     },
     {
       "key": "supercellinvestments",
@@ -8241,6 +9795,18 @@
       "url": "https://portfoliojobs.tcv.com/companies"
     },
     {
+      "key": "teachfx",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/teachfx"
+    },
+    {
+      "key": "teamshares",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/teamshares"
+    },
+    {
       "key": "teamworthy",
       "providerId": "getro",
       "taxonomy": {},
@@ -8310,10 +9876,22 @@
       "url": "https://consider.com/boards/co/telda"
     },
     {
+      "key": "telepatiaai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/telepatia-ai"
+    },
+    {
       "key": "tem",
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/tem."
+    },
+    {
+      "key": "tenablenetworksecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/tenable-network-security"
     },
     {
       "key": "tenexcm",
@@ -8322,10 +9900,34 @@
       "url": "https://tenexcm.getro.com/companies"
     },
     {
+      "key": "tensorzero",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/tensorzero"
+    },
+    {
+      "key": "teraai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/tera-ai"
+    },
+    {
       "key": "terae",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://terae.getro.com/companies"
+    },
+    {
+      "key": "terralayr",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/terralayr"
+    },
+    {
+      "key": "terrasecurity",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/terra-security"
     },
     {
       "key": "terratalent",
@@ -8346,6 +9948,12 @@
       "url": "https://careers.theadclub.org/companies"
     },
     {
+      "key": "theaerospacecorporation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/the-aerospace-corporation"
+    },
+    {
       "key": "theblockchainassociation",
       "providerId": "getro",
       "taxonomy": {},
@@ -8362,6 +9970,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.thecentermemphis.org/companies"
+    },
+    {
+      "key": "theclimatecorporation",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/the-climate-corporation"
     },
     {
       "key": "theclimatepledge",
@@ -8478,6 +10092,18 @@
       "url": "https://jobs.thrivecap.com/companies"
     },
     {
+      "key": "thrivedx",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/thrivedx"
+    },
+    {
+      "key": "thumbtack",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/thumbtack"
+    },
+    {
       "key": "thunes",
       "providerId": "consider",
       "taxonomy": {},
@@ -8553,6 +10179,18 @@
       "url": "https://jobs.ton.org/companies"
     },
     {
+      "key": "tourhero",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/tourhero"
+    },
+    {
+      "key": "tourlane",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/tourlane"
+    },
+    {
       "key": "toyotaventures",
       "providerId": "getro",
       "taxonomy": {},
@@ -8586,6 +10224,12 @@
       "url": "https://trailheadcap.getro.com/companies"
     },
     {
+      "key": "transbnk",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/transbnk"
+    },
+    {
       "key": "transfyrbio",
       "providerId": "consider",
       "taxonomy": {},
@@ -8608,6 +10252,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.traveltechessentialist.com/companies"
+    },
+    {
+      "key": "traveltriangle",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/traveltriangle"
+    },
+    {
+      "key": "trefoiltherapeutics",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/trefoil-therapeutics"
     },
     {
       "key": "tribecapital",
@@ -8643,16 +10299,34 @@
       "url": "https://jobs.trinityventures.com/companies"
     },
     {
+      "key": "trmlabs",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/trm-labs"
+    },
+    {
       "key": "trueventures",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.trueventures.com/companies"
     },
     {
+      "key": "trustingsocial",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/trusting-social"
+    },
+    {
       "key": "tscp",
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.tscp.com/companies"
+    },
+    {
+      "key": "turionspace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/turion-space"
     },
     {
       "key": "tusk",
@@ -8721,6 +10395,24 @@
       "url": "https://jobs.underscore.vc/companies"
     },
     {
+      "key": "unframeai",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/unframe-ai"
+    },
+    {
+      "key": "universalxyz",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/universal-xyz"
+    },
+    {
+      "key": "unravelcarbon",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/unravel-carbon"
+    },
+    {
       "key": "unreasonablegroup",
       "providerId": "getro",
       "taxonomy": {},
@@ -8787,6 +10479,12 @@
       "url": "https://jobs.uprotterdam.com/companies"
     },
     {
+      "key": "upside",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/upside"
+    },
+    {
       "key": "upwest",
       "providerId": "getro",
       "taxonomy": {},
@@ -8839,6 +10537,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.vamosventures.com/companies"
+    },
+    {
+      "key": "vantage",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/vantage"
     },
     {
       "key": "variant",
@@ -8937,6 +10641,12 @@
       "url": "https://jobsatventurestudios.com/discover/companies"
     },
     {
+      "key": "venusaerospace",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/venus-aerospace"
+    },
+    {
       "key": "verdane",
       "providerId": "consider",
       "taxonomy": {},
@@ -8971,6 +10681,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.vestigoventures.com/companies"
+    },
+    {
+      "key": "veza",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/veza"
     },
     {
       "key": "viggle",
@@ -9037,6 +10753,18 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.volitioncapital.com/companies"
+    },
+    {
+      "key": "volitioneco",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/volition-eco"
+    },
+    {
+      "key": "voltage",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/voltage"
     },
     {
       "key": "voltaventures",
@@ -9120,6 +10848,12 @@
       "url": "https://jobs.weareadamarie.com/companies"
     },
     {
+      "key": "webullfinancial",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/webull-financial"
+    },
+    {
       "key": "wellingtonprivateinvesting",
       "providerId": "public_page",
       "taxonomy": {
@@ -9201,6 +10935,12 @@
       "url": "https://consider.com/boards/vc/wintermute/companies"
     },
     {
+      "key": "wisetack",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/wisetack"
+    },
+    {
       "key": "withintrinsic",
       "providerId": "consider",
       "taxonomy": {},
@@ -9226,6 +10966,12 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://careers.workforceinnovationcenter.com/companies"
+    },
+    {
+      "key": "workforcesoftware",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/workforce-software"
     },
     {
       "key": "workinba",
@@ -9288,6 +11034,12 @@
       "url": "https://www.worldfund.vc/portfolio"
     },
     {
+      "key": "worldgreeneconomyorganization",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/world-green-economy-organization"
+    },
+    {
       "key": "worldlabs",
       "providerId": "consider",
       "taxonomy": {},
@@ -9306,6 +11058,12 @@
       "url": "https://wyvc-jobs.wyomingbusiness.org/companies"
     },
     {
+      "key": "x1",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/x1"
+    },
+    {
       "key": "xai",
       "providerId": "consider",
       "taxonomy": {},
@@ -9316,6 +11074,12 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://jobs.xange.vc/companies"
+    },
+    {
+      "key": "xflow",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/xflow"
     },
     {
       "key": "xista",
@@ -9346,6 +11110,18 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/yardzen"
+    },
+    {
+      "key": "yasaedtech",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/yasa-edtech"
+    },
+    {
+      "key": "yaysay",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/yaysay"
     },
     {
       "key": "yc",
@@ -9381,6 +11157,24 @@
       "url": "https://jobs.zelda.vc/companies"
     },
     {
+      "key": "zenapse",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/zenapse"
+    },
+    {
+      "key": "zenoti",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/zenoti"
+    },
+    {
+      "key": "zerocarboncapital",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/zero-carbon-capital"
+    },
+    {
       "key": "zettavp",
       "providerId": "consider",
       "taxonomy": {},
@@ -9409,12 +11203,18 @@
       "providerId": "consider",
       "taxonomy": {},
       "url": "https://consider.com/boards/co/zocks"
+    },
+    {
+      "key": "zywave",
+      "providerId": "consider",
+      "taxonomy": {},
+      "url": "https://consider.com/boards/co/zywave"
     }
   ],
   "stats": {
     "exportFormatCount": 4,
     "jobProviderCount": 9,
     "sourceAdapterCount": 14,
-    "sourceRecordCount": 1315
+    "sourceRecordCount": 1615
   }
 }

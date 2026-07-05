@@ -18,16 +18,16 @@
       "detailShardBuckets": 256,
       "detailShardRecords": 78366,
       "detailShardTiers": {
-        "T1": 13627,
-        "T2": 64739
+        "T1": 33,
+        "T2": 78333
       },
       "jobChunks": 89
     },
     "dataQuality": [
       {
-        "count": 73160,
+        "count": 88800,
         "key": "postingUrl",
-        "percentage": 82.39,
+        "percentage": 100.0,
         "total": 88800
       },
       {
@@ -1860,13 +1860,13 @@
     "format": "bucket-map",
     "idIndexFile": "jobs-detail-ids.json",
     "idIndexPath": "/data/openopps-search/jobs-detail-ids.json",
-    "indexableCount": 64739,
+    "indexableCount": 78333,
     "indexableIdIndexFile": "jobs-indexable-ids.json",
     "indexableIdIndexPath": "/data/openopps-search/jobs-indexable-ids.json",
     "root": "/data/openopps-search/jobs-details",
     "tierCounts": {
-      "T1": 13627,
-      "T2": 64739
+      "T1": 33,
+      "T2": 78333
     }
   },
   "entities": {
@@ -30972,6 +30972,19 @@
     "workplaceType": "substring match"
   },
   "kaggleDatasetId": "wyattowalsh/openoppsdb",
+  "lineageAggregate": {
+    "count": {
+      "boards": 28407,
+      "jobs": 88800,
+      "openJobs": 78366,
+      "providerRoutes": 14580,
+      "providers": 194,
+      "sourceRows": 723,
+      "sources": 695
+    },
+    "file": "lineage-aggregate.json",
+    "path": "/data/openopps-search/lineage-aggregate.json"
+  },
   "openJobCount": 78366,
   "snapshotAt": "2026-07-02T08:33:21.099662Z",
   "source": {

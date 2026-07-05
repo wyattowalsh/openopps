@@ -48,9 +48,49 @@ describe("jobs search service", () => {
 
 		expect(result.totalMatches).toBe(2);
 		expect(result.count).toBe(1);
+		expect(result.page).toBe(1);
+		expect(result.pageSize).toBe(1);
+		expect(result.totalPages).toBe(2);
+		expect(result.hasNextPage).toBe(true);
+		expect(result.hasPreviousPage).toBe(false);
 		expect(result.truncated).toBe(true);
 		expect(result.rows[0][J.id]).toBe("newer");
 		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("returns later pages without loading a browser-side snapshot", async () => {
+		const matchingNewer = row({ id: "newer", title: "Platform Engineer" });
+		const matchingOlder = row({
+			id: "older",
+			title: "Platform Lead",
+			latestObserved: "2026-06-01T00:00:00Z",
+		});
+		stubFetch({
+			"https://openopps.test/data/openopps-search/manifest.json": manifest,
+			"https://openopps.test/data/openopps-search/jobs/chunks/0000.json": chunk([
+				matchingOlder,
+			]),
+			"https://openopps.test/data/openopps-search/jobs/chunks/0001.json": chunk([
+				matchingNewer,
+			]),
+		});
+
+		const result = await searchPublicJobsIndex({
+			baseUrl: "https://openopps.test/",
+			filters: filters({ query: "platform" }),
+			sortKey: "relevance",
+			page: 2,
+			pageSize: 1,
+		});
+
+		expect(result.totalMatches).toBe(2);
+		expect(result.count).toBe(1);
+		expect(result.page).toBe(2);
+		expect(result.pageSize).toBe(1);
+		expect(result.totalPages).toBe(2);
+		expect(result.hasNextPage).toBe(false);
+		expect(result.hasPreviousPage).toBe(true);
+		expect(result.rows[0][J.id]).toBe("older");
 	});
 });
 

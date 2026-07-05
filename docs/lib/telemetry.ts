@@ -69,6 +69,8 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	page_view: ["path", "title"],
 	"explorer.inspector_closed": ["activeFilters", "entity"],
 	"explorer.inspector_opened": ["activeFilters", "entity"],
+	"explorer.lineage_error": ["message"],
+	"explorer.lineage_loaded": ["boards", "jobs", "providers", "sources"],
 	"explorer.manifest_error": ["message"],
 	"explorer.manifest_loaded": [
 		"boards",
@@ -99,6 +101,12 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 		"kind",
 		"providerIdPresent",
 		"sourceKeyPresent",
+	],
+	"jobs.page_changed": [
+		"activeFilterCount",
+		"page",
+		"pageSize",
+		"totalMatches",
 	],
 	"jobs.preview_closed": ["hadSelection"],
 	"jobs.result_selected": ["hadPreviousSelection"],

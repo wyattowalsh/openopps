@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -52,7 +52,7 @@ class GreenhouseProvider:
         if not isinstance(data, dict):
             raise ValueError("Greenhouse jobs endpoint returned invalid JSON")
         response = GreenhouseJobsResponse.model_validate(data)
-        return [self._normalize(board, posting) for posting in response.jobs]
+        return [self._normalize(board, posting, token) for posting in response.jobs]
 
     async def check_jobs(
         self,
@@ -71,7 +71,7 @@ class GreenhouseProvider:
         return len(response.jobs)
 
     def _normalize(
-        self, board: BoardRecord, posting: GreenhouseJobPosting
+        self, board: BoardRecord, posting: GreenhouseJobPosting, token: str
     ) -> JobRecord:
         remote_id = str(
             first_present(
@@ -82,7 +82,11 @@ class GreenhouseProvider:
         )
         locations = _locations(posting)
         department = posting.departments[0].name if posting.departments else None
-        posting_url = _greenhouse_public_url(posting.absolute_url)
+        posting_url = _greenhouse_public_url(
+            posting.absolute_url,
+            token=token,
+            public_job_id=posting.id,
+        )
         departments = [
             entry.model_dump(mode="python", by_alias=True, exclude_none=True)
             for entry in posting.departments
@@ -134,12 +138,29 @@ def _locations(posting: GreenhouseJobPosting) -> list[str]:
     return list(dict.fromkeys(locations))
 
 
-def _greenhouse_public_url(value: object) -> str | None:
+def _greenhouse_public_url(
+    value: object,
+    *,
+    token: str | None = None,
+    public_job_id: object = None,
+) -> str | None:
     url = normalize_public_website_url(value)
-    if not url:
+    if url:
+        parsed = urlparse(url)
+        return url if host_matches(parsed.hostname, "greenhouse.io") else None
+    if isinstance(value, str) and value.strip():
         return None
-    parsed = urlparse(url)
-    return url if host_matches(parsed.hostname, "greenhouse.io") else None
+    if token and public_job_id is not None:
+        job_id = str(public_job_id).strip()
+        if job_id:
+            fallback = (
+                "https://boards.greenhouse.io/"
+                f"{quote(token.strip(), safe='')}/jobs/{quote(job_id, safe='')}"
+            )
+            parsed = urlparse(fallback)
+            if host_matches(parsed.hostname, "greenhouse.io"):
+                return fallback
+    return None
 
 
 def _token_from_route(route: BoardProviderRecord) -> str | None:

@@ -25,6 +25,9 @@ JOB_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["JOB_COLUMNS"])
 LEGACY_JOB_COLUMNS = JOB_COLUMNS[:23]
 DETAIL_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["DETAIL_IDS_FILE"])
 INDEXABLE_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["INDEXABLE_IDS_FILE"])
+LINEAGE_AGGREGATE_FILE = cast(
+    str, _SEARCH_INDEX_NAMESPACE["LINEAGE_AGGREGATE_FILE"]
+)
 is_indexable_job_detail = cast(
     "Callable[[dict[str, Any]], bool]",
     _SEARCH_INDEX_NAMESPACE["_is_indexable_job_detail"],
@@ -267,6 +270,26 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     }
     assert "suggestions" in manifest
     assert "dashboard" in manifest
+    assert manifest["lineageAggregate"]["path"] == (
+        "/data/openopps-search/lineage-aggregate.json"
+    )
+    lineage = _read_json(output_dir / LINEAGE_AGGREGATE_FILE)
+    assert lineage["version"] == SEARCH_INDEX_VERSION
+    assert lineage["counts"] == {
+            "sourceRows": 0,
+            "sources": 3,
+            "providerRoutes": 2,
+            "providers": 2,
+            "boards": 2,
+        "jobs": 2,
+        "openJobs": 1,
+    }
+    assert lineage["nodes"]["sources"]
+    assert lineage["nodes"]["providers"]
+    assert lineage["nodes"]["boards"]
+    assert lineage["edges"]["sourceProviders"]
+    assert lineage["edges"]["sourceBoards"]
+    assert lineage["edges"]["providerBoards"]
     assert {
         entity: details["count"] for entity, details in manifest["entities"].items()
     } == {"providers": 2, "boards": 2, "jobs": 2}
@@ -337,6 +360,35 @@ def test_search_index_uses_current_job_versions(tmp_path: Path) -> None:
     assert [row[closed_index] for row in rows] == [None, None]
     assert [row[content_hash_index] for row in rows] == [None, None]
     assert [row[payload_hash_index] for row in rows] == [None, None]
+
+
+def test_search_index_synthesizes_missing_greenhouse_posting_urls(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET posting_url = NULL, apply_url = NULL
+            WHERE id = 'version-current'
+            """
+        )
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    expected_url = "https://boards.greenhouse.io/acme/jobs/remote-1"
+    detail = _read_detail_records(output_dir)["job-1"]
+    assert detail["postingUrl"] == expected_url
+    assert detail["applyUrl"] == expected_url
+
+    columns = manifest["entities"]["jobs"]["columns"]
+    id_index = columns.index("id")
+    posting_url_index = columns.index("postingUrl")
+    rows = _read_job_rows(output_dir, manifest)
+    open_row = next(row for row in rows if row[id_index] == "job-1")
+    assert open_row[posting_url_index] == expected_url
 
 
 def test_search_index_preserves_nullable_board_counts(tmp_path: Path) -> None:
@@ -551,6 +603,19 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     assert job_entity["initialPath"] == "/data/openopps-search/jobs/latest.json"
     assert (artifact_dir / job_entity["file"]).is_file()
     assert job_entity["chunks"]
+    if artifact_version == SEARCH_INDEX_VERSION:
+        assert manifest["lineageAggregate"]["path"] == (
+            "/data/openopps-search/lineage-aggregate.json"
+        )
+        lineage = _read_json(artifact_dir / manifest["lineageAggregate"]["file"])
+        assert lineage["version"] == artifact_version
+        assert lineage["counts"]["jobs"] == manifest["counts"]["snapshot"]["jobs"]
+        assert lineage["counts"]["openJobs"] == manifest["openJobCount"]
+        assert len(lineage["nodes"]["sources"]) == lineage["counts"]["sources"]
+        assert len(lineage["nodes"]["providers"]) == lineage["counts"]["providers"]
+        assert len(lineage["nodes"]["boards"]) == lineage["counts"]["boards"]
+        assert "sourceProviders" in lineage["edges"]
+        assert "providerBoards" in lineage["edges"]
     latest_jobs = _read_json(artifact_dir / "jobs" / "latest.json")
     assert latest_jobs["version"] == artifact_version
     assert latest_jobs["entity"] == "jobs"

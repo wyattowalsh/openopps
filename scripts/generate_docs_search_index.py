@@ -15,9 +15,10 @@ from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from openopps.models import derive_seniority_from_fields
+from openopps.providers.boards.tokens import greenhouse_token_from_url
 
 SEARCH_INDEX_VERSION = 5
 DESCRIPTION_SNIPPET_LEN = 200
@@ -26,6 +27,7 @@ SKILL_TOKENS_MAX_LEN = 96
 DETAIL_BUCKET_COUNT = 256
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
 INDEXABLE_IDS_FILE = "jobs-indexable-ids.json"
+LINEAGE_AGGREGATE_FILE = "lineage-aggregate.json"
 JOB_CHUNK_SIZE = 1000
 INITIAL_JOB_LIMIT = 250
 TOP_DASHBOARD_LIMIT = 20
@@ -299,6 +301,24 @@ def _build_search_index_unlocked(db_path: Path, output_dir: Path) -> dict[str, A
         source_tables=source_tables,
         sync_stats=sync_stats,
     )
+    _progress("write lineage aggregate")
+    lineage = _lineage_aggregate_payload(
+        snapshot_at=snapshot_at,
+        providers=providers,
+        boards=boards,
+        jobs=jobs,
+        source_count=source_count,
+        open_job_count=open_job_count,
+        detail_shards=detail_shards,
+        job_chunks=job_chunks,
+        source_tables=source_tables,
+    )
+    _write_json(output_dir / LINEAGE_AGGREGATE_FILE, lineage, compact=True)
+    manifest["lineageAggregate"] = {
+        "path": f"/data/openopps-search/{LINEAGE_AGGREGATE_FILE}",
+        "file": LINEAGE_AGGREGATE_FILE,
+        "count": lineage["counts"],
+    }
     _progress("write manifest")
     _write_json(output_dir / "manifest.json", manifest, compact=False)
     return manifest
@@ -387,6 +407,30 @@ def _fetch_board_source_keys(conn: sqlite3.Connection) -> dict[str, list[str]]:
                 pass
         result[str(key)] = keys
     return result
+
+
+def _fetch_greenhouse_tokens(conn: sqlite3.Connection) -> dict[str, str]:
+    token_column = _column_expr(conn, "board_providers", "bp", "token")
+    board_url_column = _column_expr(conn, "board_providers", "bp", "board_url")
+    rows = conn.execute(
+        f"""
+        SELECT bp.board_key, {token_column}, {board_url_column}
+        FROM board_providers AS bp
+        WHERE bp.provider_id = 'greenhouse'
+        ORDER BY bp.source_key, bp.id
+        """
+    )
+    tokens: dict[str, str] = {}
+    for board_key, token, board_url in rows:
+        key = str(board_key or "").strip()
+        if not key or key in tokens:
+            continue
+        value = str(token or "").strip()
+        if not value and board_url:
+            value = greenhouse_token_from_url(str(board_url)) or ""
+        if value:
+            tokens[key] = value
+    return tokens
 
 
 def _snippet_source(detail: dict[str, Any]) -> str:
@@ -672,11 +716,20 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
         """
     ).fetchall()
     current_version_ids = {str(row[5]) for row in job_rows if row[5]}
+    conn.execute("DROP TABLE IF EXISTS temp.openopps_current_versions")
+    conn.execute(
+        "CREATE TEMP TABLE openopps_current_versions (version_id TEXT PRIMARY KEY)"
+    )
+    conn.executemany(
+        "INSERT OR IGNORE INTO openopps_current_versions (version_id) VALUES (?)",
+        ((version_id,) for version_id in current_version_ids),
+    )
     _progress("fetch job details: boards")
     board_sources = {
         str(key): source_key
         for key, source_key in conn.execute("SELECT key, source_key FROM boards")
     }
+    greenhouse_tokens = _fetch_greenhouse_tokens(conn)
 
     _progress("fetch job details: versions")
     version_rows = conn.execute(
@@ -713,13 +766,12 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
             {version_payload_hash},
             {version_extra}
         FROM job_versions AS v
+        JOIN temp.openopps_current_versions AS cv ON cv.version_id = v.id
         """
     )
     versions = {}
     for index, row in enumerate(version_rows, start=1):
-        version_id = str(row[0])
-        if version_id in current_version_ids:
-            versions[version_id] = row
+        versions[str(row[0])] = row
         if index % 10_000 == 0:
             _progress(f"fetch job details: versions {index}")
 
@@ -776,6 +828,18 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
             version_payload_hash_value,
             version_extra_payload,
         ) = version
+        posting_url = _normalized_job_posting_url(
+            provider_id=provider_id,
+            board_key=board_key,
+            remote_id=remote_id,
+            posting_url=posting_url,
+            greenhouse_tokens=greenhouse_tokens,
+        )
+        apply_url = _normalized_job_apply_url(
+            provider_id=provider_id,
+            apply_url=apply_url,
+            posting_url=posting_url,
+        )
         key = str(job_id)
         details[key] = {
             "id": key,
@@ -967,6 +1031,44 @@ def _safe_job_external_url(value: Any) -> str | None:
     except ValueError:
         return None
     return None
+
+
+def _normalized_job_posting_url(
+    *,
+    provider_id: Any,
+    board_key: Any,
+    remote_id: Any,
+    posting_url: Any,
+    greenhouse_tokens: dict[str, str],
+) -> str | None:
+    safe_url = _safe_job_external_url(posting_url)
+    if safe_url:
+        return safe_url
+    if _has_text(posting_url) or str(provider_id or "") != "greenhouse":
+        return None
+    token = greenhouse_tokens.get(str(board_key or "").strip())
+    remote_text = str(remote_id or "").strip()
+    if not token or not remote_text:
+        return None
+    fallback = (
+        "https://boards.greenhouse.io/"
+        f"{quote(token.strip(), safe='')}/jobs/{quote(remote_text, safe='')}"
+    )
+    return _safe_job_external_url(fallback)
+
+
+def _normalized_job_apply_url(
+    *,
+    provider_id: Any,
+    apply_url: Any,
+    posting_url: str | None,
+) -> str | None:
+    safe_url = _safe_job_external_url(apply_url)
+    if safe_url:
+        return safe_url
+    if _has_text(apply_url) or str(provider_id or "") != "greenhouse":
+        return None
+    return posting_url
 
 
 def _primary_job_external_url(detail: dict[str, Any]) -> str | None:
@@ -1385,6 +1487,382 @@ def _dashboard_payload(
     if sync_stats:
         payload["sync"] = sync_stats
     return payload
+
+
+def _lineage_aggregate_payload(
+    *,
+    snapshot_at: str | None,
+    providers: Sequence[Sequence[Any]],
+    boards: Sequence[Sequence[Any]],
+    jobs: Sequence[Sequence[Any]],
+    source_count: int,
+    open_job_count: int,
+    detail_shards: dict[str, Any],
+    job_chunks: Sequence[dict[str, Any]],
+    source_tables: Sequence[str],
+) -> dict[str, Any]:
+    source_nodes: dict[str, dict[str, Any]] = {}
+    provider_nodes: dict[str, dict[str, Any]] = {}
+    board_nodes: dict[str, dict[str, Any]] = {}
+    source_provider_edges: dict[tuple[str, str], dict[str, Any]] = {}
+    source_board_edges: dict[tuple[str, str], dict[str, Any]] = {}
+    provider_board_edges: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def source_node(source_key: str) -> dict[str, Any]:
+        return source_nodes.setdefault(
+            source_key,
+            {
+                "id": source_key,
+                "label": source_key,
+                "boards": set(),
+                "providers": set(),
+                "routes": 0,
+                "jobs": 0,
+                "openJobs": 0,
+                "closedJobs": 0,
+                "descriptionJobs": 0,
+                "locationJobs": 0,
+                "compensationJobs": 0,
+                "latestObservedAt": None,
+            },
+        )
+
+    def provider_node(provider_id: str) -> dict[str, Any]:
+        return provider_nodes.setdefault(
+            provider_id,
+            {
+                "id": provider_id,
+                "label": provider_id,
+                "sources": set(),
+                "boards": set(),
+                "routes": 0,
+                "jobs": 0,
+                "openJobs": 0,
+                "closedJobs": 0,
+                "descriptionJobs": 0,
+                "locationJobs": 0,
+                "compensationJobs": 0,
+                "supportLevels": Counter(),
+                "routeStatuses": Counter(),
+                "latestObservedAt": None,
+            },
+        )
+
+    def board_node(board_key: str) -> dict[str, Any]:
+        return board_nodes.setdefault(
+            board_key,
+            {
+                "id": board_key,
+                "label": board_key,
+                "sourceKey": None,
+                "name": None,
+                "domain": None,
+                "providers": set(),
+                "routes": 0,
+                "jobs": 0,
+                "openJobs": 0,
+                "closedJobs": 0,
+                "descriptionJobs": 0,
+                "locationJobs": 0,
+                "compensationJobs": 0,
+                "supportLevels": Counter(),
+                "routeStatuses": Counter(),
+                "latestObservedAt": None,
+            },
+        )
+
+    for row in boards:
+        board_key = str(row[BOARD_COLUMNS.index("key")] or "").strip()
+        if not board_key:
+            continue
+        source_key = str(row[BOARD_COLUMNS.index("sourceKey")] or "").strip()
+        node = board_node(board_key)
+        node["sourceKey"] = source_key or node["sourceKey"]
+        node["name"] = row[BOARD_COLUMNS.index("name")] or node["name"]
+        node["domain"] = row[BOARD_COLUMNS.index("domain")] or node["domain"]
+        if source_key:
+            source_node(source_key)["boards"].add(board_key)
+            source_board_edges.setdefault(
+                (source_key, board_key),
+                {
+                    "sourceKey": source_key,
+                    "boardKey": board_key,
+                    "jobs": 0,
+                    "openJobs": 0,
+                    "boards": 1,
+                },
+            )
+
+    for row in providers:
+        source_key = str(row[PROVIDER_COLUMNS.index("sourceKey")] or "").strip()
+        board_key = str(row[PROVIDER_COLUMNS.index("boardKey")] or "").strip()
+        provider_id = str(row[PROVIDER_COLUMNS.index("providerId")] or "").strip()
+        support = str(row[PROVIDER_COLUMNS.index("supportLevel")] or "").strip()
+        status = str(row[PROVIDER_COLUMNS.index("lastStatus")] or "").strip()
+        if not provider_id:
+            continue
+        provider = provider_node(provider_id)
+        provider["routes"] += 1
+        if source_key:
+            provider["sources"].add(source_key)
+            source = source_node(source_key)
+            source["providers"].add(provider_id)
+            source["routes"] += 1
+            edge = source_provider_edges.setdefault(
+                (source_key, provider_id),
+                {
+                    "sourceKey": source_key,
+                    "providerId": provider_id,
+                    "routes": 0,
+                    "jobs": 0,
+                    "openJobs": 0,
+                },
+            )
+            edge["routes"] += 1
+        if support:
+            provider["supportLevels"][support] += 1
+        if status:
+            provider["routeStatuses"][status] += 1
+        if board_key:
+            provider["boards"].add(board_key)
+            board = board_node(board_key)
+            board["providers"].add(provider_id)
+            board["routes"] += 1
+            if source_key and not board.get("sourceKey"):
+                board["sourceKey"] = source_key
+            if support:
+                board["supportLevels"][support] += 1
+            if status:
+                board["routeStatuses"][status] += 1
+            pb_edge = provider_board_edges.setdefault(
+                (provider_id, board_key),
+                {
+                    "providerId": provider_id,
+                    "boardKey": board_key,
+                    "sourceKey": source_key,
+                    "routes": 0,
+                    "jobs": 0,
+                    "openJobs": 0,
+                    "supportLevels": Counter(),
+                    "routeStatuses": Counter(),
+                },
+            )
+            pb_edge["routes"] += 1
+            if support:
+                pb_edge["supportLevels"][support] += 1
+            if status:
+                pb_edge["routeStatuses"][status] += 1
+
+    for row in jobs:
+        board_key = str(row[JOB_COLUMNS.index("boardKey")] or "").strip()
+        provider_id = str(row[JOB_COLUMNS.index("providerId")] or "").strip()
+        status = str(row[JOB_COLUMNS.index("status")] or "").strip()
+        is_open = status == "open"
+        observed_at = row[JOB_COLUMNS.index("latestObservedAt")]
+        has_description = _has_text(row[JOB_COLUMNS.index("descriptionSnippet")])
+        has_location = bool(_json_array_values(row[JOB_COLUMNS.index("locations")]))
+        has_compensation = any(
+            _has_text(row[JOB_COLUMNS.index(column)])
+            for column in ("salaryMin", "salaryMax", "salaryCurrency")
+        )
+        sources = _source_values_from_job(row)
+
+        if provider_id:
+            provider = provider_node(provider_id)
+            _increment_lineage_job_metrics(
+                provider,
+                board_key=board_key,
+                is_open=is_open,
+                has_description=has_description,
+                has_location=has_location,
+                has_compensation=has_compensation,
+                observed_at=observed_at,
+            )
+        if board_key:
+            board = board_node(board_key)
+            _increment_lineage_job_metrics(
+                board,
+                provider_id=provider_id,
+                is_open=is_open,
+                has_description=has_description,
+                has_location=has_location,
+                has_compensation=has_compensation,
+                observed_at=observed_at,
+            )
+        if provider_id and board_key:
+            pb_edge = provider_board_edges.setdefault(
+                (provider_id, board_key),
+                {
+                    "providerId": provider_id,
+                    "boardKey": board_key,
+                    "sourceKey": sources[0] if sources else None,
+                    "routes": 0,
+                    "jobs": 0,
+                    "openJobs": 0,
+                    "supportLevels": Counter(),
+                    "routeStatuses": Counter(),
+                },
+            )
+            pb_edge["jobs"] += 1
+            if is_open:
+                pb_edge["openJobs"] += 1
+
+        for source_key in sources:
+            source = source_node(source_key)
+            _increment_lineage_job_metrics(
+                source,
+                provider_id=provider_id,
+                board_key=board_key,
+                is_open=is_open,
+                has_description=has_description,
+                has_location=has_location,
+                has_compensation=has_compensation,
+                observed_at=observed_at,
+            )
+            if provider_id:
+                edge = source_provider_edges.setdefault(
+                    (source_key, provider_id),
+                    {
+                        "sourceKey": source_key,
+                        "providerId": provider_id,
+                        "routes": 0,
+                        "jobs": 0,
+                        "openJobs": 0,
+                    },
+                )
+                edge["jobs"] += 1
+                if is_open:
+                    edge["openJobs"] += 1
+            if board_key:
+                edge = source_board_edges.setdefault(
+                    (source_key, board_key),
+                    {
+                        "sourceKey": source_key,
+                        "boardKey": board_key,
+                        "jobs": 0,
+                        "openJobs": 0,
+                        "boards": 1,
+                    },
+                )
+                edge["jobs"] += 1
+                if is_open:
+                    edge["openJobs"] += 1
+
+    return {
+        "version": SEARCH_INDEX_VERSION,
+        "snapshotAt": snapshot_at,
+        "source": {
+            "database": "kaggle/openoppsdb.sqlite",
+            "tables": list(source_tables),
+        },
+        "counts": {
+            "sourceRows": source_count,
+            "sources": len(source_nodes),
+            "providerRoutes": len(providers),
+            "providers": len(provider_nodes),
+            "boards": len(board_nodes),
+            "jobs": len(jobs),
+            "openJobs": open_job_count,
+        },
+        "nodes": {
+            "sources": _finalize_lineage_nodes(source_nodes.values()),
+            "providers": _finalize_lineage_nodes(provider_nodes.values()),
+            "boards": _finalize_lineage_nodes(board_nodes.values()),
+        },
+        "edges": {
+            "sourceProviders": _finalize_lineage_edges(source_provider_edges.values()),
+            "sourceBoards": _finalize_lineage_edges(source_board_edges.values()),
+            "providerBoards": _finalize_lineage_edges(provider_board_edges.values()),
+        },
+        "artifacts": {
+            "jobChunks": len(job_chunks),
+            "detailShardBuckets": len(detail_shards.get("buckets", {})),
+            "detailShardRecords": detail_shards.get("count", 0),
+            "detailShardTiers": detail_shards.get("tierCounts", {}),
+        },
+    }
+
+
+def _increment_lineage_job_metrics(
+    node: dict[str, Any],
+    *,
+    is_open: bool,
+    has_description: bool,
+    has_location: bool,
+    has_compensation: bool,
+    observed_at: Any,
+    provider_id: str | None = None,
+    board_key: str | None = None,
+) -> None:
+    node["jobs"] += 1
+    if is_open:
+        node["openJobs"] += 1
+    else:
+        node["closedJobs"] += 1
+    if has_description:
+        node["descriptionJobs"] += 1
+    if has_location:
+        node["locationJobs"] += 1
+    if has_compensation:
+        node["compensationJobs"] += 1
+    if provider_id:
+        node.setdefault("providers", set()).add(provider_id)
+    if board_key:
+        node.setdefault("boards", set()).add(board_key)
+    node["latestObservedAt"] = _latest_timestamp_value(
+        (node.get("latestObservedAt"), observed_at)
+    )
+
+
+def _finalize_lineage_nodes(nodes: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    finalized = []
+    for node in nodes:
+        item = dict(node)
+        for key in ("sources", "providers", "boards"):
+            if isinstance(item.get(key), set):
+                values = sorted(item[key])
+                item[f"{key}Count"] = len(values)
+                item[key] = values[:50]
+        for key in ("supportLevels", "routeStatuses"):
+            if isinstance(item.get(key), Counter):
+                item[key] = _top_values(item[key], limit=None)
+        total = int(item.get("jobs") or 0)
+        item["quality"] = {
+            "description": _lineage_percentage(item.get("descriptionJobs"), total),
+            "locations": _lineage_percentage(item.get("locationJobs"), total),
+            "compensation": _lineage_percentage(item.get("compensationJobs"), total),
+        }
+        finalized.append(item)
+    return sorted(
+        finalized,
+        key=lambda item: (
+            -int(item.get("jobs") or 0),
+            str(item.get("label") or item.get("id") or "").casefold(),
+        ),
+    )
+
+
+def _finalize_lineage_edges(edges: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    finalized = []
+    for edge in edges:
+        item = dict(edge)
+        for key in ("supportLevels", "routeStatuses"):
+            if isinstance(item.get(key), Counter):
+                item[key] = _top_values(item[key], limit=None)
+        finalized.append(item)
+    return sorted(
+        finalized,
+        key=lambda item: (
+            -int(item.get("jobs") or 0),
+            str(item.get("sourceKey") or "").casefold(),
+            str(item.get("providerId") or "").casefold(),
+            str(item.get("boardKey") or "").casefold(),
+        ),
+    )
+
+
+def _lineage_percentage(count: Any, total: int) -> float:
+    return round((int(count or 0) / total) * 100, 2) if total else 0
 
 
 def _fetch_sync_dashboard_stats(

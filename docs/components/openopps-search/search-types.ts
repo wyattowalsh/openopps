@@ -96,6 +96,80 @@ export type SearchDashboard = {
 	};
 };
 
+export type LineageNode = {
+	id: string;
+	label?: string | null;
+	sourceKey?: string | null;
+	name?: string | null;
+	domain?: string | null;
+	routes?: number;
+	jobs: number;
+	openJobs: number;
+	closedJobs?: number;
+	latestObservedAt?: string | null;
+	sourcesCount?: number;
+	providersCount?: number;
+	boardsCount?: number;
+	sources?: string[];
+	providers?: string[];
+	boards?: string[];
+	supportLevels?: SearchTopValue[];
+	routeStatuses?: SearchTopValue[];
+	quality?: {
+		description: number;
+		locations: number;
+		compensation: number;
+	};
+};
+
+export type LineageEdge = {
+	sourceKey?: string | null;
+	providerId?: string | null;
+	boardKey?: string | null;
+	routes?: number;
+	boards?: number;
+	jobs: number;
+	openJobs: number;
+	supportLevels?: SearchTopValue[];
+	routeStatuses?: SearchTopValue[];
+};
+
+export type LineageAggregate = {
+	version: number;
+	snapshotAt: string | null;
+	counts: {
+		sourceRows: number;
+		sources: number;
+		providerRoutes: number;
+		providers: number;
+		boards: number;
+		jobs: number;
+		openJobs: number;
+	};
+	nodes: {
+		sources: LineageNode[];
+		providers: LineageNode[];
+		boards: LineageNode[];
+	};
+	edges: {
+		sourceProviders: LineageEdge[];
+		sourceBoards: LineageEdge[];
+		providerBoards: LineageEdge[];
+	};
+	artifacts?: {
+		jobChunks: number;
+		detailShardBuckets: number;
+		detailShardRecords: number;
+		detailShardTiers?: Record<string, number>;
+	};
+};
+
+export type LineageAggregateRef = {
+	path: string;
+	file?: string;
+	count?: LineageAggregate["counts"];
+};
+
 /** Root manifest served from `/search/manifest.json`. */
 export type SearchManifest = {
 	version: number;
@@ -166,6 +240,7 @@ export type SearchManifest = {
 		salaryCurrencies?: SearchSuggestion[];
 	};
 	dashboard?: SearchDashboard;
+	lineageAggregate?: LineageAggregateRef;
 };
 
 /** Loaded entity chunk: column order plus materialized row tuples. */
@@ -182,6 +257,11 @@ export type JobsSearchResponse = SearchChunk & {
 	entity: "jobs";
 	totalMatches: number;
 	limit: number;
+	page: number;
+	pageSize: number;
+	totalPages: number;
+	hasNextPage: boolean;
+	hasPreviousPage: boolean;
 	truncated: boolean;
 };
 

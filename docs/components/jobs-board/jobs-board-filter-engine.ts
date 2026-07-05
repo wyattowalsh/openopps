@@ -10,6 +10,7 @@ import {
 export type JobBoardFilters = {
 	query: string;
 	wide: boolean;
+	includeAllIndexed: boolean;
 	source: string;
 	provider: string;
 	location: string;
@@ -30,6 +31,7 @@ export type JobSortKey = "latest" | "relevance";
 export const DEFAULT_JOB_BOARD_FILTERS: JobBoardFilters = {
 	query: "",
 	wide: false,
+	includeAllIndexed: false,
 	source: "",
 	provider: "",
 	location: "",
@@ -233,7 +235,7 @@ export function locationMatches(row: SearchRow, location: string) {
 }
 
 export function jobMatchesFilters(row: SearchRow, filters: JobBoardFilters) {
-	if (text(row[J.status]) !== "open") {
+	if (!filters.includeAllIndexed && text(row[J.status]) !== "open") {
 		return false;
 	}
 	if (!sourceKeyMatches(row, filters.source)) {

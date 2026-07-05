@@ -20,6 +20,7 @@ import type {
 	SearchRow,
 } from "@/components/openopps-search/search-types";
 import {
+	formatCurrencyRange,
 	formatDate,
 	formatLocations,
 	formatSalary,
@@ -157,6 +158,78 @@ function hasStructuredValue(value: unknown) {
 		: Object.keys(value as Record<string, unknown>).length > 0;
 }
 
+const PRIMARY_DETAIL_KEYS = new Set([
+	"id",
+	"status",
+	"sourceKey",
+	"boardKey",
+	"providerId",
+	"remoteId",
+	"title",
+	"company",
+	"department",
+	"team",
+	"workplaceType",
+	"remote",
+	"employmentType",
+	"locations",
+	"salaryMin",
+	"salaryMax",
+	"salaryCurrency",
+	"description",
+	"descriptionHtml",
+	"responsibilities",
+	"qualifications",
+	"skills",
+	"jobDescription",
+	"compensation",
+	"experience",
+	"salary",
+	"applyUrl",
+	"postingUrl",
+	"postedAt",
+	"updatedAt",
+	"versionCreatedAt",
+	"firstSeenAt",
+	"lastSeenAt",
+	"closedAt",
+	"syncedAt",
+	"version",
+	"contentHash",
+	"payloadHash",
+	"detailTier",
+	"jobExtra",
+	"versionExtra",
+	"payloadSnapshots",
+]);
+
+function additionalPublicFields(detail: JobDetail | null) {
+	if (!detail) {
+		return {};
+	}
+	return Object.fromEntries(
+		Object.entries(detail).filter(([key, value]) => {
+			if (PRIMARY_DETAIL_KEYS.has(key)) {
+				return false;
+			}
+			if (value === null || value === undefined || value === "") {
+				return false;
+			}
+			if (Array.isArray(value) && value.length === 0) {
+				return false;
+			}
+			if (
+				typeof value === "object" &&
+				!Array.isArray(value) &&
+				Object.keys(value).length === 0
+			) {
+				return false;
+			}
+			return true;
+		}),
+	);
+}
+
 function formatDetailLocations(row: SearchRow | null, detail: JobDetail | null) {
 	if (detail?.locations && detail.locations.length > 0) {
 		return detail.locations.map(text).filter(Boolean).join(", ");
@@ -176,22 +249,11 @@ function formatDetailSalary(row: SearchRow | null, detail: JobDetail | null) {
 	) {
 		const min = detail.salaryMin ?? null;
 		const max = detail.salaryMax ?? null;
-		const currency = detail.salaryCurrency ?? "USD";
-		const formatter = new Intl.NumberFormat("en-US", {
-			style: "currency",
-			currency,
-			maximumFractionDigits: 0,
+		return formatCurrencyRange({
+			min,
+			max,
+			currency: detail.salaryCurrency,
 		});
-		if (min !== null && max !== null) {
-			return `${formatter.format(min)}-${formatter.format(max)}`;
-		}
-		if (min !== null) {
-			return `${formatter.format(min)}+`;
-		}
-		if (max !== null) {
-			return `Up to ${formatter.format(max)}`;
-		}
-		return currency;
 	}
 	return row ? formatSalary(row) : "";
 }
@@ -273,10 +335,11 @@ export function JobsBoardPreview({
 	const responsibilities = (detail?.responsibilities ?? []).map(text).filter(Boolean);
 	const qualifications = (detail?.qualifications ?? []).map(text).filter(Boolean);
 	const hasDescription =
-		Boolean(descriptionSnippet) ||
 		Boolean(descriptionHtml) ||
 		Boolean(descriptionText) ||
 		loading;
+	const showSnippetFallback = Boolean(descriptionSnippet) && !hasDescription && !error;
+	const extraPublicFields = additionalPublicFields(detail);
 
 	const trackOutbound = (kind: "apply" | "posting", url: string) => {
 		trackTelemetry("jobs.outbound_clicked", {
@@ -488,10 +551,12 @@ export function JobsBoardPreview({
 					</Section>
 				) : null}
 
-				{descriptionSnippet ? (
-					<div className="rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70 p-3 text-sm leading-6 text-muted-foreground">
-						{descriptionSnippet}
-					</div>
+				{showSnippetFallback ? (
+					<Section title="Index snippet">
+						<div className="rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70 p-3 text-sm leading-6 text-muted-foreground">
+							{descriptionSnippet}
+						</div>
+					</Section>
 				) : null}
 
 				{loading ? (
@@ -560,6 +625,7 @@ export function JobsBoardPreview({
 				) : null}
 
 				<div className="grid gap-3">
+					<JsonBlock label="Additional public fields" value={extraPublicFields} />
 					<JsonBlock label="Job description" value={detail?.jobDescription} />
 					<JsonBlock label="Compensation" value={detail?.compensation} />
 					<JsonBlock label="Job extra payload" value={detail?.jobExtra} />

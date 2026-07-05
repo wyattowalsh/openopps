@@ -211,19 +211,36 @@ export function formatCount(value: number | undefined) {
 	return new Intl.NumberFormat("en-US").format(value);
 }
 
-export function formatDate(value: string) {
-	if (!value) {
+export function formatDate(value: unknown) {
+	const raw = text(value);
+	if (!raw) {
 		return "";
 	}
-	const parsed = new Date(value);
+	const parsed = parseDateValue(raw);
 	if (Number.isNaN(parsed.getTime())) {
-		return value;
+		return raw;
 	}
 	return new Intl.DateTimeFormat("en-US", {
 		year: "numeric",
 		month: "short",
 		day: "numeric",
 	}).format(parsed);
+}
+
+function parseDateValue(value: string) {
+	if (/^\d{11,}$/.test(value)) {
+		const numeric = Number(value);
+		if (Number.isFinite(numeric)) {
+			return new Date(numeric);
+		}
+	}
+	if (/^\d{10}$/.test(value)) {
+		const numeric = Number(value);
+		if (Number.isFinite(numeric)) {
+			return new Date(numeric * 1000);
+		}
+	}
+	return new Date(value);
 }
 
 export function formatLocations(value: unknown) {
@@ -249,11 +266,7 @@ export function formatSalary(row: SearchRow) {
 	if (min === null && max === null) {
 		return "";
 	}
-	const formatter = new Intl.NumberFormat("en-US", {
-		style: "currency",
-		currency,
-		maximumFractionDigits: 0,
-	});
+	const formatter = currencyFormatter(currency);
 	if (min !== null && max !== null) {
 		return `${formatter.format(min)}-${formatter.format(max)}`;
 	}
@@ -264,6 +277,44 @@ export function formatSalary(row: SearchRow) {
 		return `Up to ${formatter.format(max)}`;
 	}
 	return "";
+}
+
+export function formatCurrencyRange({
+	min,
+	max,
+	currency,
+}: {
+	min: number | null;
+	max: number | null;
+	currency?: string | null;
+}) {
+	if (min === null && max === null) {
+		return "";
+	}
+	const formatter = currencyFormatter(text(currency) || "USD");
+	if (min !== null && max !== null) {
+		return `${formatter.format(min)}-${formatter.format(max)}`;
+	}
+	if (min !== null) {
+		return `${formatter.format(min)}+`;
+	}
+	return `Up to ${formatter.format(max ?? 0)}`;
+}
+
+function currencyFormatter(currency: string) {
+	try {
+		return new Intl.NumberFormat("en-US", {
+			style: "currency",
+			currency,
+			maximumFractionDigits: 0,
+		});
+	} catch {
+		return new Intl.NumberFormat("en-US", {
+			style: "currency",
+			currency: "USD",
+			maximumFractionDigits: 0,
+		});
+	}
 }
 
 function nullableNumber(value: unknown) {

@@ -147,6 +147,37 @@ async def test_greenhouse_marks_prospect_posts_without_internal_job_id():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_greenhouse_synthesizes_public_url_when_absolute_url_missing():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+        params={"content": "true"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "id": 123,
+                        "title": "Engineer",
+                        "content": "<p>Build reliable APIs.</p>",
+                    }
+                ]
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        jobs = await GreenhouseProvider(settings).fetch_jobs(
+            client, board(), route("greenhouse", token="acme")
+        )
+
+    assert jobs[0].posting_url == "https://boards.greenhouse.io/acme/jobs/123"
+    assert jobs[0].apply_url == "https://boards.greenhouse.io/acme/jobs/123"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_greenhouse_drops_unsafe_public_job_urls():
     settings = OpenOppsSettings(cache_enabled=False)
     respx.get(
@@ -223,6 +254,7 @@ async def test_lever_fetch_jobs():
                     "text": "Designer",
                     "hostedUrl": "https://jobs.lever.co/acme/abc",
                     "applyUrl": "https://jobs.lever.co/acme/abc/apply",
+                    "createdAt": 1781953756907,
                     "categories": {
                         "location": "New York",
                         "department": "Design",
@@ -262,7 +294,9 @@ async def test_lever_fetch_jobs():
     assert jobs[0].company == "Acme"
     assert jobs[0].locations == ["New York"]
     assert jobs[0].team == "Product Design"
+    assert jobs[0].workplace_type is None
     assert jobs[0].employment_type == "Full-time"
+    assert jobs[0].posted_at == "2026-06-20T11:09:16.907000+00:00"
     assert jobs[0].job_description is not None
     assert jobs[0].job_description.type == "Full-time"
     assert (

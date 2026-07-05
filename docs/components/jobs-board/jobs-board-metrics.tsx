@@ -7,6 +7,7 @@ import { formatCount, formatDate } from "@/components/openopps-search/search-uti
 type JobsBoardMetricsProps = {
 	manifest: SearchManifest | null;
 	matchCount: number;
+	searchActive: boolean;
 };
 
 function Metric({ label, value }: { label: string; value?: number }) {
@@ -25,6 +26,7 @@ function Metric({ label, value }: { label: string; value?: number }) {
 export function JobsBoardMetrics({
 	manifest,
 	matchCount,
+	searchActive,
 }: JobsBoardMetricsProps) {
 	const totalJobs = manifest?.entities.jobs.count;
 	const openJobs = manifest?.openJobCount ?? totalJobs;
@@ -65,7 +67,7 @@ export function JobsBoardMetrics({
 				</div>
 			</div>
 			<div className="grid grid-cols-3 gap-2 sm:min-w-[28rem]">
-				<Metric label="matches" value={matchCount} />
+				<Metric label={searchActive ? "matches" : "open jobs"} value={matchCount} />
 				<Metric label="open jobs" value={openJobs} />
 				<Metric label="indexed jobs" value={totalJobs} />
 			</div>
