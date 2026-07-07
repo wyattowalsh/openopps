@@ -6,6 +6,7 @@ from click import unstyle
 import openopps.cli as cli_module
 from typer.testing import CliRunner
 
+from openopps import __version__
 from openopps.cli import app
 from openopps.models import BoardProviderRecord, BoardRecord, JobRecord, ProviderSupport
 from openopps.models import SourceRecord
@@ -53,6 +54,14 @@ def test_cli_no_command_behavior_stays_clean():
     assert result.exit_code == 2
     assert "Missing command" in result.stderr
     assert result.stdout == ""
+    assert "opening opportunity portal" not in result.output
+
+
+def test_cli_version_option_exits_cleanly():
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == f"openopps {__version__}"
     assert "opening opportunity portal" not in result.output
 
 

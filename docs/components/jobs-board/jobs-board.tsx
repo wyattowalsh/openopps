@@ -10,9 +10,11 @@ import {
 import { useJobBoardFilterState } from "@/components/jobs-board/jobs-board-filter-state";
 import {
 	baselineLookupFromSavedSearch,
+	baselineFromSearchSummary,
 	isDurableJobWorkflowRecord,
 	jobLifecycleIndicators,
 	savedSearchNewMatchCount,
+	savedSearchNewMatchCountFromSummary,
 	useJobsLocalState,
 	type JobLifecycleIndicator,
 	type RetainedJobDetailRecord,
@@ -27,6 +29,7 @@ import { JobsBoardPreview } from "@/components/jobs-board/jobs-board-preview";
 import { JobsBoardPreviewSheet } from "@/components/jobs-board/jobs-board-preview-sheet";
 import { JobsBoardToolbar } from "@/components/jobs-board/jobs-board-toolbar";
 import {
+	loadJobsSearchSummary,
 	loadJobsSearchResults,
 	loadSearchManifest,
 } from "@/components/openopps-search/search-index-loader";
@@ -72,7 +75,6 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		hasNextPage: boolean;
 		hasPreviousPage: boolean;
 	} | null>(null);
-	const [page, setPage] = useState(1);
 	const [detail, setDetail] = useState<JobDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [detailError, setDetailError] = useState<string | null>(null);
@@ -80,6 +82,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const [activeSavedSearchId, setActiveSavedSearchId] = useState<string | null>(
 		null,
 	);
+	const [savedSearchFullCounts, setSavedSearchFullCounts] = useState<
+		Record<string, number>
+	>({});
 	const searchRequestIdRef = useRef(0);
 	const mountedRef = useRef(false);
 	const localState = useJobsLocalState();
@@ -89,6 +94,8 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const {
 		filters,
 		deferredFilters,
+		page,
+		setPage,
 		selectedJobId,
 		setFilters,
 		setSelectedJobId,
@@ -153,6 +160,25 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		if (!manifest) {
 			return;
 		}
+		if (!searchActive) {
+			searchRequestIdRef.current += 1;
+			let cancelled = false;
+			window.queueMicrotask(() => {
+				if (cancelled || !mountedRef.current) {
+					return;
+				}
+				setSearchRows([]);
+				setSearchMeta(null);
+				setSearchError(null);
+				setSearchLoading(false);
+				if (page !== 1) {
+					void setPage(1);
+				}
+			});
+			return () => {
+				cancelled = true;
+			};
+		}
 		const requestId = searchRequestIdRef.current + 1;
 		searchRequestIdRef.current = requestId;
 		const controller = new AbortController();
@@ -179,6 +205,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 						hasNextPage: result.hasNextPage,
 						hasPreviousPage: result.hasPreviousPage,
 					});
+					if (result.page !== page) {
+						void setPage(result.page);
+					}
 					trackTelemetry("jobs.search_loaded", {
 						rows: result.rows.length,
 						totalMatches: result.totalMatches,
@@ -206,7 +235,15 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		return () => {
 			controller.abort();
 		};
-	}, [deferredFilters, manifest, page, searchRetryKey, sortKey]);
+	}, [
+		deferredFilters,
+		manifest,
+		page,
+		searchActive,
+		searchRetryKey,
+		setPage,
+		sortKey,
+	]);
 
 	const rowsWithLocalRetainedJobs = useMemo(() => {
 		const currentJobIds = new Set(rows.map((row) => text(row[J.id])).filter(Boolean));
@@ -329,11 +366,53 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				const matches = rowsForSavedSearch(record);
 				return {
 					record,
-					newMatches: savedSearchNewMatchCount(record, matches),
+					newMatches:
+						record.baselineScope === "full"
+							? savedSearchFullCounts[record.id] ?? null
+							: savedSearchNewMatchCount(record, matches),
 				};
 			}),
-		[localState.savedSearches, rowsForSavedSearch],
+		[localState.savedSearches, rowsForSavedSearch, savedSearchFullCounts],
 	);
+
+	useEffect(() => {
+		const records = localState.savedSearches.filter(
+			(record) => record.baselineScope === "full",
+		);
+		if (records.length === 0) {
+			return;
+		}
+		let cancelled = false;
+		async function loadSavedSearchCounts() {
+			const entries = await Promise.all(
+				records.map(async (record) => {
+					try {
+						const summary = await loadJobsSearchSummary(record.filters, record.sortKey);
+						return [
+							record.id,
+							savedSearchNewMatchCountFromSummary(record, summary),
+						] as const;
+					} catch {
+						return [record.id, null] as const;
+					}
+				}),
+			);
+			if (cancelled) {
+				return;
+			}
+			setSavedSearchFullCounts(
+				Object.fromEntries(
+					entries.filter(
+						(entry): entry is readonly [string, number] => entry[1] !== null,
+					),
+				),
+			);
+		}
+		void loadSavedSearchCounts();
+		return () => {
+			cancelled = true;
+		};
+	}, [localState.savedSearches]);
 
 	useEffect(() => {
 		if (!selectedJobId) {
@@ -364,10 +443,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 					trackTelemetry("jobs.detail_loaded", {
 						sourceKeyPresent: Boolean(nextDetail.sourceKey),
 						providerIdPresent: Boolean(nextDetail.providerId),
-						hasDescription: Boolean(
-							nextDetail.descriptionHtml ?? nextDetail.description,
-						),
-						payloadSnapshots: nextDetail.payloadSnapshots?.length ?? 0,
+						hasDescription: Boolean(nextDetail.description),
 					});
 				}
 			} catch (caught) {
@@ -404,7 +480,6 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const handleFiltersChange = (nextFilters: Parameters<typeof setFilters>[0]) => {
 		clearSearchError();
 		setActiveSavedSearchId(null);
-		setPage(1);
 		trackTelemetry("jobs.filters_changed", {
 			keys: Object.keys(nextFilters),
 			hasSelection: Boolean(selectedJobId),
@@ -415,7 +490,6 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const handleClearFilters = () => {
 		clearSearchError();
 		setActiveSavedSearchId(null);
-		setPage(1);
 		trackTelemetry("jobs.filters_cleared", {
 			activeFilterCount,
 			hasSelection: Boolean(selectedJobId),
@@ -525,23 +599,33 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		});
 	};
 
-	const handleCreateSavedSearch = () => {
-		localState.createSavedSearch({
-			filters,
-			rows: visibleRows,
-			sortKey,
-			manifest,
-		});
-		trackTelemetry("jobs.saved_search_created", {
-			activeFilterCount,
-			matchBucket: bucketCount(visibleRows.length),
-		});
+	const handleCreateSavedSearch = async () => {
+		clearSearchError();
+		try {
+			const summary = await loadJobsSearchSummary(filters, sortKey);
+			localState.createSavedSearch({
+				filters,
+				rows: visibleRows,
+				baseline: baselineFromSearchSummary(summary),
+				baselineScope: "full",
+				baselineTotalMatches: summary.totalMatches,
+				sortKey,
+				manifest,
+			});
+			trackTelemetry("jobs.saved_search_created", {
+				activeFilterCount,
+				matchBucket: bucketCount(summary.totalMatches),
+			});
+		} catch (caught) {
+			const message = errorMessage(caught);
+			setSearchError(message);
+			trackTelemetry("jobs.saved_search_error", { message });
+		}
 	};
 
 	const handleRestoreSavedSearch = (record: SavedSearchRecord) => {
 		clearSearchError();
 		setActiveSavedSearchId(record.id);
-		setPage(1);
 		localState.updateSavedSearch({
 			...record,
 			lastOpenedAt: new Date().toISOString(),
@@ -552,12 +636,24 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		});
 	};
 
-	const handleReviewSavedSearch = (record: SavedSearchRecord) => {
+	const handleReviewSavedSearch = async (record: SavedSearchRecord) => {
 		setActiveSavedSearchId(record.id);
-		localState.markSavedSearchReviewed(record, rowsForSavedSearch(record), manifest);
-		trackTelemetry("jobs.saved_search_reviewed", {
-			matchBucket: bucketCount(rowsForSavedSearch(record).length),
-		});
+		clearSearchError();
+		try {
+			const summary = await loadJobsSearchSummary(record.filters, record.sortKey);
+			localState.markSavedSearchReviewed(record, rowsForSavedSearch(record), manifest, {
+				baseline: baselineFromSearchSummary(summary),
+				baselineScope: "full",
+				baselineTotalMatches: summary.totalMatches,
+			});
+			trackTelemetry("jobs.saved_search_reviewed", {
+				matchBucket: bucketCount(summary.totalMatches),
+			});
+		} catch (caught) {
+			const message = errorMessage(caught);
+			setSearchError(message);
+			trackTelemetry("jobs.saved_search_error", { message });
+		}
 	};
 
 	const handleDeleteSavedSearch = (record: SavedSearchRecord) => {
@@ -573,6 +669,8 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 
 	const activeSearchMeta = searchMeta;
 	const activeSearchError = searchError;
+	const emptyLoadingResults = searchLoading;
+	const currentPageRowCount = rows.length;
 	const displayedMatchCount =
 		activeSearchMeta?.totalMatches ??
 		manifest?.openJobCount ??
@@ -585,9 +683,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		: activeSearchError
 			? "Showing current results. Retry search for fresh matches."
 			: activeSearchMeta
-				? `Showing page ${formatCount(activeSearchMeta.page)} of ${formatCount(activeSearchMeta.totalPages)} (${formatCount(visibleRows.length)} rows on this page).`
+				? `Showing page ${formatCount(activeSearchMeta.page)} of ${formatCount(activeSearchMeta.totalPages)} (${formatCount(currentPageRowCount)} rows on this page).`
 				: !searchActive
-					? "Loading the first page of open jobs."
+					? "Enter a search or use filters to browse the indexed jobs."
 					: null;
 
 	return (
@@ -653,46 +751,60 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 					</div>
 				) : null}
 
-					{!loading && !error ? (
-						<div className="mt-4">
-							{visibleRows.length === 0 && !hasPreviewSelection ? (
+				{!loading && !error ? (
+					<div className="mt-4">
+						{visibleRows.length === 0 && !hasPreviewSelection ? (
+							<div className="grid gap-3">
 								<JobsBoardEmpty
 									matchCount={displayedMatchCount}
 									activeFilterCount={activeFilterCount}
 									onClearFilters={handleClearFilters}
-									loadingResults={searchLoading}
+									loadingResults={emptyLoadingResults}
 								/>
-							) : (
-								<div
-									className={
+								<SearchPageControls
+									meta={activeSearchMeta}
+									loading={searchLoading}
+									onPageChange={goToPage}
+								/>
+							</div>
+						) : (
+							<div
+								className={
 									hasPreviewSelection
 										? "grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
 										: "grid gap-4"
 								}
-								>
-									{visibleRows.length === 0 ? (
+							>
+								{visibleRows.length === 0 ? (
+									<div className="grid gap-3">
 										<JobsBoardEmpty
-												matchCount={displayedMatchCount}
-												activeFilterCount={activeFilterCount}
-												onClearFilters={handleClearFilters}
-												loadingResults={searchLoading}
-											/>
-									) : (
-										<div className="grid gap-3">
-											<JobsBoardList
-												rows={visibleRows}
-												selectedJobId={selectedJobId ?? ""}
-												jobRecords={localState.jobRecords}
-												jobLifecycleIndicators={lifecycleIndicatorsByJobId}
-												onSelectJob={handleSelectJob}
-											/>
-											<SearchPageControls
-												meta={activeSearchMeta}
-												loading={searchLoading}
-												onPageChange={goToPage}
-											/>
-										</div>
-									)}
+											matchCount={displayedMatchCount}
+											activeFilterCount={activeFilterCount}
+											onClearFilters={handleClearFilters}
+											loadingResults={emptyLoadingResults}
+										/>
+										<SearchPageControls
+											meta={activeSearchMeta}
+											loading={searchLoading}
+											onPageChange={goToPage}
+										/>
+									</div>
+								) : (
+									<div className="grid gap-3">
+										<JobsBoardList
+											rows={visibleRows}
+											selectedJobId={selectedJobId ?? ""}
+											jobRecords={localState.jobRecords}
+											jobLifecycleIndicators={lifecycleIndicatorsByJobId}
+											onSelectJob={handleSelectJob}
+										/>
+										<SearchPageControls
+											meta={activeSearchMeta}
+											loading={searchLoading}
+											onPageChange={goToPage}
+										/>
+									</div>
+								)}
 								{hasPreviewSelection ? (
 									<div className="hidden lg:block">
 										<JobsBoardPreview
@@ -882,7 +994,6 @@ function detailRowSnapshot(detail: JobDetail): SearchRow {
 function detailDescriptionSnippet(detail: JobDetail) {
 	const value =
 		text(detail.description) ||
-		stripTags(detail.descriptionHtml ?? "") ||
 		structuredJobDescriptionText(detail);
 	return value.slice(0, 200);
 }

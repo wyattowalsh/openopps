@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from openopps.models import BoardProviderRecord, BoardRecord
+from openopps.models import (
+    BoardProviderRecord,
+    BoardRecord,
+    validate_provider_host,
+    validate_public_host,
+)
 from openopps.providers.boards.tokens import (
     ashby_token_from_url,
     greenhouse_token_from_url,
@@ -25,11 +30,18 @@ def route_ready(route: BoardProviderRecord) -> bool:
     """Return whether a persisted provider route has enough metadata to execute."""
 
     if route.provider_id == "workday":
-        return bool(route.board_url or (route.host and route.tenant and route.site))
+        return bool(
+            route.board_url
+            or (_provider_host(route, "myworkdayjobs.com") and route.tenant and route.site)
+        )
     if route.provider_id == "bamboohr":
-        return bool(route.token or route.board_url or (route.host and route.tenant))
+        return bool(
+            route.token or route.board_url or (_bamboohr_host(route) and route.tenant)
+        )
     if route.provider_id in {"teamtailor", "wpjobmanager"}:
-        return bool(route.token or route.board_url or route.host)
+        if route.provider_id == "teamtailor":
+            return bool(_teamtailor_host(route))
+        return bool(route.token or route.board_url or _host(route.host))
     if route.provider_id in {"greenhouse", "lever", "ashbyhq", "workable", "rippling"}:
         return bool(route.token or route.board_url)
     return bool(
@@ -134,8 +146,19 @@ def _normalize_url(url: str) -> str:
 def _host(value: str | None) -> str | None:
     if not value:
         return None
-    host = value.strip().lower().rstrip(".")
-    return host or None
+    try:
+        return validate_public_host(value)
+    except ValueError:
+        return None
+
+
+def _provider_host(route: BoardProviderRecord, domain: str) -> str | None:
+    if not route.host:
+        return None
+    try:
+        return validate_provider_host(route.host, domain)
+    except ValueError:
+        return None
 
 
 def _host_from_url(url: str | None) -> str | None:
@@ -158,30 +181,40 @@ def _origin_from_url(url: str | None) -> str | None:
 
 def _teamtailor_host(route: BoardProviderRecord) -> str | None:
     if route.host:
-        host = _host(route.host)
-        if host and host.endswith(".teamtailor.com"):
-            return host
+        return _provider_host(route, "teamtailor.com")
     host = _host_from_url(route.board_url)
-    if host and host.endswith(".teamtailor.com"):
-        return host
+    if host:
+        try:
+            return validate_provider_host(host, "teamtailor.com")
+        except ValueError:
+            pass
     if route.token:
         token = route.token.strip().lower()
         if token:
-            return f"{token}.teamtailor.com"
+            try:
+                return validate_provider_host(
+                    f"{token}.teamtailor.com", "teamtailor.com"
+                )
+            except ValueError:
+                return None
     return None
 
 
 def _bamboohr_host(route: BoardProviderRecord) -> str | None:
     if route.host:
-        host = _host(route.host)
-        if host and host.endswith(".bamboohr.com"):
-            return host
+        return _provider_host(route, "bamboohr.com")
     host = _host_from_url(route.board_url)
-    if host and host.endswith(".bamboohr.com"):
-        return host
+    if host:
+        try:
+            return validate_provider_host(host, "bamboohr.com")
+        except ValueError:
+            pass
     tenant = (route.tenant or route.token or "").strip().lower()
     if tenant:
-        return f"{tenant}.bamboohr.com"
+        try:
+            return validate_provider_host(f"{tenant}.bamboohr.com", "bamboohr.com")
+        except ValueError:
+            return None
     return None
 
 

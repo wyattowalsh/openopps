@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 import socket
+import sqlite3
 
 import httpx
 import pytest
@@ -122,6 +123,59 @@ async def test_retrying_json_request_caches_successful_json(tmp_path):
     assert route.call_count == 1
     assert _cache_for(settings).status()["total"] == 1
     assert not (tmp_path / "openopps.cache.db").exists()
+
+
+@pytest.mark.asyncio
+async def test_retrying_json_request_cache_separates_credentialed_requests(tmp_path):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        retry_attempts=1,
+        cache_ttl_seconds=60,
+    )
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        credential = {
+            "Bearer credential-one-secret": "one",
+            "Bearer credential-two-secret": "two",
+        }[request.headers["authorization"]]
+        return httpx.Response(200, json={"credential": credential}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        request_json = retrying_json_request(settings)
+        first = await request_json(
+            client,
+            "GET",
+            "https://api.example.test/credentialed",
+            headers={"Authorization": "Bearer credential-one-secret"},
+        )
+        second = await request_json(
+            client,
+            "GET",
+            "https://api.example.test/credentialed",
+            headers={"Authorization": "Bearer credential-two-secret"},
+        )
+        cached_first = await request_json(
+            client,
+            "GET",
+            "https://api.example.test/credentialed",
+            headers={"Authorization": "Bearer credential-one-secret"},
+        )
+
+    assert first == {"credential": "one"}
+    assert second == {"credential": "two"}
+    assert cached_first == {"credential": "one"}
+    assert len(requests) == 2
+    assert _cache_for(settings).status()["total"] == 2
+    assert settings.sqlite_path is not None
+    with sqlite3.connect(settings.sqlite_path) as conn:
+        stored_identity = "\n".join(
+            row[0] for row in conn.execute("select request_identity from http_cache")
+        )
+    assert "credential-one-secret" not in stored_identity
+    assert "credential-two-secret" not in stored_identity
+    assert "sha256:" in stored_identity
 
 
 @pytest.mark.asyncio
@@ -489,6 +543,46 @@ async def test_retrying_json_request_strips_sensitive_headers_on_cross_origin_re
     assert "x-api-key" not in redirected_headers
     assert "x-auth-token" not in redirected_headers
     assert redirected_headers["x-trace-id"] == "trace-1"
+
+
+@pytest.mark.asyncio
+async def test_retrying_json_request_strips_client_credentials_on_cross_origin_redirect():
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.host == "start.example.test":
+            return httpx.Response(
+                302,
+                headers={"location": "https://end.example.test/data"},
+                request=request,
+            )
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    settings = OpenOppsSettings(retry_attempts=1, cache_enabled=False)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        auth=("user", "client-secret"),
+        cookies={"client_session": "secret"},
+    ) as client:
+        data = await retrying_json_request(settings)(
+            client,
+            "GET",
+            "https://start.example.test/data",
+            follow_redirects=True,
+        )
+
+    assert data == {"ok": True}
+    assert [request.url.host for request in requests] == [
+        "start.example.test",
+        "end.example.test",
+    ]
+    assert "authorization" in requests[0].headers
+    assert "cookie" in requests[0].headers
+    redirected_headers = requests[1].headers
+    assert "authorization" not in redirected_headers
+    assert "cookie" not in redirected_headers
 
 
 @pytest.mark.asyncio

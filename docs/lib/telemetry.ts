@@ -112,6 +112,7 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	"jobs.result_selected": ["hadPreviousSelection"],
 	"jobs.saved_search_created": ["activeFilterCount", "matchBucket"],
 	"jobs.saved_search_deleted": [],
+	"jobs.saved_search_error": ["message"],
 	"jobs.saved_search_restored": ["newMatchBucket"],
 	"jobs.saved_search_reviewed": ["matchBucket"],
 	"jobs.search_error": ["message"],

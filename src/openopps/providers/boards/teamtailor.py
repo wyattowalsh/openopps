@@ -15,6 +15,7 @@ from openopps.models import (
     JobRecord,
     normalize_remote_level,
     strip_html,
+    validate_provider_host,
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
@@ -107,15 +108,25 @@ class TeamtailorProvider:
 
 
 def teamtailor_host(route: BoardProviderRecord) -> str | None:
-    if route.host and route.host.strip().lower().endswith(".teamtailor.com"):
-        return route.host.strip().lower()
+    if route.host:
+        try:
+            return validate_provider_host(route.host, "teamtailor.com")
+        except ValueError:
+            return None
     if route.board_url:
         parsed = urlparse(route.board_url)
-        host = (parsed.hostname or "").lower()
-        if host.endswith(".teamtailor.com"):
-            return host
+        try:
+            return validate_provider_host(parsed.hostname or "", "teamtailor.com")
+        except ValueError:
+            return None
     if route.token:
-        return f"{route.token.strip().lower()}.teamtailor.com"
+        try:
+            return validate_provider_host(
+                f"{route.token.strip().lower()}.teamtailor.com",
+                "teamtailor.com",
+            )
+        except ValueError:
+            return None
     return None
 
 

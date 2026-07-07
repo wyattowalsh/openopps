@@ -42,10 +42,15 @@ docs-generate:
 docs-search-index:
     cd docs && pnpm data:generate:search
 
+# Verify the committed docs search-index artifact graph is complete.
+docs-search-artifacts-check:
+    uv run python scripts/verify_docs_search_artifacts.py --root docs/public/data/openopps-search --require-git-tracked
+
 # Require the committed docs search-index snapshot to match a local Kaggle SQLite DB.
 docs-search-index-check:
     @if [ ! -f kaggle/openoppsdb.sqlite ]; then echo "Missing kaggle/openoppsdb.sqlite; refresh or download the local snapshot before running docs-search-index-check."; exit 1; fi
     cd docs && pnpm data:generate:search
+    uv run python scripts/verify_docs_search_artifacts.py --root docs/public/data/openopps-search --require-git-tracked
     git diff --exit-code -- docs/public/data/openopps-search
 
 # Generate docs data, MDX output, Next route types, and TypeScript checks.

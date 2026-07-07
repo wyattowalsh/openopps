@@ -4,7 +4,12 @@ import respx
 
 import openopps.providers.boards.workable as workable_module
 from openopps.http import build_async_client, retrying_json_request
-from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport
+from openopps.models import (
+    BoardProviderRecord,
+    BoardRecord,
+    ProviderSupport,
+    validate_provider_host,
+)
 from openopps.providers.boards.ashby import AshbyProvider, ashby_token
 from openopps.providers.boards.bamboohr import (
     BambooHRProvider,
@@ -40,6 +45,23 @@ def route(provider_id: str, **updates: object) -> BoardProviderRecord:
     }
     data.update(updates)
     return BoardProviderRecord.model_validate(data)
+
+
+def test_validate_provider_host_rejects_url_like_host_spoofing() -> None:
+    assert validate_provider_host("acme.bamboohr.com", "bamboohr.com") == (
+        "acme.bamboohr.com"
+    )
+
+    for host in (
+        "evil.example/acme.bamboohr.com",
+        "https://acme.bamboohr.com",
+        "acme.bamboohr.com:443",
+        "user@acme.bamboohr.com",
+        "acme .bamboohr.com",
+        "-acme.bamboohr.com",
+    ):
+        with pytest.raises(ValueError):
+            validate_provider_host(host, "bamboohr.com")
 
 
 @pytest.mark.asyncio
@@ -849,6 +871,11 @@ def test_teamtailor_route_detection_and_host_derivation():
     assert teamtailor_host(route("teamtailor", token="charlie")) == (
         "charlie.teamtailor.com"
     )
+    assert (
+        teamtailor_host(route("teamtailor", host="evil.example/acme.teamtailor.com"))
+        is None
+    )
+    assert teamtailor_host(route("teamtailor", token="evil/path")) is None
     assert teamtailor_host(route("teamtailor")) is None
 
 
@@ -1271,6 +1298,12 @@ def test_wpjobmanager_route_detection_and_endpoint_derivation():
     assert (
         wpjobmanager_endpoint(route("wpjobmanager", host="Jobs.Example.com"))
         == rest_url
+    )
+    assert (
+        wpjobmanager_endpoint(
+            route("wpjobmanager", host="evil.example/jobs.example.com")
+        )
+        is None
     )
     assert wpjobmanager_endpoint(route("wpjobmanager")) is None
 

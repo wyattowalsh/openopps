@@ -229,23 +229,23 @@ v0.1 intentionally stops at lightweight validation rather than connect-time IP p
 
 ## Telemetry Operations
 
-The docs app telemetry source of truth should be a first-party event lake. The default local mode is no-op; production-like deployments should write raw append-only events to persistent storage, compact them into Parquet, and query them with DuckDB or another local analytical engine.
+The docs app telemetry source of truth should be a first-party event lake. The default local mode is no-op; production-like deployments should write append-only events to persistent storage, compact them into Parquet with a separate maintenance job, and query them with DuckDB or another local analytical engine.
 
 | Sink | Operating model | Notes |
 | ---- | --------------- | ----- |
 | `noop` | Collects nothing. | Default for local development or hosts without storage. |
-| `local-event-lake` | Appends raw NDJSON events, rotates files, and compacts to Parquet. | Canonical free sink when persistent disk is available. |
-| `cloudflare` | Optional adapter for Workers/R2/D1/Analytics Engine. | Can be free inside quotas; monitor usage and billing risk. |
-| `umami` | Optional self-hosted dashboard mirror. | Useful for summary views, not the raw telemetry warehouse. |
+| `local-event-lake` | Appends sanitized NDJSON events under UTC date partitions. | Canonical free sink when persistent disk is available. |
 
-Telemetry operations should preserve the raw event lake, cap payload sizes, record redaction/truncation evidence, and avoid raw IP retention. Keep event names and property keys allowlisted so exploratory UI instrumentation does not accidentally persist secrets from query strings, stack traces, or copied provider payloads.
+The current collector accepts only `noop` and `local-event-lake` as `OPENOPPS_TELEMETRY_SINK` values. Cloudflare, Umami, or BI dashboards should be treated as downstream mirrors fed from the event lake or from sanitized aggregates, not as the canonical raw telemetry store.
+
+Telemetry operations should preserve the event lake, cap payload sizes, record redaction/truncation evidence, and avoid raw IP retention. Keep event names and property keys allowlisted so exploratory UI instrumentation does not accidentally persist secrets from query strings, stack traces, or copied provider payloads.
 
 | Variable | Default | Production rule |
 | -------- | ------- | --------------- |
 | `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED` | disabled | Enables the browser client only when explicitly set. |
 | `OPENOPPS_TELEMETRY_SINK` | `noop` | Use `local-event-lake` only when persistent storage is available. |
 | `OPENOPPS_TELEMETRY_DIR` | unset | Required for `local-event-lake`; events are partitioned by UTC date. |
-| `OPENOPPS_TELEMETRY_SALT` | test/dev fallback | Required for `local-event-lake`; rotate through deployment config, not source. |
+| `OPENOPPS_TELEMETRY_SALT` | test/dev fallback | Required before `local-event-lake` accepts writes; rotate through deployment config, not source. |
 | `OPENOPPS_TELEMETRY_IP_MODE` | `hash` | `raw` is rejected when `NODE_ENV=production`; use `hash` or `drop`. |
 | `OPENOPPS_TELEMETRY_RATE_LIMIT_MAX` | `120` | Public POST limit per salted request fingerprint. |
 | `OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window in milliseconds. |

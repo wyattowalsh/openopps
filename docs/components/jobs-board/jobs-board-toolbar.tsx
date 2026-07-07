@@ -48,7 +48,7 @@ type JobsBoardToolbarProps = {
 	showHidden: boolean;
 	savedSearches: Array<{
 		record: SavedSearchRecord;
-		newMatches: number;
+		newMatches: number | null;
 	}>;
 	onChange: (next: Partial<JobBoardFilters>) => void;
 	onClear: () => void;
@@ -360,13 +360,14 @@ export function JobsBoardToolbar({
 						</Tooltip>
 						<Tooltip>
 							<TooltipTrigger asChild>
-								<Button
-									type="button"
-									variant="outline"
-									size="icon-sm"
-									onClick={onSaveSearch}
-									aria-label="Save current search"
-								>
+									<Button
+										type="button"
+										variant="outline"
+										size="icon-sm"
+										onClick={onSaveSearch}
+										disabled={activeFilterCount === 0}
+										aria-label="Save current search"
+									>
 									<BookmarkPlus className="size-3.5" />
 								</Button>
 							</TooltipTrigger>
@@ -551,8 +552,8 @@ export function JobsBoardToolbar({
 							<ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
 						</summary>
 						<div className="grid gap-2 border-t border-border/70 p-3">
-							{savedSearches.map(({ record, newMatches }) => (
-								<div
+								{savedSearches.map(({ record, newMatches }) => (
+									<div
 									key={record.id}
 									className="grid gap-2 rounded-[var(--opps-radius-md)] border border-border/70 bg-card/60 p-2 sm:grid-cols-[minmax(0,1fr)_auto]"
 								>
@@ -564,11 +565,28 @@ export function JobsBoardToolbar({
 										<span className="block truncate text-sm font-semibold text-foreground">
 											{record.label}
 										</span>
-										<span className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-											<Badge variant={newMatches > 0 ? "info" : "muted"}>
-												{newMatches} new or changed
-											</Badge>
-											{record.lastReviewedAt ? (
+											<span className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+												<Badge
+													variant={
+														newMatches === null
+															? "outline"
+															: newMatches > 0
+																? "info"
+																: "muted"
+													}
+												>
+													{newMatches === null
+														? "syncing"
+														: `${newMatches} new or changed`}
+												</Badge>
+												<Badge
+													variant={record.baselineScope === "full" ? "success" : "outline"}
+												>
+													{record.baselineScope === "full"
+														? "full baseline"
+														: "page baseline"}
+												</Badge>
+												{record.lastReviewedAt ? (
 												<Badge variant="outline">
 													reviewed {record.lastReviewedAt.slice(0, 10)}
 												</Badge>

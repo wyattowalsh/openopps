@@ -265,6 +265,20 @@ export type JobsSearchResponse = SearchChunk & {
 	truncated: boolean;
 };
 
+export type JobsSearchSummaryEntry = {
+	id: string;
+	fingerprint: string;
+};
+
+export type JobsSearchSummaryResponse = {
+	version: number;
+	entity: "jobs";
+	totalMatches: number;
+	sortKey: string;
+	filtersHash: string;
+	entries: JobsSearchSummaryEntry[];
+};
+
 /** Job detail shard payload for preview sheets and deep links. */
 export type JobDetail = {
 	id: string;
@@ -285,7 +299,6 @@ export type JobDetail = {
 	salaryMax?: number | null;
 	salaryCurrency?: string | null;
 	description?: string | null;
-	descriptionHtml?: string | null;
 	responsibilities?: string[];
 	qualifications?: string[];
 	skills?: Array<{ name?: string; level?: string; keywords?: string[] }>;
@@ -308,12 +321,4 @@ export type JobDetail = {
 	detailTier?: "T1" | "T2" | string | null;
 	jobExtra?: Record<string, unknown> | null;
 	versionExtra?: Record<string, unknown> | null;
-	payloadSnapshots?: Array<{
-		kind?: string | null;
-		payloadHash?: string | null;
-		observedAt?: string | null;
-		payload?: Record<string, unknown>;
-		truncated?: boolean;
-		originalChars?: number;
-	}>;
 };

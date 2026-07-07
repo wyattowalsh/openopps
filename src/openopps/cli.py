@@ -26,6 +26,7 @@ from rich.progress import (
 from rich.table import Table
 from typer.core import TyperGroup
 
+from openopps import __version__
 from openopps.cache import HttpCache
 from openopps.coverage import (
     build_coverage_report,
@@ -146,6 +147,9 @@ def _load_example_dataset_builder() -> Callable[..., Any]:
 
 class OpenOppsRootGroup(TyperGroup):
     def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
+        if "--version" in args:
+            typer.echo(f"openopps {__version__}")
+            ctx.exit()
         show_intro = True
         for arg in args:
             if arg == "--no-intro":
@@ -251,7 +255,19 @@ def main(
             rich_help_panel="Experience",
         ),
     ] = True,
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show the OpenOpps version and exit.",
+            is_eager=True,
+            rich_help_panel="Experience",
+        ),
+    ] = False,
 ) -> None:
+    if version:
+        typer.echo(f"openopps {__version__}")
+        raise typer.Exit()
     play_intro(enabled=intro)
 
 
@@ -923,7 +939,15 @@ def plugins_list(
         return
     _table(
         "OpenOpps Plugins",
-        ["entry_point", "plugin", "version", "loaded", "capabilities", "error"],
+        [
+            "entry_point",
+            "plugin",
+            "version",
+            "loaded",
+            "capabilities",
+            "warnings",
+            "error",
+        ],
         [
             [
                 plugin["entryPoint"],
@@ -931,6 +955,7 @@ def plugins_list(
                 (plugin["metadata"] or {}).get("version", ""),
                 plugin["loaded"],
                 len(plugin["capabilities"]),
+                ", ".join(plugin.get("warnings") or []),
                 plugin["error"] or "",
             ]
             for plugin in data["plugins"]

@@ -1,6 +1,7 @@
 import type {
 	Entity,
 	JobsSearchResponse,
+	JobsSearchSummaryResponse,
 	LineageAggregate,
 	SearchChunk,
 	SearchChunkRef,
@@ -147,6 +148,30 @@ export async function loadJobsSearchResults(
 	return payload;
 }
 
+export async function loadJobsSearchSummary(
+	filters: JobBoardFilters,
+	sortKey: JobSortKey,
+	options: { signal?: AbortSignal } = {},
+) {
+	const params = jobsSearchParams(filters, sortKey);
+	params.set("summary", "1");
+	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
+	const response = await fetch(path, {
+		cache: "force-cache",
+		signal: options.signal,
+	});
+	if (!response.ok) {
+		throw new SearchLoadError(
+			"fetch_failed",
+			`Unable to load ${JOBS_SEARCH_PATH}: ${response.status}`,
+			JOBS_SEARCH_PATH,
+		);
+	}
+	const payload = (await response.json()) as JobsSearchSummaryResponse;
+	validateJobsSearchSummaryResponse(payload);
+	return payload;
+}
+
 export function validateSearchManifest(manifest: SearchManifest) {
 	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(manifest.version)) {
 		throw new SearchLoadError(
@@ -204,6 +229,40 @@ export function validateJobsSearchResponse(response: JobsSearchResponse) {
 			"invalid_chunk",
 			"Jobs search response is missing result metadata.",
 		);
+	}
+}
+
+export function validateJobsSearchSummaryResponse(response: JobsSearchSummaryResponse) {
+	if (
+		response.entity !== "jobs" ||
+		!SUPPORTED_SEARCH_INDEX_VERSIONS.has(response.version) ||
+		typeof response.totalMatches !== "number" ||
+		typeof response.sortKey !== "string" ||
+		typeof response.filtersHash !== "string" ||
+		!Array.isArray(response.entries)
+	) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			"Jobs search summary response is missing result metadata.",
+		);
+	}
+	if (response.entries.length !== response.totalMatches) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			"Jobs search summary count does not match entries.",
+		);
+	}
+	for (const entry of response.entries) {
+		if (
+			!entry ||
+			typeof entry.id !== "string" ||
+			typeof entry.fingerprint !== "string"
+		) {
+			throw new SearchLoadError(
+				"invalid_chunk",
+				"Jobs search summary contains an invalid entry.",
+			);
+		}
 	}
 }
 
@@ -286,4 +345,26 @@ function appendBooleanParam(params: URLSearchParams, key: string, value: boolean
 	if (value) {
 		params.set(key, "1");
 	}
+}
+
+function jobsSearchParams(filters: JobBoardFilters, sortKey: JobSortKey) {
+	const params = new URLSearchParams();
+	appendParam(params, "q", filters.query);
+	appendBooleanParam(params, "wide", filters.wide);
+	appendBooleanParam(params, "all", filters.includeAllIndexed);
+	appendParam(params, "source", filters.source);
+	appendParam(params, "provider", filters.provider);
+	appendParam(params, "location", filters.location);
+	appendParam(params, "department", filters.department);
+	appendParam(params, "team", filters.team);
+	appendParam(params, "workplace", filters.workplace);
+	appendParam(params, "remote", filters.remote);
+	appendParam(params, "employment", filters.employment);
+	appendParam(params, "skill", filters.skill);
+	appendParam(params, "salaryMin", filters.salaryMin);
+	appendParam(params, "salaryMax", filters.salaryMax);
+	appendParam(params, "postedAfter", filters.postedAfter);
+	appendParam(params, "postedBefore", filters.postedBefore);
+	appendParam(params, "sort", sortKey);
+	return params;
 }

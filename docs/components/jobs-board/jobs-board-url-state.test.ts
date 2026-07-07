@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	filterQueryOptions,
 	JOB_FILTER_DEBOUNCE_MS,
+	jobBoardQueryParsers,
 	selectedJobQueryOptions,
 } from "./jobs-board-filter-state";
 
@@ -26,5 +27,9 @@ describe("jobs board URL state policy", () => {
 			method: "debounce",
 			timeMs: JOB_FILTER_DEBOUNCE_MS,
 		});
+	});
+
+	it("tracks the search result page in shareable URL state", () => {
+		expect(Object.keys(jobBoardQueryParsers)).toContain("page");
 	});
 });

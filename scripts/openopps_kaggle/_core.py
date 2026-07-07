@@ -2341,12 +2341,22 @@ def _prune_private_upload_files(output_dir: Path) -> None:
 
 def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
     dataset_dir = dataset_dir.expanduser().resolve()
-    upload_dir = upload_dir.expanduser().resolve()
-    if upload_dir == dataset_dir:
-        raise ValueError("Public upload staging directory must differ from dataset dir")
+    raw_upload_dir = upload_dir.expanduser()
+    if raw_upload_dir.is_symlink():
+        raise ValueError("Public upload staging directory must not be a symlink")
+    upload_dir = raw_upload_dir.resolve()
+    if upload_dir == dataset_dir or _path_is_relative_to(upload_dir, dataset_dir):
+        raise ValueError(
+            "Public upload staging directory must be outside the dataset dir"
+        )
+    if _is_protected_public_upload_dir(upload_dir, dataset_dir):
+        raise ValueError(
+            f"Refusing to stage public upload into protected directory: {upload_dir}"
+        )
     if upload_dir.exists():
-        shutil.rmtree(upload_dir)
-    upload_dir.mkdir(parents=True)
+        _prepare_existing_public_upload_dir(upload_dir)
+    else:
+        upload_dir.mkdir(parents=True)
 
     db_path = dataset_dir / DB_FILE
 
@@ -2376,6 +2386,66 @@ def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
             target.hardlink_to(source)
         except OSError:
             shutil.copy2(source, target)
+
+
+def _prepare_existing_public_upload_dir(upload_dir: Path) -> None:
+    if not upload_dir.is_dir():
+        raise ValueError(
+            f"Public upload staging path exists but is not a directory: {upload_dir}"
+        )
+    entries = list(upload_dir.iterdir())
+    if not entries:
+        return
+    if not _is_tool_owned_public_upload_dir(upload_dir):
+        raise ValueError(
+            "Refusing to overwrite non-empty public upload staging directory "
+            f"without prior OpenOpps public-upload contents: {upload_dir}"
+        )
+    for entry in entries:
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
+def _is_tool_owned_public_upload_dir(upload_dir: Path) -> bool:
+    allowed_files = set(PUBLIC_UPLOAD_CONTROL_FILES + PUBLIC_UPLOAD_DATA_FILES)
+    allowed_dirs = {
+        parent.as_posix()
+        for relative_path in allowed_files
+        for parent in Path(relative_path).parents
+        if parent.as_posix() != "."
+    }
+    saw_entry = False
+    for path in upload_dir.rglob("*"):
+        saw_entry = True
+        relative_path = path.relative_to(upload_dir).as_posix()
+        if path.is_symlink():
+            return False
+        if path.is_file():
+            if relative_path not in allowed_files:
+                return False
+            continue
+        if path.is_dir():
+            if relative_path not in allowed_dirs:
+                return False
+            continue
+        return False
+    return saw_entry
+
+
+def _is_protected_public_upload_dir(upload_dir: Path, dataset_dir: Path) -> bool:
+    protected = {Path.cwd().resolve(), Path.home().resolve()}
+    protected.update(dataset_dir.parents)
+    return upload_dir in protected
+
+
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
 
 
 def _stage_runtime_generator_dir(upload_dir: Path) -> None:

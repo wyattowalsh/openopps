@@ -8,6 +8,7 @@ import {
 	normalizePage,
 	normalizePageSize,
 	searchPublicJobsIndex,
+	summarizePublicJobsIndex,
 } from "@/lib/jobs-search-service";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,18 @@ export async function GET(request: Request) {
 	const url = new URL(request.url);
 	const filters = filtersFromSearchParams(url.searchParams);
 	const sortKey = normalizeJobsSearchSortKey(url.searchParams.get("sort"), filters);
+	if (parseBooleanParam(url.searchParams.get("summary"))) {
+		const summary = await summarizePublicJobsIndex({
+			baseUrl: url,
+			filters,
+			sortKey,
+		});
+		return NextResponse.json(summary, {
+			headers: {
+				"Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+			},
+		});
+	}
 	const result = await searchPublicJobsIndex({
 		baseUrl: url,
 		filters,

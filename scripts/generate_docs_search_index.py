@@ -20,17 +20,19 @@ from urllib.parse import quote, urlparse
 from openopps.models import derive_seniority_from_fields
 from openopps.providers.boards.tokens import greenhouse_token_from_url
 
-SEARCH_INDEX_VERSION = 5
+SEARCH_INDEX_VERSION = 6
 DESCRIPTION_SNIPPET_LEN = 200
 DESCRIPTION_SNIPPET_SOURCE_LEN = 2048
+DETAIL_DESCRIPTION_TEXT_MAX_LEN = 4000
 SKILL_TOKENS_MAX_LEN = 96
-DETAIL_BUCKET_COUNT = 256
+DETAIL_BUCKET_COUNT = 1024
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
 INDEXABLE_IDS_FILE = "jobs-indexable-ids.json"
 LINEAGE_AGGREGATE_FILE = "lineage-aggregate.json"
 JOB_CHUNK_SIZE = 1000
 INITIAL_JOB_LIMIT = 250
 TOP_DASHBOARD_LIMIT = 20
+DESCRIPTION_CLEAN_INPUT_MAX_LEN = 16_000
 
 PROVIDER_COLUMNS = [
     "id",
@@ -122,7 +124,6 @@ DETAIL_TIER1_KEYS = frozenset(
 DETAIL_TIER2_BODY_KEYS = frozenset(
     {
         "description",
-        "descriptionHtml",
         "responsibilities",
         "qualifications",
         "skills",
@@ -158,6 +159,15 @@ CHUNK_FILES = {
     "providers": "providers.json",
     "boards": "boards.json",
 }
+
+_WHITESPACE_RE = re.compile(r"\s+")
+_SHEETS_SPAN_RE = re.compile(
+    r'(?is)<span\b(?=[\s\S]{0,8000}?data-sheets-value=)[\s\S]{0,8000}?data-sheets-userformat="[\s\S]{0,2000}?">'
+)
+_HTML_COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
+_HTML_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9:-]*(?:\s[^>]*)?/?>")
+_TRAILING_HTML_TAG_RE = re.compile(r"(?s)</?[A-Za-z][A-Za-z0-9:-]*(?:\s.*)?$")
+_NORMALIZED_SUGGESTION_RE = re.compile(r"[^a-z0-9]+")
 
 
 def build_search_index(db_path: Path, output_dir: Path) -> dict[str, Any]:
@@ -434,7 +444,10 @@ def _fetch_greenhouse_tokens(conn: sqlite3.Connection) -> dict[str, str]:
 
 
 def _snippet_source(detail: dict[str, Any]) -> str:
-    return _job_detail_description_text(detail)[:DESCRIPTION_SNIPPET_SOURCE_LEN]
+    return _job_detail_description_text(
+        detail,
+        clean_input_limit=DESCRIPTION_SNIPPET_SOURCE_LEN,
+    )[:DESCRIPTION_SNIPPET_SOURCE_LEN]
 
 
 def _fetch_job_version_ids(conn: sqlite3.Connection) -> dict[str, str]:
@@ -668,7 +681,10 @@ def _sort_job_rows(jobs: list[list[Any]]) -> list[list[Any]]:
 
 
 def _plain_snippet(value: str) -> str:
-    return _description_source_text(value)[:DESCRIPTION_SNIPPET_LEN]
+    return _description_source_text(
+        value,
+        clean_input_limit=DESCRIPTION_SNIPPET_SOURCE_LEN,
+    )[:DESCRIPTION_SNIPPET_LEN]
 
 
 def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
@@ -974,10 +990,23 @@ def _sqlite_identifier(value: str) -> str:
 def _clean_text(value: Any) -> str:
     if not isinstance(value, str):
         return ""
-    return re.sub(r"\s+", " ", value).strip()
+    text = value.strip()
+    if not text:
+        return ""
+    if "  " not in text and not any(char.isspace() and char != " " for char in text):
+        return text
+    return _WHITESPACE_RE.sub(" ", text).strip()
 
 
-def _strip_html(value: str) -> str:
+def _strip_html(value: str, *, clean_input_limit: int | None = None) -> str:
+    value = _bounded_description_input(value, clean_input_limit)
+    if "<" not in value:
+        if "&" not in value:
+            return value
+        decoded = _decode_html_entities(value)
+        if "<" not in decoded:
+            return decoded
+        return _remove_html_markup(decoded)
     text = _remove_html_markup(value)
     text = _decode_html_entities(text)
     return _remove_html_markup(text)
@@ -985,14 +1014,10 @@ def _strip_html(value: str) -> str:
 
 def _remove_html_markup(value: str) -> str:
     text = value
-    text = re.sub(
-        r'(?is)<span\b(?=[\s\S]{0,8000}?data-sheets-value=)[\s\S]{0,8000}?data-sheets-userformat="[\s\S]{0,2000}?">',
-        " ",
-        text,
-    )
-    text = re.sub(r"(?s)<!--.*?-->", " ", text)
-    text = re.sub(r"</?[A-Za-z][A-Za-z0-9:-]*(?:\s[^>]*)?/?>", " ", text)
-    return re.sub(r"(?s)</?[A-Za-z][A-Za-z0-9:-]*(?:\s.*)?$", " ", text)
+    text = _SHEETS_SPAN_RE.sub(" ", text)
+    text = _HTML_COMMENT_RE.sub(" ", text)
+    text = _HTML_TAG_RE.sub(" ", text)
+    return _TRAILING_HTML_TAG_RE.sub(" ", text)
 
 
 def _decode_html_entities(value: str) -> str:
@@ -1005,17 +1030,38 @@ def _decode_html_entities(value: str) -> str:
     return text
 
 
-def _description_source_text(value: Any) -> str:
+def _bounded_description_input(value: str, limit: int | None) -> str:
+    if limit is None:
+        return value
+    # Snippets and public detail bodies are bounded downstream. Keep enough raw
+    # input to survive dense markup without running regex cleanup over full pages.
+    max_len = max(DESCRIPTION_CLEAN_INPUT_MAX_LEN, limit * 4)
+    if len(value) <= max_len:
+        return value
+    return value[:max_len]
+
+
+def _description_source_text(
+    value: Any, *, clean_input_limit: int | None = None
+) -> str:
     if not isinstance(value, str):
         return ""
-    return _clean_text(_strip_html(value))
+    return _clean_text(_strip_html(value, clean_input_limit=clean_input_limit))
 
 
-def _job_detail_description_text(detail: dict[str, Any]) -> str:
-    description = _description_source_text(detail.get("description"))
+def _job_detail_description_text(
+    detail: dict[str, Any], *, clean_input_limit: int | None = None
+) -> str:
+    description = _description_source_text(
+        detail.get("description"),
+        clean_input_limit=clean_input_limit,
+    )
     if description:
         return description
-    return _description_source_text(detail.get("descriptionHtml"))
+    return _description_source_text(
+        detail.get("descriptionHtml"),
+        clean_input_limit=clean_input_limit,
+    )
 
 
 def _safe_job_external_url(value: Any) -> str | None:
@@ -1085,7 +1131,10 @@ def _is_indexable_job_detail(detail: dict[str, Any]) -> bool:
     has_core_content = bool(
         _clean_text(detail.get("title"))
         and _clean_text(detail.get("company"))
-        and _job_detail_description_text(detail)
+        and _job_detail_description_text(
+            detail,
+            clean_input_limit=DESCRIPTION_SNIPPET_SOURCE_LEN,
+        )
     )
     has_date = any(
         _parse_timestamp(value)
@@ -1124,7 +1173,17 @@ def _write_indexable_job_ids(output_dir: Path, job_ids: Sequence[str]) -> None:
 
 
 def _public_detail_description(payload: dict[str, Any]) -> str:
-    return _job_detail_description_text(payload)
+    return _bounded_public_text(
+        _job_detail_description_text(payload),
+        DETAIL_DESCRIPTION_TEXT_MAX_LEN,
+    )
+
+
+def _bounded_public_text(value: str, limit: int) -> str:
+    text = _clean_text(value)
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip()
 
 
 def _public_job_description(value: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -1133,7 +1192,7 @@ def _public_job_description(value: Any, payload: dict[str, Any]) -> dict[str, An
     if "description" not in value:
         return value
     has_canonical_description = bool(
-        _clean_text(payload.get("descriptionHtml"))
+        _description_source_text(payload.get("descriptionHtml"))
         or _public_detail_description(payload)
     )
     if not has_canonical_description:
@@ -1161,9 +1220,9 @@ def _detail_shard_payload(
             continue
         if key not in DETAIL_PUBLIC_KEYS:
             continue
+        if not indexable and key not in DETAIL_TIER1_KEYS:
+            continue
         if key == "description":
-            if _clean_text(payload.get("descriptionHtml")):
-                continue
             description = _public_detail_description(payload)
             if description:
                 shard_payload[key] = description
@@ -2075,7 +2134,7 @@ def _top_values(
 
 
 def _normalized_suggestion(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+    return _NORMALIZED_SUGGESTION_RE.sub(" ", value.casefold()).strip()
 
 
 def _has_text(value: Any) -> bool:

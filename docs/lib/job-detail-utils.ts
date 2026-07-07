@@ -4,6 +4,37 @@ import { siteUrl } from "@/lib/shared";
 
 export { cleanText, safeJobExternalUrl } from "@/lib/job-url";
 
+export type JobDetailWithPrivateFields = JobDetail & {
+	descriptionHtml?: string | null;
+	payloadSnapshots?: unknown;
+};
+
+export function publicJobDetail(
+	detail: JobDetailWithPrivateFields,
+): JobDetail {
+	const publicDetail = { ...detail };
+	delete publicDetail.payloadSnapshots;
+	if (!cleanText(publicDetail.description) && publicDetail.descriptionHtml) {
+		publicDetail.description = cleanText(stripHtml(publicDetail.descriptionHtml));
+	}
+	delete publicDetail.descriptionHtml;
+	return publicDetail;
+}
+
+export function jobDetailDescriptionHtml(
+	detail: JobDetailWithPrivateFields | null | undefined,
+) {
+	const value = detail?.descriptionHtml;
+	return typeof value === "string" ? value : "";
+}
+
+export function jobDetailPayloadSnapshotCount(
+	detail: JobDetailWithPrivateFields | null | undefined,
+) {
+	const snapshots = detail?.payloadSnapshots;
+	return Array.isArray(snapshots) ? snapshots.length : 0;
+}
+
 export function serializeJsonLdScript(value: unknown) {
 	return JSON.stringify(value)
 		.replace(/</g, "\\u003c")
@@ -27,7 +58,10 @@ export function formatJobDetailTitle(detail: JobDetail) {
 	return company ? `${title} at ${company}` : title;
 }
 
-export function jobDescriptionText(detail: JobDetail, maxLength = 240) {
+export function jobDescriptionText(
+	detail: JobDetailWithPrivateFields,
+	maxLength = 240,
+) {
 	const raw =
 		jobDetailDescriptionText(detail) ||
 		"Open public job posting from the OpenOpps static snapshot.";
@@ -37,10 +71,10 @@ export function jobDescriptionText(detail: JobDetail, maxLength = 240) {
 	return `${raw.slice(0, maxLength - 1).trim()}...`;
 }
 
-export function jobDetailDescriptionText(detail: JobDetail) {
+export function jobDetailDescriptionText(detail: JobDetailWithPrivateFields) {
 	return (
 		cleanText(stripHtml(detail.description ?? "")) ||
-		cleanText(stripHtml(detail.descriptionHtml ?? ""))
+		cleanText(stripHtml(jobDetailDescriptionHtml(detail)))
 	);
 }
 
@@ -48,7 +82,7 @@ export function primaryJobExternalUrl(detail: JobDetail) {
 	return safeJobExternalUrl(detail.postingUrl) ?? safeJobExternalUrl(detail.applyUrl);
 }
 
-export function isIndexableJobDetail(detail: JobDetail) {
+export function isIndexableJobDetail(detail: JobDetailWithPrivateFields) {
 	const status = cleanText(detail.status).toLowerCase();
 	const hasOpenStatus = !status || status === "open";
 	const hasCoreContent = Boolean(
@@ -62,14 +96,14 @@ export function isIndexableJobDetail(detail: JobDetail) {
 	return Boolean(hasOpenStatus && hasCoreContent && hasDate && primaryJobExternalUrl(detail));
 }
 
-export function shouldEmitJobPostingJsonLd(detail: JobDetail) {
+export function shouldEmitJobPostingJsonLd(detail: JobDetailWithPrivateFields) {
 	if (!jobPostingJsonLdEnabled()) {
 		return false;
 	}
 	return isIndexableJobDetail(detail);
 }
 
-export function jobPostingJsonLd(detail: JobDetail) {
+export function jobPostingJsonLd(detail: JobDetailWithPrivateFields) {
 	if (!shouldEmitJobPostingJsonLd(detail)) {
 		return null;
 	}

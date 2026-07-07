@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JobsBoardPreview } from "./jobs-board-preview";
 import type { SearchRow } from "@/components/openopps-search/search-types";
+import type { JobDetailWithPrivateFields } from "@/lib/job-detail-utils";
 
 afterEach(() => {
 	cleanup();
@@ -40,7 +41,7 @@ describe("JobsBoardPreview", () => {
 					company: "Acme",
 					applyUrl: "javascript:alert(1)",
 					postingUrl: "data:text/html,unsafe",
-					descriptionHtml: '<img src=x onerror="alert(1)">',
+					description: "Design systems.",
 				}}
 				loading={false}
 				error={null}
@@ -91,6 +92,43 @@ describe("JobsBoardPreview", () => {
 		);
 
 		expect(screen.getByText("Structured posting body only.")).toBeTruthy();
+	}, 15_000);
+
+	it("renders allowed detail fields without rendering payload snapshots", () => {
+		const detail: JobDetailWithPrivateFields = {
+			id: "job-1",
+			status: "open",
+			title: "Designer",
+			company: "Acme",
+			description: "Design systems.",
+			experience: "Senior",
+			detailTier: "T2",
+			applyUrl: "https://example.test/apply",
+			postingUrl: "https://example.test/jobs/1",
+			payloadSnapshots: [
+				{
+					kind: "raw",
+					payload: { secret: "raw provider payload" },
+				},
+			],
+		};
+
+		render(
+			<JobsBoardPreview
+				row={jobRow()}
+				selectedJobId="job-1"
+				detail={detail}
+				loading={false}
+				error={null}
+			/>,
+		);
+
+		expect(screen.getByText("Senior")).toBeTruthy();
+		expect(screen.getByText("T2")).toBeTruthy();
+		expect(screen.getByText("https://example.test/apply")).toBeTruthy();
+		expect(screen.getByText("https://example.test/jobs/1")).toBeTruthy();
+		expect(screen.queryByText(/payload snapshot/i)).toBeNull();
+		expect(screen.queryByText(/raw provider payload/i)).toBeNull();
 	}, 15_000);
 });
 

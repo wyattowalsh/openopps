@@ -9,7 +9,7 @@ import {
 	StickyNote,
 	Bookmark,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import type {
 	JobLifecycleIndicator,
@@ -31,7 +31,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { safeJobExternalUrl } from "@/lib/job-url";
-import { sanitizeJobDescriptionHtml } from "@/lib/sanitize-html";
 import { trackTelemetry } from "@/lib/telemetry";
 
 type JobsBoardPreviewProps = {
@@ -274,28 +273,6 @@ function stripTags(value: string) {
 	return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function useSanitizedHtml(value: string | null | undefined) {
-	const source = value ?? "";
-	const [sanitized, setSanitized] = useState({ source: "", html: "" });
-
-	useEffect(() => {
-		if (!source) {
-			return;
-		}
-		const timeout = window.setTimeout(() => {
-			setSanitized({ source, html: sanitizeJobDescriptionHtml(source) });
-		}, 0);
-		return () => {
-			window.clearTimeout(timeout);
-		};
-	}, [source]);
-
-	if (!source) {
-		return "";
-	}
-	return sanitized.source === source ? sanitized.html : "";
-}
-
 export function JobsBoardPreview({
 	row,
 	selectedJobId,
@@ -310,8 +287,6 @@ export function JobsBoardPreview({
 	onNotesChange,
 	onClose,
 }: JobsBoardPreviewProps) {
-	const descriptionHtml = useSanitizedHtml(detail?.descriptionHtml);
-
 	if (!row && !selectedJobId) {
 		return (
 			<div className="opps-empty h-full min-h-[24rem] text-sm text-muted-foreground lg:min-h-[32rem]">
@@ -334,10 +309,7 @@ export function JobsBoardPreview({
 	const sourceKeys = row ? parseSourceKeys(row[J.sourceKeys]) : [];
 	const responsibilities = (detail?.responsibilities ?? []).map(text).filter(Boolean);
 	const qualifications = (detail?.qualifications ?? []).map(text).filter(Boolean);
-	const hasDescription =
-		Boolean(descriptionHtml) ||
-		Boolean(descriptionText) ||
-		loading;
+	const hasDescription = Boolean(descriptionText) || loading;
 	const showSnippetFallback = Boolean(descriptionSnippet) && !hasDescription && !error;
 	const extraPublicFields = additionalPublicFields(detail);
 
@@ -496,6 +468,7 @@ export function JobsBoardPreview({
 						label="Employment"
 						value={text(detail?.employmentType) || (row ? text(row[J.type]) : "")}
 					/>
+					<Field label="Experience" value={text(detail?.experience)} />
 					<Field label="Salary" value={formatDetailSalary(row, detail)} />
 					<Field
 						label="Department / team"
@@ -535,8 +508,11 @@ export function JobsBoardPreview({
 						label="Provider"
 						value={text(detail?.providerId) || (row ? text(row[J.provider]) : "")}
 					/>
+					<Field label="Detail tier" value={text(detail?.detailTier)} />
 					<Field label="Remote id" value={text(detail?.remoteId)} />
 					<Field label="Job id" value={text(detail?.id) || selectedJobId || ""} />
+					<Field label="Apply URL" value={applyUrl} />
+					<Field label="Posting URL" value={postingUrl} />
 				</div>
 
 				{sourceKeys.length > 0 ? (
@@ -572,16 +548,7 @@ export function JobsBoardPreview({
 					</p>
 				) : null}
 
-				{descriptionHtml ? (
-					<Section title="Posting description">
-						<div
-							className="prose prose-sm max-w-none text-foreground [&_a]:text-primary [&_li]:my-1 [&_p]:my-2 [&_ul]:my-2"
-							dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-						/>
-					</Section>
-				) : null}
-
-				{!descriptionHtml && descriptionText ? (
+				{descriptionText ? (
 					<Section title="Posting description">
 						<p className="whitespace-pre-line text-sm leading-6 text-foreground">
 							{descriptionText}
@@ -630,22 +597,6 @@ export function JobsBoardPreview({
 					<JsonBlock label="Compensation" value={detail?.compensation} />
 					<JsonBlock label="Job extra payload" value={detail?.jobExtra} />
 					<JsonBlock label="Version extra payload" value={detail?.versionExtra} />
-					{detail?.payloadSnapshots && detail.payloadSnapshots.length > 0
-						? detail.payloadSnapshots.map((snapshot, index) => (
-								<JsonBlock
-									key={`${snapshot.kind ?? "snapshot"}-${index}`}
-									label={`Payload snapshot${snapshot.kind ? `: ${snapshot.kind}` : ""}`}
-									value={{
-										kind: snapshot.kind,
-										payloadHash: snapshot.payloadHash,
-										observedAt: snapshot.observedAt,
-										payload: snapshot.payload,
-									}}
-									truncated={snapshot.truncated}
-									originalChars={snapshot.originalChars}
-								/>
-							))
-						: null}
 				</div>
 
 				<div className="grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">

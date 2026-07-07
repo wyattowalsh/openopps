@@ -57,6 +57,33 @@ def test_route_ready_accepts_provider_specific_metadata():
     )
 
 
+def test_route_ready_rejects_provider_host_spoofing():
+    assert not route_ready(
+        route_record(
+            provider_id="workday",
+            host="evil.example/acme.myworkdayjobs.com",
+            tenant="acme",
+            site="External",
+        )
+    )
+    assert not route_ready(
+        route_record(
+            provider_id="bamboohr",
+            host="evil.example/acme.bamboohr.com",
+            tenant="acme",
+        )
+    )
+    assert not route_ready(
+        route_record(
+            provider_id="teamtailor",
+            host="evil.example/acme.teamtailor.com",
+        )
+    )
+    assert not route_ready(
+        route_record(provider_id="wpjobmanager", host="example.com/jobs")
+    )
+
+
 def test_route_request_key_prefers_provider_tokens_and_workday_cxs_fields():
     board = board_record()
 
@@ -129,6 +156,13 @@ def test_route_request_key_uses_provider_hosts_and_origins():
         )
         == "teamtailor:host:acme.teamtailor.com"
     )
+    assert route_request_key(
+        board,
+        route_record(
+            provider_id="teamtailor",
+            host="evil.example/acme.teamtailor.com",
+        ),
+    ) == "teamtailor:domain:acme.com"
     assert (
         route_request_key(
             board,

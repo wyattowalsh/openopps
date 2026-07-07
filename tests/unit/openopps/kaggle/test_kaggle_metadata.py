@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import inspect
 import csv
 import hashlib
@@ -1893,6 +1892,76 @@ def test_public_upload_stage_excludes_private_and_manager_files(tmp_path: Path) 
         assert f"examples/{spec.slug}/{spec.code_file}" not in actual_files
     assert not (actual_files & set(gen.PRIVATE_EVIDENCE_FILES))
     assert not (actual_files & set(gen.PRIVATE_METADATA_FILES))
+
+
+def _write_public_upload_stage_bundle(root_dir: Path) -> Path:
+    root_dir.mkdir(parents=True, exist_ok=True)
+    bundle_dir = root_dir / "bundle"
+    csv_dir = bundle_dir / gen.CSV_DIR
+    parquet_dir = bundle_dir / gen.PARQUET_DIR
+    csv_dir.mkdir(parents=True)
+    parquet_dir.mkdir(parents=True)
+    (bundle_dir / "dataset-metadata.json").write_text("{}\n", encoding="utf-8")
+    (bundle_dir / gen.DATASET_IMAGE_FILE).write_bytes(b"image")
+    schema_db = root_dir / "schema.sqlite"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{schema_db}"))
+    store.init_db()
+    shutil.copy2(schema_db, bundle_dir / gen.DB_FILE)
+    for table in gen.TABLES:
+        (csv_dir / f"{table.name}.csv").write_text("id\njob-1\n", encoding="utf-8")
+        (parquet_dir / f"{table.name}.parquet").write_bytes(b"PAR1")
+    return bundle_dir
+
+
+def test_public_upload_stage_rejects_existing_unowned_dir(tmp_path: Path) -> None:
+    bundle_dir = _write_public_upload_stage_bundle(tmp_path / "source")
+    upload_dir = tmp_path / "upload"
+    upload_dir.mkdir()
+    existing_file = upload_dir / "keep.txt"
+    existing_file.write_text("do not delete\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Refusing to overwrite non-empty"):
+        gen._stage_public_upload_dir(bundle_dir, upload_dir)
+
+    assert existing_file.read_text(encoding="utf-8") == "do not delete\n"
+
+
+def test_public_upload_stage_accepts_empty_existing_dir(tmp_path: Path) -> None:
+    bundle_dir = _write_public_upload_stage_bundle(tmp_path / "source")
+    upload_dir = tmp_path / "upload"
+    upload_dir.mkdir()
+
+    gen._stage_public_upload_dir(bundle_dir, upload_dir)
+
+    assert (upload_dir / "dataset-metadata.json").is_file()
+    assert (upload_dir / gen.DB_FILE).is_file()
+
+
+def test_public_upload_stage_replaces_prior_tool_owned_dir(tmp_path: Path) -> None:
+    bundle_dir = _write_public_upload_stage_bundle(tmp_path / "source")
+    upload_dir = tmp_path / "upload"
+
+    gen._stage_public_upload_dir(bundle_dir, upload_dir)
+    (upload_dir / "dataset-metadata.json").write_text("old\n", encoding="utf-8")
+    (bundle_dir / "dataset-metadata.json").write_text(
+        '{"updated": true}\n',
+        encoding="utf-8",
+    )
+
+    gen._stage_public_upload_dir(bundle_dir, upload_dir)
+
+    assert (
+        (upload_dir / "dataset-metadata.json").read_text(encoding="utf-8")
+        == '{"updated": true}\n'
+    )
+
+
+def test_public_upload_stage_rejects_dataset_descendant(tmp_path: Path) -> None:
+    bundle_dir = _write_public_upload_stage_bundle(tmp_path / "source")
+    upload_dir = bundle_dir / "upload"
+
+    with pytest.raises(ValueError, match="outside the dataset dir"):
+        gen._stage_public_upload_dir(bundle_dir, upload_dir)
 
 
 def test_private_upload_prune_removes_runtime_artifacts(tmp_path: Path) -> None:

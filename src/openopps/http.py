@@ -4,7 +4,9 @@ import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
+from hashlib import sha256
 from ipaddress import ip_address
+import json
 import socket
 from time import monotonic, time
 from typing import Any, cast
@@ -41,6 +43,7 @@ _CROSS_ORIGIN_SENSITIVE_HEADERS = {
     "x-api-key",
     "x-auth-token",
 }
+_CREDENTIAL_CACHE_IDENTITY_KEY = "__openopps_credentials__"
 _RESPONSE_CACHE_MARKER = "__openopps_http_response_v1__"
 
 JsonResponseData = dict[str, Any] | list[Any]
@@ -232,6 +235,10 @@ def _retrying_response_request(
         params = _mapping_or_none(request_kwargs.get("params"))
         json_body = request_kwargs.get("json")
         headers = _mapping_or_none(request_kwargs.get("headers"))
+        identity = _with_credential_cache_identity(
+            identity,
+            _credential_cache_identity(client, request_kwargs),
+        )
         request_key = (
             cache_key(
                 method,
@@ -364,13 +371,15 @@ async def _request_with_public_redirect_validation(
     max_redirects = int(request_kwargs.pop("max_redirects", MAX_PUBLIC_REDIRECTS))
     current_method = method
     current_url = url
+    strip_client_credentials = False
     for redirect_count in range(max_redirects + 1):
         await assert_public_fetch_url(current_url)
-        response = await client.request(
+        response = await _send_public_request(
+            client,
             current_method,
             current_url,
-            **request_kwargs,
-            follow_redirects=False,
+            request_kwargs,
+            strip_client_credentials=strip_client_credentials,
         )
         if not follow_redirects or not response.is_redirect:
             return response
@@ -384,7 +393,10 @@ async def _request_with_public_redirect_validation(
             )
         next_url = urljoin(str(response.url), location)
         if _request_origin(current_url) != _request_origin(next_url):
-            request_kwargs = _request_kwargs_without_sensitive_headers(request_kwargs)
+            request_kwargs = _request_kwargs_without_cross_origin_credentials(
+                request_kwargs
+            )
+            strip_client_credentials = True
         current_url = next_url
         if response.status_code == 303 or (
             response.status_code in {301, 302}
@@ -393,6 +405,30 @@ async def _request_with_public_redirect_validation(
             current_method = "GET"
             request_kwargs = _request_kwargs_without_body(request_kwargs)
     raise httpx.TooManyRedirects(f"Exceeded {max_redirects} redirects for {url}")
+
+
+async def _send_public_request(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    request_kwargs: dict[str, Any],
+    *,
+    strip_client_credentials: bool,
+) -> httpx.Response:
+    if not strip_client_credentials:
+        return await client.request(
+            method,
+            url,
+            **request_kwargs,
+            follow_redirects=False,
+        )
+
+    build_kwargs = dict(request_kwargs)
+    build_kwargs.pop("auth", None)
+    build_kwargs.pop("cookies", None)
+    request = client.build_request(method, url, **build_kwargs)
+    _strip_sensitive_headers(request.headers)
+    return await client.send(request, follow_redirects=False, auth=None)
 
 
 async def assert_public_fetch_url(url: str) -> str:
@@ -497,6 +533,22 @@ def _request_kwargs_without_sensitive_headers(
         if key.lower() not in _CROSS_ORIGIN_SENSITIVE_HEADERS
     }
     return next_kwargs
+
+
+def _request_kwargs_without_cross_origin_credentials(
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    next_kwargs = _request_kwargs_without_sensitive_headers(kwargs)
+    if next_kwargs is kwargs:
+        next_kwargs = dict(kwargs)
+    next_kwargs.pop("auth", None)
+    next_kwargs.pop("cookies", None)
+    return next_kwargs
+
+
+def _strip_sensitive_headers(headers: httpx.Headers) -> None:
+    for header in _CROSS_ORIGIN_SENSITIVE_HEADERS:
+        headers.pop(header, None)
 
 
 def _parse_json_body(response: httpx.Response, url: str) -> JsonResponseData:
@@ -638,6 +690,80 @@ def _cache_identity(value: object) -> dict[str, Any] | None:
     if isinstance(value, Mapping):
         return {str(key): item for key, item in value.items()}
     return {"value": str(value)}
+
+
+def _with_credential_cache_identity(
+    identity: dict[str, Any] | None,
+    credentials: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not credentials:
+        return identity
+    merged = dict(identity or {})
+    merged[_CREDENTIAL_CACHE_IDENTITY_KEY] = credentials
+    return merged
+
+
+def _credential_cache_identity(
+    client: httpx.AsyncClient,
+    request_kwargs: dict[str, Any],
+) -> dict[str, Any] | None:
+    credentials: dict[str, Any] = {}
+    headers = _mapping_or_none(request_kwargs.get("headers"))
+    header_credentials = _credential_header_identity(headers)
+    if header_credentials:
+        credentials["headers"] = header_credentials
+    if "auth" in request_kwargs:
+        auth = request_kwargs.get("auth")
+        if auth is not None:
+            credentials["requestAuthSha256"] = _credential_fingerprint(auth)
+    else:
+        client_auth = getattr(client, "auth", None)
+        if client_auth is not None:
+            credentials["clientAuthSha256"] = _credential_fingerprint(client_auth)
+    if request_kwargs.get("cookies"):
+        credentials["requestCookiesSha256"] = _credential_fingerprint(
+            request_kwargs["cookies"]
+        )
+    client_cookies = _client_cookie_identity(client)
+    if client_cookies:
+        credentials["clientCookies"] = client_cookies
+    return credentials or None
+
+
+def _credential_header_identity(
+    headers: dict[str, Any] | None,
+) -> dict[str, str]:
+    if not headers:
+        return {}
+    return {
+        key.lower(): _credential_fingerprint(value)
+        for key, value in sorted(headers.items())
+        if key.lower() in _CROSS_ORIGIN_SENSITIVE_HEADERS
+    }
+
+
+def _client_cookie_identity(client: httpx.AsyncClient) -> list[dict[str, str]]:
+    cookies = getattr(client, "cookies", None)
+    jar = getattr(cookies, "jar", None)
+    if jar is None:
+        return []
+    return sorted(
+        (
+            {
+                "domain": str(cookie.domain or ""),
+                "name": str(cookie.name),
+                "path": str(cookie.path or ""),
+                "valueSha256": _credential_fingerprint(cookie.value),
+            }
+            for cookie in jar
+        ),
+        key=lambda item: (item["domain"], item["path"], item["name"]),
+    )
+
+
+def _credential_fingerprint(value: object) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=repr)
+    return "sha256:" + sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _conditional_headers(

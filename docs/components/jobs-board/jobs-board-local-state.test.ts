@@ -4,6 +4,7 @@ import {
 	DEFAULT_JOBS_LOCAL_SETTINGS,
 	JOBS_LOCAL_SETTINGS_KEY,
 	baselineFromRows,
+	baselineFromSearchSummary,
 	createJobsLocalExportEnvelope,
 	createJobWorkflowRecord,
 	createRetainedJobDetailRecord,
@@ -13,11 +14,13 @@ import {
 	mergeJobsLocalSnapshots,
 	normalizeJobsLocalSettings,
 	normalizeRetainedJobDetailRecord,
+	normalizeSavedSearchRecord,
 	parseJobsLocalImport,
 	pruneRetainedJobDetailsForWorkflowRecords,
 	readJobsLocalSettings,
 	reconcileJobsLocalSnapshot,
 	savedSearchNewMatchCount,
+	savedSearchNewMatchCountFromSummary,
 	summarizeJobsLocalData,
 	updateJobWorkflowRecord,
 	type JobsLocalSnapshot,
@@ -110,6 +113,54 @@ describe("jobs board local state", () => {
 				jobRow("job-c"),
 			]),
 		).toBe(2);
+	});
+
+	it("counts saved-search new matches from full search summaries", () => {
+		const summary = searchSummary([
+			{ id: "job-a", fingerprint: "content-v1" },
+			{ id: "job-b", fingerprint: "content-v1" },
+		]);
+		const record = createSavedSearchRecord({
+			filters: DEFAULT_JOB_BOARD_FILTERS,
+			rows: [],
+			baseline: baselineFromSearchSummary(summary),
+			baselineScope: "full",
+			baselineTotalMatches: summary.totalMatches,
+			sortKey: "latest",
+			manifest: manifest(),
+			now: "2026-06-30T03:00:00.000Z",
+		});
+
+		expect(record.baselineScope).toBe("full");
+		expect(record.baselineTotalMatches).toBe(2);
+		expect(savedSearchNewMatchCountFromSummary(record, summary)).toBe(0);
+		expect(
+			savedSearchNewMatchCountFromSummary(
+				record,
+				searchSummary([
+					{ id: "job-a", fingerprint: "content-v2" },
+					{ id: "job-b", fingerprint: "content-v1" },
+					{ id: "job-c", fingerprint: "content-v1" },
+				]),
+			),
+		).toBe(2);
+	});
+
+	it("normalizes legacy saved searches as page-scoped baselines", () => {
+		const record = normalizeSavedSearchRecord({
+			id: "search-1",
+			label: "Platform",
+			filters: DEFAULT_JOB_BOARD_FILTERS,
+			sortKey: "latest",
+			baseline: {
+				reviewedJobIds: ["job-a"],
+				reviewedFingerprints: { "job-a": "content-v1" },
+			},
+		});
+
+		expect(record?.baselineScope).toBe("page");
+		expect(record?.baselineTotalMatches).toBeNull();
+		expect(record?.baseline.reviewedJobIds).toEqual(["job-a"]);
 	});
 
 	it("prefers generated content hashes for job fingerprints when present", () => {
@@ -338,12 +389,12 @@ describe("jobs board local state", () => {
 			jobRecords: [],
 			savedSearches: [],
 			retainedJobDetails: [],
-			padding: "x".repeat(2 * 1024 * 1024),
+				padding: "x".repeat(16 * 1024 * 1024),
 		});
 		const parsed = parseJobsLocalImport(oversized);
 		expect(parsed.ok).toBe(false);
 		if (!parsed.ok) {
-			expect(parsed.errors[0]).toContain("2MB");
+			expect(parsed.errors[0]).toContain("16MB");
 		}
 	});
 
@@ -367,7 +418,7 @@ describe("jobs board local state", () => {
 		}
 	});
 
-	it("sanitizes retained job detail imports with unsafe urls and html", () => {
+	it("sanitizes retained job detail imports with unsafe urls and forbidden fields", () => {
 		const record = normalizeRetainedJobDetailRecord({
 			jobId: "job-a",
 			capturedAt: "2026-06-30T03:00:00.000Z",
@@ -380,12 +431,15 @@ describe("jobs board local state", () => {
 				applyUrl: "javascript:alert(1)",
 				postingUrl: "https://example.com/jobs/1",
 				descriptionHtml: '<img src=x onerror="alert(1)">',
+				payloadSnapshots: [{ kind: "raw", payload: { secret: "nope" } }],
 			},
 		});
 
 		expect(record?.detail.applyUrl).toBeNull();
 		expect(record?.detail.postingUrl).toBe("https://example.com/jobs/1");
-		expect(record?.detail.descriptionHtml).not.toContain("onerror");
+		expect(record?.detail.description).toBeNull();
+		expect("descriptionHtml" in (record?.detail ?? {})).toBe(false);
+		expect("payloadSnapshots" in (record?.detail ?? {})).toBe(false);
 	});
 
 	it("exports and imports only versioned local data envelopes", () => {
@@ -464,6 +518,17 @@ function jobRow(
 		row[J[key as keyof typeof J]] = value;
 	}
 	return row;
+}
+
+function searchSummary(entries: Array<{ id: string; fingerprint: string }>) {
+	return {
+		version: 6,
+		entity: "jobs" as const,
+		totalMatches: entries.length,
+		sortKey: "latest",
+		filtersHash: "{}",
+		entries,
+	};
 }
 
 function manifest(): SearchManifest {

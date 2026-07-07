@@ -6,6 +6,7 @@ import {
 	loadInitialJobsChunk,
 	loadLineageAggregate,
 	loadJobsSearchResults,
+	loadJobsSearchSummary,
 	loadSearchManifest,
 } from "./search-index-loader";
 import type { SearchChunk, SearchManifest } from "./search-types";
@@ -399,6 +400,52 @@ describe("search index loader", () => {
 		).resolves.toEqual(response);
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&limit=1&page=2&pageSize=1",
+			{ cache: "force-cache", signal: undefined },
+		);
+	});
+
+	it("loads compact jobs search summaries from the API route", async () => {
+		const response = {
+			version: SEARCH_VERSION,
+			entity: "jobs",
+			totalMatches: 2,
+			sortKey: "relevance",
+			filtersHash: "{}",
+			entries: [
+				{ id: "job-a", fingerprint: "fingerprint-a" },
+				{ id: "job-b", fingerprint: "fingerprint-b" },
+			],
+		};
+		const fetchMock = stubFetch({
+			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&summary=1":
+				response,
+		});
+
+		await expect(
+			loadJobsSearchSummary(
+				{
+					query: "platform",
+					wide: true,
+					includeAllIndexed: true,
+					source: "a16z",
+					provider: "",
+					location: "",
+					department: "",
+					team: "",
+					workplace: "",
+					remote: "",
+					employment: "",
+					skill: "",
+					salaryMin: "",
+					salaryMax: "",
+					postedAfter: "",
+					postedBefore: "",
+				},
+				"relevance",
+			),
+		).resolves.toEqual(response);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&summary=1",
 			{ cache: "force-cache", signal: undefined },
 		);
 	});

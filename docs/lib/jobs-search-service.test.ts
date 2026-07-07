@@ -13,9 +13,15 @@ import {
 	SEARCH_VERSION,
 } from "@/components/openopps-search/search-utils";
 
-import { searchPublicJobsIndex } from "./jobs-search-service";
+import {
+	clearJobsSearchStoreForTests,
+	jobsSearchStoreStatsForTests,
+	searchPublicJobsIndex,
+	summarizePublicJobsIndex,
+} from "./jobs-search-service";
 
 afterEach(() => {
+	clearJobsSearchStoreForTests();
 	vi.unstubAllGlobals();
 });
 
@@ -53,10 +59,50 @@ describe("jobs search service", () => {
 		expect(result.totalPages).toBe(2);
 		expect(result.hasNextPage).toBe(true);
 		expect(result.hasPreviousPage).toBe(false);
-		expect(result.truncated).toBe(true);
-		expect(result.rows[0][J.id]).toBe("newer");
-		expect(fetchMock).toHaveBeenCalledTimes(3);
-	});
+			expect(result.truncated).toBe(true);
+			expect(result.rows[0][J.id]).toBe("newer");
+			expect(fetchMock).toHaveBeenCalledTimes(3);
+		});
+
+		it("reuses parsed chunks for later requests on the same server instance", async () => {
+			const matchingNewer = row({ id: "newer", title: "Platform Engineer" });
+			const matchingOlder = row({
+				id: "older",
+				title: "Platform Lead",
+				latestObserved: "2026-06-01T00:00:00Z",
+			});
+			const fetchMock = stubFetch({
+				"https://openopps.test/data/openopps-search/manifest.json": manifest,
+				"https://openopps.test/data/openopps-search/jobs/chunks/0000.json": chunk([
+					matchingOlder,
+				]),
+				"https://openopps.test/data/openopps-search/jobs/chunks/0001.json": chunk([
+					matchingNewer,
+				]),
+			});
+
+			await searchPublicJobsIndex({
+				baseUrl: "https://openopps.test/",
+				filters: filters({ query: "platform" }),
+				sortKey: "relevance",
+				page: 1,
+				pageSize: 1,
+			});
+			const second = await searchPublicJobsIndex({
+				baseUrl: "https://openopps.test/",
+				filters: filters({ query: "platform" }),
+				sortKey: "relevance",
+				page: 2,
+				pageSize: 1,
+			});
+
+			expect(second.rows[0][J.id]).toBe("older");
+			expect(fetchMock).toHaveBeenCalledTimes(3);
+			expect(jobsSearchStoreStatsForTests()).toEqual({
+				loads: 1,
+				chunkFetches: 2,
+			});
+		});
 
 	it("returns later pages without loading a browser-side snapshot", async () => {
 		const matchingNewer = row({ id: "newer", title: "Platform Engineer" });
@@ -92,7 +138,108 @@ describe("jobs search service", () => {
 		expect(result.hasPreviousPage).toBe(true);
 		expect(result.rows[0][J.id]).toBe("older");
 	});
-});
+
+	it("returns every row for the requested page when matches are larger than one page", async () => {
+		const firstChunkRows = Array.from({ length: 70 }, (_, index) =>
+			row({
+				id: `first-${index}`,
+				title: `Platform Engineer ${index}`,
+				latestObserved: `2026-06-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+			}),
+		);
+		const secondChunkRows = Array.from({ length: 50 }, (_, index) =>
+			row({
+				id: `second-${index}`,
+				title: `Platform Engineer ${index + 70}`,
+				latestObserved: `2026-05-${String((index % 28) + 1).padStart(2, "0")}T00:00:00Z`,
+			}),
+		);
+		stubFetch({
+			"https://openopps.test/data/openopps-search/manifest.json": {
+				...manifest,
+				openJobCount: 120,
+				entities: {
+					...manifest.entities,
+					jobs: {
+						...manifest.entities.jobs,
+						count: 120,
+						chunks: [
+							{
+								index: 0,
+								path: "/data/openopps-search/jobs/chunks/0000.json",
+								file: "jobs/chunks/0000.json",
+								count: 70,
+							},
+							{
+								index: 1,
+								path: "/data/openopps-search/jobs/chunks/0001.json",
+								file: "jobs/chunks/0001.json",
+								count: 50,
+							},
+						],
+					},
+				},
+			},
+			"https://openopps.test/data/openopps-search/jobs/chunks/0000.json":
+				chunk(firstChunkRows),
+			"https://openopps.test/data/openopps-search/jobs/chunks/0001.json":
+				chunk(secondChunkRows),
+		});
+
+		const result = await searchPublicJobsIndex({
+			baseUrl: "https://openopps.test/",
+			filters: filters({ query: "platform" }),
+			sortKey: "relevance",
+			page: 2,
+			pageSize: 50,
+		});
+
+		expect(result.totalMatches).toBe(120);
+		expect(result.count).toBe(50);
+		expect(result.rows).toHaveLength(50);
+		expect(result.page).toBe(2);
+		expect(result.pageSize).toBe(50);
+		expect(result.totalPages).toBe(3);
+			expect(result.hasNextPage).toBe(true);
+			expect(result.hasPreviousPage).toBe(true);
+		});
+
+		it("returns a compact full-match summary for saved-search baselines", async () => {
+			const matchingNewer = row({
+				id: "newer",
+				title: "Platform Engineer",
+				contentHash: "content-newer",
+			});
+			const matchingOlder = row({
+				id: "older",
+				title: "Platform Lead",
+				latestObserved: "2026-06-01T00:00:00Z",
+				contentHash: "content-older",
+			});
+			stubFetch({
+				"https://openopps.test/data/openopps-search/manifest.json": manifest,
+				"https://openopps.test/data/openopps-search/jobs/chunks/0000.json": chunk([
+					matchingOlder,
+				]),
+				"https://openopps.test/data/openopps-search/jobs/chunks/0001.json": chunk([
+					matchingNewer,
+				]),
+			});
+
+			const result = await summarizePublicJobsIndex({
+				baseUrl: "https://openopps.test/",
+				filters: filters({ query: "platform" }),
+				sortKey: "relevance",
+			});
+
+			expect(result.totalMatches).toBe(2);
+			expect(result.entries).toEqual([
+				{ id: "newer", fingerprint: "content-newer" },
+				{ id: "older", fingerprint: "content-older" },
+			]);
+			expect(result.filtersHash).toContain('"query":"platform"');
+		});
+	});
 
 const manifest: SearchManifest = {
 	version: SEARCH_VERSION,
@@ -173,6 +320,8 @@ function row(values: Partial<Record<keyof typeof J, string | number | null>>): S
 	item[J.company] = values.company ?? "Acme";
 	item[J.latestObserved] = values.latestObserved ?? "2026-06-20T00:00:00Z";
 	item[J.descriptionSnippet] = values.descriptionSnippet ?? "Build systems.";
+	item[J.contentHash] = values.contentHash ?? null;
+	item[J.payloadHash] = values.payloadHash ?? null;
 	return item;
 }
 

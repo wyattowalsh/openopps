@@ -8,18 +8,18 @@ import type {
 } from "@/components/jobs-board/jobs-board-filter-engine";
 import type {
 	JobDetail,
+	JobsSearchSummaryResponse,
 	SearchManifest,
 	SearchRow,
 } from "@/components/openopps-search/search-types";
 import { J, text } from "@/components/openopps-search/search-utils";
 import { safeJobExternalUrl } from "@/lib/job-url";
-import { sanitizeJobDescriptionHtml } from "@/lib/sanitize-html";
 
 export const JOBS_LOCAL_SCHEMA_VERSION = 1;
 export const JOBS_LOCAL_SETTINGS_KEY = "openopps.jobs.local.settings.v1";
 export const JOBS_LOCAL_DB_NAME = "openopps.jobs.local";
 export const JOBS_LOCAL_DB_VERSION = 1;
-export const JOBS_LOCAL_IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+export const JOBS_LOCAL_IMPORT_MAX_BYTES = 16 * 1024 * 1024;
 export const JOBS_LOCAL_IMPORT_MAX_RECORDS = 5_000;
 
 const JOB_RECORD_STORE = "jobRecords";
@@ -79,6 +79,8 @@ export type SavedSearchRecord = {
 	lastReviewedAt: string | null;
 	manifestVersion: number | null;
 	snapshotAt: string | null;
+	baselineScope: "page" | "full";
+	baselineTotalMatches: number | null;
 	baseline: {
 		reviewedJobIds: string[];
 		reviewedFingerprints: Record<string, string>;
@@ -306,6 +308,7 @@ export function normalizeSavedSearchRecord(
 	if (!id || !candidate.filters || typeof candidate.filters !== "object") {
 		return null;
 	}
+	const baselineScope = candidate.baselineScope === "full" ? "full" : "page";
 	const reviewedJobIds = Array.isArray(candidate.baseline?.reviewedJobIds)
 		? candidate.baseline.reviewedJobIds.map(text).filter(Boolean)
 		: [];
@@ -336,6 +339,14 @@ export function normalizeSavedSearchRecord(
 				? candidate.manifestVersion
 				: null,
 		snapshotAt: nullableString(candidate.snapshotAt),
+		baselineScope,
+		baselineTotalMatches:
+			typeof candidate.baselineTotalMatches === "number" &&
+			Number.isFinite(candidate.baselineTotalMatches)
+				? Math.max(0, Math.trunc(candidate.baselineTotalMatches))
+				: baselineScope === "full"
+					? reviewedJobIds.length
+					: null,
 		baseline: {
 			reviewedJobIds,
 			reviewedFingerprints,
@@ -370,15 +381,27 @@ export function normalizeRetainedJobDetailRecord(
 }
 
 function sanitizeRetainedJobDetail(detail: JobDetail): JobDetail {
+	const retained = detail as JobDetail & {
+		descriptionHtml?: unknown;
+		payloadSnapshots?: unknown;
+	};
+	const legacyHtmlDescription =
+		typeof retained.descriptionHtml === "string"
+			? stripTags(retained.descriptionHtml)
+			: "";
+	const { descriptionHtml, payloadSnapshots, ...publicDetail } = retained;
+	void descriptionHtml;
+	void payloadSnapshots;
 	return {
-		...detail,
+		...publicDetail,
 		postingUrl: safeJobExternalUrl(detail.postingUrl),
 		applyUrl: safeJobExternalUrl(detail.applyUrl),
-		descriptionHtml:
-			typeof detail.descriptionHtml === "string" && detail.descriptionHtml.trim()
-				? sanitizeJobDescriptionHtml(detail.descriptionHtml)
-				: detail.descriptionHtml,
+		description: text(detail.description) || legacyHtmlDescription || null,
 	};
+}
+
+function stripTags(value: string) {
+	return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function updateJobWorkflowRecord(
@@ -482,6 +505,9 @@ export function createRetainedJobDetailRecord({
 export function createSavedSearchRecord({
 	filters,
 	rows,
+	baseline,
+	baselineScope = "page",
+	baselineTotalMatches,
 	label,
 	sortKey,
 	manifest,
@@ -489,6 +515,9 @@ export function createSavedSearchRecord({
 }: {
 	filters: JobBoardFilters;
 	rows: SearchRow[];
+	baseline?: SavedSearchRecord["baseline"];
+	baselineScope?: SavedSearchRecord["baselineScope"];
+	baselineTotalMatches?: number | null;
 	label?: string;
 	sortKey: JobSortKey;
 	manifest: SearchManifest | null;
@@ -507,7 +536,12 @@ export function createSavedSearchRecord({
 		lastReviewedAt: now,
 		manifestVersion: manifest?.version ?? null,
 		snapshotAt: manifest?.snapshotAt ?? null,
-		baseline: baselineFromRows(rows),
+		baselineScope,
+		baselineTotalMatches:
+			baselineScope === "full"
+				? baselineTotalMatches ?? baseline?.reviewedJobIds.length ?? rows.length
+				: baselineTotalMatches ?? null,
+		baseline: baseline ?? baselineFromRows(rows),
 	};
 }
 
@@ -541,6 +575,24 @@ export function savedSearchNewMatchCount(record: SavedSearchRecord, rows: Search
 	return count;
 }
 
+export function savedSearchNewMatchCountFromSummary(
+	record: SavedSearchRecord,
+	summary: JobsSearchSummaryResponse,
+) {
+	const reviewedIds = new Set(record.baseline.reviewedJobIds);
+	let count = 0;
+	for (const entry of summary.entries) {
+		if (!entry.id) {
+			continue;
+		}
+		const previousFingerprint = record.baseline.reviewedFingerprints[entry.id];
+		if (!reviewedIds.has(entry.id) || previousFingerprint !== entry.fingerprint) {
+			count += 1;
+		}
+	}
+	return count;
+}
+
 export function baselineFromRows(rows: SearchRow[]) {
 	return {
 		reviewedJobIds: rows.map((row) => text(row[J.id])).filter(Boolean),
@@ -548,6 +600,17 @@ export function baselineFromRows(rows: SearchRow[]) {
 			rows
 				.map((row) => [text(row[J.id]), jobFingerprint(row)] as const)
 				.filter(([jobId]) => Boolean(jobId)),
+		),
+	};
+}
+
+export function baselineFromSearchSummary(summary: JobsSearchSummaryResponse) {
+	return {
+		reviewedJobIds: summary.entries.map((entry) => text(entry.id)).filter(Boolean),
+		reviewedFingerprints: Object.fromEntries(
+			summary.entries
+				.map((entry) => [text(entry.id), text(entry.fingerprint)] as const)
+				.filter(([jobId, fingerprint]) => Boolean(jobId && fingerprint)),
 		),
 	};
 }
@@ -1018,22 +1081,31 @@ export function useJobsLocalState() {
 	const createSavedSearch = useCallback(
 		({
 			filters,
-			rows,
-			sortKey,
-			manifest,
-		}: {
-			filters: JobBoardFilters;
-			rows: SearchRow[];
-			sortKey: JobSortKey;
-			manifest: SearchManifest | null;
-		}) => {
-			const now = new Date().toISOString();
-			const record = createSavedSearchRecord({
-				filters,
 				rows,
+				baseline,
+				baselineScope,
+				baselineTotalMatches,
 				sortKey,
 				manifest,
-				now,
+			}: {
+				filters: JobBoardFilters;
+				rows: SearchRow[];
+				baseline?: SavedSearchRecord["baseline"];
+				baselineScope?: SavedSearchRecord["baselineScope"];
+				baselineTotalMatches?: number | null;
+				sortKey: JobSortKey;
+				manifest: SearchManifest | null;
+			}) => {
+			const now = new Date().toISOString();
+			const record = createSavedSearchRecord({
+					filters,
+					rows,
+					baseline,
+					baselineScope,
+					baselineTotalMatches,
+					sortKey,
+					manifest,
+					now,
 			});
 			setSavedSearches((current) => [...current, record]);
 			void writeStoreRecord(SAVED_SEARCH_STORE, record);
@@ -1061,7 +1133,16 @@ export function useJobsLocalState() {
 	}, []);
 
 	const markSavedSearchReviewed = useCallback(
-		(record: SavedSearchRecord, rows: SearchRow[], manifest: SearchManifest | null) => {
+		(
+			record: SavedSearchRecord,
+			rows: SearchRow[],
+			manifest: SearchManifest | null,
+			options: {
+				baseline?: SavedSearchRecord["baseline"];
+				baselineScope?: SavedSearchRecord["baselineScope"];
+				baselineTotalMatches?: number | null;
+			} = {},
+		) => {
 			const now = new Date().toISOString();
 			updateSavedSearch({
 				...record,
@@ -1069,7 +1150,14 @@ export function useJobsLocalState() {
 				lastOpenedAt: now,
 				manifestVersion: manifest?.version ?? record.manifestVersion,
 				snapshotAt: manifest?.snapshotAt ?? record.snapshotAt,
-				baseline: baselineFromRows(rows),
+				baselineScope: options.baselineScope ?? "page",
+				baselineTotalMatches:
+					options.baselineScope === "full"
+						? options.baselineTotalMatches ??
+							options.baseline?.reviewedJobIds.length ??
+							rows.length
+						: options.baselineTotalMatches ?? null,
+				baseline: options.baseline ?? baselineFromRows(rows),
 			});
 		},
 		[updateSavedSearch],

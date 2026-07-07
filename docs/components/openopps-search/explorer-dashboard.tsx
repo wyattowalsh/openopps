@@ -29,6 +29,12 @@ import {
 } from "@/components/openopps-search/search-utils";
 import { Button } from "@/components/ui/button";
 
+import {
+	buildLineageNetworkModel,
+	type LineageNetworkModel,
+	type LineagePairRow,
+	type LineagePathRow,
+} from "./explorer-lineage-model";
 import { ExplorerMetric } from "./explorer-shared";
 
 type ExplorerDashboardProps = {
@@ -361,14 +367,51 @@ function LineageAnalysis({ lineage }: { lineage: LineageAggregate | null }) {
 			</DashboardCard>
 		);
 	}
+	const network = buildLineageNetworkModel(lineage);
 	return (
 		<div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+			<div className="xl:col-span-2">
+				<DashboardCard
+					title="Full lineage map"
+					icon={Network}
+					description="Generated source rows, provider routes, boards, and job outcomes connected by lineage edges."
+				>
+					<LineageNetwork model={network} />
+				</DashboardCard>
+			</div>
 			<DashboardCard
-				title="Lineage flow"
-				icon={Route}
-				description="Largest provider-to-board flows, with open-job share shown as the active bar."
+				title="Source-provider routes"
+				icon={Globe2}
+				description="Highest-volume source-to-provider transitions before board-level job evidence."
 			>
-				<LineageFlow edges={lineage.edges.providerBoards} />
+				<LineagePairList
+					rows={network.sourceProviderRows}
+					maxJobs={network.maxSourceProviderJobs}
+					emptyLabel="No source-provider lineage rows are available."
+					metaLabel="routes"
+				/>
+			</DashboardCard>
+			<DashboardCard
+				title="Source-board reach"
+				icon={Route}
+				description="Source-to-board transitions ranked by generated job evidence."
+			>
+				<LineagePairList
+					rows={network.sourceBoardRows}
+					maxJobs={network.maxSourceBoardJobs}
+					emptyLabel="No source-board lineage rows are available."
+					metaLabel="boards"
+				/>
+			</DashboardCard>
+			<DashboardCard
+				title="Board job paths"
+				icon={Route}
+				description="Largest source-provider-board paths, with open-job share shown inside each job bar."
+			>
+				<LineagePathList
+					rows={network.pathRows}
+					maxJobs={network.maxPathJobs}
+				/>
 			</DashboardCard>
 			<DashboardCard
 				title="Board quality matrix"
@@ -395,29 +438,66 @@ function LineageAnalysis({ lineage }: { lineage: LineageAggregate | null }) {
 	);
 }
 
-function LineageFlow({ edges }: { edges: LineageAggregate["edges"]["providerBoards"] }) {
-	const rows = edges.filter((edge) => edge.jobs > 0).slice(0, 8);
-	const max = Math.max(1, ...rows.map((edge) => edge.jobs));
+function LineageNetwork({ model }: { model: LineageNetworkModel }) {
+	return (
+		<div className="grid gap-2 md:grid-cols-4">
+			{model.stages.map((stage) => (
+				<div
+					key={stage.key}
+					className="min-w-0 border border-border/70 bg-card/70 px-3 py-2"
+				>
+					<div className="font-mono text-[0.68rem] font-semibold text-muted-foreground">
+						{stage.label}
+					</div>
+					<div className="mt-1 font-heading text-xl font-semibold">
+						{formatCount(stage.value)}
+					</div>
+					<div className="mt-1 text-xs text-muted-foreground">
+						{formatCount(stage.secondaryValue)} {stage.secondaryLabel}
+					</div>
+					{stage.edgeLabel ? (
+						<div className="mt-1 text-xs text-muted-foreground">
+							{formatCount(stage.edgeCount)} {stage.edgeLabel}
+						</div>
+					) : null}
+				</div>
+			))}
+		</div>
+	);
+}
+
+function LineagePathList({
+	rows,
+	maxJobs,
+}: {
+	rows: LineagePathRow[];
+	maxJobs: number;
+}) {
 	if (rows.length === 0) {
-		return <EmptyLineageState>No provider-to-board job flows are available.</EmptyLineageState>;
+		return <EmptyLineageState>No source-provider-board paths are available.</EmptyLineageState>;
 	}
 	return (
 		<div className="space-y-2">
-			{rows.map((edge) => {
-				const totalWidth = `${Math.max(4, Math.round((edge.jobs / max) * 100))}%`;
-				const openWidth = `${Math.max(2, Math.round((edge.openJobs / edge.jobs) * 100))}%`;
+			{rows.map((row) => {
+				const totalWidth = `${Math.max(4, Math.round((row.jobs / maxJobs) * 100))}%`;
+				const openWidth =
+					row.openJobs > 0 ? `${Math.max(2, row.openShare)}%` : "0%";
 				return (
 					<div
-						key={`${edge.providerId}-${edge.boardKey}`}
-						className="rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70 px-3 py-2"
+						key={row.key}
+						className="border border-border/70 bg-card/70 px-3 py-2"
 					>
 						<div className="flex items-center justify-between gap-3 text-xs">
 							<span className="min-w-0 truncate font-semibold">
-								{edge.providerId || "provider"} {"->"} {edge.boardKey || "board"}
+								{row.sourceKey} {"->"} {row.providerId} {"->"} {row.boardKey}
 							</span>
 							<span className="font-mono text-muted-foreground">
-								{formatCount(edge.openJobs)} / {formatCount(edge.jobs)} open
+								{formatCount(row.openJobs)} / {formatCount(row.jobs)} open
 							</span>
+						</div>
+						<div className="mt-1 flex items-center justify-between gap-3 font-mono text-[0.68rem] text-muted-foreground">
+							<span>{formatCount(row.routes)} routes</span>
+							<span>{row.openShare}% open</span>
 						</div>
 						<div className="mt-2 h-2 overflow-hidden rounded-[var(--opps-radius-sm)] bg-muted">
 							<div
@@ -431,6 +511,58 @@ function LineageFlow({ edges }: { edges: LineageAggregate["edges"]["providerBoar
 									aria-hidden="true"
 								/>
 							</div>
+						</div>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
+function LineagePairList({
+	rows,
+	maxJobs,
+	emptyLabel,
+	metaLabel,
+}: {
+	rows: LineagePairRow[];
+	maxJobs: number;
+	emptyLabel: string;
+	metaLabel: "routes" | "boards";
+}) {
+	if (rows.length === 0) {
+		return <EmptyLineageState>{emptyLabel}</EmptyLineageState>;
+	}
+	return (
+		<div className="space-y-2">
+			{rows.map((row) => {
+				const width = `${Math.max(4, Math.round((row.jobs / maxJobs) * 100))}%`;
+				const metaValue =
+					metaLabel === "routes" ? row.routes ?? 0 : row.boards ?? 0;
+				return (
+					<div key={row.key} className="space-y-1">
+						<div className="flex items-center justify-between gap-3 text-xs">
+							<span className="min-w-0 truncate font-semibold">
+								{row.from} {"->"} {row.to}
+							</span>
+							<span className="font-mono text-muted-foreground">
+								{formatCount(row.jobs)} jobs
+							</span>
+						</div>
+						<div className="flex items-center justify-between gap-3 font-mono text-[0.68rem] text-muted-foreground">
+							<span>
+								{formatCount(metaValue)} {metaLabel}
+							</span>
+							<span>
+								{formatCount(row.openJobs)} open ({row.openShare}%)
+							</span>
+						</div>
+						<div className="h-2 overflow-hidden rounded-[var(--opps-radius-sm)] bg-muted">
+							<div
+								className="h-full rounded-[var(--opps-radius-sm)] bg-info"
+								style={{ width }}
+								aria-hidden="true"
+							/>
 						</div>
 					</div>
 				);

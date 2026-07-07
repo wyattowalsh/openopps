@@ -44,7 +44,8 @@ test("job detail API returns one rich posting record", async ({ request }) => {
 		payloadSnapshots?: unknown;
 	};
 	expect(detail.id).toBe(jobId);
-	expect(detail.description || detail.descriptionHtml).toBeTruthy();
+	expect(detail.description).toBeTruthy();
+	expect(detail.descriptionHtml).toBeUndefined();
 	expect(detail.payloadSnapshots).toBeUndefined();
 });
 

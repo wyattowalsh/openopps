@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useMemo } from "react";
 import {
 	debounce,
 	parseAsBoolean,
+	parseAsInteger,
 	parseAsString,
 	useQueryState,
 	useQueryStates,
@@ -31,6 +32,7 @@ export const jobBoardQueryParsers = {
 	salaryMax: parseAsString.withDefault(""),
 	postedAfter: parseAsString.withDefault(""),
 	postedBefore: parseAsString.withDefault(""),
+	page: parseAsInteger.withDefault(1),
 } as const;
 
 export type JobBoardQueryState = {
@@ -50,6 +52,7 @@ export type JobBoardQueryState = {
 	salaryMax: string;
 	postedAfter: string;
 	postedBefore: string;
+	page: number;
 };
 
 export function filtersFromQueryState(
@@ -122,6 +125,7 @@ export function useJobBoardFilterState() {
 	);
 
 	const filters = useMemo(() => filtersFromQueryState(state), [state]);
+	const page = Math.max(1, state.page);
 	const selectedJobId = selectedJobState || null;
 	const setSelectedJobId = useCallback(
 		(jobId: string | null) => setSelectedJobState(jobId ?? ""),
@@ -148,6 +152,7 @@ export function useJobBoardFilterState() {
 				salaryMax: next.salaryMax ?? current.salaryMax,
 				postedAfter: next.postedAfter ?? current.postedAfter,
 				postedBefore: next.postedBefore ?? current.postedBefore,
+				page: 1,
 			}));
 		},
 		[setState],
@@ -171,12 +176,25 @@ export function useJobBoardFilterState() {
 			salaryMax: DEFAULT_JOB_BOARD_FILTERS.salaryMax,
 			postedAfter: DEFAULT_JOB_BOARD_FILTERS.postedAfter,
 			postedBefore: DEFAULT_JOB_BOARD_FILTERS.postedBefore,
+			page: 1,
 		});
 	}, [setState]);
+
+	const setPage = useCallback(
+		(nextPage: number) => {
+			const normalized = Number.isFinite(nextPage)
+				? Math.max(1, Math.trunc(nextPage))
+				: 1;
+			setState({ page: normalized });
+		},
+		[setState],
+	);
 
 	return {
 		filters,
 		deferredFilters,
+		page,
+		setPage,
 		selectedJobId,
 		setFilters,
 		setSelectedJobId,

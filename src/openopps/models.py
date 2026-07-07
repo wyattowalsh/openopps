@@ -93,6 +93,12 @@ def validate_public_host(host: str) -> str:
     normalized = host.strip().lower().rstrip(".")
     if not normalized:
         raise ValueError("Host must not be empty")
+    if "://" in normalized or any(char in normalized for char in "/\\@:#?[]"):
+        raise ValueError("Host must be a hostname, not a URL or path")
+    if any(char.isspace() for char in normalized):
+        raise ValueError("Host must not contain whitespace")
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*", normalized):
+        raise ValueError("Host must be a valid hostname")
     if normalized == "localhost" or normalized.endswith(".localhost"):
         raise ValueError("Host must not be localhost")
     try:

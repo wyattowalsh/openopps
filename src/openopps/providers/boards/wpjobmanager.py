@@ -19,6 +19,7 @@ from openopps.models import (
     normalize_public_website_url,
     normalize_remote_level,
     strip_html,
+    validate_public_host,
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
@@ -217,7 +218,11 @@ def wpjobmanager_endpoint(route: BoardProviderRecord) -> str | None:
     if route.token and route.token.startswith("https://"):
         return urljoin(route.token.rstrip("/") + "/", "wp-json/wp/v2/job-listings")
     if route.host:
-        return f"https://{route.host.strip().lower()}/wp-json/wp/v2/job-listings"
+        try:
+            host = validate_public_host(route.host)
+        except ValueError:
+            return None
+        return f"https://{host}/wp-json/wp/v2/job-listings"
     return None
 
 

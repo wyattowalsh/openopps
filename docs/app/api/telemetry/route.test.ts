@@ -33,6 +33,23 @@ describe("telemetry route", () => {
 		});
 	});
 
+	it("treats unsupported sink names as noop", async () => {
+		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "cloudflare");
+
+		const response = await POST(
+			request({
+				events: [event({ event_name: "explorer.lineage_loaded" })],
+			}),
+		);
+
+		expect(response.status).toBe(202);
+		await expect(response.json()).resolves.toMatchObject({
+			ok: true,
+			sink: "noop",
+			accepted: 1,
+		});
+	});
+
 	it("rejects payloads above the configured request byte limit", async () => {
 		vi.stubEnv("OPENOPPS_TELEMETRY_MAX_REQUEST_BYTES", "16");
 

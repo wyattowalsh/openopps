@@ -1,7 +1,8 @@
 import type { Entity, SearchRow } from "./search-types";
 import type { SearchSuggestion } from "./search-types";
 
-export const SEARCH_VERSION = 5;
+export const SEARCH_VERSION = 6;
+export const DETAIL_BUCKET_COUNT = 1024;
 
 export const EXPECTED_PROVIDER_COLUMNS = [
 	"id",
@@ -346,7 +347,7 @@ export function detailBucket(jobId: string) {
 	for (let index = 0; index < jobId.length; index += 1) {
 		hash = (hash * 31 + jobId.charCodeAt(index)) >>> 0;
 	}
-	return (hash % 256).toString(16).padStart(2, "0");
+	return (hash % DETAIL_BUCKET_COUNT).toString(16).padStart(2, "0");
 }
 
 export function detailPath(root: string, jobId: string) {

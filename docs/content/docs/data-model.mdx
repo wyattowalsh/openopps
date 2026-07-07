@@ -136,21 +136,21 @@ Recommended event shape:
 | `event_id` | Client-generated unique id for de-duping. |
 | `schema_version` | Telemetry schema version, starting at `1`. |
 | `sent_at` and `received_at` | Client and collector timestamps. |
-| `event_name` | Allowlisted event name such as `jobs.filter_set` or `explorer.chart_select`. |
+| `event_name` | Allowlisted event name such as `jobs.filters_changed` or `explorer.lineage_loaded`. |
 | `anonymous_id`, `session_id`, `page_id` | First-party anonymous identifiers. |
-| `route`, `path`, `query`, `referrer`, `utm` | Navigation and attribution context. |
-| `viewport`, `timezone`, `language`, `user_agent` | Browser context for debugging and product analytics. |
+| `context.path`, `context.viewport`, `context.screen`, `context.timezone`, `context.language`, `context.languages`, `context.userAgent` | Browser context retained by the current route allowlist. Raw `search`, `url`, and `referrer` fields are dropped. |
+| `request.path`, `request.headers`, `request.ip` | Server-side request context after header allowlisting, query removal, and IP drop/hash/raw policy. |
 | `entity_context` | Job, source, provider, filter, or explorer entity ids when relevant. |
 | `properties` | Event-specific allowlisted metadata. |
 | `redaction_count`, `payload_truncated` | Evidence that sanitization and size limits were applied. |
 
-Recommended sink modes:
+Runtime sink modes:
 
 | Sink | Use case | Cost posture |
 | ---- | -------- | ------------ |
 | `noop` | Local development or deployments without storage. | Free; records nothing. |
 | `local-event-lake` | Canonical first-party telemetry on persistent disk. | Free when running on existing infrastructure. |
-| `cloudflare` | Optional Workers/R2/D1/Analytics Engine adapter. | Can stay free inside quotas, but quota and billing risk must be monitored. |
-| `umami` | Optional dashboard mirror for web analytics summaries. | Free when self-hosted, but not the canonical raw warehouse. |
+
+The current `/api/telemetry` route treats any unsupported sink value as `noop`. Cloudflare, Umami, or hosted analytics dashboards can mirror sanitized summaries downstream, but the canonical raw sink remains `local-event-lake`.
 
 Sanitize obvious secret-like values, cap event size, and make raw IP retention an explicit opt-in. Hashing IPs with a deployment salt is the default compromise when approximate abuse/debugging signal is useful.

@@ -127,8 +127,15 @@ function OpenOppsSearchExplorerInner() {
 
 	useEffect(() => {
 		if (!manifest?.lineageAggregate) {
-			setLineage(null);
-			return;
+			let cancelled = false;
+			window.queueMicrotask(() => {
+				if (!cancelled) {
+					setLineage(null);
+				}
+			});
+			return () => {
+				cancelled = true;
+			};
 		}
 		const currentManifest = manifest;
 		let mounted = true;
