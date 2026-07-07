@@ -30,8 +30,23 @@ export function JobsBoardMetrics({
 }: JobsBoardMetricsProps) {
 	const totalJobs = manifest?.entities.jobs.count;
 	const openJobs = manifest?.openJobCount ?? totalJobs;
+	const sourceRows = manifest?.counts?.snapshot?.sourceRows;
+	const providerRoutes = manifest?.counts?.snapshot?.providerRoutes;
 	const kaggleId = manifest?.kaggleDatasetId ?? "wyattowalsh/openoppsdb";
 	const kaggleUrl = `https://www.kaggle.com/datasets/${kaggleId}`;
+	const metrics = searchActive
+		? [
+				{ label: "matches", value: matchCount },
+				{ label: "open jobs", value: openJobs },
+				{ label: "indexed jobs", value: totalJobs },
+				{ label: "routes", value: providerRoutes },
+			]
+		: [
+				{ label: "open jobs", value: openJobs },
+				{ label: "indexed jobs", value: totalJobs },
+				{ label: "sources", value: sourceRows },
+				{ label: "routes", value: providerRoutes },
+			];
 
 	return (
 		<div className="flex flex-col gap-4 border-b border-border/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
@@ -66,10 +81,10 @@ export function JobsBoardMetrics({
 					</Link>
 				</div>
 			</div>
-			<div className="grid grid-cols-3 gap-2 sm:min-w-[28rem]">
-				<Metric label={searchActive ? "matches" : "open jobs"} value={matchCount} />
-				<Metric label="open jobs" value={openJobs} />
-				<Metric label="indexed jobs" value={totalJobs} />
+			<div className="grid grid-cols-2 gap-2 sm:min-w-[30rem] sm:grid-cols-4">
+				{metrics.map((metric) => (
+					<Metric key={metric.label} label={metric.label} value={metric.value} />
+				))}
 			</div>
 		</div>
 	);

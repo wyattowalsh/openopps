@@ -19,7 +19,8 @@ describe("JobsBoardEmpty", () => {
 			/>,
 		);
 
-		expect(screen.getByText("No visible open jobs")).toBeTruthy();
+		expect(screen.getByText("Search or filter open jobs")).toBeTruthy();
+		expect(screen.getByText(/load a paginated result set from the server/i)).toBeTruthy();
 		expect(screen.queryByText(/1,234 roles pass/i)).toBeNull();
 		expect(screen.queryByRole("button", { name: /clear filters/i })).toBeNull();
 	});

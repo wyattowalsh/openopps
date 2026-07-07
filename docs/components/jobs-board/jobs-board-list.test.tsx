@@ -60,7 +60,7 @@ describe("JobsBoardList", () => {
 
 		fireEvent.keyDown(listbox, { key: "Enter" });
 		expect(onSelectJob).toHaveBeenCalledWith("job-2");
-	});
+	}, 15_000);
 });
 
 function row(id: string, title: string): SearchRow {

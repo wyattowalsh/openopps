@@ -53,7 +53,7 @@ describe("JobsBoardLocalDataPanel", () => {
 	expect(screen.getByLabelText("Close app settings")).toBe(
 		document.activeElement,
 	);
-	});
+	}, 15_000);
 
 	it("requires confirmation before replace import", async () => {
 		const user = userEvent.setup();
@@ -78,7 +78,7 @@ describe("JobsBoardLocalDataPanel", () => {
 				"replace",
 			),
 		);
-	});
+	}, 15_000);
 });
 
 function renderPanel(

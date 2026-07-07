@@ -11,6 +11,16 @@ async function waitForFirstJob(page: Page) {
 	return firstJob;
 }
 
+async function searchForFirstJob(page: Page) {
+	const searchResponse = page.waitForResponse(
+		(response) => response.url().includes("/api/jobs/search") && response.ok(),
+		{ timeout: 30_000 },
+	);
+	await page.getByLabel("Search jobs").fill("platform");
+	await searchResponse;
+	return waitForFirstJob(page);
+}
+
 test("jobs workbench and local settings pass baseline accessibility checks", async ({
 	page,
 }) => {
@@ -18,7 +28,7 @@ test("jobs workbench and local settings pass baseline accessibility checks", asy
 	await expect(
 		page.getByRole("button", { name: /save current search/i }),
 	).toBeVisible();
-	await waitForFirstJob(page);
+	await searchForFirstJob(page);
 
 	const workbenchScan = await new AxeBuilder({ page })
 		.include("main")
@@ -40,7 +50,7 @@ test("mobile preview sheet keeps dialog semantics", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/");
 
-	const firstJob = await waitForFirstJob(page);
+	const firstJob = await searchForFirstJob(page);
 	await firstJob.click();
 
 	const dialog = page.getByRole("dialog", { name: /job preview/i });

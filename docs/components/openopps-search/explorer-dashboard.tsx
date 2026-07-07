@@ -370,7 +370,7 @@ function LineageAnalysis({ lineage }: { lineage: LineageAggregate | null }) {
 	const network = buildLineageNetworkModel(lineage);
 	return (
 		<div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-			<div className="xl:col-span-2">
+			<div className="min-w-0">
 				<DashboardCard
 					title="Full lineage map"
 					icon={Network}
@@ -577,50 +577,47 @@ function LineageQualityMatrix({ boards }: { boards: LineageAggregate["nodes"]["b
 		return <EmptyLineageState>No board quality rows are available.</EmptyLineageState>;
 	}
 	return (
-		<div className="overflow-x-auto">
-			<table className="w-full min-w-[30rem] border-collapse text-xs">
-				<thead>
-					<tr className="border-b border-border/70 text-left text-muted-foreground">
-						<th className="py-2 pr-3 font-semibold">Board</th>
-						<th className="px-2 py-2 font-semibold">Jobs</th>
-						<th className="px-2 py-2 font-semibold">Desc</th>
-						<th className="px-2 py-2 font-semibold">Loc</th>
-						<th className="px-2 py-2 font-semibold">Comp</th>
-					</tr>
-				</thead>
-				<tbody>
-					{rows.map((board) => (
-						<tr key={board.id} className="border-b border-border/45 last:border-b-0">
-							<td className="max-w-56 truncate py-2 pr-3 font-semibold">
-								{board.label || board.id}
-							</td>
-							<td className="px-2 py-2 font-mono text-muted-foreground">
-								{formatCount(board.jobs)}
-							</td>
-							<QualityCell value={board.quality?.description ?? 0} />
-							<QualityCell value={board.quality?.locations ?? 0} />
-							<QualityCell value={board.quality?.compensation ?? 0} />
-						</tr>
-					))}
-				</tbody>
-			</table>
+		<div className="space-y-2">
+			{rows.map((board) => (
+				<div
+					key={board.id}
+					className="rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70 px-3 py-2"
+				>
+					<div className="flex items-center justify-between gap-3 text-xs">
+						<span className="min-w-0 truncate font-semibold">
+							{board.label || board.id}
+						</span>
+						<span className="shrink-0 font-mono text-muted-foreground">
+							{formatCount(board.jobs)} jobs
+						</span>
+					</div>
+					<div className="mt-2 grid gap-2 sm:grid-cols-3">
+						<QualityMeter label="Desc" value={board.quality?.description ?? 0} />
+						<QualityMeter label="Loc" value={board.quality?.locations ?? 0} />
+						<QualityMeter label="Comp" value={board.quality?.compensation ?? 0} />
+					</div>
+				</div>
+			))}
 		</div>
 	);
 }
 
-function QualityCell({ value }: { value: number }) {
+function QualityMeter({ label, value }: { label: string; value: number }) {
 	const percentage = clampPercentage(value);
 	return (
-		<td className="px-2 py-2">
+		<div>
+			<div className="mb-1 flex items-center justify-between gap-2 font-mono text-[0.68rem] text-muted-foreground">
+				<span>{label}</span>
+				<span>{percentage}%</span>
+			</div>
 			<div className="h-6 overflow-hidden rounded-[var(--opps-radius-sm)] border border-border/60 bg-muted">
 				<div
-					className="flex h-full items-center justify-end bg-info/80 pr-1 font-mono text-[0.62rem] text-primary-foreground"
+					className="h-full bg-info/80"
 					style={{ width: `${Math.max(8, percentage)}%` }}
-				>
-					{percentage}%
-				</div>
+					aria-hidden="true"
+				/>
 			</div>
-		</td>
+		</div>
 	);
 }
 
@@ -719,7 +716,7 @@ function DashboardCard({
 	children: ReactNode;
 }) {
 	return (
-		<section className="rounded-[var(--opps-radius-lg)] border border-border/75 bg-background/60 p-3 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_5%,transparent)]">
+		<section className="min-w-0 rounded-[var(--opps-radius-lg)] border border-border/75 bg-background/60 p-3 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_5%,transparent)]">
 			<div className="mb-3 flex items-start gap-2">
 				<div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[var(--opps-radius-md)] border border-primary/25 bg-primary/10 text-primary">
 					<Icon className="size-4" />

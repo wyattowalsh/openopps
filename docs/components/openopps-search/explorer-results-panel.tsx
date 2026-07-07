@@ -278,7 +278,7 @@ function ProviderResult({ row, focused }: { row: SearchRow; focused: boolean }) 
 
 function Field({ label, value }: { label: string; value: string }) {
 	return (
-		<div className="min-w-0 rounded-xl border border-border/60 bg-card/65 px-3 py-2">
+		<div className="min-w-0 rounded-[var(--opps-radius-md)] border border-border/60 bg-card/65 px-3 py-2">
 			<div className="font-mono text-[0.68rem] font-semibold tracking-normal text-muted-foreground">
 				{label}
 			</div>

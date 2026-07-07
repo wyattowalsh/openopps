@@ -103,7 +103,7 @@ export const JOB_FILTER_DEBOUNCE_MS = 200;
 
 export const filterQueryOptions = {
 	history: "replace" as const,
-	shallow: true,
+	shallow: false,
 	clearOnDefault: true,
 	limitUrlUpdates: debounce(JOB_FILTER_DEBOUNCE_MS),
 };

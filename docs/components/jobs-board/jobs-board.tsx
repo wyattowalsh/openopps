@@ -209,8 +209,14 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 						void setPage(result.page);
 					}
 					trackTelemetry("jobs.search_loaded", {
+						activeFilterCount,
+						page: result.page,
+						pageSize: result.pageSize,
+						query: deferredFilters.query,
 						rows: result.rows.length,
+						sortKey,
 						totalMatches: result.totalMatches,
+						totalPages: result.totalPages,
 						truncated: result.truncated,
 					});
 				}
@@ -236,6 +242,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 			controller.abort();
 		};
 	}, [
+		activeFilterCount,
 		deferredFilters,
 		manifest,
 		page,

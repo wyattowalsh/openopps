@@ -303,14 +303,12 @@ export function JobsBoardPreview({
 	const applyUrl = safeJobExternalUrl(detail?.applyUrl);
 	const postingUrl =
 		safeJobExternalUrl(detail?.postingUrl) ?? safeJobExternalUrl(row ? text(row[J.url]) : "");
-	const descriptionSnippet = row ? text(row[J.descriptionSnippet]) : "";
 	const descriptionText =
 		text(detail?.description) || structuredJobDescriptionText(detail);
 	const sourceKeys = row ? parseSourceKeys(row[J.sourceKeys]) : [];
 	const responsibilities = (detail?.responsibilities ?? []).map(text).filter(Boolean);
 	const qualifications = (detail?.qualifications ?? []).map(text).filter(Boolean);
 	const hasDescription = Boolean(descriptionText) || loading;
-	const showSnippetFallback = Boolean(descriptionSnippet) && !hasDescription && !error;
 	const extraPublicFields = additionalPublicFields(detail);
 
 	const trackOutbound = (kind: "apply" | "posting", url: string) => {
@@ -527,14 +525,6 @@ export function JobsBoardPreview({
 					</Section>
 				) : null}
 
-				{showSnippetFallback ? (
-					<Section title="Index snippet">
-						<div className="rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70 p-3 text-sm leading-6 text-muted-foreground">
-							{descriptionSnippet}
-						</div>
-					</Section>
-				) : null}
-
 				{loading ? (
 					<div className="flex items-center gap-2 text-sm text-muted-foreground">
 						<Loader2 className="size-4 animate-spin" />
@@ -544,7 +534,7 @@ export function JobsBoardPreview({
 
 				{error ? (
 					<p className="text-sm text-destructive">
-						{error} Showing index snippet only.
+						{error} Showing available index metadata only.
 					</p>
 				) : null}
 

@@ -365,17 +365,17 @@ function OpenOppsSearchExplorerInner() {
 	return (
 		<section className="not-prose mx-auto w-full max-w-[96rem] px-3 py-4 sm:px-5 lg:px-6">
 			<div className="opps-ledger-shell">
-				<ExplorerDashboard
-					manifest={manifest}
-					lineage={lineage}
-					loading={loadingManifest}
-					warning={error && !manifest ? error : null}
-					onInspectRows={openInspector}
-					onRetry={!manifest && error ? retryManifest : undefined}
-				/>
-
-				{showInspector ? (
-					<div className="mt-5 border-t border-border/70 pt-4">
+				{!showInspector ? (
+					<ExplorerDashboard
+						manifest={manifest}
+						lineage={lineage}
+						loading={loadingManifest}
+						warning={error && !manifest ? error : null}
+						onInspectRows={openInspector}
+						onRetry={!manifest && error ? retryManifest : undefined}
+					/>
+				) : (
+					<div>
 						<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							<div>
 								<p className="opps-kicker">Row inspector</p>
@@ -383,14 +383,16 @@ function OpenOppsSearchExplorerInner() {
 									Generated index rows
 								</h2>
 							</div>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={closeInspector}
-							>
-								Hide inspector
-							</Button>
+							<div className="flex flex-wrap gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={closeInspector}
+								>
+									Dashboard
+								</Button>
+							</div>
 						</div>
 
 						<ExplorerStatusBar manifest={manifest} />
@@ -446,7 +448,7 @@ function OpenOppsSearchExplorerInner() {
 							/>
 						) : null}
 					</div>
-				) : null}
+				)}
 			</div>
 		</section>
 	);

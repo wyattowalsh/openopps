@@ -26,6 +26,6 @@ test("explorer row inspector supports keyboard navigation and activation", async
 	expect(popup.url()).not.toBe("");
 	await popup.close();
 
-	await page.getByRole("button", { name: /hide inspector/i }).click();
+	await page.getByRole("button", { name: /dashboard/i }).click();
 	await expect(page.getByRole("heading", { name: /generated index rows/i })).toBeHidden();
 });

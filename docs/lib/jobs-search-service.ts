@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import {
 	DEFAULT_JOB_BOARD_FILTERS,
 	filterAndSortJobs,
@@ -23,6 +26,13 @@ export const MAX_JOBS_SEARCH_LIMIT = 1000;
 export const DEFAULT_JOBS_SEARCH_PAGE_SIZE = 50;
 export const MAX_JOBS_SEARCH_PAGE_SIZE = 100;
 const MAX_CHUNK_FETCHES = 6;
+const SEARCH_DATA_PREFIX = "/data/openopps-search/";
+const SEARCH_DATA_ROOT = path.join(
+	process.cwd(),
+	"public",
+	"data",
+	"openopps-search",
+);
 
 type SearchPublicJobsIndexOptions = {
 	baseUrl: URL | string;
@@ -182,7 +192,7 @@ async function loadJobsSearchStore(baseUrl: URL | string): Promise<JobsSearchSto
 
 async function buildJobsSearchStore(base: URL): Promise<JobsSearchStore> {
 	storeStats.loads += 1;
-	const manifest = await fetchPublicJson<SearchManifest>(base, SEARCH_MANIFEST_PATH);
+	const manifest = await loadPublicJson<SearchManifest>(base, SEARCH_MANIFEST_PATH);
 	validateSearchManifest(manifest);
 	const jobs = manifest.entities.jobs;
 	const refs = jobs.chunks?.length
@@ -229,7 +239,7 @@ async function loadChunkRefs(base: URL, refs: Array<{ path: string }>) {
 			const index = cursor;
 			cursor += 1;
 			const ref = refs[index];
-			const chunk = await fetchPublicJson<SearchChunk>(base, ref.path);
+			const chunk = await loadPublicJson<SearchChunk>(base, ref.path);
 			validateSearchChunk("jobs", chunk);
 			chunks[index] = chunk;
 		}
@@ -242,22 +252,57 @@ async function loadChunkRefs(base: URL, refs: Array<{ path: string }>) {
 	return chunks;
 }
 
-async function fetchPublicJson<T>(
+async function loadPublicJson<T>(
 	baseUrl: URL,
-	path: string,
+	publicPath: string,
 ): Promise<T> {
-	storeStats.chunkFetches += path.includes("/jobs/chunks/") ? 1 : 0;
-	const response = await fetch(new URL(path, baseUrl), {
+	storeStats.chunkFetches += publicPath.includes("/jobs/chunks/") ? 1 : 0;
+	if (!shouldFetchPublicData(baseUrl)) {
+		const localPath = localPublicSearchDataPath(publicPath);
+		if (localPath) {
+			try {
+				return JSON.parse(await fs.readFile(localPath, "utf8")) as T;
+			} catch (caught) {
+				throw new SearchLoadError(
+					"fetch_failed",
+					`Unable to load ${publicPath}: ${errorMessage(caught)}`,
+					publicPath,
+				);
+			}
+		}
+	}
+	const response = await fetch(new URL(publicPath, baseUrl), {
 		cache: "force-cache",
 	});
 	if (!response.ok) {
 		throw new SearchLoadError(
 			"fetch_failed",
-			`Unable to load ${path}: ${response.status}`,
-			path,
+			`Unable to load ${publicPath}: ${response.status}`,
+			publicPath,
 		);
 	}
 	return response.json() as Promise<T>;
+}
+
+function shouldFetchPublicData(baseUrl: URL) {
+	return process.env.VITEST === "true" || baseUrl.hostname.endsWith(".test");
+}
+
+function localPublicSearchDataPath(publicPath: string) {
+	if (!publicPath.startsWith(SEARCH_DATA_PREFIX)) {
+		return null;
+	}
+	const relativePath = publicPath.slice(SEARCH_DATA_PREFIX.length);
+	const resolved = path.resolve(SEARCH_DATA_ROOT, relativePath);
+	const root = path.resolve(SEARCH_DATA_ROOT);
+	if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+		return null;
+	}
+	return resolved;
+}
+
+function errorMessage(caught: unknown) {
+	return caught instanceof Error ? caught.message : String(caught);
 }
 
 function normalizeBaseUrl(baseUrl: URL | string) {

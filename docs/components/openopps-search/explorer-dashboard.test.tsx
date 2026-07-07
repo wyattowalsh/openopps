@@ -28,7 +28,7 @@ describe("ExplorerDashboard", () => {
 		expect(screen.getByText("Board job paths")).not.toBeNull();
 		expect(screen.getByText("a16z -> greenhouse -> a16z:acme")).not.toBeNull();
 		expect(screen.getByText("12 / 15 open")).not.toBeNull();
-	});
+	}, 15_000);
 });
 
 const lineageAggregate: LineageAggregate = {

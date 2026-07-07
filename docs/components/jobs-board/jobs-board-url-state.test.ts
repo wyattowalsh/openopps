@@ -11,7 +11,7 @@ describe("jobs board URL state policy", () => {
 	it("replaces history for live filters and pushes history for selected jobs", () => {
 		expect(filterQueryOptions).toMatchObject({
 			history: "replace",
-			shallow: true,
+			shallow: false,
 			clearOnDefault: true,
 		});
 		expect(selectedJobQueryOptions).toMatchObject({

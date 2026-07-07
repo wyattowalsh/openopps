@@ -10,6 +10,16 @@ async function waitForFirstJob(page: Page) {
 	return firstJob;
 }
 
+async function searchForFirstJob(page: Page, query = "platform") {
+	const searchResponse = page.waitForResponse(
+		(response) => response.url().includes("/api/jobs/search") && response.ok(),
+		{ timeout: 30_000 },
+	);
+	await page.getByLabel("Search jobs").fill(query);
+	await searchResponse;
+	return waitForFirstJob(page);
+}
+
 test("jobs board supports local workflow controls without analytics", async ({
 	page,
 }) => {
@@ -29,7 +39,7 @@ test("jobs board supports local workflow controls without analytics", async ({
 	await expect(
 		page.getByRole("button", { name: /save current search/i }),
 	).toBeVisible();
-	const firstJob = await waitForFirstJob(page);
+	const firstJob = await searchForFirstJob(page);
 
 	await page.getByRole("button", { name: /save current search/i }).click();
 	await page.getByText("Saved searches", { exact: true }).click();
@@ -67,7 +77,7 @@ test("jobs board supports local workflow controls without analytics", async ({
 
 test("jobs board results support keyboard preview activation", async ({ page }) => {
 	await page.goto("/");
-	await waitForFirstJob(page);
+	await searchForFirstJob(page);
 
 	const list = page.getByRole("listbox", { name: /open jobs results/i });
 	await list.focus();
@@ -92,14 +102,8 @@ test("jobs board searches without browser chunk downloads", async ({ page }) => 
 	});
 
 	await page.goto("/");
-	await waitForFirstJob(page);
 
-	const searchResponse = page.waitForResponse(
-		(response) => response.url().includes("/api/jobs/search") && response.ok(),
-		{ timeout: 30_000 },
-	);
-	await page.getByLabel("Search jobs").fill("platform");
-	await searchResponse;
+	await searchForFirstJob(page, "platform");
 
 	expect(browserChunkRequests).toBe(0);
 });
