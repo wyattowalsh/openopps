@@ -194,6 +194,7 @@ pnpm test
 ```
 
 `pnpm data:generate` refreshes package-derived provider/source metadata. `pnpm types:check` also regenerates that metadata before generating Fumadocs MDX artifacts, generating Next.js route types, and running TypeScript without emitting files. `pnpm lint` runs the Next ESLint surface. `pnpm test` runs the docs Vitest suite.
+`just docs-build` runs the production docs build and the function trace guard that keeps committed search artifacts out of API route bundles.
 Use `just docs-rtk-lint` from the repository root for the optional maintainer `rtk lint` surface; it requires `rtk` locally and is not silently skipped inside `just ci`.
 `pnpm data:generate:search` refreshes the committed static search index used by [Jobs](/) and [Explorer](/explorer) from `kaggle/openoppsdb.sqlite`; run it after updating the local OpenOppsDB snapshot. From the repository root you can also use `just docs-search-index`. The generated `docs/public/data/openopps-search/` tree is intentionally committed so the docs host can serve search, filters, dashboard aggregates, and job preview/detail shards without a live backend. Preview descriptions are limited to the normalized description fields present in that snapshot; when those fields are empty, the jobs surface shows metadata and links back to the source posting.
 

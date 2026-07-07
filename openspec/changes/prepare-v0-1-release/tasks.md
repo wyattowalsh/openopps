@@ -19,7 +19,7 @@
 - [x] Harden scheduled sync accounting so repeated source refreshes preserve executable route metadata, expected filtering does not emit skipped warnings, terminal unavailable routes are removed from future job-sync targets, and fair-access-gated detect-only sources stay opt-in.
 - [x] Clarify sync metrics with additive fetched-vs-persisted job counts, reason-level provider diagnostics, and Workable-aware throttling/rate-limit handling.
 - [x] Repair previously failed source syncs through existing Getro embedded-state fallback where live first-page validation works, and remove proven-unavailable packaged sources without tombstones.
-- [x] Keep the local `just docs-build` validation path reliable on macOS while preserving the direct `pnpm build` path used by CI.
+- [x] Keep the local `just docs-build` validation path reliable on macOS, including API function trace checks, while preserving the direct `pnpm build` path used by CI.
 - [x] Add OpenOppsDB Kaggle dataset workflow requirements, local/live Just recipes, docs, and regenerated daily manager artifacts.
 - [x] Implement snapshot quality reports and hard gates before live OpenOppsDB publishing.
 - [x] Deploy and verify the live OpenOppsDB Kaggle dataset and manager notebook surfaces.

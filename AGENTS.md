@@ -32,6 +32,7 @@ cd docs && pnpm types:check
 cd docs && pnpm build
 cd docs && pnpm lint
 cd docs && pnpm test
+just docs-function-trace-check
 just docs-search-index-check
 just docs-rtk-lint
 rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict

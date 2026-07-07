@@ -64,9 +64,51 @@ describe("jobs search service", () => {
 			expect(fetchMock).toHaveBeenCalledTimes(3);
 		});
 
-		it("reuses parsed chunks for later requests on the same server instance", async () => {
-			const matchingNewer = row({ id: "newer", title: "Platform Engineer" });
-			const matchingOlder = row({
+	it("fetches public artifacts for production hosts", async () => {
+		const matching = row({ id: "prod", title: "Platform Engineer" });
+		const fetchMock = stubFetch({
+			"https://openopps.example/data/openopps-search/manifest.json": manifest,
+			"https://openopps.example/data/openopps-search/jobs/chunks/0000.json": chunk([
+				matching,
+			]),
+			"https://openopps.example/data/openopps-search/jobs/chunks/0001.json": chunk([]),
+		});
+
+		const result = await searchPublicJobsIndex({
+			baseUrl: "https://openopps.example/api/jobs/search?q=platform",
+			filters: filters({ query: "platform" }),
+			sortKey: "relevance",
+			page: 1,
+			pageSize: 50,
+		});
+
+		expect(result.rows[0][J.id]).toBe("prod");
+		expect(fetchMock).toHaveBeenCalledWith(
+			new URL("https://openopps.example/data/openopps-search/manifest.json"),
+			{ cache: "no-store" },
+		);
+	});
+
+	it("reports failed public artifact fetches as search load errors", async () => {
+		stubFetch({});
+
+		await expect(
+			searchPublicJobsIndex({
+				baseUrl: "https://openopps.example/",
+				filters: filters({ query: "platform" }),
+				sortKey: "relevance",
+			}),
+		).rejects.toMatchObject({
+			name: "SearchLoadError",
+			code: "fetch_failed",
+			path: "/data/openopps-search/manifest.json",
+			message: "Unable to load /data/openopps-search/manifest.json: 404",
+		});
+	});
+
+			it("reuses parsed chunks for later requests on the same server instance", async () => {
+				const matchingNewer = row({ id: "newer", title: "Platform Engineer" });
+				const matchingOlder = row({
 				id: "older",
 				title: "Platform Lead",
 				latestObserved: "2026-06-01T00:00:00Z",

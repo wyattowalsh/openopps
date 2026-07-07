@@ -61,6 +61,11 @@ docs-check:
 # Build the Fumadocs/Next.js docs site.
 docs-build:
     cd docs && NEXT_TELEMETRY_DISABLED=1 CI=true pnpm build
+    just docs-function-trace-check
+
+# Verify docs API function traces do not bundle committed search artifacts.
+docs-function-trace-check:
+    uv run python scripts/verify_docs_function_trace.py
 
 # Run docs unit tests.
 docs-test:

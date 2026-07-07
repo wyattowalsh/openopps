@@ -126,8 +126,8 @@ export function activeFilterChips(filters: JobBoardFilters): FilterChip[] {
 export function removeFilterPatch(
 	key: keyof JobBoardFilters,
 ): Partial<JobBoardFilters> {
-	if (key === "wide") {
-		return { wide: false };
+	if (key === "wide" || key === "includeAllIndexed") {
+		return { [key]: false } as Partial<JobBoardFilters>;
 	}
 	return { [key]: "" } as Partial<JobBoardFilters>;
 }

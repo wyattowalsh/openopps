@@ -108,6 +108,9 @@ jobs:
         working-directory: docs
         run: pnpm build
 
+      - name: Check docs API function traces
+        run: uv run python scripts/verify_docs_function_trace.py
+
       - name: Test docs
         working-directory: docs
         run: pnpm test

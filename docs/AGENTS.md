@@ -30,6 +30,7 @@ pnpm lint
 pnpm test
 just docs-check
 just docs-build
+just docs-function-trace-check
 just docs-search-index
 just docs-search-index-check
 just docs-test
@@ -38,5 +39,6 @@ just docs-rtk-lint
 ```
 
 Use `pnpm types:check` after MDX/content graph edits because it runs `fumadocs-mdx`, `next typegen`, and `tsc --noEmit`.
+Use `just docs-function-trace-check` after production docs builds when verifying API route bundles; `just docs-build` already runs it.
 Use `just docs-search-index-check` from the repository root before release when refreshing `public/data/openopps-search/`; it requires the ignored local `kaggle/openoppsdb.sqlite` snapshot and fails on generated snapshot drift.
 Use `just docs-rtk-lint` only for the optional maintainer `rtk lint` surface; it is not part of the default CI path.

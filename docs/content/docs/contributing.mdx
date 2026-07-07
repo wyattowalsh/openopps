@@ -65,6 +65,7 @@ pnpm test
 ```
 
 `pnpm data:generate` refreshes package-derived source/provider/export metadata. `pnpm types:check` also regenerates that metadata before Fumadocs MDX artifacts, Next.js route types, and TypeScript checks.
+Use `just docs-build` from the repository root for production docs build assurance; it also runs the API function trace check.
 
 The static jobs/explorer index is separate because it requires the ignored local SQLite snapshot:
 

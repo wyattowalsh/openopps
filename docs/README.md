@@ -24,6 +24,7 @@ From the repository root, the equivalent contributor shortcuts are:
 ```bash
 just docs-check
 just docs-build
+just docs-function-trace-check
 just docs-search-index
 just docs-search-index-check
 just docs-lint
@@ -32,6 +33,7 @@ just docs-rtk-lint
 ```
 
 `pnpm types:check` and `pnpm build` both refresh `lib/generated/openopps-data.json` through `pnpm data:generate`, so treat generated docs data as part of the docs validation surface.
+`just docs-build` runs the production Next.js build and then `just docs-function-trace-check`, which verifies API route traces do not bundle the committed `public/data/openopps-search/` tree into a server function.
 `pnpm data:generate:search` refreshes the committed static snapshot used by Jobs (`/`) and Explorer (`/explorer`) from `../kaggle/openoppsdb.sqlite`; it is explicit because that SQLite file is local and ignored by git. Run `just docs-search-index-check` from the repository root before release when refreshing the committed snapshot; it requires the local SQLite file, regenerates the search index, and fails if `public/data/openopps-search/` remains dirty. The generated `public/data/openopps-search/` tree is intentionally committed and can be tens of megabytes so the hosted docs can search, dashboard, and preview jobs without a live backend. Job previews show full description text only when the snapshot contains normalized description fields; otherwise they remain metadata-first and link back to the source posting.
 `just docs-rtk-lint` is the optional maintainer lint surface for `rtk`; it is explicit and outside the default `just ci`/GitHub Actions path.
 

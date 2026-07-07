@@ -1,6 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
 import {
 	DEFAULT_JOB_BOARD_FILTERS,
 	filterAndSortJobs,
@@ -26,13 +23,7 @@ export const MAX_JOBS_SEARCH_LIMIT = 1000;
 export const DEFAULT_JOBS_SEARCH_PAGE_SIZE = 50;
 export const MAX_JOBS_SEARCH_PAGE_SIZE = 100;
 const MAX_CHUNK_FETCHES = 6;
-const SEARCH_DATA_PREFIX = "/data/openopps-search/";
-const SEARCH_DATA_ROOT = path.join(
-	process.cwd(),
-	"public",
-	"data",
-	"openopps-search",
-);
+const PUBLIC_SEARCH_FETCH_INIT = { cache: "no-store" } satisfies RequestInit;
 
 type SearchPublicJobsIndexOptions = {
 	baseUrl: URL | string;
@@ -257,48 +248,19 @@ async function loadPublicJson<T>(
 	publicPath: string,
 ): Promise<T> {
 	storeStats.chunkFetches += publicPath.includes("/jobs/chunks/") ? 1 : 0;
-	if (!shouldFetchPublicData(baseUrl)) {
-		const localPath = localPublicSearchDataPath(publicPath);
-		if (localPath) {
-			try {
-				return JSON.parse(await fs.readFile(localPath, "utf8")) as T;
-			} catch (caught) {
-				throw new SearchLoadError(
-					"fetch_failed",
-					`Unable to load ${publicPath}: ${errorMessage(caught)}`,
-					publicPath,
-				);
-			}
+	try {
+		const response = await fetch(new URL(publicPath, baseUrl), PUBLIC_SEARCH_FETCH_INIT);
+		if (!response.ok) {
+			throw new Error(String(response.status));
 		}
-	}
-	const response = await fetch(new URL(publicPath, baseUrl), {
-		cache: "force-cache",
-	});
-	if (!response.ok) {
+		return response.json() as Promise<T>;
+	} catch (caught) {
 		throw new SearchLoadError(
 			"fetch_failed",
-			`Unable to load ${publicPath}: ${response.status}`,
+			`Unable to load ${publicPath}: ${errorMessage(caught)}`,
 			publicPath,
 		);
 	}
-	return response.json() as Promise<T>;
-}
-
-function shouldFetchPublicData(baseUrl: URL) {
-	return process.env.VITEST === "true" || baseUrl.hostname.endsWith(".test");
-}
-
-function localPublicSearchDataPath(publicPath: string) {
-	if (!publicPath.startsWith(SEARCH_DATA_PREFIX)) {
-		return null;
-	}
-	const relativePath = publicPath.slice(SEARCH_DATA_PREFIX.length);
-	const resolved = path.resolve(SEARCH_DATA_ROOT, relativePath);
-	const root = path.resolve(SEARCH_DATA_ROOT);
-	if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-		return null;
-	}
-	return resolved;
 }
 
 function errorMessage(caught: unknown) {

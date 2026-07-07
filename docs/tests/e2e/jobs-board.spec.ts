@@ -107,3 +107,45 @@ test("jobs board searches without browser chunk downloads", async ({ page }) => 
 
 	expect(browserChunkRequests).toBe(0);
 });
+
+test("jobs board removes all-indexed mode from the active filter chip", async ({
+	page,
+}) => {
+	const searchUrls: string[] = [];
+	page.on("response", (response) => {
+		if (response.url().includes("/api/jobs/search") && response.ok()) {
+			searchUrls.push(response.url());
+		}
+	});
+
+	await page.goto("/");
+	await searchForFirstJob(page, "platform");
+
+	await page.getByRole("button", { name: /^All$/i }).click();
+	const chip = page.getByRole("button", {
+		name: /remove all indexed filter/i,
+	});
+	await expect(chip).toBeVisible();
+	await expect
+		.poll(() => searchUrls.some((url) => new URL(url).searchParams.get("all") === "1"))
+		.toBe(true);
+
+	const clearedSearch = page.waitForResponse(
+		(response) => {
+			if (!response.url().includes("/api/jobs/search") || !response.ok()) {
+				return false;
+			}
+			return new URL(response.url()).searchParams.get("all") === null;
+		},
+		{ timeout: 30_000 },
+	);
+	await chip.click();
+	const response = await clearedSearch;
+
+	expect(new URL(response.url()).searchParams.get("all")).toBeNull();
+	await expect(chip).toBeHidden();
+	await expect(page.getByRole("button", { name: /^All$/i })).toHaveAttribute(
+		"aria-pressed",
+		"false",
+	);
+});
