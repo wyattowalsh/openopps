@@ -29,6 +29,9 @@ const DEFAULT_TELEMETRY_SALT = "openopps-docs-telemetry";
 const DEFAULT_RATE_LIMIT_MAX = 120;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_BUCKETS = 4_096;
+const DEFAULT_POSTHOG_TIMEOUT_MS = 1_500;
+const MIN_POSTHOG_TIMEOUT_MS = 100;
+const MAX_POSTHOG_TIMEOUT_MS = 10_000;
 const SENSITIVE_HEADER_PATTERN =
 	/^(authorization|cookie|proxy-authorization|set-cookie|x-api-key|x-auth-token)$/i;
 const HEADER_ALLOWLIST = new Set([
@@ -52,10 +55,18 @@ const HEADER_ALLOWLIST = new Set([
 
 type TelemetrySink = "noop" | "local-event-lake";
 type TelemetryIpMode = "drop" | "hash" | "raw";
+type PostHogTelemetryStatus = "accepted" | "disabled" | "failed" | "timeout";
+
+interface PostHogTelemetryConfig {
+	projectApiKey: string;
+	host: string;
+}
 
 interface TelemetryRouteConfig {
 	sink: TelemetrySink;
 	dir?: string;
+	posthog?: PostHogTelemetryConfig;
+	postHogTimeoutMs: number;
 	maxRequestBytes: number;
 	maxEventBytes: number;
 	ipMode: TelemetryIpMode;
@@ -130,10 +141,12 @@ export async function POST(request: Request) {
 	);
 
 	if (config.sink === "noop") {
+		const posthog = await forwardPostHogTelemetry(config, envelopes);
 		return jsonResponse({
 			ok: true,
-			sink: "noop",
+			sink: config.posthog ? "posthog" : "noop",
 			accepted: envelopes.length,
+			posthog,
 		});
 	}
 
@@ -150,10 +163,12 @@ export async function POST(request: Request) {
 		return jsonResponse({ ok: false, error: "telemetry_write_failed" }, 500);
 	}
 
+	const posthog = await forwardPostHogTelemetry(config, envelopes);
 	return jsonResponse({
 		ok: true,
 		sink: "local-event-lake",
 		accepted: envelopes.length,
+		posthog,
 	});
 }
 
@@ -173,6 +188,13 @@ function getTelemetryRouteConfig(
 	return {
 		sink,
 		dir: env.OPENOPPS_TELEMETRY_DIR,
+		posthog: postHogTelemetryConfig(env),
+		postHogTimeoutMs: readClampedInteger(
+			env.OPENOPPS_POSTHOG_TIMEOUT_MS,
+			DEFAULT_POSTHOG_TIMEOUT_MS,
+			MIN_POSTHOG_TIMEOUT_MS,
+			MAX_POSTHOG_TIMEOUT_MS,
+		),
 		maxRequestBytes: readPositiveInteger(
 			env.OPENOPPS_TELEMETRY_MAX_REQUEST_BYTES,
 			512 * 1024,
@@ -199,6 +221,20 @@ function getTelemetryRouteConfig(
 			env.OPENOPPS_TELEMETRY_TRUSTED_PROXY,
 		),
 		configError,
+	};
+}
+
+function postHogTelemetryConfig(
+	env: NodeJS.ProcessEnv,
+): PostHogTelemetryConfig | undefined {
+	const projectApiKey =
+		env.OPENOPPS_POSTHOG_PROJECT_API_KEY || env.POSTHOG_PROJECT_API_KEY;
+	if (!projectApiKey) {
+		return undefined;
+	}
+	return {
+		projectApiKey,
+		host: env.OPENOPPS_POSTHOG_HOST || env.POSTHOG_HOST || "https://us.i.posthog.com",
 	};
 }
 
@@ -361,6 +397,105 @@ async function appendTelemetryEvents(
 	await appendFile(file, `${lines}\n`, "utf8");
 }
 
+async function forwardPostHogTelemetry(
+	config: TelemetryRouteConfig,
+	envelopes: TelemetryEnvelope[],
+): Promise<PostHogTelemetryStatus> {
+	if (!config.posthog) {
+		return "disabled";
+	}
+	const posthog = config.posthog;
+	try {
+		const endpoint = new URL("/capture/", posthog.host).toString();
+		await Promise.all(
+			envelopes.map((event) =>
+				postHogFetchWithTimeout(endpoint, config.postHogTimeoutMs, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						api_key: posthog.projectApiKey,
+						event: event.event_name,
+						distinct_id: event.anonymous_id,
+						uuid: event.event_id,
+						timestamp: event.sent_at,
+						properties: postHogProperties(event),
+					}),
+				}).then((response) => {
+					if (!response.ok) {
+						throw new Error(`PostHog capture failed: ${response.status}`);
+					}
+				}),
+			),
+		);
+		return "accepted";
+	} catch (caught) {
+		if (caught instanceof PostHogTimeoutError) {
+			return "timeout";
+		}
+		return "failed";
+	}
+}
+
+class PostHogTimeoutError extends Error {
+	constructor() {
+		super("PostHog capture timed out");
+		this.name = "PostHogTimeoutError";
+	}
+}
+
+async function postHogFetchWithTimeout(
+	url: string,
+	timeoutMs: number,
+	init: RequestInit,
+) {
+	const controller = new AbortController();
+	let timedOut = false;
+	const timeout = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, timeoutMs);
+	try {
+		return await fetch(url, {
+			...init,
+			signal: controller.signal,
+		});
+	} catch (caught) {
+		if (timedOut) {
+			throw new PostHogTimeoutError();
+		}
+		throw caught;
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+function postHogProperties(event: TelemetryEnvelope): TelemetryProperties {
+	const viewport = telemetryRecord(event.context.viewport);
+	return {
+		...event.properties,
+		openopps_schema_version: event.schema_version,
+		openopps_page_id: event.page_id,
+		openopps_payload_truncated: event.payload_truncated,
+		openopps_redaction_count: event.redaction_count,
+		$session_id: event.session_id,
+		$current_url: event.context.path ?? null,
+		path: event.context.path ?? null,
+		title: event.context.title ?? null,
+		viewport_width: telemetryNumber(viewport?.width),
+		viewport_height: telemetryNumber(viewport?.height),
+	};
+}
+
+function telemetryRecord(value: TelemetryProperties[string] | undefined) {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? value
+		: undefined;
+}
+
+function telemetryNumber(value: TelemetryProperties[string] | undefined) {
+	return typeof value === "number" ? value : null;
+}
+
 async function readBoundedRequestText(
 	request: Request,
 	maxBytes: number,
@@ -421,6 +556,16 @@ function normalizeIpMode(value: string | undefined): TelemetryIpMode {
 function readPositiveInteger(value: string | undefined, fallback: number) {
 	const parsed = value ? Number.parseInt(value, 10) : Number.NaN;
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readClampedInteger(
+	value: string | undefined,
+	fallback: number,
+	minimum: number,
+	maximum: number,
+) {
+	const parsed = readPositiveInteger(value, fallback);
+	return Math.min(Math.max(parsed, minimum), maximum);
 }
 
 function jsonResponse(payload: unknown, status = 202) {

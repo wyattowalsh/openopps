@@ -127,7 +127,7 @@ Derived **S3** fields such as `seniority` are computed from title/experience tex
 
 ## Telemetry Event Lake
 
-The docs app telemetry source of truth should be a first-party event lake, not a paid analytics product. The collector can run as a no-op locally, append raw events when persistent storage is configured, and compact events into Parquet for DuckDB analysis.
+The docs app telemetry source of truth should be a first-party event lake. The collector can run as a no-op locally, append raw events when persistent storage is configured, mirror sanitized events to PostHog when configured, and compact local events into Parquet for DuckDB analysis.
 
 Recommended event shape:
 
@@ -144,6 +144,8 @@ Recommended event shape:
 | `properties` | Event-specific allowlisted metadata. |
 | `redaction_count`, `payload_truncated` | Evidence that sanitization and size limits were applied. |
 
+`page_engagement` events include both cumulative counters (`durationMs`, `visibleDurationMs`, `interactionCount`) and additive counters (`durationDeltaMs`, `visibleDurationDeltaMs`, `interactionDeltaCount`) with a `reason` and `sequence`. Use the additive counters for aggregate dwell-time stories so route changes, hidden-tab flushes, and unmounts do not double-count the same page interval.
+
 Runtime sink modes:
 
 | Sink | Use case | Cost posture |
@@ -151,6 +153,6 @@ Runtime sink modes:
 | `noop` | Local development or deployments without storage. | Free; records nothing. |
 | `local-event-lake` | Canonical first-party telemetry on persistent disk. | Free when running on existing infrastructure. |
 
-The current `/api/telemetry` route treats any unsupported sink value as `noop`. Cloudflare, Umami, or hosted analytics dashboards can mirror sanitized summaries downstream, but the canonical raw sink remains `local-event-lake`.
+The current `/api/telemetry` route treats any unsupported sink value as `noop`. PostHog forwarding is controlled separately with `OPENOPPS_POSTHOG_PROJECT_API_KEY`, receives only allowlisted sanitized properties, and is bounded by `OPENOPPS_POSTHOG_TIMEOUT_MS`. Browser PostHog session replay is an opt-in mirror controlled by `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY`; replay masks text and inputs, disables network body/header capture, respects PostHog project sampling and trigger controls, and does not change the first-party event schema. Cloudflare, Umami, or BI dashboards can mirror sanitized summaries downstream, but the canonical raw sink remains `local-event-lake`.
 
 Sanitize obvious secret-like values, cap event size, and make raw IP retention an explicit opt-in. Hashing IPs with a deployment salt is the default compromise when approximate abuse/debugging signal is useful.

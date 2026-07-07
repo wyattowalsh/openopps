@@ -64,6 +64,7 @@ describe("telemetry sanitizer", () => {
 describe("telemetry client", () => {
 	it("exposes an explicit event-name allowlist", () => {
 		expect(isAllowedTelemetryEventName("jobs.local_flag_changed")).toBe(true);
+		expect(isAllowedTelemetryEventName("page_engagement")).toBe(true);
 		expect(isAllowedTelemetryEventName("jobs.filter")).toBe(false);
 	});
 
@@ -146,6 +147,44 @@ describe("telemetry client", () => {
 
 		expect(client.pendingCount()).toBe(0);
 		expect(transport).not.toHaveBeenCalled();
+	});
+
+	it("keeps page engagement compact and allowlisted", async () => {
+		const transport = vi.fn().mockResolvedValue(undefined);
+		const client = createTelemetryClient({
+			enabled: true,
+			flushIntervalMs: 0,
+			transport,
+			idGenerator: deterministicIds(),
+		});
+
+		client.track("page_engagement", {
+			durationDeltaMs: 234,
+			durationMs: 1234,
+			interactionCount: 3,
+			interactionDeltaCount: 2,
+			path: "/",
+			rawUrl: "https://openopps.local/?q=private",
+			reason: "visibility_hidden",
+			sequence: 2,
+			secretToken: "github_pat_1234567890abcdef1234567890",
+			visibleDurationDeltaMs: 200,
+			visibleDurationMs: 1000,
+		});
+		await client.flush("test");
+
+		const event = transport.mock.calls[0][1].events[0];
+		expect(event.properties).toEqual({
+			durationDeltaMs: 234,
+			durationMs: 1234,
+			interactionCount: 3,
+			interactionDeltaCount: 2,
+			path: "/",
+			reason: "visibility_hidden",
+			sequence: 2,
+			visibleDurationDeltaMs: 200,
+			visibleDurationMs: 1000,
+		});
 	});
 
 	it("drops raw URL context before transport", async () => {

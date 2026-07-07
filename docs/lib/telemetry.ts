@@ -67,6 +67,17 @@ export interface TelemetryRequestPayload {
 
 export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	page_view: ["path", "title"],
+	page_engagement: [
+		"durationDeltaMs",
+		"durationMs",
+		"interactionCount",
+		"interactionDeltaCount",
+		"path",
+		"reason",
+		"sequence",
+		"visibleDurationDeltaMs",
+		"visibleDurationMs",
+	],
 	"explorer.inspector_closed": ["activeFilters", "entity"],
 	"explorer.inspector_opened": ["activeFilters", "entity"],
 	"explorer.lineage_error": ["message"],
@@ -116,7 +127,17 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 	"jobs.saved_search_restored": ["newMatchBucket"],
 	"jobs.saved_search_reviewed": ["matchBucket"],
 	"jobs.search_error": ["message"],
-	"jobs.search_loaded": ["rows", "totalMatches", "truncated"],
+	"jobs.search_loaded": [
+		"activeFilterCount",
+		"page",
+		"pageSize",
+		"query",
+		"rows",
+		"sortKey",
+		"totalMatches",
+		"totalPages",
+		"truncated",
+	],
 	"jobs.search_retry": ["activeFilterCount", "hasSelection"],
 } as const satisfies Record<string, readonly string[]>;
 

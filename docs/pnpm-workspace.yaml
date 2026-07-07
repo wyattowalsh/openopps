@@ -1,5 +1,8 @@
 allowBuilds:
+  core-js: false
   esbuild: true
   msw: true
   sharp: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - posthog-js@1.398.0

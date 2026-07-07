@@ -238,11 +238,15 @@ The docs app telemetry source of truth should be a first-party event lake. The d
 
 The current collector accepts only `noop` and `local-event-lake` as `OPENOPPS_TELEMETRY_SINK` values. Cloudflare, Umami, or BI dashboards should be treated as downstream mirrors fed from the event lake or from sanitized aggregates, not as the canonical raw telemetry store.
 
-Telemetry operations should preserve the event lake, cap payload sizes, record redaction/truncation evidence, and avoid raw IP retention. Keep event names and property keys allowlisted so exploratory UI instrumentation does not accidentally persist secrets from query strings, stack traces, or copied provider payloads.
+PostHog can be enabled as a free hosted product-analytics mirror by setting `OPENOPPS_POSTHOG_PROJECT_API_KEY`. The route forwards only allowlisted, sanitized events after OpenOpps redaction and never forwards raw posting bodies, request headers, or raw IPs. Forwarding is bounded by `OPENOPPS_POSTHOG_TIMEOUT_MS` and runs after successful `local-event-lake` writes, so a slow hosted mirror cannot block the canonical sink. Browser session replay is a separate public-key opt-in through `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY`; the browser SDK masks all inputs and text, blocks elements marked `data-openopps-private`, `data-telemetry-private`, or `data-sensitive`, disables network body/header capture, leaves sampling plus URL/event/linked-flag controls to PostHog project configuration, and keeps PostHog automatic pageview/autocapture events off so OpenOpps remains the event schema source of truth. Use PostHog for dashboards and masked replay while keeping `local-event-lake` as the canonical raw sink when persistent storage is available.
+
+Telemetry operations should preserve the event lake, cap payload sizes, record redaction/truncation evidence, and avoid raw IP retention. Keep event names and property keys allowlisted so exploratory UI instrumentation does not accidentally persist secrets from query strings, stack traces, or copied provider payloads. Page-engagement stories should sum `visibleDurationDeltaMs` and `durationDeltaMs`; cumulative `visibleDurationMs` and `durationMs` are retained for last-known-state debugging.
 
 | Variable | Default | Production rule |
 | -------- | ------- | --------------- |
 | `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED` | disabled | Enables the browser client only when explicitly set. |
+| `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY` | unset | Optional browser PostHog key for masked session replay; ignored unless browser telemetry is enabled. |
+| `NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST` | `https://us.i.posthog.com` | Optional browser PostHog ingestion host. |
 | `OPENOPPS_TELEMETRY_SINK` | `noop` | Use `local-event-lake` only when persistent storage is available. |
 | `OPENOPPS_TELEMETRY_DIR` | unset | Required for `local-event-lake`; events are partitioned by UTC date. |
 | `OPENOPPS_TELEMETRY_SALT` | test/dev fallback | Required before `local-event-lake` accepts writes; rotate through deployment config, not source. |
@@ -251,6 +255,9 @@ Telemetry operations should preserve the event lake, cap payload sizes, record r
 | `OPENOPPS_TELEMETRY_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window in milliseconds. |
 | `OPENOPPS_TELEMETRY_RATE_LIMIT_MAX_BUCKETS` | `4096` | Maximum in-process rate-limit fingerprints retained before oldest buckets are evicted. |
 | `OPENOPPS_TELEMETRY_TRUSTED_PROXY` | `none` | Valid values are `none`, `cloudflare`, `vercel`, and `forwarded`. Client IP headers are ignored unless a mode is selected; `cloudflare` trusts `cf-connecting-ip`, `vercel` trusts `x-vercel-forwarded-for`, and `forwarded` trusts the first `x-forwarded-for` hop only when your ingress strips client-supplied values. `x-real-ip` is not trusted by this route. |
+| `OPENOPPS_POSTHOG_PROJECT_API_KEY` | unset | Optional PostHog project key for sanitized hosted product analytics. |
+| `OPENOPPS_POSTHOG_HOST` | `https://us.i.posthog.com` | Optional PostHog ingestion host. |
+| `OPENOPPS_POSTHOG_TIMEOUT_MS` | `1500` | Best-effort PostHog forwarding timeout, clamped to 100-10000 ms. |
 
 ## OpenOppsDB Kaggle
 

@@ -12,6 +12,7 @@ import {
 
 afterEach(() => {
 	vi.useRealTimers();
+	vi.unstubAllGlobals();
 	vi.unstubAllEnvs();
 	resetTelemetryRateLimitStateForTests();
 });
@@ -47,6 +48,178 @@ describe("telemetry route", () => {
 			ok: true,
 			sink: "noop",
 			accepted: 1,
+		});
+	});
+
+	it("forwards allowlisted events to PostHog when configured", async () => {
+		vi.stubEnv("OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		vi.stubEnv("OPENOPPS_POSTHOG_HOST", "https://eu.i.posthog.com");
+		const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+			new Response("{}", { status: 200 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const response = await POST(
+			request({
+				events: [
+					event({
+						event_name: "jobs.search_loaded",
+						context: {
+							path: "/",
+							viewport: { width: 390, height: 844 },
+						},
+						properties: {
+							rows: 50,
+							totalMatches: 1908,
+							truncated: true,
+							rawPostingBody: "drop me",
+						},
+					}),
+				],
+			}),
+		);
+
+		expect(response.status).toBe(202);
+		await expect(response.json()).resolves.toMatchObject({
+			ok: true,
+			sink: "posthog",
+			accepted: 1,
+			posthog: "accepted",
+		});
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://eu.i.posthog.com/capture/",
+			expect.objectContaining({ method: "POST" }),
+		);
+		const firstCall = fetchMock.mock.calls[0];
+		expect(firstCall).toBeDefined();
+		const body = JSON.parse(String(firstCall?.[1]?.body));
+		expect(body).toMatchObject({
+			api_key: "phc_test",
+			event: "jobs.search_loaded",
+			distinct_id: "anon-1",
+		});
+		expect(body.properties).toMatchObject({
+			rows: 50,
+			totalMatches: 1908,
+			truncated: true,
+			path: "/",
+			viewport_width: 390,
+			viewport_height: 844,
+		});
+		expect(body.properties.rawPostingBody).toBeUndefined();
+	});
+
+	it("appends local event-lake events before reporting PostHog success", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "openopps-telemetry-"));
+		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "local-event-lake");
+		vi.stubEnv("OPENOPPS_TELEMETRY_DIR", dir);
+		vi.stubEnv("OPENOPPS_TELEMETRY_SALT", "test-salt");
+		vi.stubEnv("OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		try {
+			const response = await POST(request({ events: [event()] }));
+
+			expect(response.status).toBe(202);
+			await expect(response.json()).resolves.toMatchObject({
+				ok: true,
+				sink: "local-event-lake",
+				accepted: 1,
+				posthog: "accepted",
+			});
+			expect(fetchMock).toHaveBeenCalledOnce();
+			const files = await findEventFiles(dir);
+			expect(files).toHaveLength(1);
+		} finally {
+			await rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("keeps the local event lake durable when PostHog forwarding fails", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "openopps-telemetry-"));
+		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "local-event-lake");
+		vi.stubEnv("OPENOPPS_TELEMETRY_DIR", dir);
+		vi.stubEnv("OPENOPPS_TELEMETRY_SALT", "test-salt");
+		vi.stubEnv("OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		const fetchMock = vi.fn(async () => {
+			throw new Error("PostHog unavailable");
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		try {
+			const response = await POST(request({ events: [event()] }));
+
+			expect(response.status).toBe(202);
+			await expect(response.json()).resolves.toMatchObject({
+				ok: true,
+				sink: "local-event-lake",
+				accepted: 1,
+				posthog: "failed",
+			});
+			const files = await findEventFiles(dir);
+			expect(files).toHaveLength(1);
+		} finally {
+			await rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("keeps the local event lake durable when PostHog forwarding times out", async () => {
+		vi.useFakeTimers();
+		const dir = await mkdtemp(join(tmpdir(), "openopps-telemetry-"));
+		vi.stubEnv("OPENOPPS_TELEMETRY_SINK", "local-event-lake");
+		vi.stubEnv("OPENOPPS_TELEMETRY_DIR", dir);
+		vi.stubEnv("OPENOPPS_TELEMETRY_SALT", "test-salt");
+		vi.stubEnv("OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		vi.stubEnv("OPENOPPS_POSTHOG_TIMEOUT_MS", "250");
+		const fetchMock = hangingFetchMock();
+		vi.stubGlobal("fetch", fetchMock);
+
+		try {
+			const responsePromise = POST(request({ events: [event()] }));
+			await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+			await vi.advanceTimersByTimeAsync(250);
+			const response = await responsePromise;
+
+			expect(response.status).toBe(202);
+			await expect(response.json()).resolves.toMatchObject({
+				ok: true,
+				sink: "local-event-lake",
+				accepted: 1,
+				posthog: "timeout",
+			});
+			const files = await findEventFiles(dir);
+			expect(files).toHaveLength(1);
+		} finally {
+			await rm(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("bounds mirror-only PostHog forwarding with a clamped timeout", async () => {
+		vi.useFakeTimers();
+		vi.stubEnv("OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		vi.stubEnv("OPENOPPS_POSTHOG_TIMEOUT_MS", "1");
+		const fetchMock = hangingFetchMock();
+		vi.stubGlobal("fetch", fetchMock);
+
+		let settled = false;
+		const responsePromise = POST(request({ events: [event()] })).then((response) => {
+			settled = true;
+			return response;
+		});
+		await flushMicrotasksUntil(() => fetchMock.mock.calls.length > 0);
+		expect(fetchMock).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(99);
+		expect(settled).toBe(false);
+		await vi.advanceTimersByTimeAsync(1);
+		const response = await responsePromise;
+
+		expect(response.status).toBe(202);
+		await expect(response.json()).resolves.toMatchObject({
+			ok: true,
+			sink: "posthog",
+			accepted: 1,
+			posthog: "timeout",
 		});
 	});
 
@@ -514,6 +687,34 @@ function event(overrides: Record<string, unknown> = {}) {
 		payload_truncated: false,
 		...overrides,
 	};
+}
+
+function hangingFetchMock() {
+	return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+		return new Promise<Response>((_resolve, reject) => {
+			const signal = init?.signal;
+			if (signal?.aborted) {
+				reject(new Error("aborted"));
+				return;
+			}
+			signal?.addEventListener(
+				"abort",
+				() => {
+					reject(new Error("aborted"));
+				},
+				{ once: true },
+			);
+		});
+	});
+}
+
+async function flushMicrotasksUntil(predicate: () => boolean) {
+	for (let index = 0; index < 20; index += 1) {
+		if (predicate()) {
+			return;
+		}
+		await Promise.resolve();
+	}
 }
 
 async function findEventFiles(root: string): Promise<string[]> {
