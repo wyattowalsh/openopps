@@ -54,14 +54,14 @@ OpenOpps SHALL NOT add browser-driven, authenticated, or anti-bot-bypass source 
 #### Scenario: Wellfound startup discovery is blocked
 
 - **WHEN** Wellfound/Angel startup discovery cannot be fetched through static no-auth assets or public search-index endpoints
-- **THEN** OpenOpps records the source as disabled or unsupported metadata
+- **THEN** OpenOpps excludes it from the packaged source catalog and records the unsupported outcome in release rationale
 - **AND** points future authorized data flows toward plugins or explicit user-provided imports rather than browser/session scraping
 
 #### Scenario: Fair-access source rejects generic scheduled syncs
 
 - **WHEN** an official detect-only source requires caller-specific fair-access headers or network posture beyond the generic scheduled CLI environment
-- **THEN** OpenOpps keeps that source opt-in by default
-- **AND** documents how to run it explicitly when the caller can satisfy the upstream access policy
+- **THEN** OpenOpps excludes that source from unscoped scheduled sync unless it has an explicitly invoked access-constrained path
+- **AND** documents how to run the explicit path when the caller can satisfy the upstream access policy
 
 ### Requirement: Provider requests remain bounded and deduped
 

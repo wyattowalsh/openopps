@@ -16,8 +16,8 @@ OpenOpps SHALL package source adapters for low-friction public company and ecosy
 #### Scenario: Scrappy or license-sensitive source is packaged
 
 - **WHEN** an index or ranking source has unreviewed or community-maintained provenance
-- **THEN** the packaged source is disabled by default or manual/opt-in
-- **AND** the source metadata records the provenance and default-enable rationale
+- **THEN** OpenOpps excludes it from the packaged source catalog until it has a reviewed public fetch path
+- **AND** any packaged access-constrained source records provenance and access constraints without source enablement state
 
 ### Requirement: Source metadata records coverage taxonomy
 
@@ -26,7 +26,7 @@ OpenOpps SHALL preserve taxonomy metadata for packaged source records using exis
 #### Scenario: Source taxonomy is exported
 
 - **WHEN** source metadata is listed, synced, or generated for docs
-- **THEN** OpenOpps includes provider type, coverage mode, access type, license status, refresh cadence, source category, source attribution, and default-enabled reason when known
+- **THEN** OpenOpps includes provider type, coverage mode, access type, license status, refresh cadence, source category, source attribution, and access-constraint rationale when known
 
 ### Requirement: Source-yield reporting is offline and persisted-data-only
 

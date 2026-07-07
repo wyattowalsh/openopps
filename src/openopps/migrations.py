@@ -31,6 +31,9 @@ REQUIRED_SQLITE_COLUMNS: dict[str, set[str]] = {
     "job_sync_runs": {"board_key", "provider_id", "synced_at"},
     "job_sync_observations": {"sync_run_id", "job_id", "observation_kind"},
 }
+UNSUPPORTED_LEGACY_SQLITE_COLUMNS: dict[str, set[str]] = {
+    "sources": {"enabled"},
+}
 EXPECTED_SQLITE_FOREIGN_KEYS: dict[str, set[tuple[str, str, str]]] = {
     "boards": {("source_key", "sources", "key")},
     "board_providers": {
@@ -183,6 +186,7 @@ def _validate_sqlite_schema(settings: OpenOppsSettings) -> None:
     try:
         inspector = inspect(engine)
         table_names = set(inspector.get_table_names())
+        _validate_unsupported_legacy_sqlite_columns(settings, inspector, table_names)
         missing: list[str] = []
         for table_name, column_names in REQUIRED_SQLITE_COLUMNS.items():
             if table_name not in table_names:
@@ -243,6 +247,7 @@ def _validate_existing_sqlite_columns(settings: OpenOppsSettings) -> None:
             if managed_tables:
                 _raise_unstamped_sqlite_database_error(settings, managed_tables)
             return
+        _validate_unsupported_legacy_sqlite_columns(settings, inspector, table_names)
         _validate_required_sqlite_columns(settings, inspector, table_names)
     finally:
         engine.dispose()
@@ -291,6 +296,35 @@ def _validate_required_sqlite_columns(
             "This usually means a pre-release local SQLite database was stamped "
             "before the v0.1 schema was finalized."
         )
+
+
+def _validate_unsupported_legacy_sqlite_columns(
+    settings: OpenOppsSettings, inspector, table_names: set[str]
+) -> None:
+    legacy_columns: list[str] = []
+    for table_name, column_names in UNSUPPORTED_LEGACY_SQLITE_COLUMNS.items():
+        if table_name not in table_names:
+            continue
+        existing_columns = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        legacy_columns.extend(
+            f"{table_name}.{column}"
+            for column in sorted(column_names & existing_columns)
+        )
+    if not legacy_columns:
+        return
+
+    location = str(settings.sqlite_path or settings.db_url)
+    raise DatabaseSchemaError(
+        "does not match the OpenOpps v0.1.0 schema. "
+        "Reset that local DB and rerun `openopps admin db init` "
+        f"(path: {location}), or set OPENOPPS_DB_URL to a new SQLite file. "
+        f"Unsupported legacy columns: {', '.join(legacy_columns)}. "
+        "Source enabled/disabled state is no longer supported; every persisted "
+        "source is active by definition, and excluded sources should be removed "
+        "instead of stored as disabled."
+    )
 
 
 def _missing_sqlite_unique_indexes(inspector) -> list[str]:

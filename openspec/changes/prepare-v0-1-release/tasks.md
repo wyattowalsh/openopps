@@ -24,5 +24,5 @@
 - [x] Implement snapshot quality reports and hard gates before live OpenOppsDB publishing.
 - [x] Deploy and verify the live OpenOppsDB Kaggle dataset and manager notebook surfaces.
 - [x] Add workflow, dependency, and secret hygiene for docs tests, uv lock checks, optional `rtk` lint, Renovate lock maintenance, credential ignores, and synchronized docs/spec/instruction command lists.
-- [ ] Keep WorkAtAStartup out of scope in favor of the existing YC source provider, and document/test any Wellfound/Angel outcome as static no-auth source support or explicit unsupported/disabled metadata.
+- [ ] Keep WorkAtAStartup out of scope in favor of the existing YC source provider, and document/test any Wellfound/Angel outcome as static no-auth source support or explicit unsupported release rationale.
 - [ ] Audit Editorial/Editiorial source labels before adding any provider identity, and only add detection if a real public provider route is proven.

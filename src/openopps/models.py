@@ -823,21 +823,21 @@ def derive_seniority(record: JobRecord) -> str | None:
 class SourceRecord(OpenOppsRecord):
     """A configured source of opportunity-board companies."""
 
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_legacy_enabled_extra(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            sanitized = dict(data)
-            sanitized.pop("enabled", None)
-            extra_payload = sanitized.get("extra_payload")
-            if isinstance(extra_payload, dict) and "enabled" in extra_payload:
-                sanitized["extra_payload"] = {
-                    key: value
-                    for key, value in extra_payload.items()
-                    if key != "enabled"
-                }
-            return sanitized
-        return data
+    @model_validator(mode="after")
+    def _reject_enablement_extras(self) -> Self:
+        extra = self.model_extra or {}
+        forbidden = set(extra) & {"disabled", "enabled"}
+        extra_payload = extra.get("extra_payload")
+        if isinstance(extra_payload, dict):
+            forbidden.update(set(extra_payload) & {"disabled", "enabled"})
+        forbidden = sorted(forbidden)
+        if forbidden:
+            joined = ", ".join(forbidden)
+            raise ValueError(
+                f"Source records do not support enablement fields: {joined}. "
+                "Remove excluded sources instead of storing them as disabled."
+            )
+        return self
 
     key: NonEmptyStr = Field(
         description="Stable local identifier for the source.",

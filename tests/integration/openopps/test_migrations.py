@@ -296,6 +296,35 @@ def test_stamped_sqlite_db_missing_v01_columns_fails_with_reset_guidance(
     assert str(db_path) in message
 
 
+def test_stamped_sqlite_db_with_legacy_source_enabled_column_fails(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "openopps.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        conn.execute(f"INSERT INTO alembic_version VALUES ('{ALEMBIC_HEAD}')")
+        conn.execute(
+            """
+            CREATE TABLE sources (
+                key VARCHAR NOT NULL PRIMARY KEY,
+                url VARCHAR NOT NULL,
+                provider_id VARCHAR NOT NULL,
+                enabled BOOLEAN NOT NULL
+            )
+            """
+        )
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+
+    with pytest.raises(DatabaseSchemaError, match="Reset that local DB") as exc_info:
+        store.init_db()
+
+    message = str(exc_info.value)
+    assert "Unsupported legacy columns: sources.enabled" in message
+    assert "Source enabled/disabled state is no longer supported" in message
+    assert "every persisted source is active" in message
+    assert str(db_path) in message
+
+
 def test_unstamped_sqlite_db_with_app_tables_fails_with_reset_guidance(
     tmp_path: Path,
 ):

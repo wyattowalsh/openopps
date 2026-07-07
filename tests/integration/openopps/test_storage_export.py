@@ -3,6 +3,8 @@ from pathlib import Path
 import sqlite3
 
 import polars as pl
+from pydantic import ValidationError
+import pytest
 
 import openopps.storage as storage_module
 from openopps.export import export_records
@@ -333,40 +335,23 @@ def test_storage_roundtrip_and_export(tmp_path: Path):
     assert metadata["export_format"] == "sqlite"
 
 
-def test_source_enabled_extra_does_not_rehydrate_or_export(tmp_path: Path):
-    db_path = tmp_path / "openopps.db"
-    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
-    store.init_db()
-
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO sources (
-                key, url, provider_id, version, raw_metadata, extra_payload, synced_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, NULL)
-            """,
-            (
-                "legacy",
-                "https://jobs.example.com/companies",
-                "getro",
-                json.dumps({}),
-                json.dumps({"collectionId": "8672"}),
-                json.dumps({"enabled": True, "legacyNote": "kept"}),
-            ),
+@pytest.mark.parametrize("field_name", ["enabled", "disabled"])
+@pytest.mark.parametrize("payload_wrapper", ["top-level", "extra-payload"])
+def test_source_enablement_extras_are_rejected(
+    field_name: str, payload_wrapper: str
+):
+    payload = (
+        {field_name: True}
+        if payload_wrapper == "top-level"
+        else {"extra_payload": {field_name: True}}
+    )
+    with pytest.raises(ValidationError, match="do not support enablement"):
+        SourceRecord(
+            key="legacy",
+            url="https://jobs.example.com/companies",
+            provider_id="getro",
+            **payload,
         )
-
-    source = store.get_source("legacy")
-    assert source is not None
-    source_data = source.model_dump(mode="json")
-    assert "enabled" not in source_data
-    assert source_data["legacyNote"] == "kept"
-
-    jsonl_output = tmp_path / "sources.jsonl"
-    assert export_records([source], jsonl_output, ExportFormat.JSONL) == 1
-    jsonl_row = json.loads(jsonl_output.read_text().strip())
-    assert "enabled" not in jsonl_row
-    assert jsonl_row["legacyNote"] == "kept"
 
 
 def test_job_sync_tracks_versions_raw_drift_and_lifecycle(tmp_path: Path):
