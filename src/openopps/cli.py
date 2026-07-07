@@ -100,8 +100,8 @@ REMOTE_FILTER_HELP = "Case-insensitive exact remote level: Full, Hybrid, or None
 EMPLOYMENT_TYPE_FILTER_HELP = (
     "Case-insensitive substring match, such as full-time or contract."
 )
-SALARY_MIN_FILTER_HELP = "Keep jobs whose salary range overlaps this lower bound."
-SALARY_MAX_FILTER_HELP = "Keep jobs whose salary range overlaps this upper bound."
+SALARY_MIN_FILTER_HELP = "overlaps this lower salary range bound."
+SALARY_MAX_FILTER_HELP = "overlaps this upper salary range bound."
 SKILL_FILTER_HELP = "Match normalized skill names, levels, or keywords."
 QUERY_FILTER_HELP = "Search normalized title, company, and plain-text description."
 POSTED_AFTER_FILTER_HELP = "Inclusive YYYY-MM-DD lower bound for normalized posted_at."
@@ -2112,7 +2112,15 @@ def jobs_list(
         str | None,
         typer.Option(
             "--employment-type",
+            help=EMPLOYMENT_TYPE_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    employment_type_alias: Annotated[
+        str | None,
+        typer.Option(
             "--type",
+            hidden=True,
             help=EMPLOYMENT_TYPE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
@@ -2194,7 +2202,7 @@ def jobs_list(
             team=team,
             workplace_type=workplace_type,
             remote=remote,
-            employment_type=employment_type,
+            employment_type=employment_type or employment_type_alias,
             salary_min=salary_min,
             salary_max=salary_max,
             skill=skill,
@@ -2339,7 +2347,15 @@ def jobs_export(
         str | None,
         typer.Option(
             "--employment-type",
+            help=EMPLOYMENT_TYPE_FILTER_HELP,
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    employment_type_alias: Annotated[
+        str | None,
+        typer.Option(
             "--type",
+            hidden=True,
             help=EMPLOYMENT_TYPE_FILTER_HELP,
             rich_help_panel=PANEL_SCOPE,
         ),
@@ -2418,7 +2434,7 @@ def jobs_export(
                 team=team,
                 workplace_type=workplace_type,
                 remote=remote,
-                employment_type=employment_type,
+                employment_type=employment_type or employment_type_alias,
                 salary_min=salary_min,
                 salary_max=salary_max,
                 skill=skill,
