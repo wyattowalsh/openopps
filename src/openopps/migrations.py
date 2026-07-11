@@ -40,7 +40,10 @@ EXPECTED_SQLITE_FOREIGN_KEYS: dict[str, set[tuple[str, str, str]]] = {
         ("source_key", "sources", "key"),
         ("board_key", "boards", "key"),
     },
-    "jobs": {("board_key", "boards", "key")},
+    "jobs": {
+        ("board_key", "boards", "key"),
+        ("current_version_id", "job_versions", "id"),
+    },
     "job_versions": {("job_id", "jobs", "id")},
     "job_version_locations": {("job_version_id", "job_versions", "id")},
     "job_version_skills": {("job_version_id", "job_versions", "id")},

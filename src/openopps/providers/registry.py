@@ -65,7 +65,10 @@ class ProviderRegistry:
         for candidate in self.list_board_providers():
             if candidate.route_detector is None:
                 continue
-            match = candidate.route_detector(url)
+            try:
+                match = candidate.route_detector(url)
+            except ValueError:
+                continue
             if match is not None:
                 definition = candidate
                 break

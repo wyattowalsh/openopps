@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlparse
@@ -57,15 +58,21 @@ class BambooHRProvider:
         if not bamboohr:
             return []
         listings = await self._fetch_listings(client, bamboohr)
-        jobs: list[JobRecord] = []
-        for listing in listings:
+        semaphore = asyncio.Semaphore(self.settings.board_concurrency)
+
+        async def detail_for(listing: dict[str, Any]) -> dict[str, Any]:
             raw_job_id = listing.get("id")
             job_id = str(raw_job_id) if raw_job_id is not None else None
-            detail = (
-                await self._fetch_detail(client, bamboohr, job_id) if job_id else {}
-            )
-            jobs.append(self._normalize(board, bamboohr, listing, detail))
-        return jobs
+            if not job_id:
+                return {}
+            async with semaphore:
+                return await self._fetch_detail(client, bamboohr, job_id)
+
+        details = await asyncio.gather(*(detail_for(listing) for listing in listings))
+        return [
+            self._normalize(board, bamboohr, listing, detail)
+            for listing, detail in zip(listings, details, strict=False)
+        ]
 
     async def check_jobs(
         self,

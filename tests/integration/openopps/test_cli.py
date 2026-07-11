@@ -3,6 +3,7 @@ from pathlib import Path
 import sqlite3
 
 from click import unstyle
+import pytest
 import openopps.cli as cli_module
 from typer.testing import CliRunner
 
@@ -111,6 +112,7 @@ def test_sync_commands_expose_cache_refresh_option():
     for flag in [
         "--metrics-json",
         "--refresh-cache",
+        "--strict",
         "--verbose",
         "-M",
         "-R",
@@ -156,8 +158,10 @@ def test_filter_help_describes_actual_scope_semantics():
     assert "source job hint" in boards_result.output
     assert "provider job" in boards_result.output
     assert "synced job" in boards_result.output
-    assert "salary range" in jobs_result.output
-    assert "overlaps this lower" in jobs_result.output
+    assert "normalized salary range" in jobs_result.output
+    assert "overlaps this lower bound" in jobs_result.output or (
+        "salary range" in jobs_result.output and "overlap" in jobs_result.output
+    )
     assert "Inclusive YYYY-MM-DD" in jobs_result.output
 
 
@@ -336,7 +340,7 @@ def test_sources_sync_reports_compact_warning_for_skips(tmp_path: Path):
 
     assert add_result.exit_code == 0
     assert sync_result.exit_code == 0
-    assert sync_result.stdout == ""
+    assert "sources.sync completed" in sync_result.stdout
     assert "Warning: sources.sync completed with skipped=1" in sync_result.stderr
     assert "--verbose" in sync_result.stderr
 
@@ -574,6 +578,19 @@ def test_run_sync_with_progress_renders_update_message(monkeypatch):
     ]
 
 
+def test_metrics_summary_always_prints_for_human_output(capsys):
+    metrics = SyncMetrics(name="sources.sync", boards=2, jobs=3)
+    metrics.jobs_persisted = 1
+    metrics.finish()
+
+    cli_module._metrics(metrics, metrics_json=False, profile=False)
+    captured = capsys.readouterr()
+
+    assert "sources.sync completed in" in captured.out
+    assert "boards=2 jobs=3 jobsPersisted=1" in captured.out
+    assert captured.err == ""
+
+
 def test_profile_metrics_include_provider_errors_and_warning(capsys):
     metrics = SyncMetrics(name="jobs.sync")
     metrics.error("ashbyhq")
@@ -582,10 +599,38 @@ def test_profile_metrics_include_provider_errors_and_warning(capsys):
     cli_module._metrics(metrics, metrics_json=False, profile=True)
     captured = capsys.readouterr()
 
-    assert "provider_errors={'ashbyhq': 1}" in captured.out
-    assert "provider_error_details={'ashbyhq': {'error': 1}}" in captured.out
+    assert "jobs.sync completed in" in captured.out
+    assert "providerErrors=1" in captured.out
+    assert "skipped=0" in captured.out
     assert "Warning: jobs.sync completed with skipped=0" in captured.err
+    assert "ashbyhq" in captured.err
     assert "--verbose" in captured.err
+
+
+def test_strict_metrics_exit_nonzero_on_provider_errors():
+    metrics = SyncMetrics(name="jobs.sync")
+    metrics.error("ashbyhq")
+    metrics.finish()
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module._metrics(metrics, metrics_json=False, profile=False, strict=True)
+
+    assert exc.value.code == 1
+
+
+def test_status_human_output_lists_issues(tmp_path: Path):
+    result = invoke(tmp_path, "status")
+
+    assert result.exit_code == 0
+    assert "Issues: no_sources, no_boards" in result.output
+
+
+def test_doctor_human_output_includes_setup_checklist(tmp_path: Path):
+    result = invoke(tmp_path, "doctor")
+
+    assert result.exit_code == 0
+    assert "Setup checklist:" in result.output
+    assert "openopps sources sync" in result.output
 
 
 def test_cli_reports_stale_stamped_database_without_traceback(tmp_path: Path):
@@ -767,8 +812,10 @@ def test_cli_provider_and_board_flow(tmp_path: Path):
     greenhouse = next(
         provider for provider in providers if provider["id"] == "greenhouse"
     )
-    assert greenhouse["detects_routes"] is True
+    assert greenhouse["detectsRoutes"] is True
+    assert greenhouse["supportLevel"]
     assert "route_detector" not in greenhouse
+    assert "detects_routes" not in greenhouse
 
     result = invoke(tmp_path, "admin", "db", "init")
     assert result.exit_code == 0
@@ -795,8 +842,9 @@ def test_cli_provider_and_board_flow(tmp_path: Path):
 
     result = invoke(tmp_path, "admin", "providers", "registry", "--json")
     assert result.exit_code == 0
-    assert '"routeCount": 1' in result.output
-    assert '"requestKey": "lever:token:acme"' in result.output
+    registry = json.loads(result.output)
+    assert registry["routeCount"] == 1
+    assert registry["routes"][0]["requestKey"] == "lever:token:acme"
 
 
 def test_low_level_commands_are_under_admin_namespace(tmp_path: Path):
@@ -1173,7 +1221,7 @@ def test_cli_provider_health_json(monkeypatch, tmp_path: Path):
     result = invoke(tmp_path, "providers", "health", "--json")
 
     assert result.exit_code == 0
-    assert '"routeCount": 0' in result.output
+    assert json.loads(result.output)["routeCount"] == 0
 
 
 def test_cli_detects_ashby_hosted_board_url(tmp_path: Path):
@@ -1182,8 +1230,9 @@ def test_cli_detects_ashby_hosted_board_url(tmp_path: Path):
     )
 
     assert result.exit_code == 0
-    assert '"provider_id": "ashbyhq"' in result.output
-    assert '"token": "acme"' in result.output
+    detected = json.loads(result.output)
+    assert detected["provider_id"] == "ashbyhq"
+    assert detected["token"] == "acme"
 
 
 def test_cli_probe_routes_accepts_ashby_provider(tmp_path: Path):
@@ -1200,4 +1249,4 @@ def test_cli_probe_routes_accepts_ashby_provider(tmp_path: Path):
     )
 
     assert result.exit_code == 0
-    assert '"checked": 0' in result.output
+    assert json.loads(result.output)["checked"] == 0

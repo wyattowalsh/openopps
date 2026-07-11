@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 import httpx
@@ -58,16 +59,21 @@ class WorkableProvider:
         jobs = data.get("results") if isinstance(data, dict) else None
         if not isinstance(jobs, list):
             raise ValueError("Workable jobs endpoint returned invalid JSON")
-        normalized: list[JobRecord] = []
-        for item in jobs:
-            if not isinstance(item, dict):
-                continue
-            shortcode = _string(item.get("shortcode"))
-            detail = (
-                await self._fetch_detail(client, token, shortcode) if shortcode else {}
-            )
-            normalized.append(self._normalize(board, token, item, detail))
-        return normalized
+        listings = [item for item in jobs if isinstance(item, dict)]
+        semaphore = asyncio.Semaphore(self.settings.board_concurrency)
+
+        async def detail_for(listing: dict[str, Any]) -> dict[str, Any]:
+            shortcode = _string(listing.get("shortcode"))
+            if not shortcode:
+                return {}
+            async with semaphore:
+                return await self._fetch_detail(client, token, shortcode)
+
+        details = await asyncio.gather(*(detail_for(listing) for listing in listings))
+        return [
+            self._normalize(board, token, listing, detail)
+            for listing, detail in zip(listings, details, strict=False)
+        ]
 
     async def check_jobs(
         self,

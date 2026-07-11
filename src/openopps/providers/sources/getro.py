@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from openopps.http import retrying_json_request
+from openopps.http import retrying_json_request, retrying_text_request
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -2655,6 +2655,7 @@ class GetroSourceAdapter:
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
         self._request_json = retrying_json_request(settings)
+        self._request_text = retrying_text_request(settings)
 
     async def iter_boards(
         self,
@@ -2729,9 +2730,14 @@ class GetroSourceAdapter:
     async def _discover_collection_id(
         self, client: httpx.AsyncClient, source: SourceRecord
     ) -> str:
-        response = await client.get(source.url, follow_redirects=True)
-        response.raise_for_status()
-        match = _COLLECTION_RE.search(response.text)
+        text = await self._request_text(
+            client,
+            "GET",
+            source.url,
+            headers={"accept": "text/html,application/xhtml+xml"},
+            follow_redirects=True,
+        )
+        match = _COLLECTION_RE.search(text)
         if not match:
             raise ValueError(
                 f"Could not discover Getro collection id from {source.url}"
@@ -2741,9 +2747,14 @@ class GetroSourceAdapter:
     async def _embedded_initial_state(
         self, client: httpx.AsyncClient, source: SourceRecord
     ) -> dict[str, Any]:
-        response = await client.get(source.url, follow_redirects=True)
-        response.raise_for_status()
-        match = _NEXT_DATA_RE.search(response.text)
+        text = await self._request_text(
+            client,
+            "GET",
+            source.url,
+            headers={"accept": "text/html,application/xhtml+xml"},
+            follow_redirects=True,
+        )
+        match = _NEXT_DATA_RE.search(text)
         if not match:
             raise ValueError(
                 f"Could not find embedded Getro initial state in {source.url}"

@@ -11,10 +11,11 @@ from alembic import command
 
 from openopps import migrations as migrations_module
 from openopps.migrations import DatabaseSchemaError
+from openopps.models import BoardRecord, JobRecord, SourceRecord
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
-ALEMBIC_HEAD = "0002_data_model_integrity"
+ALEMBIC_HEAD = "0003_jobs_current_version_fk"
 
 
 def test_init_db_runs_initial_sqlite_schema(tmp_path: Path):
@@ -76,10 +77,12 @@ def test_initial_sqlite_schema_has_app_constraints_and_indexes(tmp_path: Path):
         assert _has_sqlite_fk(conn, "boards", "source_key", "sources", "key")
         assert _has_sqlite_fk(conn, "board_providers", "board_key", "boards", "key")
         assert _has_sqlite_fk(conn, "job_versions", "job_id", "jobs", "id")
+        assert _has_sqlite_fk(conn, "jobs", "current_version_id", "job_versions", "id")
         assert _has_sqlite_fk(
             conn, "job_version_skill_keywords", "skill_id", "job_version_skills", "id"
         )
         assert _has_sqlite_fk(conn, "job_sync_observations", "job_id", "jobs", "id")
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
@@ -278,6 +281,97 @@ def test_migration_nulls_observation_version_refs_after_version_cleanup(
             is None
         )
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_migration_0003_nulls_orphan_job_current_version_refs(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    command.upgrade(
+        migrations_module._alembic_config(settings), "0002_data_model_integrity"
+    )
+    observed_at = "2026-01-01 00:00:00"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('source-1', 'https://example.com', 'manual')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (key, source_key, remote_id, name)
+            VALUES ('board-1', 'source-1', 'board-1', 'Board 1')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                id, board_key, provider_id, remote_id, status, current_version_id,
+                current_content_hash, current_payload_hash, first_seen_at,
+                last_seen_at, synced_at
+            )
+            VALUES (
+                'job-orphan-ref', 'board-1', 'greenhouse', 'remote-1', 'open',
+                'missing-version', 'content-1', 'payload-1', ?, ?, ?
+            )
+            """,
+            (observed_at, observed_at, observed_at),
+        )
+
+    OpenOppsStore(settings).init_db()
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            ALEMBIC_HEAD,
+        )
+        assert (
+            conn.execute(
+                "SELECT current_version_id FROM jobs WHERE id = 'job-orphan-ref'"
+            ).fetchone()[0]
+            is None
+        )
+        assert _has_sqlite_fk(conn, "jobs", "current_version_id", "job_versions", "id")
+
+
+def test_deleting_current_job_version_nulls_job_pointer(tmp_path: Path):
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}"))
+    store.init_db()
+    store.upsert_source(
+        SourceRecord(key="source-1", url="https://example.com", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="board-1", source_key="source-1", remote_id="board-1", name="Board")]
+    )
+    store.upsert_jobs(
+        [
+            JobRecord.model_validate(
+                {
+                    "id": "board-1:greenhouse:1",
+                    "board_key": "board-1",
+                    "provider_id": "greenhouse",
+                    "remote_id": "1",
+                    "title": "Engineer",
+                    "company": "Board",
+                    "locations": ["Remote"],
+                }
+            )
+        ]
+    )
+    db_path = tmp_path / "openopps.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        version_id = conn.execute(
+            "SELECT current_version_id FROM jobs WHERE id = 'board-1:greenhouse:1'"
+        ).fetchone()[0]
+        assert version_id is not None
+        conn.execute("DELETE FROM job_versions WHERE id = ?", (version_id,))
+        assert (
+            conn.execute(
+                "SELECT current_version_id FROM jobs WHERE id = 'board-1:greenhouse:1'"
+            ).fetchone()[0]
+            is None
+        )
 
 
 def test_stamped_sqlite_db_missing_v01_columns_fails_with_reset_guidance(

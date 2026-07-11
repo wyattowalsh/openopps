@@ -11,7 +11,7 @@ from urllib.parse import urlencode, urljoin, urlparse
 import httpx
 from loguru import logger
 
-from openopps.http import retrying_json_request
+from openopps.http import retrying_json_request, retrying_text_request
 from openopps.models import (
     AshbyJobBoardResponse,
     BoardProviderRecord,
@@ -446,6 +446,7 @@ class PublicPageSourceAdapter:
 
         self.settings = settings
         self.registry = provider_registry(settings=settings)
+        self._request_text = retrying_text_request(settings)
 
     async def iter_boards(
         self,
@@ -455,18 +456,14 @@ class PublicPageSourceAdapter:
         page_size: int,
     ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
         validate_public_https_url(source.url)
-        response = await client.get(
+        html = await self._request_text(
+            client,
+            "GET",
             source.url,
-            headers={
-                "accept": "text/html,application/xhtml+xml",
-                "user-agent": "Mozilla/5.0",
-            },
+            headers={"accept": "text/html,application/xhtml+xml"},
             follow_redirects=True,
         )
-        response.raise_for_status()
-        candidates = _public_page_link_candidates(
-            response.text, source.url, limit=page_size
-        )
+        candidates = _public_page_link_candidates(html, source.url, limit=page_size)
         boards, providers, normalize_meta = self._normalize_candidates(
             source, candidates
         )

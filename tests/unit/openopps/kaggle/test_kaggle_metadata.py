@@ -684,7 +684,7 @@ def test_manager_notebook_rehydrates_public_sqlite_snapshot(
             for table_name in namespace["APP_TABLE_NAMES"]
         }
 
-        assert version == ("0002_data_model_integrity",)
+        assert version == ("0003_jobs_current_version_fk",)
         assert "openopps_tables" not in tables
         assert "openopps_columns" not in tables
         assert all(count == 1 for count in counts.values())
