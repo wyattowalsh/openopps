@@ -155,8 +155,7 @@ def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
         encoding="utf-8"
     )
     spec = (
-        repo_root
-        / "openspec/changes/prepare-v0-1-release/specs/release-workflows/spec.md"
+        repo_root / "openspec/specs/release-workflows/spec.md"
     ).read_text(encoding="utf-8")
 
     assert "openopps sync --metrics-json --refresh-cache" in readme

@@ -113,3 +113,26 @@ OpenOpps SHALL keep docs navigation, README references, LLM routes, generated da
 
 - **WHEN** OpenOpps changes a public docs route, export format, generated docs data field, or validation command
 - **THEN** the docs content graph, README guidance, LLM-readable routes, and local validation commands are updated in the same change
+
+### Requirement: OpenOppsDB deployment remains local and verifiable
+
+OpenOpps SHALL keep live Kaggle deployment credentialed and local/manual while providing deterministic non-live validation and thin documented Kaggle CLI wrappers.
+
+#### Scenario: Contributor validates the bundle without live credentials
+
+- **WHEN** a contributor runs the local Kaggle bundle validation recipe
+- **THEN** OpenOpps regenerates deterministic metadata and, when a local SQLite database is supplied, validates the generated SQLite/CSV/Parquet artifact surface without requiring Kaggle credentials
+
+#### Scenario: Maintainer deploys the live Kaggle dataset
+
+- **WHEN** a maintainer runs the documented live create/version and manager notebook push recipes with Kaggle CLI credentials
+- **THEN** the commands use local Kaggle CLI credentials from `kaggle auth login` or an already configured Kaggle API credential environment without printing secrets
+- **AND** dataset create/version recipes stage a temporary upload directory that excludes private evidence and manager notebook files before calling the Kaggle dataset write command
+- **AND** the manager push is preceded by running the private runtime generator create/version recipe so the notebook source gate downloads the current generator script
+- **AND** CI does not publish the dataset, push the manager notebook, or require Kaggle secrets
+
+#### Scenario: Maintainer verifies the live Kaggle surfaces
+
+- **WHEN** a maintainer runs live post-deploy verification
+- **THEN** the workflow checks dataset status/version, dataset files, downloaded metadata, manager notebook availability, and manager notebook files for `wyattowalsh/openoppsdb` and `wyattowalsh/openoppsdb-manager`
+- **AND** it verifies direct SQLite readback plus CSV/Parquet table metadata instead of treating missing Kaggle `sqliteInfo.tables` as an OpenOpps data-shape failure
