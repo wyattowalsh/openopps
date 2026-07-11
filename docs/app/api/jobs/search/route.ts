@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { JobBoardFilters } from "@/components/jobs-board/jobs-board-filter-engine";
+import { getAllowlistedPublicSearchOrigin } from "@/lib/jobs-public-data";
 import {
 	normalizeJobsSearchFilters,
 	normalizeJobsSearchSortKey,
@@ -15,11 +16,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
 	const url = new URL(request.url);
+	const dataOrigin = getAllowlistedPublicSearchOrigin();
 	const filters = filtersFromSearchParams(url.searchParams);
 	const sortKey = normalizeJobsSearchSortKey(url.searchParams.get("sort"), filters);
 	if (parseBooleanParam(url.searchParams.get("summary"))) {
 		const summary = await summarizePublicJobsIndex({
-			baseUrl: url,
+			baseUrl: dataOrigin,
 			filters,
 			sortKey,
 		});
@@ -30,7 +32,7 @@ export async function GET(request: Request) {
 		});
 	}
 	const result = await searchPublicJobsIndex({
-		baseUrl: url,
+		baseUrl: dataOrigin,
 		filters,
 		sortKey,
 		limit: normalizeLimit(url.searchParams.get("limit")),

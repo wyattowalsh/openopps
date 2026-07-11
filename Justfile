@@ -1,6 +1,6 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-openspec := env_var_or_default("OPENOPPS_OPENSPEC", "npx -y @fission-ai/openspec@latest")
+openspec := env_var_or_default("OPENOPPS_OPENSPEC", "npx -y @fission-ai/openspec@1.6.0")
 kaggle := "uv run --with kaggle kaggle"
 kaggle-gen := "PYTHONPATH=scripts uv run python -m openopps_kaggle"
 
@@ -184,15 +184,15 @@ openspec-list:
     {{ openspec }} list --json
 
 # Show one OpenSpec change status as agent-readable JSON.
-openspec-status change="prepare-v0-1-release":
+openspec-status change="provider-source-scope-hygiene":
     {{ openspec }} status --change "{{ change }}" --json
 
 # Show OpenSpec task instructions for one change as agent-readable JSON.
-openspec-tasks change="prepare-v0-1-release":
+openspec-tasks change="provider-source-scope-hygiene":
     {{ openspec }} instructions --change "{{ change }}" tasks --json
 
 # Validate one OpenSpec change strictly.
-openspec-validate change="prepare-v0-1-release":
+openspec-validate change="provider-source-scope-hygiene":
     {{ openspec }} validate "{{ change }}" --strict
 
 # Validate all active OpenSpec changes strictly.
