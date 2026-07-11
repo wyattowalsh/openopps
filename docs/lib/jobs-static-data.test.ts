@@ -200,8 +200,14 @@ describe("jobs static data", () => {
 			}>;
 		};
 		for (const vector of payload.vectors) {
+			const { id: _detailId, ...detailFields } = vector.detail as {
+				id?: string;
+			} & Parameters<typeof isIndexableJobDetail>[0];
 			expect(
-				isIndexableJobDetail({ id: `fixture:${vector.id}`, ...vector.detail }),
+				isIndexableJobDetail({
+					...detailFields,
+					id: `fixture:${vector.id}`,
+				}),
 				vector.id,
 			).toBe(vector.indexable);
 		}

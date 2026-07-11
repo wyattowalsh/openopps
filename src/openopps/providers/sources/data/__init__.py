@@ -1,0 +1,1 @@
+"""Packaged board-source catalog data files."""

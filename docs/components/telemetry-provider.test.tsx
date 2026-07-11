@@ -148,9 +148,21 @@ describe("TelemetryProvider", () => {
 		]);
 	});
 
-	it("starts masked PostHog replay without overriding project controls", async () => {
+	it("initializes PostHog without session recording unless explicitly enabled", async () => {
 		vi.stubEnv("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED", "true");
 		vi.stubEnv("NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		const { TelemetryProvider } = await import("./telemetry-provider");
+
+		renderProvider(TelemetryProvider);
+
+		await vi.waitFor(() => expect(posthogMock.init).toHaveBeenCalledOnce());
+		expect(posthogMock.startSessionRecording).not.toHaveBeenCalled();
+	});
+
+	it("starts masked PostHog replay when recording is explicitly enabled", async () => {
+		vi.stubEnv("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED", "true");
+		vi.stubEnv("NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY", "phc_test");
+		vi.stubEnv("NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING", "true");
 		const { TelemetryProvider } = await import("./telemetry-provider");
 
 		renderProvider(TelemetryProvider);

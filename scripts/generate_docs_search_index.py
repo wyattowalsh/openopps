@@ -24,6 +24,10 @@ SEARCH_INDEX_VERSION = 6
 DESCRIPTION_SNIPPET_LEN = 200
 DESCRIPTION_SNIPPET_SOURCE_LEN = 2048
 DETAIL_DESCRIPTION_TEXT_MAX_LEN = 4000
+# T2 surplus metadata (versionExtra / jobExtra): strip provider_extras trees first,
+# then keep scalar promotion keys; bound compact JSON size for committed shards.
+DETAIL_SURPLUS_JSON_MAX_CHARS = 2048
+DETAIL_SURPLUS_SCALAR_KEYS = frozenset({"posting_kind", "seniority"})
 # Text projection matrix (see docs/content/docs/data-model.mdx):
 # - Kaggle/SQLite export previews: 512 chars (SQLITE_PREVIEW_TEXT_MAX_CHARS)
 # - Docs search T2 detail shards: 4000 chars plain text (HTML stripped)
@@ -1225,6 +1229,39 @@ def _public_job_description(value: Any, payload: dict[str, Any]) -> dict[str, An
     return compact or None
 
 
+def _detail_surplus_json_len(value: Any) -> int:
+    if value in (None, "", [], {}):
+        return 0
+    return len(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    )
+
+
+def _public_detail_surplus_extra(value: Any) -> dict[str, Any] | None:
+    """Bound versionExtra/jobExtra for committed T2 shards."""
+    extra = _parse_json_object(value) if not isinstance(value, dict) else dict(value)
+    if not extra:
+        return None
+    candidates = [extra]
+    if "provider_extras" in extra:
+        without_provider = {
+            key: item for key, item in extra.items() if key != "provider_extras"
+        }
+        if without_provider:
+            candidates.append(without_provider)
+        scalar_only = {
+            key: extra[key]
+            for key in DETAIL_SURPLUS_SCALAR_KEYS
+            if key in extra and extra[key] not in (None, "", [], {})
+        }
+        if scalar_only:
+            candidates.append(scalar_only)
+    for candidate in candidates:
+        if _detail_surplus_json_len(candidate) <= DETAIL_SURPLUS_JSON_MAX_CHARS:
+            return candidate
+    return None
+
+
 def _detail_bucket(job_id: str) -> str:
     hash_value = 0
     for char in job_id:
@@ -1254,6 +1291,11 @@ def _detail_shard_payload(
             job_description = _public_job_description(value, payload)
             if job_description:
                 shard_payload[key] = job_description
+            continue
+        if key in {"versionExtra", "jobExtra"}:
+            bounded_extra = _public_detail_surplus_extra(value)
+            if bounded_extra:
+                shard_payload[key] = bounded_extra
             continue
         if value not in (None, "", [], {}):
             shard_payload[key] = value

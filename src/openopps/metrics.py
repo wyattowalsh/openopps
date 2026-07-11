@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
+
+_http_retry_metrics: ContextVar[SyncMetrics | None] = ContextVar(
+    "openopps_http_retry_metrics",
+    default=None,
+)
 
 
 @dataclass(frozen=True)
@@ -73,3 +79,18 @@ class SyncMetrics:
             "boardsPerSecond": self.boards / elapsed if elapsed else 0,
             "jobsPerSecond": self.jobs / elapsed if elapsed else 0,
         }
+
+
+def bind_http_retry_metrics(metrics: SyncMetrics | None) -> Token[SyncMetrics | None]:
+    """Attach sync metrics for Tenacity HTTP retry accounting in the current context."""
+    return _http_retry_metrics.set(metrics)
+
+
+def reset_http_retry_metrics(token: Token[SyncMetrics | None]) -> None:
+    _http_retry_metrics.reset(token)
+
+
+def record_http_retry() -> None:
+    metrics = _http_retry_metrics.get()
+    if metrics is not None:
+        metrics.retries += 1

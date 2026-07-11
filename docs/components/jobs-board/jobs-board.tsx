@@ -21,7 +21,9 @@ import {
 } from "@/components/jobs-board/jobs-board-local-state";
 import { JobsBoardLocalDataPanel } from "@/components/jobs-board/jobs-board-local-data-panel";
 import { resolveSelectedJobRow } from "@/components/jobs-board/jobs-board-load-state";
+import { JobsBoardConfirmDialog } from "@/components/jobs-board/jobs-board-confirm-dialog";
 import { JobsBoardEmpty } from "@/components/jobs-board/jobs-board-empty";
+import { buildJobsBoardLiveStatus } from "@/components/jobs-board/jobs-board-live-status";
 import { JobsBoardList } from "@/components/jobs-board/jobs-board-list";
 import { JobsBoardMetrics } from "@/components/jobs-board/jobs-board-metrics";
 import { JobsBoardPreview } from "@/components/jobs-board/jobs-board-preview";
@@ -53,6 +55,8 @@ type JobsBoardProps = {
 
 export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const [localDataOpen, setLocalDataOpen] = useState(false);
+	const [pendingDeleteSavedSearch, setPendingDeleteSavedSearch] =
+		useState<SavedSearchRecord | null>(null);
 	const [activeSavedSearchId, setActiveSavedSearchId] = useState<string | null>(
 		null,
 	);
@@ -408,7 +412,12 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	};
 
 	const handleDeleteSavedSearch = (record: SavedSearchRecord) => {
-		if (!window.confirm(`Delete saved search "${record.label}"?`)) {
+		setPendingDeleteSavedSearch(record);
+	};
+
+	const confirmDeleteSavedSearch = () => {
+		const record = pendingDeleteSavedSearch;
+		if (!record) {
 			return;
 		}
 		if (activeSavedSearchId === record.id) {
@@ -416,6 +425,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		}
 		localState.deleteSavedSearch(record.id);
 		trackTelemetry("jobs.saved_search_deleted");
+		setPendingDeleteSavedSearch(null);
 	};
 
 	const activeSearchMeta = searchMeta;
@@ -439,8 +449,20 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 					? "Enter a search or use filters to browse the indexed jobs."
 					: null;
 
+	const liveStatusMessage = buildJobsBoardLiveStatus({
+		manifestLoading: loading,
+		manifestError: error,
+		searchLoading,
+		searchActive,
+		searchError: activeSearchError,
+		indexNote,
+	});
+
 	return (
 		<section className="not-prose mx-auto w-full max-w-[96rem] px-3 py-4 sm:px-5 lg:px-6">
+			<p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+				{liveStatusMessage ?? ""}
+			</p>
 			<div className="opps-ledger-shell">
 				<JobsBoardMetrics
 					manifest={manifest}
@@ -472,17 +494,31 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				</div>
 
 				{indexNote ? (
-					<p className="mt-3 text-xs text-muted-foreground">{indexNote}</p>
+					<p
+						className="mt-3 text-xs text-muted-foreground"
+						role="status"
+						aria-live="polite"
+					>
+						{indexNote}
+					</p>
 				) : null}
 
 				{error ? (
-					<div className="opps-error-banner mt-4">
+					<div
+						className="opps-error-banner mt-4"
+						role="alert"
+						aria-live="assertive"
+					>
 						<span>{error}</span>
 					</div>
 				) : null}
 
 				{activeSearchError ? (
-					<div className="opps-error-banner mt-4">
+					<div
+						className="opps-error-banner mt-4"
+						role="alert"
+						aria-live="assertive"
+					>
 						<span>{activeSearchError}</span>
 						<Button
 							type="button"
@@ -502,8 +538,13 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				) : null}
 
 				{loading ? (
-					<div className="opps-loading mt-4 min-h-[24rem]">
-						<Loader2 className="size-4 animate-spin" />
+					<div
+						className="opps-loading mt-4 min-h-[24rem]"
+						role="status"
+						aria-live="polite"
+						aria-busy="true"
+					>
+						<Loader2 className="size-4 animate-spin" aria-hidden="true" />
 						Loading open jobs index…
 					</div>
 				) : null}
@@ -613,6 +654,20 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				onClearCategory={localState.clearCategory}
 				onExport={localState.exportLocalData}
 				onImport={localState.importLocalData}
+			/>
+			<JobsBoardConfirmDialog
+				open={pendingDeleteSavedSearch !== null}
+				title="Delete saved search?"
+				description={
+					pendingDeleteSavedSearch
+						? `Delete saved search "${pendingDeleteSavedSearch.label}"? This only removes it from this browser.`
+						: ""
+				}
+				confirmLabel="Delete"
+				cancelLabel="Keep"
+				destructive
+				onConfirm={confirmDeleteSavedSearch}
+				onCancel={() => setPendingDeleteSavedSearch(null)}
 			/>
 		</section>
 	);

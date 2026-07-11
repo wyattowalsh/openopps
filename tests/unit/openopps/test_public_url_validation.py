@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import given, settings, strategies as st
 
 from openopps.models import validate_public_host, validate_public_https_url
 
@@ -94,3 +95,30 @@ def test_validate_public_host_rejects_unsafe_hosts(host: str, message_fragment: 
 
 def test_validate_public_host_accepts_public_hostname() -> None:
     assert validate_public_host("Example.COM.") == "example.com"
+
+
+_label = st.from_regex(r"[a-z][a-z0-9]{0,12}", fullmatch=True)
+_public_hostname = st.builds(lambda a, b: f"{a}.{b}", _label, _label)
+
+
+@settings(deadline=None, max_examples=30)
+@given(host=_public_hostname, path=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789/-_", max_size=12))
+def test_validate_public_https_url_accepts_generated_https_urls(host: str, path: str) -> None:
+    url = f"https://{host}/{path}".rstrip("/") if path else f"https://{host}/"
+    assert validate_public_https_url(url) == url
+
+
+@settings(deadline=None, max_examples=30)
+@given(
+    scheme=st.sampled_from(["http", "ftp", "file", "javascript"]),
+    host=_public_hostname,
+)
+def test_validate_public_https_url_rejects_non_https_schemes(scheme: str, host: str) -> None:
+    with pytest.raises(ValueError):
+        validate_public_https_url(f"{scheme}://{host}/")
+
+
+@settings(deadline=None, max_examples=30)
+@given(host=_public_hostname)
+def test_validate_public_host_normalizes_trailing_dot(host: str) -> None:
+    assert validate_public_host(f"{host}.") == host.rstrip(".")

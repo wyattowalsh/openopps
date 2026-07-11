@@ -31,6 +31,7 @@ packages = ["src/openopps"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "examples/examples.py" = "examples/examples.py"
+"src/openopps/providers/sources/data/portfolio_source_catalog.json" = "openopps/providers/sources/data/portfolio_source_catalog.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

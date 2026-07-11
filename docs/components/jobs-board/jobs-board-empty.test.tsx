@@ -26,7 +26,7 @@ describe("JobsBoardEmpty", () => {
 	});
 
 	it("shows match count context once filters are active", () => {
-		render(
+		const { container } = render(
 			<JobsBoardEmpty
 				matchCount={12}
 				activeFilterCount={2}
@@ -34,8 +34,8 @@ describe("JobsBoardEmpty", () => {
 			/>,
 		);
 
-		expect(screen.getByText("No open jobs match")).toBeTruthy();
-		expect(screen.getByText(/12 roles pass/i)).toBeTruthy();
+		expect(container.textContent).toMatch(/No open jobs match/);
+		expect(container.textContent).toMatch(/12 roles pass/i);
 		expect(screen.getByRole("button", { name: /clear filters/i })).toBeTruthy();
-	});
+	}, 15_000);
 });

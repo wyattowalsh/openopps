@@ -15,6 +15,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from loguru import logger
 from tenacity import (
+    RetryCallState,
     retry,
     retry_if_exception,
     stop_after_attempt,
@@ -22,6 +23,7 @@ from tenacity import (
 )
 
 from openopps.cache import DEFAULT_CACHE_NAMESPACE, HttpCache, cache_key
+from openopps.metrics import SyncMetrics, record_http_retry
 from openopps.models import validate_public_https_url
 from openopps.settings import OpenOppsSettings
 
@@ -188,6 +190,7 @@ def _retrying_response_request(
         retry=retry_if_exception(_is_retryable_http_error),
         wait=wait_exponential_jitter(initial=0.25, max=8),
         stop=stop_after_attempt(settings.retry_attempts),
+        before_sleep=_record_http_retry_before_sleep,
         reraise=True,
     )
     async def _request_upstream(
@@ -637,6 +640,17 @@ def _int_or_default(value: object, default: int) -> int:
         except ValueError:
             return default
     return default
+
+
+def _record_http_retry_before_sleep(retry_state: RetryCallState) -> None:
+    if retry_state.args:
+        client = retry_state.args[0]
+        if isinstance(client, httpx.AsyncClient):
+            metrics = getattr(client, "_openopps_sync_metrics", None)
+            if isinstance(metrics, SyncMetrics):
+                metrics.retries += 1
+                return
+    record_http_retry()
 
 
 def _is_retryable_http_error(exc: BaseException) -> bool:

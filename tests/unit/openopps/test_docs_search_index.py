@@ -184,6 +184,42 @@ def test_detail_shards_do_not_emit_partial_html_fragments(tmp_path: Path) -> Non
     assert "descriptionHtml" not in rich
 
 
+def test_detail_shards_strip_provider_surplus_from_version_extra(tmp_path: Path) -> None:
+    db_path = _write_tiered_shard_db(tmp_path)
+    provider_blob = {
+        "greenhouse": {
+            "metadata": [{"name": f"field-{index}", "value": "x" * 200} for index in range(40)],
+            "offices": [{"id": index, "name": "Office " * 30} for index in range(40)],
+        }
+    }
+    extra_payload = json.dumps(
+        {
+            "seniority": "Senior",
+            "posting_kind": "standard",
+            "provider_extras": provider_blob,
+        }
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET extra_payload = ?
+            WHERE id = 'version-rich'
+            """,
+            (extra_payload,),
+        )
+    output_dir = tmp_path / "index"
+
+    build_search_index(db_path, output_dir)
+
+    rich = _read_detail_records(output_dir)["job-rich"]
+    assert rich["versionExtra"] == {
+        "seniority": "Senior",
+        "posting_kind": "standard",
+    }
+    assert "provider_extras" not in rich["versionExtra"]
+
+
 def test_detail_shards_bound_public_description_text(tmp_path: Path) -> None:
     db_path = _write_tiered_shard_db(tmp_path)
     description = "A" * (DETAIL_DESCRIPTION_TEXT_MAX_LEN + 500)

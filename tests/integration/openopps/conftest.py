@@ -1,0 +1,1 @@
+"""Integration package conftest (catalog trim lives in tests/conftest.py)."""

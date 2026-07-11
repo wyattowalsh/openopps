@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from hypothesis import assume, given, settings, strategies as st
+
 from openopps.utils import slugify, source_board_key, stable_id
 
 
@@ -32,3 +34,33 @@ def test_source_board_key_matches_stable_id_pair() -> None:
     remote_key = "Acme Corp"
     assert source_board_key(source_key, remote_key) == stable_id(source_key, remote_key)
     assert source_board_key(source_key, remote_key) == "yc-source:acme-corp"
+
+
+@settings(deadline=None, max_examples=40)
+@given(parts=st.lists(st.text(min_size=0, max_size=40), min_size=0, max_size=6))
+def test_stable_id_is_idempotent_for_same_parts(parts: list[str]) -> None:
+    assert stable_id(*parts) == stable_id(*parts)
+
+
+@settings(deadline=None, max_examples=40)
+@given(
+    left=st.text(min_size=1, max_size=30),
+    right=st.text(min_size=1, max_size=30),
+)
+def test_source_board_key_matches_stable_id(left: str, right: str) -> None:
+    assert source_board_key(left, right) == stable_id(left, right)
+
+
+@settings(deadline=None, max_examples=40)
+@given(
+    prefix=st.text(
+        alphabet=st.characters(whitelist_categories=("L", "N"), min_codepoint=48, max_codepoint=122),
+        min_size=1,
+        max_size=20,
+    )
+)
+def test_stable_id_omits_none_and_blank_parts(prefix: str) -> None:
+    assume(prefix.strip() != "")
+    with_blank = stable_id(prefix, None, "", "tail")
+    assert with_blank == stable_id(prefix, "tail")
+    assert "tail" in with_blank

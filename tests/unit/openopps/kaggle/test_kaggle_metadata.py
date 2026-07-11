@@ -1823,7 +1823,7 @@ def test_generated_kaggle_upload_root_has_only_public_data_files() -> None:
     actual_files = {
         path.relative_to(kaggle_dir).as_posix()
         for path in kaggle_dir.rglob("*")
-        if path.is_file()
+        if path.is_file() and path.name != ".DS_Store"
     }
 
     assert actual_files <= allowed_public_files
