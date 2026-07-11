@@ -1,4 +1,9 @@
+// Explorer filters use exact term matching; jobs board uses fuzzy helpers (see search-job-core).
 import type { Entity, SearchRow } from "./search-types";
+import {
+	compareLatestObserved,
+	scoreQueryTermsInHaystack,
+} from "@/lib/search-job-core";
 import {
 	J,
 	compareText,
@@ -143,7 +148,7 @@ export function sortRows(
 		}
 		if (entity === "jobs") {
 			if (sortKey === "latest") {
-				return compareLatestObserved(left, right);
+				return compareLatestObserved(left, right, "compareText");
 			}
 			if (sortKey === "company") {
 				return compareText(text(left[J.company]), text(right[J.company]));
@@ -215,7 +220,7 @@ export function activeFilterCount(entity: Entity, filters: ExplorerFilters) {
 function compareEntityFallback(entity: Entity, left: SearchRow, right: SearchRow) {
 	if (entity === "jobs") {
 		return (
-			compareLatestObserved(left, right) ||
+			compareLatestObserved(left, right, "compareText") ||
 			compareText(text(left[J.title]), text(right[J.title]))
 		);
 	}
@@ -257,18 +262,7 @@ function searchText(entity: Entity, row: SearchRow) {
 }
 
 function relevanceScore(entity: Entity, row: SearchRow, queryTerms: string[]) {
-	const haystack = searchText(entity, row);
-	let score = 0;
-	for (const term of queryTerms) {
-		if (haystack.startsWith(term)) {
-			score += 3;
-		} else if (haystack.includes(` ${term}`)) {
-			score += 2;
-		} else if (haystack.includes(term)) {
-			score += 1;
-		}
-	}
-	return score;
+	return scoreQueryTermsInHaystack(searchText(entity, row), queryTerms);
 }
 
 function matchesTerms(value: string, queryTerms: string[]) {
@@ -280,25 +274,4 @@ function providerValue(entity: Entity, row: SearchRow) {
 		return text(row[J.provider]);
 	}
 	return text(row[P.provider]);
-}
-
-function compareLatestObserved(left: SearchRow, right: SearchRow) {
-	const leftTime = timestampValue(rowLatestObserved(left));
-	const rightTime = timestampValue(rowLatestObserved(right));
-	if (leftTime !== rightTime) {
-		return rightTime - leftTime;
-	}
-	return compareText(rowLatestObserved(right), rowLatestObserved(left));
-}
-
-function rowLatestObserved(row: SearchRow) {
-	return text(row[J.latestObserved]);
-}
-
-function timestampValue(value: string) {
-	if (!value) {
-		return Number.NEGATIVE_INFINITY;
-	}
-	const parsed = Date.parse(value);
-	return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }

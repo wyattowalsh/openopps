@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import csv
+import json
+from functools import lru_cache
+from importlib import resources
 from io import StringIO
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 from urllib.parse import urlparse
 
 import httpx
 
 from openopps.http import retrying_text_request
-from openopps.models import BoardRecord, JsonDict, SourceRecord
+from openopps.models import BoardRecord, JsonDict, SourceRecord, canonical_json_hash
 from openopps.models import normalize_public_website_url, validate_public_https_url
 from openopps.settings import OpenOppsSettings
 from openopps.utils import slugify, source_board_key
@@ -26,6 +29,82 @@ SOURCE_TAXONOMY_KEYS = (
     "sourceAttribution",
     "inclusionReason",
 )
+
+PACKAGED_PORTFOLIO_CATALOG_FILENAME = "portfolio_source_catalog.json"
+
+
+def source_record_to_catalog_entry(record: SourceRecord) -> dict[str, Any]:
+    return {
+        "key": record.key,
+        "url": record.url,
+        "provider_id": record.provider_id,
+        "version": dict(record.version),
+        "raw_metadata": dict(record.raw_metadata),
+    }
+
+
+def catalog_entry_to_source_record(entry: Mapping[str, Any]) -> SourceRecord:
+    return SourceRecord(
+        key=str(entry["key"]),
+        url=str(entry["url"]),
+        provider_id=str(entry["provider_id"]),
+        version=dict(entry.get("version") or {}),
+        raw_metadata=dict(entry.get("raw_metadata") or {}),
+    )
+
+
+def portfolio_source_catalog_fingerprint(
+    entries: Sequence[Mapping[str, Any]],
+) -> str:
+    """Stable hash over sorted source keys and canonical URLs."""
+
+    pairs = sorted(
+        (str(entry["key"]), str(entry["url"]))
+        for entry in entries
+        if entry.get("key") and entry.get("url")
+    )
+    return canonical_json_hash(pairs)
+
+
+@lru_cache(maxsize=1)
+def load_packaged_portfolio_source_records() -> tuple[SourceRecord, ...]:
+    """Load portfolio/public-page packaged catalog entries from package data."""
+
+    package = "openopps.providers.sources.data"
+    resource = resources.files(package).joinpath(PACKAGED_PORTFOLIO_CATALOG_FILENAME)
+    payload = json.loads(resource.read_text(encoding="utf-8"))
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError(
+            f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} must contain an 'entries' list"
+        )
+    records = tuple(
+        catalog_entry_to_source_record(entry)
+        for entry in entries
+        if isinstance(entry, dict)
+    )
+    expected_count = payload.get("count")
+    if isinstance(expected_count, int) and expected_count != len(records):
+        raise ValueError(
+            f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} count mismatch: "
+            f"expected {expected_count}, got {len(records)}"
+        )
+    fingerprint = payload.get("fingerprint")
+    if isinstance(fingerprint, str):
+        actual = portfolio_source_catalog_fingerprint(entries)
+        if fingerprint != actual:
+            raise ValueError(
+                f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} fingerprint mismatch: "
+                f"expected {fingerprint}, got {actual}"
+            )
+    keys = [record.key for record in records]
+    if len(keys) != len(set(keys)):
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        raise ValueError(
+            "Packaged portfolio catalog has duplicate keys: "
+            + ", ".join(duplicates)
+        )
+    return records
 
 
 def source_taxonomy_metadata(

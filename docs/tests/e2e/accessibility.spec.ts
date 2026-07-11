@@ -21,6 +21,18 @@ async function searchForFirstJob(page: Page) {
 	return waitForFirstJob(page);
 }
 
+async function expectNoAxeViolations(
+	page: Page,
+	options: { include: string; exclude?: string },
+) {
+	const builder = new AxeBuilder({ page }).include(options.include);
+	if (options.exclude) {
+		builder.exclude(options.exclude);
+	}
+	const scan = await builder.analyze();
+	expect(scan.violations).toEqual([]);
+}
+
 test("jobs workbench and local settings pass baseline accessibility checks", async ({
 	page,
 }) => {
@@ -30,20 +42,14 @@ test("jobs workbench and local settings pass baseline accessibility checks", asy
 	).toBeVisible();
 	await searchForFirstJob(page);
 
-	const workbenchScan = await new AxeBuilder({ page })
-		.include("main")
-		.exclude('[role="listbox"][aria-label="Open jobs results"]')
-		.disableRules(["color-contrast"])
-		.analyze();
-	expect(workbenchScan.violations).toEqual([]);
+	await expectNoAxeViolations(page, {
+		include: "main",
+		exclude: '[role="listbox"][aria-label="Open jobs results"]',
+	});
 
 	await page.getByRole("button", { name: /open app settings/i }).click();
 	await expect(page.getByRole("dialog", { name: /app settings/i })).toBeVisible();
-	const settingsScan = await new AxeBuilder({ page })
-		.include('[role="dialog"]')
-		.disableRules(["color-contrast"])
-		.analyze();
-	expect(settingsScan.violations).toEqual([]);
+	await expectNoAxeViolations(page, { include: '[role="dialog"]' });
 });
 
 test("mobile preview sheet keeps dialog semantics", async ({ page }) => {
@@ -57,9 +63,37 @@ test("mobile preview sheet keeps dialog semantics", async ({ page }) => {
 	await expect(dialog).toBeVisible();
 	await expect(page.getByRole("button", { name: /close job preview/i })).toBeVisible();
 
-	const scan = await new AxeBuilder({ page })
-		.include('[role="dialog"]')
-		.disableRules(["color-contrast"])
-		.analyze();
-	expect(scan.violations).toEqual([]);
+	await expectNoAxeViolations(page, { include: '[role="dialog"]' });
+});
+
+test("explorer index passes baseline accessibility checks", async ({ page }) => {
+	await page.goto("/explorer");
+	await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
+	await expect(
+		page.getByRole("heading", { name: /data pipeline dashboard/i }),
+	).toBeVisible({ timeout: 30_000 });
+
+	await expectNoAxeViolations(page, { include: "main" });
+});
+
+test("delete saved search uses an accessible confirmation dialog", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await searchForFirstJob(page);
+	await page.getByRole("button", { name: /save current search/i }).click();
+	await page.getByText("Saved searches", { exact: true }).click();
+
+	const deleteButton = page.getByRole("button", { name: /^delete /i }).first();
+	await expect(deleteButton).toBeVisible({ timeout: 15_000 });
+	await deleteButton.click();
+
+	const confirmDialog = page.getByRole("alertdialog", {
+		name: /delete saved search/i,
+	});
+	await expect(confirmDialog).toBeVisible();
+	await expectNoAxeViolations(page, { include: '[role="alertdialog"]' });
+
+	await page.getByRole("button", { name: /^keep$/i }).click();
+	await expect(confirmDialog).toBeHidden();
 });

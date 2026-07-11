@@ -26,8 +26,11 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.          |
 | `OPENOPPS_SOURCE_TIMEOUT_SECONDS` | `900.0`                                                 | Maximum seconds one source adapter can run before timed-out skip.  |
 | `OPENOPPS_SOURCE_FRESHNESS_SECONDS` | `0.0`                                                 | Skip recently synced source catalogs during unscoped full-sync retries. |
-| `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Board-level concurrency during sync workflows.                     |
-| `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Provider job-fetch concurrency across job-capable routes.          |
+| `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Concurrent ready board routes and board-scoped listing/detail work during job sync, route health checks, and providers that fan out across job pages. |
+| `OPENOPPS_JOB_ROUTE_TIMEOUT_SECONDS` | `180.0`                                            | Maximum seconds one executable provider route may run during job sync before OpenOpps records a timeout and continues with remaining routes. |
+| `OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS` | `0.0`                                            | Skip recently synced provider routes during job sync when above `0`; `0` refreshes every selected route. |
+| `OPENOPPS_JOB_ROUTE_LIMIT`      | unset                                                     | Cap stale or never-synced routes processed in one job sync; unset processes every selected route. |
+| `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Concurrent provider route probes when OpenOpps detects executable job-board routes (for example during `admin providers probe-routes`). Not job-fetch parallelism. |
 | `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests.   |
 | `OPENOPPS_DB_BATCH_SIZE`        | `500`                                                     | Batch size for SQLite writes.                                      |
 | `OPENOPPS_HTTP_TIMEOUT`         | `30.0`                                                    | HTTP timeout in seconds.                                           |
@@ -46,7 +49,8 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 
 ```bash
 OPENOPPS_DB_URL=sqlite:///data/openopps.db uv run openopps admin db status
-OPENOPPS_PROVIDER_CONCURRENCY=4 uv run openopps jobs sync --provider workday --profile
+OPENOPPS_BOARD_CONCURRENCY=8 OPENOPPS_JOB_ROUTE_LIMIT=100 uv run openopps jobs sync --provider workday --metrics-json
+OPENOPPS_PROVIDER_CONCURRENCY=4 uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
 OPENOPPS_USER_AGENT='openopps/0.1 (contact: jobs@example.com)' uv run openopps admin sources test yc
 ```
 
@@ -57,6 +61,9 @@ OPENOPPS_DB_URL=sqlite:///openoppsdb.sqlite
 OPENOPPS_SOURCE_CONCURRENCY=4
 OPENOPPS_SOURCE_TIMEOUT_SECONDS=900
 OPENOPPS_SOURCE_FRESHNESS_SECONDS=0
+OPENOPPS_BOARD_CONCURRENCY=16
+OPENOPPS_JOB_ROUTE_TIMEOUT_SECONDS=180
+OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS=0
 OPENOPPS_PROVIDER_CONCURRENCY=12
 OPENOPPS_CACHE_TTL_SECONDS=3600
 OPENOPPS_PLUGIN_ALLOWED=trusted-plugin
@@ -79,6 +86,10 @@ Prefer flags for one run and environment variables for durable local policy:
 | Always bypass cache reads in a shell/session | `OPENOPPS_CACHE_REFRESH=true`           |
 | Narrow one job sync                          | `--source`, `--board`, or `--provider`  |
 | Lower Workday pressure across all runs       | `OPENOPPS_WORKDAY_CONCURRENCY=1` or `2` |
+| Cap one unscoped job sync batch              | `OPENOPPS_JOB_ROUTE_LIMIT=500`          |
+| Skip recently synced routes in job sync      | `OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS=86400` |
+| Lower concurrent job-route execution       | `OPENOPPS_BOARD_CONCURRENCY=8`          |
+| Lower concurrent route probing             | `OPENOPPS_PROVIDER_CONCURRENCY=6`       |
 | Hide the animation once                      | `--no-intro`                            |
 | Hide the animation everywhere                | `OPENOPPS_NO_INTRO=1`                   |
 

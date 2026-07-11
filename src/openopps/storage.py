@@ -40,6 +40,7 @@ from openopps.models import (
     source_to_row,
     utc_now,
 )
+from openopps.export import canonical_json_dumps
 from openopps.migrations import (
     enable_sqlite_foreign_keys,
     sqlite_database_lock,
@@ -659,12 +660,94 @@ def append_jsonl(path: Path, records: Iterable[object]) -> int:
     count = 0
     with path.open("a", encoding="utf-8") as handle:
         for record in records:
-            if isinstance(record, JsonDumpable):
-                handle.write(record.model_dump_json() + "\n")
-            else:
-                handle.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")
+            handle.write(_canonical_jsonl_line(record) + "\n")
             count += 1
     return count
+
+
+def _canonical_jsonl_line(record: object) -> str:
+    if isinstance(record, JsonDumpable):
+        payload = json.loads(record.model_dump_json())
+    elif hasattr(record, "model_dump"):
+        payload = record.model_dump(mode="json")  # type: ignore[union-attr]
+    else:
+        payload = record
+    return canonical_json_dumps(payload)
+
+
+def report_job_version_dual_write_mismatches(
+    engine,
+    *,
+    limit: int | None = None,
+) -> dict[str, object]:
+    """Report JSON facet columns that disagree with normalized child tables.
+
+    Report-only helper for DEC-03 dual-write verification; does not repair rows.
+    """
+
+    mismatches: list[dict[str, object]] = []
+    checked_versions = 0
+    with Session(engine) as session:
+        versions = session.exec(select(JobVersionRow).order_by(JobVersionRow.id)).all()
+        for version in versions:
+            checked_versions += 1
+            issues = _job_version_dual_write_issues(session, version)
+            if issues:
+                mismatches.append(
+                    {"jobVersionId": version.id, "jobId": version.job_id, "issues": issues}
+                )
+                if limit is not None and len(mismatches) >= limit:
+                    break
+    return {
+        "checkedVersions": checked_versions,
+        "mismatchCount": len(mismatches),
+        "mismatches": mismatches,
+    }
+
+
+def _job_version_dual_write_issues(
+    session: Session, version: JobVersionRow
+) -> list[dict[str, object]]:
+    issues: list[dict[str, object]] = []
+    json_locations = list(version.locations or [])
+    table_locations = _version_locations(session, version)
+    if json_locations != table_locations:
+        issues.append(
+            {
+                "field": "locations",
+                "jsonFacet": json_locations,
+                "childTable": table_locations,
+            }
+        )
+    for field_name, bullet_kind in (
+        ("responsibilities", "responsibility"),
+        ("qualifications", "qualification"),
+    ):
+        json_values = list(
+            version.responsibilities or []
+            if field_name == "responsibilities"
+            else version.qualifications or []
+        )
+        table_values = _version_bullets(session, version, bullet_kind)
+        if json_values != table_values:
+            issues.append(
+                {
+                    "field": field_name,
+                    "jsonFacet": json_values,
+                    "childTable": table_values,
+                }
+            )
+    json_skills = list(version.skills or [])
+    table_skills = _version_skills(session, version)
+    if json_skills != table_skills:
+        issues.append(
+            {
+                "field": "skills",
+                "jsonFacet": json_skills,
+                "childTable": table_skills,
+            }
+        )
+    return issues
 
 
 def _count_rows(session: Session, row_type: type[SQLModel]) -> int:

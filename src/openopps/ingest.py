@@ -11,7 +11,13 @@ from pydantic import ValidationError
 
 from openopps.enrichment import enrich_metadata
 from openopps.http import build_async_client
-from openopps.metrics import ProgressReporter, ProgressUpdate, SyncMetrics
+from openopps.metrics import (
+    ProgressReporter,
+    ProgressUpdate,
+    SyncMetrics,
+    bind_http_retry_metrics,
+    reset_http_retry_metrics,
+)
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
@@ -46,6 +52,33 @@ async def sync_sources(
     report: ProgressReporter | None = None,
 ) -> SyncMetrics:
     metrics = SyncMetrics(name="sources.sync")
+    retry_token = bind_http_retry_metrics(metrics)
+    try:
+        return await _sync_sources_bound(
+            settings=settings,
+            store=store,
+            source_key=source_key,
+            output=output,
+            page_size=page_size,
+            verbose=verbose,
+            report=report,
+            metrics=metrics,
+        )
+    finally:
+        reset_http_retry_metrics(retry_token)
+
+
+async def _sync_sources_bound(
+    *,
+    settings: OpenOppsSettings,
+    store: OpenOppsStore | None,
+    source_key: str | None,
+    output: Path | None,
+    page_size: int,
+    verbose: bool,
+    report: ProgressReporter | None,
+    metrics: SyncMetrics,
+) -> SyncMetrics:
     selected_sources = _select_sources(store, source_key)
     fresh_sources, sources = _partition_fresh_sources(
         selected_sources,
@@ -227,6 +260,37 @@ async def sync_boards(
     report: ProgressReporter | None = None,
 ) -> SyncMetrics:
     metrics = SyncMetrics(name="boards.sync")
+    retry_token = bind_http_retry_metrics(metrics)
+    try:
+        return await _sync_boards_bound(
+            settings=settings,
+            store=store,
+            source_key=source_key,
+            board_key=board_key,
+            provider_id=provider_id,
+            max_candidates=max_candidates,
+            limit=limit,
+            verbose=verbose,
+            report=report,
+            metrics=metrics,
+        )
+    finally:
+        reset_http_retry_metrics(retry_token)
+
+
+async def _sync_boards_bound(
+    *,
+    settings: OpenOppsSettings,
+    store: OpenOppsStore,
+    source_key: str | None,
+    board_key: str | None,
+    provider_id: str | None,
+    max_candidates: int,
+    limit: int | None,
+    verbose: bool,
+    report: ProgressReporter | None,
+    metrics: SyncMetrics,
+) -> SyncMetrics:
     board_total = len(
         store.list_boards(source_key=source_key, board_key=board_key, limit=limit)
     )
@@ -396,6 +460,39 @@ async def sync_jobs(
     report: ProgressReporter | None = None,
 ) -> SyncMetrics:
     metrics = SyncMetrics(name="jobs.sync")
+    retry_token = bind_http_retry_metrics(metrics)
+    try:
+        return await _sync_jobs_bound(
+            settings=settings,
+            store=store,
+            source_key=source_key,
+            board_key=board_key,
+            provider_id=provider_id,
+            output=output,
+            freshness_seconds=freshness_seconds,
+            limit=limit,
+            verbose=verbose,
+            report=report,
+            metrics=metrics,
+        )
+    finally:
+        reset_http_retry_metrics(retry_token)
+
+
+async def _sync_jobs_bound(
+    *,
+    settings: OpenOppsSettings,
+    store: OpenOppsStore,
+    source_key: str | None,
+    board_key: str | None,
+    provider_id: str | None,
+    output: Path | None,
+    freshness_seconds: float | None,
+    limit: int | None,
+    verbose: bool,
+    report: ProgressReporter | None,
+    metrics: SyncMetrics,
+) -> SyncMetrics:
     provider_filter = normalize_provider_filter(provider_id)
     route_selection = BoardRouteRegistry(store).select(
         source_key=source_key,

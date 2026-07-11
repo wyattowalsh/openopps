@@ -24,6 +24,14 @@ SEARCH_INDEX_VERSION = 6
 DESCRIPTION_SNIPPET_LEN = 200
 DESCRIPTION_SNIPPET_SOURCE_LEN = 2048
 DETAIL_DESCRIPTION_TEXT_MAX_LEN = 4000
+# T2 surplus metadata (versionExtra / jobExtra): strip provider_extras trees first,
+# then keep scalar promotion keys; bound compact JSON size for committed shards.
+DETAIL_SURPLUS_JSON_MAX_CHARS = 2048
+DETAIL_SURPLUS_SCALAR_KEYS = frozenset({"posting_kind", "seniority"})
+# Text projection matrix (see docs/content/docs/data-model.mdx):
+# - Kaggle/SQLite export previews: 512 chars (SQLITE_PREVIEW_TEXT_MAX_CHARS)
+# - Docs search T2 detail shards: 4000 chars plain text (HTML stripped)
+# - Parquet/JSONL exports: full normalized fields from SQLite
 SKILL_TOKENS_MAX_LEN = 96
 DETAIL_BUCKET_COUNT = 1024
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
@@ -469,23 +477,38 @@ def _current_version_id_values(conn: sqlite3.Connection) -> set[str]:
     return {str(row[0]) for row in rows}
 
 
+def _ensure_current_versions_temp_table(
+    conn: sqlite3.Connection, current_version_ids: set[str]
+) -> None:
+    conn.execute("DROP TABLE IF EXISTS temp.openopps_current_versions")
+    conn.execute(
+        "CREATE TEMP TABLE openopps_current_versions (version_id TEXT PRIMARY KEY)"
+    )
+    if current_version_ids:
+        conn.executemany(
+            "INSERT OR IGNORE INTO openopps_current_versions (version_id) VALUES (?)",
+            ((version_id,) for version_id in current_version_ids),
+        )
+
+
 def _fetch_version_locations(
     conn: sqlite3.Connection, current_version_ids: set[str]
 ) -> dict[str, str]:
-    if not current_version_ids:
+    if not current_version_ids or not _has_table(conn, "job_version_locations"):
         return {}
 
+    _ensure_current_versions_temp_table(conn, current_version_ids)
     rows = conn.execute(
         """
-        SELECT job_version_id, label, ordinal
-        FROM job_version_locations
+        SELECT jvl.job_version_id, jvl.label, jvl.ordinal
+        FROM job_version_locations AS jvl
+        JOIN temp.openopps_current_versions AS cv
+          ON cv.version_id = jvl.job_version_id
         """
     )
     grouped: dict[str, list[tuple[int, str | None]]] = {}
     for index, (version_id, label, ordinal) in enumerate(rows, start=1):
         key = str(version_id)
-        if key not in current_version_ids:
-            continue
         ordinal_key = int(ordinal) if ordinal is not None else 0
         grouped.setdefault(key, []).append(
             (ordinal_key, str(label) if label is not None else None)
@@ -519,18 +542,19 @@ def _fetch_version_skill_tokens(
     if not current_version_ids:
         return {}
 
+    _ensure_current_versions_temp_table(conn, current_version_ids)
     skills = conn.execute(
         """
-        SELECT id, job_version_id, name, level
-        FROM job_version_skills
+        SELECT s.id, s.job_version_id, s.name, s.level
+        FROM job_version_skills AS s
+        JOIN temp.openopps_current_versions AS cv
+          ON cv.version_id = s.job_version_id
         """
     )
     tokens_by_version: dict[str, set[str]] = {}
     current_skill_versions: dict[str, str] = {}
     for index, (skill_id, version_id, name, level) in enumerate(skills, start=1):
         version_key = str(version_id)
-        if version_key not in current_version_ids:
-            continue
         current_skill_versions[str(skill_id)] = version_key
         tokens = tokens_by_version.setdefault(version_key, set())
         for value in (name, level):
@@ -540,10 +564,20 @@ def _fetch_version_skill_tokens(
         if index % 25_000 == 0:
             _progress(f"fetch version skill tokens: skills {index}")
 
+    if not _has_table(conn, "job_version_skill_keywords"):
+        return {
+            version_id: ",".join(sorted(tokens))
+            for version_id, tokens in tokens_by_version.items()
+            if tokens
+        }
+
     keywords = conn.execute(
         """
-        SELECT skill_id, keyword
-        FROM job_version_skill_keywords
+        SELECT k.skill_id, k.keyword
+        FROM job_version_skill_keywords AS k
+        JOIN job_version_skills AS s ON s.id = k.skill_id
+        JOIN temp.openopps_current_versions AS cv
+          ON cv.version_id = s.job_version_id
         """
     )
     for index, (skill_id, keyword) in enumerate(keywords, start=1):
@@ -732,14 +766,7 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
         """
     ).fetchall()
     current_version_ids = {str(row[5]) for row in job_rows if row[5]}
-    conn.execute("DROP TABLE IF EXISTS temp.openopps_current_versions")
-    conn.execute(
-        "CREATE TEMP TABLE openopps_current_versions (version_id TEXT PRIMARY KEY)"
-    )
-    conn.executemany(
-        "INSERT OR IGNORE INTO openopps_current_versions (version_id) VALUES (?)",
-        ((version_id,) for version_id in current_version_ids),
-    )
+    _ensure_current_versions_temp_table(conn, current_version_ids)
     _progress("fetch job details: boards")
     board_sources = {
         str(key): source_key
@@ -1202,6 +1229,39 @@ def _public_job_description(value: Any, payload: dict[str, Any]) -> dict[str, An
     return compact or None
 
 
+def _detail_surplus_json_len(value: Any) -> int:
+    if value in (None, "", [], {}):
+        return 0
+    return len(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    )
+
+
+def _public_detail_surplus_extra(value: Any) -> dict[str, Any] | None:
+    """Bound versionExtra/jobExtra for committed T2 shards."""
+    extra = _parse_json_object(value) if not isinstance(value, dict) else dict(value)
+    if not extra:
+        return None
+    candidates = [extra]
+    if "provider_extras" in extra:
+        without_provider = {
+            key: item for key, item in extra.items() if key != "provider_extras"
+        }
+        if without_provider:
+            candidates.append(without_provider)
+        scalar_only = {
+            key: extra[key]
+            for key in DETAIL_SURPLUS_SCALAR_KEYS
+            if key in extra and extra[key] not in (None, "", [], {})
+        }
+        if scalar_only:
+            candidates.append(scalar_only)
+    for candidate in candidates:
+        if _detail_surplus_json_len(candidate) <= DETAIL_SURPLUS_JSON_MAX_CHARS:
+            return candidate
+    return None
+
+
 def _detail_bucket(job_id: str) -> str:
     hash_value = 0
     for char in job_id:
@@ -1231,6 +1291,11 @@ def _detail_shard_payload(
             job_description = _public_job_description(value, payload)
             if job_description:
                 shard_payload[key] = job_description
+            continue
+        if key in {"versionExtra", "jobExtra"}:
+            bounded_extra = _public_detail_surplus_extra(value)
+            if bounded_extra:
+                shard_payload[key] = bounded_extra
             continue
         if value not in (None, "", [], {}):
             shard_payload[key] = value

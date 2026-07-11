@@ -18,123 +18,10 @@ from openopps.models import (
     job_payload_hash,
 )
 from openopps.settings import OpenOppsSettings
-from openopps.storage import BoardFilters, JobFilters
-from openopps.storage import OpenOppsStore
+from openopps.storage import BoardFilters, JobFilters, OpenOppsStore, append_jsonl
+from openopps.storage import report_job_version_dual_write_mismatches
 
-
-def seeded_filter_store(tmp_path: Path) -> OpenOppsStore:
-    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
-    store = OpenOppsStore(settings)
-    store.init_db()
-    store.upsert_source(
-        SourceRecord(key="a16z", url="https://a16z.com/jobs", provider_id="consider")
-    )
-    store.upsert_source(
-        SourceRecord(
-            key="yc",
-            url="https://www.ycombinator.com/companies",
-            provider_id="ycombinator",
-        )
-    )
-    store.upsert_boards(
-        [
-            BoardRecord(
-                key="acme",
-                source_key="a16z",
-                remote_id="acme",
-                name="Acme AI",
-                domain="acme.ai",
-                markets=["Artificial Intelligence", "Developer Tools"],
-                locations=["San Francisco", "Remote"],
-                staff_count=42,
-                num_jobs_hint=3,
-            ),
-            BoardRecord(
-                key="bravo",
-                source_key="yc",
-                remote_id="bravo",
-                name="Bravo Health",
-                domain="bravo.health",
-                markets=["Healthcare"],
-                locations=["Boston"],
-                staff_count=12,
-                num_jobs_hint=0,
-            ),
-        ]
-    )
-    store.upsert_board_providers(
-        [
-            BoardProviderRecord(
-                id="a16z:acme:ashbyhq",
-                source_key="a16z",
-                board_key="acme",
-                provider_id="ashbyhq",
-                support_level=ProviderSupport.JOBS,
-                count_hint=3,
-                token="acme",
-            ),
-            BoardProviderRecord(
-                id="yc:bravo:lever",
-                source_key="yc",
-                board_key="bravo",
-                provider_id="lever",
-                support_level=ProviderSupport.JOBS,
-                count_hint=0,
-                token="bravo",
-            ),
-        ]
-    )
-    store.upsert_jobs(
-        [
-            JobRecord.model_validate(
-                {
-                    "id": "acme:ashbyhq:1",
-                    "board_key": "acme",
-                    "provider_id": "ashbyhq",
-                    "remote_id": "1",
-                    "title": "Senior Platform Engineer",
-                    "company": "Acme AI",
-                    "locations": ["Remote", "San Francisco"],
-                    "department": "Engineering",
-                    "team": "Platform",
-                    "workplace_type": "Remote",
-                    "employment_type": "Full-time",
-                    "description": "Build reliable AI developer infrastructure.",
-                    "remote": "Full",
-                    "salary_min": 120000,
-                    "salary_max": 180000,
-                    "skills": [
-                        {"name": "Backend", "level": "Senior", "keywords": ["Python"]}
-                    ],
-                    "posted_at": "2026-05-10T12:00:00Z",
-                }
-            ),
-            JobRecord.model_validate(
-                {
-                    "id": "bravo:lever:1",
-                    "board_key": "bravo",
-                    "provider_id": "lever",
-                    "remote_id": "1",
-                    "title": "Care Designer",
-                    "company": "Bravo Health",
-                    "locations": ["Boston"],
-                    "department": "Design",
-                    "team": "Care",
-                    "workplace_type": "Onsite",
-                    "employment_type": "Contract",
-                    "description": "Design patient care workflows.",
-                    "remote": "None",
-                    "salary_min": 70000,
-                    "salary_max": 90000,
-                    "skills": [
-                        {"name": "Design", "level": "Mid", "keywords": ["Figma"]}
-                    ],
-                    "posted_at": "2026-04-01",
-                }
-            ),
-        ]
-    )
-    return store
+from _fixtures.store import seeded_filter_store
 
 
 def test_board_provider_upsert_preserves_executable_route_metadata(tmp_path: Path):
@@ -723,3 +610,38 @@ def test_job_exports_use_same_filters_as_job_list(tmp_path: Path):
 
     assert count == 1
     assert [row["id"] for row in rows] == [job.id for job in listed]
+
+
+def test_append_jsonl_uses_sorted_keys_like_export_records(tmp_path: Path):
+    output = tmp_path / "stream.jsonl"
+    record = JobRecord(
+        id="acme:greenhouse:1",
+        board_key="acme",
+        provider_id="greenhouse",
+        remote_id="1",
+        title="Engineer",
+        company="Acme",
+        skills=[{"name": "Backend", "level": "Senior", "keywords": ["Python"]}],
+    )
+
+    assert append_jsonl(output, [record]) == 1
+
+    assert output.read_text().splitlines() == [
+        json.dumps(
+            record.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    ]
+
+
+def test_report_job_version_dual_write_mismatches_is_clean_after_sync(
+    tmp_path: Path,
+):
+    store = seeded_filter_store(tmp_path)
+
+    report = report_job_version_dual_write_mismatches(store.engine)
+
+    assert report["mismatchCount"] == 0
+    assert report["mismatches"] == []
+    assert report["checkedVersions"] >= 2

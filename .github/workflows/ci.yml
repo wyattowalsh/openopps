@@ -23,10 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -39,10 +39,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras --dev
 
-      - name: Run tests
-        run: uv run pytest
-
-      - name: Run coverage
+      - name: Run tests with coverage
         run: uv run pytest --cov=openopps --cov-report=term-missing
 
   openspec:
@@ -50,30 +47,76 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24
 
       - name: Show OpenSpec state
         run: |
-          npx -y @fission-ai/openspec@latest list --json
-          npx -y @fission-ai/openspec@latest status --change prepare-v0-1-release --json
+          npx -y @fission-ai/openspec@1.6.0 list --json
+          npx -y @fission-ai/openspec@1.6.0 status --change provider-source-scope-hygiene --json
 
       - name: Validate all changes
-        run: npx -y @fission-ai/openspec@latest validate --all --strict
+        run: npx -y @fission-ai/openspec@1.6.0 validate --all --strict
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install Python dependencies
+        run: uv sync --frozen --all-extras --dev
+
+      # uv lock --check runs in the python job; export resolved deps for CVE scanning.
+      - name: Export Python requirements for audit
+        run: uv export --frozen --all-extras --dev --no-hashes -o /tmp/requirements-audit.txt
+
+      - name: Audit Python dependencies
+        run: uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off --severity high
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 11.5.2
+          package_json_file: docs/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit docs production dependencies
+        working-directory: docs
+        run: pnpm audit --prod --audit-level high
 
   docs:
     name: Docs
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -84,13 +127,13 @@ jobs:
         run: uv sync --frozen --all-extras --dev
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.5.2
           package_json_file: docs/package.json
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: 24
           cache: pnpm
@@ -118,6 +161,9 @@ jobs:
       - name: Check committed search index schema
         run: uv run pytest tests/unit/openopps/test_docs_search_index.py -k committed
 
+      - name: Check committed search artifact graph
+        run: uv run python scripts/verify_docs_search_artifacts.py --root docs/public/data/openopps-search --require-git-tracked
+
       - name: Install Playwright browser
         working-directory: docs
         run: pnpm exec playwright install --with-deps chromium
@@ -143,10 +189,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 

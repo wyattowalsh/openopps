@@ -56,14 +56,15 @@ The local sink appends newline-delimited JSON under `OPENOPPS_TELEMETRY_DIR/YYYY
 
 For a free hosted product-analytics mirror, set `OPENOPPS_POSTHOG_PROJECT_API_KEY` and optionally `OPENOPPS_POSTHOG_HOST`. PostHog forwarding happens server-side after the OpenOpps allowlist/sanitizer runs, so raw posting bodies, request headers, secrets, and direct identifiers are not forwarded. The local event lake remains the canonical raw sink when configured, and PostHog forwarding is bounded by `OPENOPPS_POSTHOG_TIMEOUT_MS` so a slow mirror cannot block the canonical write.
 
-For hosted browser session replay, also set `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY` and optionally `NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST`. Replay is still gated by `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true`; the browser SDK disables automatic pageview/autocapture events, masks all input and page text, disables network body/header capture, and leaves sampling plus URL/event/linked-flag controls to the PostHog project configuration. OpenOpps first-party telemetry continues to send only compact allowlisted events such as searches, selections, pagination, and page engagement counters.
+For hosted browser session replay, set `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY`, enable `NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING=true`, and optionally `NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST`. The PostHog client still requires `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true`; the browser SDK disables automatic pageview/autocapture events, masks all input and page text, disables network body/header capture, and leaves sampling plus URL/event/linked-flag controls to the PostHog project configuration. OpenOpps first-party telemetry continues to send only compact allowlisted events such as searches, selections, pagination, and page engagement counters.
 
 Useful limits:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED` | unset | Enables the browser telemetry client and optional browser PostHog replay. |
-| `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY` | unset | Optional browser PostHog key for masked session replay. |
+| `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY` | unset | Optional browser PostHog key; initializes the masked client when telemetry is enabled. |
+| `NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING` | unset | When `true`, starts browser session recording (default off). |
 | `NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST` | `https://us.i.posthog.com` | Optional browser PostHog host, for example the EU ingestion host. |
 | `OPENOPPS_TELEMETRY_MAX_REQUEST_BYTES` | `524288` | Maximum accepted telemetry batch body size. |
 | `OPENOPPS_TELEMETRY_MAX_EVENT_BYTES` | `65536` | Maximum sanitized event/context payload before truncation metadata replaces oversized properties. |

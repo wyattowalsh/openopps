@@ -46,6 +46,14 @@ Each packaged source includes taxonomy metadata such as `providerType`, `coverag
 
 `manatal` and `gem` are preserved as board metadata until stable public fetching is added. Health reports group these under `notCovered` so they are visible without being treated as failed job syncs.
 
+## Startup-board source scope (v0.1)
+
+YC is the preferred packaged startup-board source (`yc` / `ycombinator` via the public Algolia-backed companies index). WorkAtAStartup is intentionally **not** packaged; it duplicates that discovery surface without a better public no-auth path.
+
+Wellfound and Angel List startup discovery are **unsupported** for v0.1: public discovery depends on session or anti-bot protected pages rather than stable static no-auth assets or approved search-index endpoints. OpenOpps does not ship a Wellfound/Angel source adapter. Provider coverage JSON includes `gaps.sourceScope.unsupportedSourceDiscovery` with the release rationale.
+
+Consider-backed sources may emit `Editorial` or misspelled `Editiorial` `job_sources` labels without a generic public ATS route. OpenOpps keeps those hints as detect-only metadata and does not register an `editorial` job provider until route-probe evidence proves a repeatable public fetch path. Audit notes live in `openspec/changes/provider-source-scope-hygiene/editorial-label-audit.md`.
+
 ## Public No-Auth Board Providers
 
 Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager are job-capable in v0.1 only through public unauthenticated board routes. Workable fetches list and per-job detail endpoints separately so `raw_listing` and `raw_detail` stay distinct for audit replay. BambooHR uses public careers endpoints such as `/careers/list` and `/careers/{job_id}/detail`; OpenOpps does not call authenticated BambooHR ATS APIs. WP Job Manager requires an explicit `/wp-json/wp/v2/job-listings` or `/jm-ajax/get_listings/` endpoint and is not inferred from arbitrary WordPress sites.

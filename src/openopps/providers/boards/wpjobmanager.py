@@ -23,6 +23,7 @@ from openopps.models import (
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.normalize import string as _string
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
@@ -336,5 +337,4 @@ def _rendered(value: object) -> str | None:
     return _string(value)
 
 
-def _string(value: object) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None
+

@@ -47,7 +47,7 @@ OpenOpps SHALL provide packaged source definitions for Lightspeed, Sequoia, Bess
 
 ### Requirement: Job-capable providers fetch jobs
 
-Ashby, Greenhouse, Lever, and public Workday CXS providers SHALL fetch public job postings and normalize them into the shared Job contract.
+OpenOpps v0.1 SHALL treat Ashby, Greenhouse, Lever, public Workday CXS, Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager as adopted job-capable providers when executable public routes are present, and SHALL fetch public job postings into the shared Job contract.
 
 #### Scenario: Ashby board syncs jobs
 
@@ -70,19 +70,55 @@ Ashby, Greenhouse, Lever, and public Workday CXS providers SHALL fetch public jo
 - **WHEN** a board has a Workday CXS provider route with host tenant and site
 - **THEN** OpenOpps paginates public listings and fetches details for listings with `externalPath`
 
+#### Scenario: Adopted no-auth board provider syncs jobs
+
+- **WHEN** a board has a public Workable, Teamtailor, BambooHR, Rippling, or WP Job Manager route
+- **THEN** OpenOpps fetches jobs from the documented public no-auth board surface for that provider
+- **AND** preserves raw upstream payloads for auditability
+
+### Requirement: Adopted public board providers use no-auth routes
+
+OpenOpps v0.1 SHALL support Workable, Teamtailor, BambooHR, Rippling, and WP Job Manager only through public, unauthenticated board routes.
+
+#### Scenario: Public BambooHR board route is executable
+
+- **WHEN** a board has a BambooHR tenant route such as `https://{tenant}.bamboohr.com/careers`
+- **THEN** OpenOpps fetches public board JSON from the documented careers endpoints as needed
+- **AND** OpenOpps does not require, configure, document, or call the authenticated BambooHR ATS API for v0.1 public sync
+
+### Requirement: Provider surplus fields are promoted without public raw payload exposure
+
+OpenOpps SHALL promote high-value provider list and detail fields into normalized job fields or bounded version metadata while preserving full raw provider evidence in local SQLite and Kaggle export surfaces.
+
+#### Scenario: Workable listing and detail payloads are distinct
+
+- **WHEN** Workable jobs are fetched from listing and detail endpoints
+- **THEN** OpenOpps keeps listing and detail raw payload evidence distinct
+- **AND** normalized job output uses the shared Job contract
+
+### Requirement: Derived job facets are generated from normalized fields
+
+OpenOpps SHALL derive public docs job facets from normalized fields and bounded metadata rather than from committed raw provider payload snapshots.
+
+#### Scenario: Seniority is derived for docs search
+
+- **WHEN** a job lacks an explicit provider seniority value
+- **THEN** OpenOpps derives seniority from title and experience fields
+- **AND** the generated docs search manifest can expose a seniority facet without constructing invalid job records
+
 ### Requirement: Provider route probing reports missing route metadata
 
 OpenOpps SHALL provide a best-effort route probe for job-capable provider hints that lack the token, URL, host, tenant, or site needed for job fetching.
 
 #### Scenario: Probe finds a candidate token
 
-- **WHEN** the user runs `openopps providers probe-routes --provider greenhouse`
+- **WHEN** the user runs `openopps admin providers probe-routes --provider greenhouse`
 - **THEN** OpenOpps tries bounded candidate tokens derived from stored board metadata
 - **AND** reports matched routes without persisting them unless `--apply` is passed
 
 #### Scenario: Probe finds an Ashby job board name
 
-- **WHEN** the user runs `openopps providers probe-routes --provider ashbyhq`
+- **WHEN** the user runs `openopps admin providers probe-routes --provider ashbyhq`
 - **THEN** OpenOpps tests candidate board names against the public Ashby posting API
 - **AND** reports the matched Ashby hosted board URL
 

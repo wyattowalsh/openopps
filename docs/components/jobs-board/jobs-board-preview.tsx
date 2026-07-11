@@ -46,6 +46,8 @@ type JobsBoardPreviewProps = {
 	onToggleApplied?: () => void;
 	onNotesChange?: (notes: string) => void;
 	onClose?: () => void;
+	/** When false, omit split-pane divider chrome (e.g. mobile sheet). */
+	paneChrome?: boolean;
 };
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
@@ -88,7 +90,7 @@ function Section({
 		return null;
 	}
 	return (
-		<section className="space-y-2">
+		<section className="space-y-2 border-t border-border/70 pt-4">
 			<h3 className="font-mono text-[0.68rem] font-semibold text-muted-foreground">
 				{title}
 			</h3>
@@ -103,7 +105,7 @@ function BulletList({ items }: { items?: string[] }) {
 		return null;
 	}
 	return (
-		<ul className="space-y-1.5 rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70 p-3 text-sm leading-6">
+		<ul className="space-y-1.5 text-sm leading-6">
 			{values.map((item, index) => (
 				<li key={`${item}-${index}`} className="flex gap-2">
 					<span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
@@ -129,8 +131,8 @@ function JsonBlock({
 		return null;
 	}
 	return (
-		<details className="rounded-[var(--opps-radius-md)] border border-border/70 bg-card/70">
-			<summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-muted-foreground">
+		<details className="pt-3 [&+&]:border-t [&+&]:border-border/70">
+			<summary className="flex cursor-pointer items-center justify-between gap-3 py-1 text-xs font-semibold text-muted-foreground">
 				<span className="inline-flex items-center gap-2">
 					<FileJson className="size-3.5" />
 					{label}
@@ -141,7 +143,7 @@ function JsonBlock({
 					</Badge>
 				) : null}
 			</summary>
-			<pre className="max-h-72 overflow-auto border-t border-border/70 p-3 text-xs leading-5 text-muted-foreground">
+			<pre className="mt-2 max-h-72 overflow-auto text-xs leading-5 text-muted-foreground">
 				{JSON.stringify(value, null, 2)}
 			</pre>
 		</details>
@@ -286,6 +288,7 @@ export function JobsBoardPreview({
 	onToggleApplied,
 	onNotesChange,
 	onClose,
+	paneChrome = true,
 }: JobsBoardPreviewProps) {
 	if (!row && !selectedJobId) {
 		return (
@@ -310,6 +313,12 @@ export function JobsBoardPreview({
 	const qualifications = (detail?.qualifications ?? []).map(text).filter(Boolean);
 	const hasDescription = Boolean(descriptionText) || loading;
 	const extraPublicFields = additionalPublicFields(detail);
+	const hasStructuredPayloadSection =
+		hasStructuredValue(extraPublicFields) ||
+		hasStructuredValue(detail?.jobDescription) ||
+		hasStructuredValue(detail?.compensation) ||
+		hasStructuredValue(detail?.jobExtra) ||
+		hasStructuredValue(detail?.versionExtra);
 
 	const trackOutbound = (kind: "apply" | "posting", url: string) => {
 		trackTelemetry("jobs.outbound_clicked", {
@@ -325,9 +334,15 @@ export function JobsBoardPreview({
 	};
 	const notes = workflowRecord?.notes ?? "";
 
+	const paneChromeClass = paneChrome
+		? "lg:border-l lg:border-border/70 lg:pl-4"
+		: "";
+
 	return (
-		<article className="opps-result-card flex h-full min-h-[24rem] flex-col overflow-hidden p-0 lg:min-h-[32rem]">
-			<div className="border-b border-border/70 p-4">
+		<article
+			className={`flex h-full min-h-[24rem] flex-col overflow-hidden lg:min-h-[32rem] ${paneChromeClass}`.trim()}
+		>
+			<header className="border-b border-border/70 pb-4">
 				<div className="flex flex-wrap items-center gap-2">
 					<Badge variant="success">
 						{text(detail?.status) || (row ? text(row[J.status]) : "selected")}
@@ -429,9 +444,9 @@ export function JobsBoardPreview({
 						</Button>
 					) : null}
 				</div>
-			</div>
+			</header>
 
-			<div className="flex-1 space-y-4 overflow-y-auto p-4">
+			<div className="flex-1 overflow-y-auto">
 				{onNotesChange ? (
 					<Section title="Local notes">
 						<label className="grid gap-2">
@@ -451,7 +466,7 @@ export function JobsBoardPreview({
 					</Section>
 				) : null}
 
-				<div className="grid gap-3 sm:grid-cols-2">
+				<section className="grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">
 					<Field label="Location" value={formatDetailLocations(row, detail)} />
 					<Field
 						label="Workplace"
@@ -511,7 +526,7 @@ export function JobsBoardPreview({
 					<Field label="Job id" value={text(detail?.id) || selectedJobId || ""} />
 					<Field label="Apply URL" value={applyUrl} />
 					<Field label="Posting URL" value={postingUrl} />
-				</div>
+				</section>
 
 				{sourceKeys.length > 0 ? (
 					<Section title="Source keys">
@@ -526,16 +541,18 @@ export function JobsBoardPreview({
 				) : null}
 
 				{loading ? (
-					<div className="flex items-center gap-2 text-sm text-muted-foreground">
+					<section className="flex items-center gap-2 border-t border-border/70 pt-4 text-sm text-muted-foreground">
 						<Loader2 className="size-4 animate-spin" />
 						Loading full description...
-					</div>
+					</section>
 				) : null}
 
 				{error ? (
-					<p className="text-sm text-destructive">
-						{error} Showing available index metadata only.
-					</p>
+					<section className="border-t border-border/70 pt-4">
+						<p className="text-sm text-destructive">
+							{error} Showing available index metadata only.
+						</p>
+					</section>
 				) : null}
 
 				{descriptionText ? (
@@ -547,10 +564,12 @@ export function JobsBoardPreview({
 				) : null}
 
 				{!hasDescription && !error ? (
-					<p className="rounded-[var(--opps-radius-md)] border border-border/70 bg-muted/50 p-3 text-sm leading-6 text-muted-foreground">
-						This static snapshot has metadata for the posting, but no full
-						description text. Use the posting link to inspect the source role.
-					</p>
+					<section className="border-t border-border/70 pt-4">
+						<p className="text-sm leading-6 text-muted-foreground">
+							This static snapshot has metadata for the posting, but no full
+							description text. Use the posting link to inspect the source role.
+						</p>
+					</section>
 				) : null}
 
 				{responsibilities.length > 0 ? (
@@ -581,15 +600,17 @@ export function JobsBoardPreview({
 					</Section>
 				) : null}
 
-				<div className="grid gap-3">
-					<JsonBlock label="Additional public fields" value={extraPublicFields} />
-					<JsonBlock label="Job description" value={detail?.jobDescription} />
-					<JsonBlock label="Compensation" value={detail?.compensation} />
-					<JsonBlock label="Job extra payload" value={detail?.jobExtra} />
-					<JsonBlock label="Version extra payload" value={detail?.versionExtra} />
-				</div>
+				{hasStructuredPayloadSection ? (
+					<section className="border-t border-border/70 pt-4">
+						<JsonBlock label="Additional public fields" value={extraPublicFields} />
+						<JsonBlock label="Job description" value={detail?.jobDescription} />
+						<JsonBlock label="Compensation" value={detail?.compensation} />
+						<JsonBlock label="Job extra payload" value={detail?.jobExtra} />
+						<JsonBlock label="Version extra payload" value={detail?.versionExtra} />
+					</section>
+				) : null}
 
-				<div className="grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">
+				<section className="grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">
 					<Field label="First seen" value={formatDate(text(detail?.firstSeenAt))} />
 					<Field label="Last seen" value={formatDate(text(detail?.lastSeenAt))} />
 					<Field label="Closed" value={formatDate(text(detail?.closedAt))} />
@@ -604,7 +625,7 @@ export function JobsBoardPreview({
 					/>
 					<Field label="Content hash" value={text(detail?.contentHash)} />
 					<Field label="Payload hash" value={text(detail?.payloadHash)} />
-				</div>
+				</section>
 			</div>
 		</article>
 	);

@@ -190,7 +190,9 @@ async function initializePostHogBrowserClientOnce() {
 		},
 	} satisfies Partial<PostHogConfig>;
 	posthog.init(projectApiKey, config);
-	posthog.startSessionRecording();
+	if (readPublicBoolean("NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING")) {
+		posthog.startSessionRecording();
+	}
 }
 
 function readPublicString(name: string) {

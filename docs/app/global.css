@@ -1,10 +1,8 @@
 @import "@fontsource/monaspace-neon/400.css";
-@import "@fontsource/monaspace-neon/500.css";
 @import "@fontsource/monaspace-neon/600.css";
 @import "@fontsource/monaspace-argon/600.css";
 @import "@fontsource/monaspace-argon/700.css";
 @import "@fontsource/monaspace-xenon/400.css";
-@import "@fontsource/monaspace-xenon/600.css";
 @import "tailwindcss" source(none);
 @import "fumadocs-ui/css/shadcn.css";
 @import "fumadocs-ui/css/preset.css";
@@ -91,7 +89,7 @@ html > body[data-scroll-locked] {
   --secondary: oklch(0.915 0.044 86.3);
   --secondary-foreground: oklch(0.246 0.05 119.6);
   --muted: oklch(0.926 0.028 93.6);
-  --muted-foreground: oklch(0.46 0.037 105.3);
+  --muted-foreground: oklch(0.40 0.037 105.3);
   --accent: oklch(0.748 0.156 63.2);
   --accent-foreground: oklch(0.178 0.034 103.9);
   --destructive: oklch(0.592 0.189 29.2);
@@ -139,7 +137,7 @@ html > body[data-scroll-locked] {
   --secondary: oklch(0.262 0.038 128.5);
   --secondary-foreground: oklch(0.936 0.018 93.1);
   --muted: oklch(0.249 0.034 128.1);
-  --muted-foreground: oklch(0.731 0.035 99.6);
+  --muted-foreground: oklch(0.78 0.035 99.6);
   --accent: oklch(0.774 0.151 72.8);
   --accent-foreground: oklch(0.123 0.019 119.3);
   --destructive: oklch(0.692 0.178 27.7);
@@ -355,11 +353,13 @@ html > body[data-scroll-locked] {
   .openopps-status-chip[data-tone="unsupported"],
   .openopps-status-chip[data-tone="no"],
   .openopps-status-chip[data-tone="error"] {
-    @apply border-error/40 bg-error/10 text-error;
+    @apply border-error/40 bg-error/10;
+    color: color-mix(in oklab, var(--error) 88%, var(--foreground));
   }
 
   .openopps-status-chip[data-tone="info"] {
-    @apply border-info/45 bg-info/10 text-info;
+    @apply border-info/45 bg-info/10;
+    color: color-mix(in oklab, var(--info) 88%, var(--foreground));
   }
 
   .opps-loading {
@@ -367,7 +367,8 @@ html > body[data-scroll-locked] {
   }
 
   .opps-error-banner {
-    @apply flex flex-col gap-3 rounded-[var(--opps-radius-lg)] border border-error/40 bg-error/10 p-3 text-sm text-error sm:flex-row sm:items-center sm:justify-between;
+    @apply flex flex-col gap-3 rounded-[var(--opps-radius-lg)] border border-error/40 bg-error/10 p-3 text-sm sm:flex-row sm:items-center sm:justify-between;
+    color: color-mix(in oklab, var(--error) 90%, var(--foreground));
   }
 
   .opps-empty-state {

@@ -2228,7 +2228,10 @@ class JobRow(SQLModel, table=True):
         description="Current lifecycle status for the stable job identity.",
     )
     current_version_id: str | None = SQLField(
-        default=None, index=True, description="Current normalized job version id."
+        default=None,
+        foreign_key="job_versions.id",
+        index=True,
+        description="Current normalized job version id.",
     )
     current_content_hash: str | None = SQLField(
         default=None, index=True, description="Current normalized content hash."

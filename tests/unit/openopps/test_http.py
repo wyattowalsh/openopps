@@ -14,6 +14,7 @@ from openopps.http import (
     retrying_json_response,
     retrying_text_request,
 )
+from openopps.metrics import SyncMetrics, bind_http_retry_metrics, reset_http_retry_metrics
 from openopps.settings import OpenOppsSettings
 
 
@@ -40,6 +41,56 @@ async def test_retrying_json_request_retries_transient_status():
 
     assert data == {"ok": True}
     assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retrying_json_request_records_http_retries_for_bound_metrics():
+    settings = OpenOppsSettings(retry_attempts=3, cache_enabled=False)
+    route = respx.get("https://api.example.test/data").mock(
+        side_effect=[
+            httpx.Response(500, json={"error": "temporary"}),
+            httpx.Response(500, json={"error": "temporary"}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+    metrics = SyncMetrics(name="http.test")
+    token = bind_http_retry_metrics(metrics)
+
+    try:
+        async with build_async_client(settings) as client:
+            data = await retrying_json_request(settings)(
+                client, "GET", "https://api.example.test/data"
+            )
+    finally:
+        reset_http_retry_metrics(token)
+
+    assert data == {"ok": True}
+    assert route.call_count == 3
+    assert metrics.retries == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retrying_json_request_records_http_retries_on_client_attribute():
+    settings = OpenOppsSettings(retry_attempts=2, cache_enabled=False)
+    route = respx.get("https://api.example.test/data").mock(
+        side_effect=[
+            httpx.Response(503, json={"error": "temporary"}),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+    metrics = SyncMetrics(name="http.client")
+
+    async with build_async_client(settings) as client:
+        setattr(client, "_openopps_sync_metrics", metrics)
+        data = await retrying_json_request(settings)(
+            client, "GET", "https://api.example.test/data"
+        )
+
+    assert data == {"ok": True}
+    assert route.call_count == 2
+    assert metrics.retries == 1
 
 
 @pytest.mark.asyncio

@@ -23,5 +23,6 @@ Python package for the OpenOpps CLI.
 - Keep provider route probing best-effort and dry-run by default; only persist discovered tokens, URLs, or Workday CXS fields when an explicit `--apply` path is used.
 - Keep provider health checks dry-run by default; only persist source `raw_metadata.health` and board-provider `last_status` when an explicit `--apply` path is used.
 - Keep provider coverage and audit commands based on persisted SQLite evidence; they should not fetch, probe, or sample live jobs.
+- SQLite writes batch through `OpenOppsStore._merge_batches`, `upsert_boards`, `upsert_board_providers`, and `sync_jobs_for_route`: each batch uses `settings.db_batch_size` row merges followed by an explicit `session.commit()` so partial batches stay durable without holding one transaction open for an entire ingest.
 - Add focused pytest coverage for new provider behavior, CLI scope semantics, cache behavior, plugin loading, storage/export behavior, and performance-sensitive batching.
 - Run targeted tests after narrow CLI/package edits and `uv run pytest` before handing off Python package changes. Keep `just test` and CI test commands aligned with the raw `uv run pytest` invocation.

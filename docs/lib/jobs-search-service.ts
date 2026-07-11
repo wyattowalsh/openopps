@@ -33,6 +33,8 @@ type SearchPublicJobsIndexOptions = {
 	page?: number;
 	pageSize?: number;
 	signal?: AbortSignal;
+	/** When true, summary responses include per-job id/fingerprint entries (DEC-07). */
+	includeFingerprints?: boolean;
 };
 
 type JobsSearchStore = {
@@ -50,6 +52,7 @@ type JobsSearchStoreStats = {
 };
 
 const storeByBase = new Map<string, Promise<JobsSearchStore>>();
+const filterResultCache = new Map<string, SearchRow[]>();
 const storeStats: JobsSearchStoreStats = {
 	loads: 0,
 	chunkFetches: 0,
@@ -66,7 +69,7 @@ export async function searchPublicJobsIndex({
 	const normalizedPage = normalizePage(page);
 	const normalizedPageSize = normalizePageSize(pageSize ?? limit);
 	const store = await loadJobsSearchStore(baseUrl);
-	const sortedRows = searchRows(store, filters, sortKey);
+	const sortedRows = getFilteredSortedRows(store, filters, sortKey);
 	const totalMatches = sortedRows.length;
 	const totalPages = Math.max(1, Math.ceil(totalMatches / normalizedPageSize));
 	const safePage = Math.min(normalizedPage, totalPages);
@@ -93,17 +96,22 @@ export async function summarizePublicJobsIndex({
 	baseUrl,
 	filters,
 	sortKey,
+	includeFingerprints = false,
 }: SearchPublicJobsIndexOptions): Promise<JobsSearchSummaryResponse> {
 	const store = await loadJobsSearchStore(baseUrl);
-	const rows = searchRows(store, filters, sortKey);
-	const entries = rows.map((row) => ({
-		id: text(row[J.id]),
-		fingerprint: jobFingerprint(row),
-	})).filter((entry) => entry.id);
+	const rows = getFilteredSortedRows(store, filters, sortKey);
+	const entries = includeFingerprints
+		? rows
+				.map((row) => ({
+					id: text(row[J.id]),
+					fingerprint: jobFingerprint(row),
+				}))
+				.filter((entry) => entry.id)
+		: [];
 	return {
 		version: store.manifest.version,
 		entity: "jobs",
-		totalMatches: entries.length,
+		totalMatches: rows.length,
 		sortKey,
 		filtersHash: stableStringify(filters),
 		entries,
@@ -157,6 +165,7 @@ export function normalizePageSize(value: number | string | null | undefined) {
 
 export function clearJobsSearchStoreForTests() {
 	storeByBase.clear();
+	filterResultCache.clear();
 	storeStats.loads = 0;
 	storeStats.chunkFetches = 0;
 }
@@ -213,13 +222,28 @@ async function buildJobsSearchStore(base: URL): Promise<JobsSearchStore> {
 	};
 }
 
-function searchRows(
+function filterResultCacheKey(
 	store: JobsSearchStore,
 	filters: JobBoardFilters,
 	sortKey: JobSortKey,
 ) {
-	const rows = filters.includeAllIndexed ? store.rows : store.openRows;
-	return filterAndSortJobs(rows, filters, sortKey);
+	return `${store.cacheKey}|${stableStringify(filters)}|${sortKey}`;
+}
+
+function getFilteredSortedRows(
+	store: JobsSearchStore,
+	filters: JobBoardFilters,
+	sortKey: JobSortKey,
+) {
+	const key = filterResultCacheKey(store, filters, sortKey);
+	const cached = filterResultCache.get(key);
+	if (cached) {
+		return cached;
+	}
+	const sourceRows = filters.includeAllIndexed ? store.rows : store.openRows;
+	const sortedRows = filterAndSortJobs(sourceRows, filters, sortKey);
+	filterResultCache.set(key, sortedRows);
+	return sortedRows;
 }
 
 async function loadChunkRefs(base: URL, refs: Array<{ path: string }>) {

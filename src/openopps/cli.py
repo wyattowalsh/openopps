@@ -100,8 +100,15 @@ REMOTE_FILTER_HELP = "Case-insensitive exact remote level: Full, Hybrid, or None
 EMPLOYMENT_TYPE_FILTER_HELP = (
     "Case-insensitive substring match, such as full-time or contract."
 )
-SALARY_MIN_FILTER_HELP = "overlaps this lower salary range bound."
-SALARY_MAX_FILTER_HELP = "overlaps this upper salary range bound."
+SALARY_MIN_FILTER_HELP = (
+    "Keep jobs whose normalized salary range overlaps this lower bound."
+)
+SALARY_MAX_FILTER_HELP = (
+    "Keep jobs whose normalized salary range overlaps this upper bound."
+)
+STRICT_SYNC_HELP = (
+    "Exit with a non-zero status when sync skips records or reports provider errors."
+)
 SKILL_FILTER_HELP = "Match normalized skill names, levels, or keywords."
 QUERY_FILTER_HELP = "Search normalized title, company, and plain-text description."
 POSTED_AFTER_FILTER_HELP = "Inclusive YYYY-MM-DD lower bound for normalized posted_at."
@@ -147,6 +154,8 @@ def _load_example_dataset_builder() -> Callable[..., Any]:
 
 class OpenOppsRootGroup(TyperGroup):
     def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
+        # Handle --version before command validation so bare
+        # `openopps --version` does not require a subcommand (exit 2).
         if "--version" in args:
             typer.echo(f"openopps {__version__}")
             ctx.exit()
@@ -336,29 +345,40 @@ def _export_metadata(entity: str, filters: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _metrics(metrics, metrics_json: bool, profile: bool) -> None:
+def _metrics(
+    metrics: SyncMetrics,
+    metrics_json: bool,
+    profile: bool,
+    *,
+    strict: bool = False,
+) -> None:
     if metrics_json:
         _json(metrics.as_dict())
-        return
-
-    has_issues = bool(metrics.skipped or metrics.provider_errors)
-    if profile:
+    else:
         data = metrics.as_dict()
-        console.print(
+        summary = (
             f"{data['name']} completed in {data['elapsedSeconds']:.2f}s "
             f"boards={data['boards']} jobs={data['jobs']} "
-            f"jobs_persisted={data['jobsPersisted']} "
-            f"job_sync_runs={data['jobSyncRuns']} "
-            f"jobs_deduped={data['jobsDeduped']} pages={data['pages']} "
-            f"skipped={data['skipped']} duplicate_routes_skipped={data['duplicateRoutesSkipped']} "
-            f"provider_errors={data['providerErrors']} "
-            f"provider_error_details={data['providerErrorDetails']}"
+            f"jobsPersisted={data['jobsPersisted']}"
         )
-    if has_issues:
-        Console(stderr=True).print(
-            f"Warning: {metrics.name} completed with skipped={metrics.skipped} "
-            f"provider_errors={metrics.provider_errors}. Re-run with --verbose for details."
-        )
+        if profile:
+            provider_error_count = sum(data["providerErrors"].values())
+            summary = (
+                f"{summary} jobSyncRuns={data['jobSyncRuns']} "
+                f"jobsDeduped={data['jobsDeduped']} pages={data['pages']} "
+                f"skipped={data['skipped']} "
+                f"duplicateRoutesSkipped={data['duplicateRoutesSkipped']} "
+                f"providerErrors={provider_error_count}"
+            )
+        console.print(summary)
+        if metrics.skipped or metrics.provider_errors:
+            Console(stderr=True).print(
+                f"Warning: {metrics.name} completed with skipped={metrics.skipped} "
+                f"provider_errors={metrics.provider_errors}. "
+                "Re-run with --verbose for details."
+            )
+    if strict and (metrics.skipped or metrics.provider_errors):
+        raise SystemExit(1)
 
 
 def _run_sync_with_progress[T](
@@ -719,7 +739,15 @@ def sync_all(
         bool,
         typer.Option(
             "--profile",
-            help="Print a compact human-readable sync summary.",
+            help="Print an extended human-readable sync summary with page and error counts.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help=STRICT_SYNC_HELP,
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = False,
@@ -792,7 +820,7 @@ def sync_all(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    _metrics(metrics, metrics_json, profile)
+    _metrics(metrics, metrics_json, profile, strict=strict)
 
 
 def _board_filters(
@@ -863,21 +891,7 @@ def _job_filters(
     )
 
 
-@app.command(
-    "status",
-    help="Show local OpenOpps database, cache, plugin, and next-action status.",
-    rich_help_panel=PANEL_OPERATIONS,
-)
-def status(
-    json_output: Annotated[
-        bool,
-        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
-    ] = False,
-) -> None:
-    data = _status_payload()
-    if json_output:
-        _json(data)
-        return
+def _render_status_human(data: dict[str, Any]) -> None:
     counts = data["database"]["counts"]
     cache = data["cache"]
     plugins = data["plugins"]
@@ -909,12 +923,35 @@ def status(
             ]
         ],
     )
+    if data["issues"]:
+        console.print(f"Issues: {', '.join(data['issues'])}")
     console.print(f"Next action: {data['nextAction']}")
 
 
 @app.command(
+    "status",
+    help="Show local OpenOpps database, cache, plugin, and next-action status.",
+    rich_help_panel=PANEL_OPERATIONS,
+)
+def status(
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    data = _status_payload()
+    if json_output:
+        _json(data)
+        return
+    _render_status_human(data)
+
+
+@app.command(
     "doctor",
-    help="Alias for status with setup-oriented next-step guidance.",
+    help=(
+        "Show the same local status view as `openopps status` plus a short "
+        "first-time setup checklist."
+    ),
     rich_help_panel=PANEL_OPERATIONS,
 )
 def doctor(
@@ -923,7 +960,15 @@ def doctor(
         typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
     ] = False,
 ) -> None:
-    status(json_output=json_output)
+    data = _status_payload()
+    if json_output:
+        _json(data)
+        return
+    _render_status_human(data)
+    console.print(
+        "Setup checklist: set OPENOPPS_DB_URL, run `openopps sources sync <source>`, "
+        "then `openopps boards sync` and `openopps jobs sync`."
+    )
 
 
 @plugins_app.command("list", help="List installed OpenOpps plugins and load status.")
@@ -1295,7 +1340,15 @@ def sources_sync(
         bool,
         typer.Option(
             "--profile",
-            help="Print a compact human-readable sync summary.",
+            help="Print an extended human-readable sync summary with page and error counts.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help=STRICT_SYNC_HELP,
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = False,
@@ -1339,7 +1392,7 @@ def sources_sync(
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    _metrics(metrics, metrics_json, profile)
+    _metrics(metrics, metrics_json, profile, strict=strict)
 
 
 @admin_boards_app.command(
@@ -1655,7 +1708,15 @@ def boards_sync(
         bool,
         typer.Option(
             "--profile",
-            help="Print a compact human-readable sync summary.",
+            help="Print an extended human-readable sync summary with page and error counts.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help=STRICT_SYNC_HELP,
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = False,
@@ -1695,7 +1756,7 @@ def boards_sync(
         enabled=not metrics_json,
         verbose=verbose,
     )
-    _metrics(metrics, metrics_json, profile)
+    _metrics(metrics, metrics_json, profile, strict=strict)
 
 
 @admin_boards_app.command(
@@ -1791,27 +1852,6 @@ def boards_detect_provider(
     data = detected.model_dump(mode="json")
     data["applied"] = apply
     _json(data)
-
-
-@admin_boards_app.command(
-    "refresh", help="Recount stored boards for a source without fetching jobs."
-)
-def boards_refresh(
-    source: Annotated[
-        str | None,
-        typer.Option(
-            *SOURCE_OPTION_FLAGS, help=SOURCE_FILTER_HELP, rich_help_panel=PANEL_SCOPE
-        ),
-    ] = None,
-    limit: Annotated[
-        int | None,
-        typer.Option(
-            *LIMIT_OPTION_FLAGS, min=1, help=LIMIT_HELP, rich_help_panel=PANEL_SCOPE
-        ),
-    ] = None,
-) -> None:
-    boards = _store().list_boards(source_key=source, limit=limit)
-    console.print(f"Refreshed {len(boards)} boards")
 
 
 @boards_app.command(
@@ -2001,7 +2041,15 @@ def jobs_sync(
         bool,
         typer.Option(
             "--profile",
-            help="Print a compact human-readable sync summary.",
+            help="Print an extended human-readable sync summary with page and error counts.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help=STRICT_SYNC_HELP,
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = False,
@@ -2043,7 +2091,7 @@ def jobs_sync(
         enabled=not metrics_json,
         verbose=verbose,
     )
-    _metrics(metrics, metrics_json, profile)
+    _metrics(metrics, metrics_json, profile, strict=strict)
 
 
 @jobs_app.command("list", help="List jobs with normalized metadata filters.")
@@ -2499,9 +2547,9 @@ def _provider_definition_payload(provider: ProviderDefinition) -> dict[str, obje
         "id": provider.id,
         "label": provider.label,
         "kind": provider.kind.value,
-        "support_level": provider.support_level.value,
+        "supportLevel": provider.support_level.value,
         "description": provider.description,
-        "detects_routes": provider.route_detector is not None,
+        "detectsRoutes": provider.route_detector is not None,
     }
 
 

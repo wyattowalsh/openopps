@@ -155,8 +155,7 @@ def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
         encoding="utf-8"
     )
     spec = (
-        repo_root
-        / "openspec/changes/prepare-v0-1-release/specs/release-workflows/spec.md"
+        repo_root / "openspec/specs/release-workflows/spec.md"
     ).read_text(encoding="utf-8")
 
     assert "openopps sync --metrics-json --refresh-cache" in readme
@@ -684,7 +683,7 @@ def test_manager_notebook_rehydrates_public_sqlite_snapshot(
             for table_name in namespace["APP_TABLE_NAMES"]
         }
 
-        assert version == ("0002_data_model_integrity",)
+        assert version == ("0003_jobs_current_version_fk",)
         assert "openopps_tables" not in tables
         assert "openopps_columns" not in tables
         assert all(count == 1 for count in counts.values())
@@ -1824,7 +1823,7 @@ def test_generated_kaggle_upload_root_has_only_public_data_files() -> None:
     actual_files = {
         path.relative_to(kaggle_dir).as_posix()
         for path in kaggle_dir.rglob("*")
-        if path.is_file()
+        if path.is_file() and path.name != ".DS_Store"
     }
 
     assert actual_files <= allowed_public_files

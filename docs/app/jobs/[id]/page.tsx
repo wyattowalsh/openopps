@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -28,8 +27,8 @@ export const dynamicParams = true;
 export async function generateMetadata({
 	params,
 }: JobDeepLinkPageProps): Promise<Metadata> {
-	const [{ id }, baseUrl] = await Promise.all([params, requestBaseUrl()]);
-	const detail = baseUrl ? await getPublicJobDetail(id, baseUrl) : null;
+	const { id } = await params;
+	const detail = await getPublicJobDetail(id);
 	if (!detail) {
 		return {
 			title: "Job not found",
@@ -73,8 +72,8 @@ export async function generateMetadata({
 }
 
 export default async function JobDeepLinkPage({ params }: JobDeepLinkPageProps) {
-	const [{ id }, baseUrl] = await Promise.all([params, requestBaseUrl()]);
-	const detail = baseUrl ? await getPublicJobDetail(id, baseUrl) : null;
+	const { id } = await params;
+	const detail = await getPublicJobDetail(id);
 	if (!detail) {
 		notFound();
 	}
@@ -149,24 +148,6 @@ export default async function JobDeepLinkPage({ params }: JobDeepLinkPageProps) 
 			</article>
 		</section>
 	);
-}
-
-async function requestBaseUrl() {
-	const requestHeaders = await headers();
-	const host =
-		firstHeaderValue(requestHeaders.get("x-forwarded-host")) ??
-		firstHeaderValue(requestHeaders.get("host"));
-	if (!host) {
-		return null;
-	}
-	const protocol =
-		firstHeaderValue(requestHeaders.get("x-forwarded-proto")) ??
-		(host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-	return `${protocol}://${host}`;
-}
-
-function firstHeaderValue(value: string | null) {
-	return value?.split(",")[0]?.trim() || null;
 }
 
 function Field({

@@ -9,6 +9,8 @@ import subprocess
 import sys
 from typing import Any
 
+FORBIDDEN_DETAIL_KEYS = frozenset({"payloadSnapshots", "descriptionHtml"})
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -95,6 +97,7 @@ def validate_artifacts(root: Path, *, require_git_tracked: bool = False) -> list
                     f"detail shard {path.as_posix()} count {len(payload)} "
                     f"does not match manifest {details.get('count')!r}"
                 )
+            errors.extend(_forbidden_detail_key_errors(path, payload))
 
     detail_ids_file = detail_shards.get("idIndexFile")
     if isinstance(detail_ids_file, str):
@@ -250,6 +253,22 @@ def _artifact_files(root: Path) -> set[Path]:
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _forbidden_detail_key_errors(
+    shard_path: Path, payload: dict[str, Any]
+) -> list[str]:
+    errors: list[str] = []
+    for job_id, detail in payload.items():
+        if not isinstance(detail, dict):
+            continue
+        for key in FORBIDDEN_DETAIL_KEYS:
+            if key in detail:
+                errors.append(
+                    f"detail shard {shard_path.as_posix()} job {job_id} "
+                    f"must not include {key!r}"
+                )
+    return errors
 
 
 if __name__ == "__main__":

@@ -1,8 +1,23 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import dynamic from "next/dynamic";
+import { Loader2 } from "lucide-react";
 
-import { JobsBoard } from "@/components/jobs-board/jobs-board";
 import { appName } from "@/lib/shared";
+
+const JobsBoard = dynamic(
+	() =>
+		import("@/components/jobs-board/jobs-board").then((module) => ({
+			default: module.JobsBoard,
+		})),
+	{
+		loading: () => (
+			<div className="opps-loading mx-auto my-8 min-h-[24rem] max-w-[96rem]">
+				<Loader2 className="size-4 animate-spin" />
+				Loading open jobs index...
+			</div>
+		),
+	},
+);
 
 export const metadata: Metadata = {
 	title: "Jobs board",
@@ -16,15 +31,5 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
-	return (
-		<Suspense
-			fallback={
-				<div className="opps-loading mx-auto my-8 min-h-[24rem] max-w-[96rem]">
-					Loading open jobs index...
-				</div>
-			}
-		>
-			<JobsBoard />
-		</Suspense>
-	);
+	return <JobsBoard />;
 }

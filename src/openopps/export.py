@@ -13,6 +13,12 @@ from openopps.models import ExportFormat
 SQLITE_METADATA_TABLE = "_openopps_export_metadata"
 
 
+def canonical_json_dumps(value: Any) -> str:
+    """Serialize JSON-compatible values with stable key ordering."""
+
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
 def _jsonable_record(record: Any) -> dict[str, Any]:
     if hasattr(record, "model_dump"):
         return record.model_dump(mode="json")  # type: ignore[attr-defined]
@@ -63,7 +69,7 @@ def export_records(
         count = 0
         with output.open("w", encoding="utf-8") as handle:
             for row in _jsonable_records(records):
-                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+                handle.write(canonical_json_dumps(row) + "\n")
                 count += 1
         return count
     rows = list(_jsonable_records(records))
