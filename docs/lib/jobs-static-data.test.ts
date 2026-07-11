@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -184,6 +185,26 @@ describe("jobs static data", () => {
 	it("returns null for unknown or malformed job ids instead of throwing", () => {
 		expect(getStaticJobDetail("definitely-not-a-real-job-id-%ZZ")).toBeNull();
 		expect(getStaticJobDetail("missing-shard-job-id-00000000")).toBeNull();
+	});
+
+	it("matches shared indexable golden vectors with the Python index generator", () => {
+		const vectorsPath = path.resolve(
+			__dirname,
+			"../../tests/fixtures/job_detail_indexable_vectors.json",
+		);
+		const payload = JSON.parse(fs.readFileSync(vectorsPath, "utf8")) as {
+			vectors: Array<{
+				id: string;
+				detail: Parameters<typeof isIndexableJobDetail>[0];
+				indexable: boolean;
+			}>;
+		};
+		for (const vector of payload.vectors) {
+			expect(
+				isIndexableJobDetail({ id: `fixture:${vector.id}`, ...vector.detail }),
+				vector.id,
+			).toBe(vector.indexable);
+		}
 	});
 
 	it("only accepts HTTP(S) external job urls", () => {

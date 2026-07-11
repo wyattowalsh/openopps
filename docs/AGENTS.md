@@ -33,6 +33,7 @@ just docs-build
 just docs-function-trace-check
 just docs-search-index
 just docs-search-index-check
+just docs-search-artifacts-check
 just docs-test
 just docs-lint
 just docs-rtk-lint

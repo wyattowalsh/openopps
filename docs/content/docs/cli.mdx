@@ -76,6 +76,40 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | `examples` | `seed` | Seed deterministic synthetic demo data. |
 | `admin` | `sources`, `boards`, `providers`, `cache`, `db` | Advanced registration, route diagnostics, cache purge, and DB maintenance. |
 
+## Admin inventory
+
+Use these commands for registration, portable backups, and route metadata repair. They are grouped under `openopps admin` and are separate from everyday `sync` workflows.
+
+| Group | Command | Purpose |
+| ----- | ------- | ------- |
+| `admin db` | `init` | Create or upgrade the local SQLite schema at `OPENOPPS_DB_URL`. |
+| `admin db` | `status` | JSON counts and path for the configured database. |
+| `admin db` | `export --output <path>` | Copy the local `sqlite:///` database to a portable SQLite file (requires a local SQLite URL). |
+| `admin db` | `vacuum` | Compact the configured SQLite database file. |
+| `admin boards` | `add-provider` | Attach explicit provider route metadata (token, hosted URL, or site fields) when probing did not resolve a board. |
+| `admin boards` | `detect-provider` | Detect provider metadata from one board URL; add `--apply` to persist. |
+| `admin providers` | `detect <url>` | Detect which packaged provider adapter matches a public board URL without a board scope. |
+| `admin providers` | `probe-routes` | Try route candidates and report boards that can fetch jobs; `--apply` persists matches. |
+| `admin providers` | `registry` | Inspect the durable `board_providers` route registry before job sync. |
+
+```bash
+uv run openopps admin db export --output /tmp/openopps-backup.sqlite
+uv run openopps admin db vacuum
+uv run openopps admin boards add-provider a16z:example --provider ashbyhq --url 'https://jobs.ashbyhq.com/example'
+uv run openopps admin providers detect 'https://jobs.ashbyhq.com/example'
+```
+
+## Job inspection
+
+`jobs show` prints one normalized job record as JSON, including current lifecycle fields and enriched metadata. Use the job `id` from `jobs list --json`.
+
+`jobs history` lists normalized **content versions** for the same posting id (`job_versions`), not raw provider payload snapshots. Payload-only drift can update `job_payload_snapshots` and sync observations without creating a new content version. Add `--json` for automation; the default table view shows version, content hash prefix, first/last seen timestamps, and title per version.
+
+```bash
+uv run openopps jobs show '<job-id>'
+uv run openopps jobs history '<job-id>' --json
+```
+
 ## Option Conventions
 
 Examples use long flags for readability. The CLI also exposes script-friendly short aliases for high-traffic options:

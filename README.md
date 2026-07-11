@@ -4,7 +4,7 @@
 
 # OpenOpps
 
-OpenOpps is a CLI-only v0.1 for discovering firm hiring boards from aggregate sources, resolving public provider routes, syncing normalized public jobs, and exporting an auditable local opportunity ledger.
+OpenOpps is a v0.1 Python CLI for discovering firm hiring boards from aggregate sources, resolving public provider routes, syncing normalized public jobs, and exporting an auditable local opportunity ledger. Public ingestion is CLI-driven; the Fumadocs site under `docs/` ships static Jobs (`/`) and Explorer (`/explorer`) workbenches over a committed search snapshot, not a live sync backend.
 
 The public domain nouns are:
 
@@ -19,9 +19,12 @@ The public domain nouns are:
 ```bash
 uv sync
 just --list
+uv run openopps admin db init
 uv run openopps status
 uv run openopps --help
 ```
+
+Initialize the SQLite schema once per `OPENOPPS_DB_URL` before live syncs. For an isolated database, set `OPENOPPS_DB_URL=sqlite:///./path/to/openopps.sqlite` (or copy `.env.example` to `.env`) before `admin db init`.
 
 `just` is the contributor command index. It mirrors CI while keeping the raw `uv`, `pnpm`, and OpenSpec commands visible in this README and the docs site.
 
@@ -222,8 +225,11 @@ Configuration uses `OPENOPPS_` environment variables:
 - `OPENOPPS_SOURCE_CONCURRENCY` bounds source adapter work.
 - `OPENOPPS_SOURCE_TIMEOUT_SECONDS` bounds one source adapter run before recording a classified timeout.
 - `OPENOPPS_SOURCE_FRESHNESS_SECONDS` skips recently synced sources during unscoped full-sync retries when set above `0`.
-- `OPENOPPS_BOARD_CONCURRENCY` bounds board-level processing.
-- `OPENOPPS_PROVIDER_CONCURRENCY` bounds provider job fetching.
+- `OPENOPPS_BOARD_CONCURRENCY` bounds concurrent ready board routes and board-scoped job listing/detail work during job sync and related checks.
+- `OPENOPPS_JOB_ROUTE_TIMEOUT_SECONDS` bounds how long one provider route may run during job sync before a classified timeout.
+- `OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS` skips recently synced routes during job sync when set above `0`.
+- `OPENOPPS_JOB_ROUTE_LIMIT` optionally caps how many stale routes one job sync processes; unset means no cap.
+- `OPENOPPS_PROVIDER_CONCURRENCY` bounds concurrent provider route probes during detection and probing, not job-fetch parallelism.
 - `OPENOPPS_WORKDAY_CONCURRENCY` keeps Workday CXS requests conservative.
 - `OPENOPPS_DB_BATCH_SIZE` controls batched SQLite writes.
 - `OPENOPPS_HTTP_TIMEOUT` controls HTTP request timeouts.
@@ -270,6 +276,7 @@ pnpm test
 
 Documentation content lives in `docs/content/docs/`; Fumadocs navigation is curated by `docs/content/docs/meta.json`.
 The docs IA is organized as `/docs`, `/docs/cli`, `/docs/configuration`, `/docs/data-model`, `/docs/providers`, `/docs/operations`, and `/docs/contributing`; the jobs workbench lives at `/`, and the data dashboard lives at `/explorer`.
+LLM-readable exports are served at `/llms.txt` (compact index) and `/llms-full.txt` (full docs text) when the docs app is running or deployed.
 
 ## Contributor Workflow
 
@@ -302,7 +309,7 @@ just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-`just ci` includes `uv lock --check`, docs type-check/build/unit/browser/accessibility tests, docs lint, OpenSpec validation, coverage, Kaggle metadata generation, CLI help smoke checks, and diff formatting. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not silently skipped inside the CI recipe.
+`just ci` runs `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not part of the default CI recipe.
 `just docs-search-index-check` is the explicit maintainer release gate for the committed static docs search snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `docs/public/data/openopps-search/`, and fails on remaining snapshot drift.
 
 Renovate is configured in `renovate.json` for Python `pyproject.toml`/`uv.lock` and docs `package.json`/`pnpm-lock.yaml` maintenance. Review dependency PRs with the same `just ci` path used for local release validation.

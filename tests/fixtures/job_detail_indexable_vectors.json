@@ -1,0 +1,110 @@
+{
+  "description": "Shared indexability contract for Python _is_indexable_job_detail and docs isIndexableJobDetail.",
+  "vectors": [
+    {
+      "id": "open-with-status",
+      "detail": {
+        "status": "open",
+        "title": "Staff Engineer",
+        "company": "Acme",
+        "description": "Build platform systems.",
+        "postedAt": "2026-01-01T00:00:00Z",
+        "postingUrl": "https://acme.example/jobs/1"
+      },
+      "indexable": true
+    },
+    {
+      "id": "missing-status-treats-as-open",
+      "detail": {
+        "title": "Staff Engineer",
+        "company": "Acme",
+        "description": "Build platform systems.",
+        "postedAt": "2026-01-01T00:00:00Z",
+        "postingUrl": "https://acme.example/jobs/1"
+      },
+      "indexable": true
+    },
+    {
+      "id": "closed-status",
+      "detail": {
+        "status": "closed",
+        "title": "Staff Engineer",
+        "company": "Acme",
+        "description": "Build platform systems.",
+        "postedAt": "2026-01-01T00:00:00Z",
+        "postingUrl": "https://acme.example/jobs/1"
+      },
+      "indexable": false
+    },
+    {
+      "id": "unsafe-javascript-apply-url",
+      "detail": {
+        "status": "open",
+        "title": "Staff Engineer",
+        "company": "Acme",
+        "description": "Build platform systems.",
+        "postedAt": "2026-01-01T00:00:00Z",
+        "applyUrl": "javascript:alert(1)"
+      },
+      "indexable": false
+    },
+    {
+      "id": "unsafe-credentials-in-posting-url",
+      "detail": {
+        "status": "open",
+        "title": "Staff Engineer",
+        "company": "Acme",
+        "description": "Build platform systems.",
+        "postedAt": "2026-01-01T00:00:00Z",
+        "postingUrl": "https://user:pass@acme.example/jobs/1"
+      },
+      "indexable": false
+    },
+    {
+      "id": "unsafe-userinfo-in-apply-url",
+      "detail": {
+        "status": "open",
+        "title": "Staff Engineer",
+        "company": "Acme",
+        "description": "Build platform systems.",
+        "postedAt": "2026-01-01T00:00:00Z",
+        "applyUrl": "https://user@acme.example/jobs/1"
+      },
+      "indexable": false
+    },
+    {
+      "id": "html-description-fallback",
+      "detail": {
+        "status": "open",
+        "title": "Platform Engineer",
+        "company": "Acme Corp",
+        "descriptionHtml": "<p>Build reliable services.</p>",
+        "firstSeenAt": "2026-06-01T00:00:00.000Z",
+        "postingUrl": "https://example.com/jobs/1"
+      },
+      "indexable": true
+    },
+    {
+      "id": "missing-core-content",
+      "detail": {
+        "status": "open",
+        "title": "Platform Engineer",
+        "company": "Acme Corp",
+        "postedAt": "2026-06-01T00:00:00.000Z",
+        "postingUrl": "https://example.com/jobs/1"
+      },
+      "indexable": false
+    },
+    {
+      "id": "missing-date",
+      "detail": {
+        "status": "open",
+        "title": "Platform Engineer",
+        "company": "Acme Corp",
+        "description": "Build reliable services.",
+        "postingUrl": "https://example.com/jobs/1"
+      },
+      "indexable": false
+    }
+  ]
+}

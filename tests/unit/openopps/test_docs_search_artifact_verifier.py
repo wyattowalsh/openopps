@@ -38,6 +38,36 @@ def test_verifier_rejects_extra_detail_shard(tmp_path: Path) -> None:
     assert any("detail shard exists but is not in manifest: jobs-details/02.json" in error for error in errors)
 
 
+def test_verifier_rejects_forbidden_detail_keys(tmp_path: Path) -> None:
+    root = write_artifacts(tmp_path)
+    shard_path = root / "jobs-details" / "00.json"
+    payload = json.loads(shard_path.read_text(encoding="utf-8"))
+    payload["job-a"]["descriptionHtml"] = "<p>secret</p>"
+    write_json(shard_path, payload)
+
+    errors = validate_artifacts(root)
+
+    assert any(
+        "must not include 'descriptionHtml'" in error and "job-a" in error
+        for error in errors
+    )
+
+
+def test_verifier_rejects_payload_snapshots_in_detail_shards(tmp_path: Path) -> None:
+    root = write_artifacts(tmp_path)
+    shard_path = root / "jobs-details" / "01.json"
+    payload = json.loads(shard_path.read_text(encoding="utf-8"))
+    payload["job-b"]["payloadSnapshots"] = [{"kind": "listing"}]
+    write_json(shard_path, payload)
+
+    errors = validate_artifacts(root)
+
+    assert any(
+        "must not include 'payloadSnapshots'" in error and "job-b" in error
+        for error in errors
+    )
+
+
 def test_verifier_rejects_bucket_count_mismatch(tmp_path: Path) -> None:
     root = write_artifacts(tmp_path)
     manifest_path = root / "manifest.json"

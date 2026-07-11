@@ -3,7 +3,7 @@ title: Start Here
 description: OpenOpps concepts, first commands, public data surfaces, and docs map.
 ---
 
-OpenOpps v0.1 is a CLI-only Python app for discovering firm hiring boards from aggregate sources, detecting public provider routes, syncing normalized jobs, caching repeated HTTP JSON requests, and exporting an auditable local opportunity ledger. It intentionally ships without a hosted service, browser app, prompt UI, or TUI.
+OpenOpps v0.1 is a Python CLI for discovering firm hiring boards from aggregate sources, detecting public provider routes, syncing normalized jobs, caching repeated HTTP JSON requests, and exporting an auditable local opportunity ledger. Ingestion and durable state are CLI-driven; the published [Jobs](/) and [Explorer](/explorer) surfaces are a static docs workbench over a committed search snapshot, not a hosted sync service. There is no prompt UI or TUI.
 
 <div className="not-prose my-6 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-sm leading-6">
   <strong className="text-foreground">Browse the committed snapshot</strong>
@@ -64,6 +64,24 @@ openopps status
 
 `uv tool install -e .` installs the console entry point from the current checkout. Runtime settings such as `OPENOPPS_DB_URL` still control where local SQLite state is read and written.
 
+## First run
+
+Before live syncs against public upstreams, initialize the durable SQLite schema for the database you intend to use:
+
+```bash
+uv run openopps admin db init
+uv run openopps admin db status
+```
+
+`OPENOPPS_DB_URL` defaults to `sqlite:///openoppsdb.sqlite` relative to the process working directory. For an isolated smoke database, point at a dedicated file before `admin db init` and sync:
+
+```bash
+OPENOPPS_DB_URL=sqlite:///./tmp/openopps-smoke.sqlite uv run openopps admin db init
+OPENOPPS_DB_URL=sqlite:///./tmp/openopps-smoke.sqlite uv run openopps examples seed --json
+```
+
+See [Configuration](/docs/configuration) for concurrency and job-route settings.
+
 ## Contributor Command Map
 
 The root `Justfile` is the quickest way to discover local validation without hiding the underlying toolchain:
@@ -77,7 +95,7 @@ just docs-check
 just cli-help
 ```
 
-`just ci` mirrors the GitHub Actions validation lanes: Python tests, coverage, OpenSpec validation, generated docs data, docs type-check/build/lint, Kaggle metadata generation, and whitespace checks. Use the raw `uv`, `pnpm`, and OpenSpec commands from the reference pages when a CI failure needs exact reproduction.
+`just ci` runs, in order: `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`. Use the raw `uv`, `pnpm`, and OpenSpec commands from the reference pages when a CI failure needs exact reproduction.
 
 ## Safe Local Smoke Path
 
@@ -140,6 +158,17 @@ Ashby postings marked `isListed: false` are direct-link-only and are excluded fr
 ## Public Docs Routes
 
 The canonical jobs workbench is `/`, the canonical analytics explorer is `/explorer`, and thin job detail pages live at `/jobs/:id` for direct posting previews. Legacy `/jobs` redirects to `/`, and legacy `/docs/explorer` redirects to `/explorer`; do not add broad `/jobs/:path` redirects because detail pages must remain addressable.
+
+## LLM-readable docs
+
+The docs app exposes machine-readable exports for agents and tooling:
+
+| URL | Purpose |
+| --- | ------- |
+| `/llms.txt` | Compact index of documentation pages for LLM context. |
+| `/llms-full.txt` | Full concatenated docs text for deeper retrieval. |
+
+Per-page markdown routes are also available under `/llms.mdx/` when you need a single MDX page in isolation.
 
 ## Route Probing Summary
 

@@ -168,10 +168,16 @@ just ci
 just lock-check
 just openspec-validate-all
 just docs-check
+just docs-build
 just docs-test
+just docs-e2e
+just docs-a11y
+just docs-lint
 just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
+
+`just ci` chains `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`.
 
 Run Python tests from the repository root:
 
@@ -200,12 +206,12 @@ Use `just docs-rtk-lint` from the repository root for the optional maintainer `r
 
 `just docs-search-index-check` requires the ignored local `kaggle/openoppsdb.sqlite` snapshot and fails clearly when that file is unavailable. Do not remove committed search-index compatibility for the current artifact version unless the v4 generator has been run from that snapshot and `docs/public/data/openopps-search/` has been refreshed.
 
-Run OpenSpec checks from the repository root:
+Run OpenSpec checks from the repository root. Pin `@fission-ai/openspec@1.6.0` in copy-paste commands for parity with CI; do not use a floating `@latest`. Override the `Justfile` default with `OPENOPPS_OPENSPEC='npx -y @fission-ai/openspec@1.6.0'` when `just openspec-*` should run a different invocation.
 
 ```bash
-rtk npx -y @fission-ai/openspec@latest list --json
-rtk npx -y @fission-ai/openspec@latest status --change prepare-v0-1-release --json
-rtk npx -y @fission-ai/openspec@latest validate --all --strict
+rtk npx -y @fission-ai/openspec@1.6.0 list --json
+rtk npx -y @fission-ai/openspec@1.6.0 status --change prepare-v0-1-release --json
+rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 ```
 
 OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested `AGENTS.md`, CI, and just recipes synchronized. Use `instructions --json` when handing an OpenSpec task graph to another agent.
@@ -229,6 +235,8 @@ This guard is **not** rebinding-proof. httpx resolves DNS again at connect time,
 v0.1 intentionally stops at lightweight validation rather than connect-time IP pinning or a trusted resolver policy. Treat the check as reducing accidental SSRF against RFC1918/link-local targets, not as a network sandbox. If you need stronger outbound controls later, pin the vetted addresses into the client connect path or run ingestion behind an egress policy you control.
 
 ## Telemetry Operations
+
+Telemetry in this section applies **only** to the Fumadocs/Next.js docs app (Jobs, Explorer, and `/docs/*`). The `openopps` CLI does not collect, store, or forward usage telemetry; CLI behavior is controlled solely by `OPENOPPS_*` settings in [Configuration](/docs/configuration).
 
 The docs app telemetry source of truth should be a first-party event lake. The default local mode is no-op; production-like deployments should write append-only events to persistent storage, compact them into Parquet with a separate maintenance job, and query them with DuckDB or another local analytical engine.
 

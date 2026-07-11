@@ -507,66 +507,80 @@ def test_snapshot_at_ignores_newer_historical_versions(tmp_path: Path) -> None:
     assert manifest["snapshotAt"] == "2026-02-03T04:05:06.123456Z"
 
 
-def test_is_indexable_job_detail_matches_docs_runtime_rules() -> None:
-    assert is_indexable_job_detail(
-        {
-            "status": "open",
-            "title": "Staff Engineer",
-            "company": "Acme",
-            "description": "Build platform systems.",
-            "postedAt": "2026-01-01T00:00:00Z",
-            "postingUrl": "https://acme.example/jobs/1",
-        }
-    )
-    assert is_indexable_job_detail(
-        {
-            "title": "Staff Engineer",
-            "company": "Acme",
-            "description": "Build platform systems.",
-            "postedAt": "2026-01-01T00:00:00Z",
-            "postingUrl": "https://acme.example/jobs/1",
-        }
-    )
-    assert not is_indexable_job_detail(
-        {
-            "status": "closed",
-            "title": "Staff Engineer",
-            "company": "Acme",
-            "description": "Build platform systems.",
-            "postedAt": "2026-01-01T00:00:00Z",
-            "postingUrl": "https://acme.example/jobs/1",
-        }
-    )
-    assert not is_indexable_job_detail(
-        {
-            "status": "open",
-            "title": "Staff Engineer",
-            "company": "Acme",
-            "description": "Build platform systems.",
-            "postedAt": "2026-01-01T00:00:00Z",
-            "applyUrl": "javascript:alert(1)",
-        }
-    )
-    assert not is_indexable_job_detail(
-        {
-            "status": "open",
-            "title": "Staff Engineer",
-            "company": "Acme",
-            "description": "Build platform systems.",
-            "postedAt": "2026-01-01T00:00:00Z",
-            "postingUrl": "https://user:pass@acme.example/jobs/1",
-        }
-    )
-    assert not is_indexable_job_detail(
-        {
-            "status": "open",
-            "title": "Staff Engineer",
-            "company": "Acme",
-            "description": "Build platform systems.",
-            "postedAt": "2026-01-01T00:00:00Z",
-            "applyUrl": "https://user@acme.example/jobs/1",
-        }
-    )
+_INDEXABLE_VECTORS_PATH = (
+    Path(__file__).resolve().parents[2] / "fixtures" / "job_detail_indexable_vectors.json"
+)
+_INDEXABLE_VECTOR_CASES = json.loads(
+    _INDEXABLE_VECTORS_PATH.read_text(encoding="utf-8")
+)["vectors"]
+
+
+@pytest.mark.parametrize(
+    ("vector_id", "detail", "expected"),
+    [
+        (item["id"], item["detail"], item["indexable"])
+        for item in _INDEXABLE_VECTOR_CASES
+    ],
+    ids=[item["id"] for item in _INDEXABLE_VECTOR_CASES],
+)
+def test_is_indexable_job_detail_matches_shared_golden_vectors(
+    vector_id: str, detail: dict[str, Any], expected: bool
+) -> None:
+    assert is_indexable_job_detail(detail) is expected, vector_id
+
+
+def test_search_index_child_tables_ignore_stale_job_versions(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO job_version_locations (
+                id, job_version_id, ordinal, label
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                ("loc-stale", "version-old", 0, "Stale City"),
+                ("loc-current", "version-current", 0, "Current City"),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO job_version_skills (
+                id, job_version_id, ordinal, name, level
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("skill-stale", "version-old", 0, "Rust", "expert"),
+                ("skill-current", "version-current", 0, "Python", "staff"),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO job_version_skill_keywords (
+                id, skill_id, ordinal, keyword
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                ("kw-stale", "skill-stale", 0, "systems"),
+                ("kw-current", "skill-current", 0, "platform"),
+            ],
+        )
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    columns = manifest["entities"]["jobs"]["columns"]
+    locations_index = columns.index("locations")
+    skill_tokens_index = columns.index("skillTokens")
+    id_index = columns.index("id")
+    rows = _read_job_rows(output_dir, manifest)
+    open_row = next(row for row in rows if row[id_index] == "job-1")
+    assert json.loads(open_row[locations_index]) == ["Current City"]
+    assert open_row[skill_tokens_index] == "platform,python,staff"
+    assert "Stale City" not in manifest["facets"]["locations"]
 
 
 def test_safe_job_external_url_requires_absolute_hostless_free_urls() -> None:

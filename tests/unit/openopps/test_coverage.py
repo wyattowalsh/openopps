@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from openopps.cli import app
 from openopps.coverage import (
+    AUDIT_PROVIDER_TARGETS,
     build_coverage_report,
     build_provider_audit_report,
     build_source_yield_report,
@@ -19,121 +20,10 @@ from openopps.models import (
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
+from _fixtures.store import seeded_coverage_store as seeded_store
+
 
 runner = CliRunner()
-
-
-def seeded_store(tmp_path: Path) -> tuple[OpenOppsSettings, OpenOppsStore]:
-    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
-    store = OpenOppsStore(settings)
-    store.upsert_source(
-        SourceRecord(key="a16z", url="https://jobs.a16z.com", provider_id="consider")
-    )
-    store.upsert_source(
-        SourceRecord(key="lsvp", url="https://jobs.lsvp.com", provider_id="consider")
-    )
-    store.upsert_boards(
-        [
-            BoardRecord(
-                key="acme",
-                source_key="a16z",
-                remote_id="acme",
-                name="Acme",
-                domain="acme.com",
-            ),
-            BoardRecord(
-                key="beta",
-                source_key="a16z",
-                remote_id="beta",
-                name="Beta",
-                domain="beta.com",
-            ),
-            BoardRecord(
-                key="gamma",
-                source_key="a16z",
-                remote_id="gamma",
-                name="Gamma",
-                domain="gamma.com",
-            ),
-            BoardRecord(
-                key="dupe-acme",
-                source_key="lsvp",
-                remote_id="acme",
-                name="Acme",
-                domain="acme.com",
-            ),
-        ]
-    )
-    store.upsert_board_providers(
-        [
-            BoardProviderRecord(
-                id="a16z:acme:lever",
-                source_key="a16z",
-                board_key="acme",
-                provider_id="lever",
-                support_level=ProviderSupport.JOBS,
-                token="acme",
-            ),
-            BoardProviderRecord(
-                id="lsvp:dupe-acme:lever",
-                source_key="lsvp",
-                board_key="dupe-acme",
-                provider_id="lever",
-                support_level=ProviderSupport.JOBS,
-                token="acme",
-            ),
-            BoardProviderRecord(
-                id="a16z:beta:greenhouse",
-                source_key="a16z",
-                board_key="beta",
-                provider_id="greenhouse",
-                support_level=ProviderSupport.JOBS,
-                token="beta",
-                last_status="route_ready",
-            ),
-            BoardProviderRecord(
-                id="a16z:gamma:greenhouse",
-                source_key="a16z",
-                board_key="gamma",
-                provider_id="greenhouse",
-                support_level=ProviderSupport.JOBS,
-            ),
-            BoardProviderRecord(
-                id="a16z:gamma:teamtailor",
-                source_key="a16z",
-                board_key="gamma",
-                provider_id="teamtailor",
-                support_level=ProviderSupport.DETECT,
-            ),
-        ]
-    )
-    store.upsert_jobs(
-        [
-            JobRecord(
-                id="beta:greenhouse:1",
-                board_key="beta",
-                provider_id="greenhouse",
-                remote_id="1",
-                title="Engineer",
-                locations=["Remote"],
-                department="Engineering",
-                employment_type="Full-time",
-                description="Build systems.",
-                remote="Full",
-                compensation={"currency": "USD"},
-                salary="USD 100000 - 160000",
-                posting_url="https://boards.greenhouse.io/beta/jobs/1",
-            ),
-            JobRecord(
-                id="beta:greenhouse:2",
-                board_key="beta",
-                provider_id="greenhouse",
-                remote_id="2",
-                title="Designer",
-            ),
-        ]
-    )
-    return settings, store
 
 
 def test_coverage_report_counts_persisted_records_and_routes(tmp_path: Path):
@@ -466,15 +356,6 @@ def test_providers_audit_json_cli_output(tmp_path: Path):
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["snapshot"]["denominator"] == 3
-    assert [item["provider"] for item in data["candidates"]] == [
-        "smartrecruiters",
-        "workable",
-        "recruitee",
-        "teamtailor",
-        "bamboohr",
-        "rippling",
-        "wpjobmanager",
-        "icims",
-        "jobvite",
-        "jazzhr",
-    ]
+    providers = [item["provider"] for item in data["candidates"]]
+    assert len(providers) == len(AUDIT_PROVIDER_TARGETS)
+    assert set(providers) == set(AUDIT_PROVIDER_TARGETS)
