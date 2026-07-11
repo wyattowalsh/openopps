@@ -12,6 +12,7 @@ from openopps.models import ProviderSupport
 from openopps.providers.base import BoardSourceAdapter, ProviderDefinition, ProviderKind
 from openopps.plugins import PluginContext, PluginRegistry, load_plugins
 from openopps.settings import OpenOppsSettings
+from openopps.source_scope import validate_packaged_source_catalog
 
 BoardSourceAdapterFactory = Callable[[OpenOppsSettings], BoardSourceAdapter]
 
@@ -61,6 +62,8 @@ BOARD_SOURCE_RECORDS: tuple[SourceRecord, ...] = _discover_source_records()
 BOARD_SOURCE_CATALOG: dict[str, SourceRecord] = {
     source.key: source for source in BOARD_SOURCE_RECORDS
 }
+
+validate_packaged_source_catalog(BOARD_SOURCE_CATALOG)
 
 
 def source_provider_definitions() -> tuple[ProviderDefinition, ...]:

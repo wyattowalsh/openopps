@@ -158,6 +158,8 @@ uv run openopps admin sources yield --source sec-company-tickers
 
 The report is offline and reads persisted SQLite records only. It does not fetch sources, probe routes, or sync jobs. Treat `yieldScore` as a local snapshot metric rather than a global benchmark unless the database was refreshed from a representative source set.
 
+`openopps providers coverage --json` also exposes `gaps.sourceScope` for v0.1 startup-board exclusions (WorkAtAStartup), Wellfound/Angel unsupported rationales, and the Editorial label audit decision.
+
 ## Validation
 
 Use `just` from the repository root for the contributor validation graph:

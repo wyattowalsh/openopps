@@ -134,6 +134,7 @@ export function JobsBoardPreviewSheet({
 						onToggleHidden={onToggleHidden}
 						onToggleApplied={onToggleApplied}
 						onNotesChange={onNotesChange}
+						paneChrome={false}
 					/>
 				</div>
 			</div>

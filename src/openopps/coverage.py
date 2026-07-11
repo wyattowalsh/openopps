@@ -14,6 +14,7 @@ from openopps.models import (
 from openopps.providers.registry import provider_registry
 from openopps.route_registry import select_routes_from_records
 from openopps.route_select import normalize_provider_filter, route_ready
+from openopps.source_scope import source_scope_summary
 from openopps.storage import OpenOppsStore
 
 
@@ -269,6 +270,7 @@ def build_coverage_report(
             "byBoard": jobs_by_board,
         },
         gaps={
+            "sourceScope": source_scope_summary(),
             "boardsWithJobCapableProviderHintsButNoExecutableRoute": (
                 _boards_with_job_hints_but_no_executable_route(boards, routes)
             ),
