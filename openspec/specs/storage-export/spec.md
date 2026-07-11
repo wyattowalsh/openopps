@@ -1,7 +1,7 @@
 # storage-export Specification
 
 ## Purpose
-Define OpenOpps persistence and export behavior for SQLite-backed records, no-database JSONL mode, and analytical export formats.
+Define OpenOpps persistence and export behavior for SQLite-backed records, no-database JSONL mode, analytical export formats, and portable database snapshots.
 ## Requirements
 ### Requirement: SQLite storage persists normalized records
 
@@ -9,7 +9,7 @@ OpenOpps SHALL persist sources, boards, board-provider relationships, and jobs i
 
 #### Scenario: User initializes the database
 
-- **WHEN** the user runs `openopps db init`
+- **WHEN** the user runs `openopps admin db init`
 - **THEN** the schema exists and SQLite is configured for WAL mode
 
 ### Requirement: No-DB mode writes normalized JSONL
@@ -23,7 +23,7 @@ OpenOpps SHALL support writing normalized records to JSONL without requiring a d
 
 ### Requirement: Exports support common analytical formats
 
-OpenOpps SHALL export boards and jobs as JSONL, CSV, or Parquet.
+OpenOpps SHALL export boards and jobs as JSONL, CSV, Parquet, or SQLite.
 
 #### Scenario: User exports jobs as parquet
 
@@ -46,3 +46,51 @@ OpenOpps SHALL export boards and jobs as JSONL, CSV, or Parquet.
 - **WHEN** an export filter matches no records
 - **THEN** JSONL and CSV exports are deterministic empty files
 - **AND** Parquet exports are deterministic readable empty Parquet tables
+
+### Requirement: Filtered exports support SQLite
+
+OpenOpps SHALL export filtered board and job records to SQLite files in addition to JSONL, CSV, and Parquet.
+
+#### Scenario: User exports filtered jobs as SQLite
+
+- **WHEN** the user runs `openopps jobs export --format sqlite --output jobs.sqlite`
+- **THEN** OpenOpps writes a SQLite database containing a `jobs` table
+- **AND** the rows match the same filter semantics as the corresponding jobs list/export operation
+- **AND** nested values are encoded as stable JSON strings
+- **AND** `_openopps_export_metadata` records entity, row count, filters, generated timestamp, and export format
+
+#### Scenario: User exports filtered boards as SQLite
+
+- **WHEN** the user runs `openopps boards export --format sqlite --output boards.sqlite`
+- **THEN** OpenOpps writes a SQLite database containing a `boards` table
+- **AND** `_openopps_export_metadata` records the board export metadata
+
+### Requirement: Local database snapshots are exportable
+
+OpenOpps SHALL provide an admin command that exports a portable snapshot of the configured local SQLite database.
+
+#### Scenario: User exports the local database
+
+- **WHEN** the user runs `openopps admin db export --output openoppsdb.sqlite`
+- **THEN** OpenOpps uses SQLite backup/checkpoint behavior rather than raw sidecar copying
+- **AND** the output passes `PRAGMA integrity_check`
+- **AND** non-SQLite configured storage fails with a clear unsupported-backend message
+
+### Requirement: Raw upstream payloads remain preserved
+
+OpenOpps SHALL preserve raw upstream source, board, provider-route, and job payloads when available for auditability and future reprocessing.
+
+#### Scenario: Source emits raw company payload
+
+- **WHEN** source sync stores a board
+- **THEN** the raw upstream board payload remains available on the normalized record
+
+### Requirement: Job postings retain stable identity and version history
+
+OpenOpps SHALL model job postings as stable identities with normalized content versions, raw payload snapshots, sync runs, and sync observations.
+
+#### Scenario: User inspects job history
+
+- **WHEN** the user runs `jobs history <job-id> --json`
+- **THEN** OpenOpps returns ordered normalized content versions for that stable job identity
+- **AND** each version includes its version number, hashes, and first/last seen timestamps

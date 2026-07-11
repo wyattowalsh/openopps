@@ -50,3 +50,66 @@ OpenOpps SHALL keep README, docs pages, DESIGN.md, nested AGENTS.md, Justfile re
 
 - **WHEN** a validation command or public workflow changes
 - **THEN** the corresponding README/docs, agent instructions, OpenSpec task, CI job, and just recipe are updated in the same logical change
+
+### Requirement: Docs search index uses tiered committed artifacts
+
+OpenOpps SHALL publish the public jobs and explorer search surface from committed static artifacts generated from the local SQLite snapshot, using tiered detail shards to bound repository size and public payload exposure.
+
+#### Scenario: Maintainer refreshes the committed search index
+
+- **WHEN** a maintainer runs `just docs-search-index-check` with `kaggle/openoppsdb.sqlite` available
+- **THEN** the recipe regenerates `docs/public/data/openopps-search/`
+- **AND** the recipe fails if regenerated artifacts differ from the committed tree
+
+#### Scenario: Public detail shards are written
+
+- **WHEN** the docs search index is generated
+- **THEN** open jobs receive metadata-only T1 detail shards
+- **AND** indexable jobs may receive bounded plain-text T2 body shards
+- **AND** raw payload snapshots are not committed to the public search index
+
+### Requirement: Docs search generated text is safe for browser indexing
+
+OpenOpps SHALL convert provider description HTML into bounded plain text before publishing committed docs search detail artifacts.
+
+#### Scenario: Search index schema is validated in CI
+
+- **WHEN** GitHub Actions runs the docs validation job
+- **THEN** CI validates the committed search index schema without regenerating the local SQLite-backed snapshot
+- **AND** maintainer-only regeneration remains covered by the local docs search index check
+
+### Requirement: Docs search artifacts expose generated data contracts
+
+OpenOpps SHALL generate docs search artifacts with explicit schema versioning, count provenance, facets, suggestions, dashboard aggregates, and job detail shards.
+
+#### Scenario: Search manifest is generated
+
+- **WHEN** `scripts/generate_docs_search_index.py` builds the docs search index from a SQLite snapshot
+- **THEN** the manifest version field identifies the runtime schema consumed by the docs app
+- **AND** package-catalog counts are distinguishable from SQLite snapshot counts
+- **AND** generated facets and suggestions include sources, providers, locations, departments, teams, companies, skills, workplace types, employment types, statuses, and salary currencies
+- **AND** dashboard aggregates are generated before browser runtime
+
+### Requirement: Docs routes are hard-moved
+
+OpenOpps SHALL make the jobs workbench and analytics explorer top-level docs-app routes.
+
+#### Scenario: User opens the docs app root
+
+- **WHEN** a user visits `/`
+- **THEN** the jobs workbench is the primary screen
+
+#### Scenario: User opens the analytics explorer
+
+- **WHEN** a user visits `/explorer`
+- **THEN** OpenOpps renders a dashboard-first analytics explorer
+- **AND** `/jobs`, `/jobs/[id]`, and `/docs/explorer` are not preserved as compatibility routes
+
+### Requirement: Docs IA remains synchronized
+
+OpenOpps SHALL keep docs navigation, README references, LLM routes, generated data, and validation commands aligned with public route and export changes.
+
+#### Scenario: Public routes or export formats change
+
+- **WHEN** OpenOpps changes a public docs route, export format, generated docs data field, or validation command
+- **THEN** the docs content graph, README guidance, LLM-readable routes, and local validation commands are updated in the same change

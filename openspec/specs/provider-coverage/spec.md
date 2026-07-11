@@ -42,3 +42,31 @@ OpenOpps SHALL report source-yield metrics from persisted SQLite records without
 
 - **WHEN** the user runs `openopps providers coverage --json`
 - **THEN** the source summary includes compact source-yield totals
+
+### Requirement: Provider coverage reports board-level non-supported share
+
+OpenOpps SHALL report the measured percentage of persisted boards with any non-supported provider hint using distinct persisted boards in the current report scope as the denominator.
+
+#### Scenario: Coverage report includes non-supported percentage
+
+- **WHEN** the user runs provider coverage reporting
+- **THEN** the report includes total boards, boards with non-supported provider hints, and the corresponding percentage
+
+### Requirement: Coverage distinguishes provider support categories
+
+OpenOpps SHALL separately report boards with baseline job-capable providers, adopted v0.1 providers, detect-only providers, unsupported or unknown providers, only non-supported provider hints, and missing executable route metadata.
+
+#### Scenario: Board has only detect-only hints
+
+- **WHEN** a board has provider hints but none are job-capable
+- **THEN** it counts toward boards with only non-supported provider hints
+
+### Requirement: Coverage audit evaluates high-impact provider candidates
+
+OpenOpps SHALL audit candidate public ATS providers that may materially improve board coverage without bespoke per-company logic.
+
+#### Scenario: Candidate provider is evaluated
+
+- **WHEN** a candidate such as SmartRecruiters, Workable, Recruitee, Teamtailor, BambooHR, Rippling, WP Job Manager, iCIMS, Jobvite, or JazzHR is evaluated
+- **THEN** OpenOpps records whether generic public route discovery and job fetching are viable
+- **AND** records a before-and-after coverage delta or do-not-adopt rationale
