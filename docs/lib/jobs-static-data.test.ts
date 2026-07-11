@@ -200,16 +200,13 @@ describe("jobs static data", () => {
 			}>;
 		};
 		for (const vector of payload.vectors) {
-			const { id: _detailId, ...detailFields } = vector.detail as {
-				id?: string;
-			} & Parameters<typeof isIndexableJobDetail>[0];
-			expect(
-				isIndexableJobDetail({
-					...detailFields,
-					id: `fixture:${vector.id}`,
-				}),
-				vector.id,
-			).toBe(vector.indexable);
+			// Build a fresh detail so fixture ids win without TS2783 (duplicate `id`).
+			const detail = Object.assign(
+				{},
+				vector.detail,
+				{ id: `fixture:${vector.id}` },
+			) as Parameters<typeof isIndexableJobDetail>[0];
+			expect(isIndexableJobDetail(detail), vector.id).toBe(vector.indexable);
 		}
 	});
 
