@@ -10,13 +10,13 @@ from openopps.models import (
     AshbyJobPosting,
     BoardProviderRecord,
     BoardRecord,
-    JsonDict,
     JobRecord,
     normalize_remote_level,
     strip_html,
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.normalize import salary_components, salary_display
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
@@ -92,8 +92,10 @@ class AshbyProvider:
             )
         )
         locations = _locations(posting)
-        salary_min, salary_max, salary_currency = _salary_components(
-            posting.compensation
+        salary_min, salary_max, salary_currency = salary_components(
+            posting.compensation,
+            min_keys=("minValue", "min"),
+            max_keys=("maxValue", "max"),
         )
         return JobRecord(
             id=stable_id(board.key, self.provider_id, remote_id),
@@ -116,7 +118,7 @@ class AshbyProvider:
                 is_remote=posting.is_remote,
             ),
             compensation=posting.compensation,
-            salary=_salary_display(salary_min, salary_max, salary_currency),
+            salary=salary_display(salary_min, salary_max, salary_currency),
             salary_min=salary_min,
             salary_max=salary_max,
             salary_currency=salary_currency,
@@ -154,41 +156,4 @@ def _locations(posting: AshbyJobPosting) -> list[str]:
     return list(dict.fromkeys(values))
 
 
-def _salary_components(
-    compensation: JsonDict | None,
-) -> tuple[float | None, float | None, str | None]:
-    if not compensation:
-        return None, None, None
-    salary_min = _number(compensation.get("minValue") or compensation.get("min"))
-    salary_max = _number(compensation.get("maxValue") or compensation.get("max"))
-    currency = compensation.get("currency") or compensation.get("currencyCode")
-    return salary_min, salary_max, str(currency) if currency else None
 
-
-def _salary_display(
-    salary_min: float | None, salary_max: float | None, currency: str | None
-) -> str | None:
-    values = [value for value in (salary_min, salary_max) if value is not None]
-    if not values:
-        return None
-    prefix = f"{currency} " if currency else ""
-    if salary_min is not None and salary_max is not None:
-        return f"{prefix}{_format_salary(salary_min)} - {_format_salary(salary_max)}"
-    return f"{prefix}{_format_salary(values[0])}"
-
-
-def _number(value: object) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value.replace(",", ""))
-        except ValueError:
-            return None
-    return None
-
-
-def _format_salary(value: float) -> str:
-    return str(int(value)) if value.is_integer() else str(value)

@@ -19,6 +19,11 @@ from openopps.models import (
     validate_public_https_url,
 )
 from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.normalize import (
+    salary_components,
+    salary_display,
+    string as _string,
+)
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
@@ -135,7 +140,11 @@ class BambooHRProvider:
         description_html = _string(merged.get("description"))
         locations = _locations(merged)
         compensation = _json_dict(merged.get("compensation"))
-        salary_min, salary_max, salary_currency = _salary_components(compensation)
+        salary_min, salary_max, salary_currency = salary_components(
+            compensation,
+            min_keys=("minValue", "minimum"),
+            max_keys=("maxValue", "maximum"),
+        )
         posting_url = (
             _string(merged.get("jobOpeningShareUrl"))
             or f"https://{route.host}/careers/{remote_id}"
@@ -157,7 +166,7 @@ class BambooHRProvider:
                 locations, is_remote=_bool(merged.get("isRemote"))
             ),
             compensation=compensation,
-            salary=_salary_display(salary_min, salary_max, salary_currency),
+            salary=salary_display(salary_min, salary_max, salary_currency),
             salary_min=salary_min,
             salary_max=salary_max,
             salary_currency=salary_currency,
@@ -226,49 +235,5 @@ def _raw(value: dict[str, Any]) -> JsonDict:
     return cast(JsonDict, dict(value))
 
 
-def _string(value: object) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None
-
-
 def _bool(value: object) -> bool | None:
     return value if isinstance(value, bool) else None
-
-
-def _salary_components(
-    compensation: JsonDict | None,
-) -> tuple[float | None, float | None, str | None]:
-    if not compensation:
-        return None, None, None
-    salary_min = _number(compensation.get("minValue") or compensation.get("minimum"))
-    salary_max = _number(compensation.get("maxValue") or compensation.get("maximum"))
-    currency = compensation.get("currency") or compensation.get("currencyCode")
-    return salary_min, salary_max, str(currency) if currency else None
-
-
-def _salary_display(
-    salary_min: float | None, salary_max: float | None, currency: str | None
-) -> str | None:
-    values = [value for value in (salary_min, salary_max) if value is not None]
-    if not values:
-        return None
-    prefix = f"{currency} " if currency else ""
-    if salary_min is not None and salary_max is not None:
-        return f"{prefix}{_format_salary(salary_min)} - {_format_salary(salary_max)}"
-    return f"{prefix}{_format_salary(values[0])}"
-
-
-def _number(value: object) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value.replace(",", ""))
-        except ValueError:
-            return None
-    return None
-
-
-def _format_salary(value: float) -> str:
-    return str(int(value)) if value.is_integer() else str(value)
