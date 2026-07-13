@@ -329,6 +329,23 @@ async function loadChunkRefs(
 	return chunks;
 }
 
+function isLoopbackBase(baseUrl: URL) {
+	return (
+		baseUrl.hostname === "127.0.0.1" ||
+		baseUrl.hostname === "localhost" ||
+		baseUrl.hostname === "::1"
+	);
+}
+
+async function loadPublicJsonFromFilesystem<T>(publicPath: string): Promise<T> {
+	const { readFile } = await import("node:fs/promises");
+	const { join } = await import("node:path");
+	const relative = publicPath.replace(/^\/+/, "");
+	const filePath = join(process.cwd(), "public", relative);
+	const raw = await readFile(filePath, "utf8");
+	return JSON.parse(raw) as T;
+}
+
 async function loadPublicJson<T>(
 	baseUrl: URL,
 	publicPath: string,
@@ -337,14 +354,18 @@ async function loadPublicJson<T>(
 	storeStats.chunkFetches += publicPath.includes("/jobs/chunks/") ? 1 : 0;
 	try {
 		const resolved = resolvePublicSearchUrl(baseUrl, publicPath);
+		// Avoid flaky server-side self-HTTP against next start (IPv6/connection races).
+		if (isLoopbackBase(baseUrl) || isLoopbackBase(resolved)) {
+			return await loadPublicJsonFromFilesystem<T>(publicPath);
+		}
 		const response = await fetch(resolved, {
 			...PUBLIC_SEARCH_FETCH_INIT,
 			signal,
 		});
 		if (!response.ok) {
-			throw new Error(String(response.status));
+			throw new Error(`HTTP ${response.status}`);
 		}
-		return response.json() as Promise<T>;
+		return (await response.json()) as T;
 	} catch (caught) {
 		if (caught instanceof DOMException && caught.name === "AbortError") {
 			throw caught;
@@ -352,9 +373,13 @@ async function loadPublicJson<T>(
 		if (caught instanceof Error && caught.name === "AbortError") {
 			throw caught;
 		}
+		const detail =
+			caught instanceof Error
+				? `${caught.name}: ${caught.message || "(empty message)"}`
+				: String(caught);
 		throw new SearchLoadError(
 			"fetch_failed",
-			`Unable to load ${publicPath}: ${errorMessage(caught)}`,
+			`Unable to load ${publicPath}: ${detail}`,
 			publicPath,
 		);
 	}
