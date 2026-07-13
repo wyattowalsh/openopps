@@ -3,10 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearStaticJobDataCachesForTests, getStaticJobDetailIds } from "@/lib/jobs-static-data";
 import { siteUrl } from "@/lib/shared";
 
-import {
-	getAllowlistedPublicSearchOrigin,
-	getPublicJobDetail,
-} from "./jobs-public-data";
+import { getPublicJobDetail } from "./jobs-public-data";
+import { getAllowlistedPublicSearchOrigin } from "./jobs-public-origin";
 
 describe("jobs public data", () => {
 	const originalEnv = { ...process.env };

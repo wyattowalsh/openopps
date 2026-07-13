@@ -26,7 +26,7 @@ security-audit: security-audit-python security-audit-docs
 
 security-audit-python:
     uv export --frozen --all-extras --dev --no-hashes -o /tmp/requirements-audit.txt
-    uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off --severity high
+    uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off
 
 security-audit-docs:
     cd docs && pnpm audit --prod --audit-level high

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { JobBoardFilters } from "@/components/jobs-board/jobs-board-filter-engine";
-import { getAllowlistedPublicSearchOrigin } from "@/lib/jobs-public-data";
+import { getAllowlistedPublicSearchOrigin } from "@/lib/jobs-public-origin";
 import {
 	normalizeJobsSearchFilters,
 	normalizeJobsSearchSortKey,
