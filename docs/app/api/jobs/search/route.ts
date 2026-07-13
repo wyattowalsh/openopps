@@ -14,9 +14,25 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function resolveSearchDataOrigin(requestUrl: URL): URL {
+	// Explicit env always wins (validated allowlist).
+	if (process.env.OPENOPPS_PUBLIC_DATA_ORIGIN?.trim()) {
+		return getAllowlistedPublicSearchOrigin();
+	}
+	// Local next start / Playwright e2e: load static shards from the same host.
+	if (
+		requestUrl.hostname === "localhost" ||
+		requestUrl.hostname === "127.0.0.1" ||
+		requestUrl.hostname === "::1"
+	) {
+		return new URL(`${requestUrl.protocol}//${requestUrl.host}/`);
+	}
+	return getAllowlistedPublicSearchOrigin();
+}
+
 export async function GET(request: Request) {
 	const url = new URL(request.url);
-	const dataOrigin = getAllowlistedPublicSearchOrigin();
+	const dataOrigin = resolveSearchDataOrigin(url);
 	const filters = filtersFromSearchParams(url.searchParams);
 	const sortKey = normalizeJobsSearchSortKey(url.searchParams.get("sort"), filters);
 	const signal = request.signal;
