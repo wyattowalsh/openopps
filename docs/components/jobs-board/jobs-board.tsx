@@ -10,6 +10,7 @@ import {
 import { useJobBoardFilterState } from "@/components/jobs-board/jobs-board-filter-state";
 import { bucketMatchCount, JOBS_BOARD_PAGE_SIZE } from "@/components/jobs-board/jobs-board-constants";
 import {
+	baselineFromRows,
 	baselineFromSearchSummary,
 	baselineLookupFromSavedSearch,
 	isDurableJobWorkflowRecord,
@@ -357,19 +358,29 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const handleCreateSavedSearch = async () => {
 		clearSearchError();
 		try {
-			const summary = await loadJobsSearchSummary(filters, sortKey);
+			let baseline = baselineFromRows(visibleRows);
+			let baselineScope: "full" | "page" = "page";
+			let baselineTotalMatches: number | null = visibleRows.length;
+			try {
+				const summary = await loadJobsSearchSummary(filters, sortKey);
+				baseline = baselineFromSearchSummary(summary);
+				baselineScope = "full";
+				baselineTotalMatches = summary.totalMatches;
+			} catch {
+				// Fall back to page baseline so saves still work if summary is slow/unavailable.
+			}
 			localState.createSavedSearch({
 				filters,
 				rows: visibleRows,
-				baseline: baselineFromSearchSummary(summary),
-				baselineScope: "full",
-				baselineTotalMatches: summary.totalMatches,
+				baseline,
+				baselineScope,
+				baselineTotalMatches,
 				sortKey,
 				manifest,
 			});
 			trackTelemetry("jobs.saved_search_created", {
 				activeFilterCount,
-				matchBucket: bucketMatchCount(summary.totalMatches),
+				matchBucket: bucketMatchCount(baselineTotalMatches ?? visibleRows.length),
 			});
 		} catch (caught) {
 			const message = formatLoadError(caught);
