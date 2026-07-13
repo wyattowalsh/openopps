@@ -20,12 +20,15 @@ function resolveSearchDataOrigin(requestUrl: URL): URL {
 		return getAllowlistedPublicSearchOrigin();
 	}
 	// Local next start / Playwright e2e: load static shards from the same host.
+	// Prefer 127.0.0.1 over "localhost" so Node server-side fetch does not hit
+	// IPv6 ::1 when the Next listener is IPv4-only.
 	if (
 		requestUrl.hostname === "localhost" ||
 		requestUrl.hostname === "127.0.0.1" ||
 		requestUrl.hostname === "::1"
 	) {
-		return new URL(`${requestUrl.protocol}//${requestUrl.host}/`);
+		const port = requestUrl.port ? `:${requestUrl.port}` : "";
+		return new URL(`http://127.0.0.1${port}/`);
 	}
 	return getAllowlistedPublicSearchOrigin();
 }
