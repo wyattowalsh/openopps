@@ -13,10 +13,28 @@ setup:
     cd docs && pnpm install
 
 # Fast local confidence checks.
-quick: cli-help test-cli openspec-status
+quick: cli-help test-cli openspec-list openspec-validate-all
 
-# Full local validation graph matching CI lanes.
+# Full local validation graph matching primary CI lanes.
 ci: diff-check lock-check openspec-validate-all test-cov docs-check docs-build docs-test docs-e2e docs-a11y docs-lint kaggle-meta cli-help
+
+# CI plus network-dependent security audits (GHA Security job parity).
+ci-full: ci security-audit wheel-catalog-smoke
+
+# Local parity with GHA security job (requires network).
+security-audit: security-audit-python security-audit-docs
+
+security-audit-python:
+    uv export --frozen --all-extras --dev --no-hashes -o /tmp/requirements-audit.txt
+    uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off
+
+security-audit-docs:
+    cd docs && pnpm audit --prod --audit-level high
+
+# Build a wheel and confirm packaged portfolio catalog is importable.
+wheel-catalog-smoke:
+    uv build --wheel -o /tmp/openopps-wheels
+    uv run python scripts/smoke_wheel_catalog.py
 
 # Check that uv.lock is current for pyproject.toml.
 lock-check:
@@ -184,16 +202,35 @@ openspec-list:
     {{ openspec }} list --json
 
 # Show one OpenSpec change status as agent-readable JSON.
-openspec-status change="provider-source-scope-hygiene":
-    {{ openspec }} status --change "{{ change }}" --json
+# Pass change=<name> when an active change exists; archived changes are under openspec/changes/archive/.
+openspec-status change="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "{{ change }}" ]]; then
+      {{ openspec }} list --json
+    else
+      {{ openspec }} status --change "{{ change }}" --json
+    fi
 
 # Show OpenSpec task instructions for one change as agent-readable JSON.
-openspec-tasks change="provider-source-scope-hygiene":
+openspec-tasks change="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "{{ change }}" ]]; then
+      echo "usage: just openspec-tasks change=<active-change-name>" >&2
+      exit 2
+    fi
     {{ openspec }} instructions --change "{{ change }}" tasks --json
 
 # Validate one OpenSpec change strictly.
-openspec-validate change="provider-source-scope-hygiene":
-    {{ openspec }} validate "{{ change }}" --strict
+openspec-validate change="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "{{ change }}" ]]; then
+      {{ openspec }} validate --all --strict
+    else
+      {{ openspec }} validate "{{ change }}" --strict
+    fi
 
 # Validate all active OpenSpec changes strictly.
 openspec-validate-all:

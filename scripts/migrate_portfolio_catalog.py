@@ -1,3 +1,4 @@
+# ONE-SHOT maintainer script: refuse re-running after portfolio catalog is extracted.
 """Export packaged portfolio catalog JSON from special.py (phases A–B)."""
 
 from __future__ import annotations

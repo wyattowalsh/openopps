@@ -55,9 +55,7 @@ jobs:
           node-version: 24
 
       - name: Show OpenSpec state
-        run: |
-          npx -y @fission-ai/openspec@1.6.0 list --json
-          npx -y @fission-ai/openspec@1.6.0 status --change provider-source-scope-hygiene --json
+        run: npx -y @fission-ai/openspec@1.6.0 list --json
 
       - name: Validate all changes
         run: npx -y @fission-ai/openspec@1.6.0 validate --all --strict
@@ -85,7 +83,8 @@ jobs:
         run: uv export --frozen --all-extras --dev --no-hashes -o /tmp/requirements-audit.txt
 
       - name: Audit Python dependencies
-        run: uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off --severity high
+        # pip-audit no longer accepts --severity; -r cannot be combined with project_path.
+        run: uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6

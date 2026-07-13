@@ -4,6 +4,7 @@ import { Download, Loader2, Settings2, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { useDialogFocusTrap } from "@/components/jobs-board/dialog-focus";
+import { JobsBoardConfirmDialog } from "@/components/jobs-board/jobs-board-confirm-dialog";
 import type {
 	JobsLocalSettings,
 	JobsLocalStorageStatus,
@@ -66,6 +67,10 @@ export function JobsBoardLocalDataPanel({
 	const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
 	const [replaceConfirmed, setReplaceConfirmed] = useState(false);
 	const [importMessage, setImportMessage] = useState<string | null>(null);
+	const [pendingClear, setPendingClear] = useState<{
+		category: ClearCategory;
+		label: string;
+	} | null>(null);
 	const dialogRef = useRef<HTMLDivElement>(null);
 
 	useDialogFocusTrap(open, dialogRef, onClose);
@@ -93,10 +98,16 @@ export function JobsBoardLocalDataPanel({
 		setImportMessage(result.errors?.join(" ") || "Import failed.");
 	};
 
-	const clearCategory = async (category: ClearCategory, label: string) => {
-		if (!window.confirm(`Clear ${label}? This only changes local browser data.`)) {
+	const clearCategory = (category: ClearCategory, label: string) => {
+		setPendingClear({ category, label });
+	};
+
+	const confirmPendingClear = async () => {
+		if (!pendingClear) {
 			return;
 		}
+		const { category } = pendingClear;
+		setPendingClear(null);
 		await onClearCategory(category);
 	};
 
@@ -314,6 +325,17 @@ export function JobsBoardLocalDataPanel({
 					</section>
 				</div>
 			</div>
+			<JobsBoardConfirmDialog
+				open={Boolean(pendingClear)}
+				title={pendingClear ? `Clear ${pendingClear.label}?` : "Clear local data?"}
+				description="This only changes local browser data for OpenOpps on this device."
+				confirmLabel="Clear"
+				destructive
+				onCancel={() => setPendingClear(null)}
+				onConfirm={() => {
+					void confirmPendingClear();
+				}}
+			/>
 		</div>
 	);
 }

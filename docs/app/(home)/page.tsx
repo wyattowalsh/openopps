@@ -11,8 +11,13 @@ const JobsBoard = dynamic(
 		})),
 	{
 		loading: () => (
-			<div className="opps-loading mx-auto my-8 min-h-[24rem] max-w-[96rem]">
-				<Loader2 className="size-4 animate-spin" />
+			<div
+				className="opps-loading mx-auto my-8 min-h-[24rem] max-w-[96rem]"
+				role="status"
+				aria-live="polite"
+				aria-busy="true"
+			>
+				<Loader2 className="size-4 animate-spin" aria-hidden="true" />
 				Loading open jobs index...
 			</div>
 		),

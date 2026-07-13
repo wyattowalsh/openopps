@@ -42,8 +42,16 @@ test("jobs board supports local workflow controls without analytics", async ({
 	const firstJob = await searchForFirstJob(page);
 
 	await page.getByRole("button", { name: /save current search/i }).click();
-	await page.getByText("Saved searches", { exact: true }).click();
-	await expect(page.getByText(/new or changed/).first()).toBeVisible();
+	const savedDetails = page.locator("details").filter({
+		has: page.getByText("Saved searches", { exact: true }),
+	});
+	await expect(savedDetails).toBeVisible({ timeout: 20_000 });
+	await savedDetails.locator("summary").click();
+	await expect(savedDetails).toHaveAttribute("open", "");
+	// Full-baseline counts resolve asynchronously (syncing → N new or changed).
+	await expect(
+		page.getByText(/new or changed|syncing|full baseline/i).first(),
+	).toBeVisible({ timeout: 20_000 });
 
 	await firstJob.click();
 	await expect(page.getByRole("dialog", { name: /job preview/i })).toHaveCount(0);

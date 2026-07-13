@@ -24,12 +24,32 @@ def test_packaged_portfolio_catalog_json_integrity() -> None:
     )
     payload = json.loads(raw)
     entries = payload["entries"]
+    assert isinstance(payload["version"], int) and payload["version"] >= 2
     assert payload["count"] == len(entries)
     assert payload["fingerprint"] == portfolio_source_catalog_fingerprint(entries)
     records = load_packaged_portfolio_source_records()
     assert len(records) == len(entries)
     loaded_entries = [source_record_to_catalog_entry(record) for record in records]
     assert portfolio_source_catalog_fingerprint(loaded_entries) == payload["fingerprint"]
+
+
+def test_portfolio_fingerprint_includes_provider_and_metadata() -> None:
+    base = {
+        "key": "fp-probe",
+        "url": "https://example.com/portfolio",
+        "provider_id": "public_page",
+        "version": {},
+        "raw_metadata": {"providerType": "venture_firm"},
+    }
+    left = portfolio_source_catalog_fingerprint([base])
+    right = portfolio_source_catalog_fingerprint(
+        [{**base, "raw_metadata": {"providerType": "other"}}]
+    )
+    assert left != right
+    provider_changed = portfolio_source_catalog_fingerprint(
+        [{**base, "provider_id": "getro"}]
+    )
+    assert left != provider_changed
 
 
 def test_packaged_portfolio_catalog_records_are_valid_source_records() -> None:

@@ -298,7 +298,7 @@ The underlying commands remain direct and scriptable:
 uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
 uv lock --check
-rtk npx -y @fission-ai/openspec@latest validate --all --strict
+rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 cd docs && pnpm types:check
 cd docs && pnpm build
 cd docs && pnpm test
@@ -317,9 +317,8 @@ Renovate is configured in `renovate.json` for Python `pyproject.toml`/`uv.lock` 
 Public workflow, CLI, docs-generation, CI, or validation behavior changes must update OpenSpec, README/docs, nested `AGENTS.md`, CI, and `Justfile` in the same logical change. Use OpenSpec JSON/status commands for agent-readable state:
 
 ```bash
-rtk npx -y @fission-ai/openspec@latest list --json
-rtk npx -y @fission-ai/openspec@latest status --change prepare-v0-1-release --json
-rtk npx -y @fission-ai/openspec@latest instructions --change prepare-v0-1-release tasks --json
+rtk npx -y @fission-ai/openspec@1.6.0 list --json
+rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 ```
 
 ## Validation
@@ -335,7 +334,7 @@ cd docs && pnpm build
 cd docs && pnpm lint
 cd docs && pnpm test
 just docs-rtk-lint
-rtk npx -y @fission-ai/openspec@latest validate "prepare-v0-1-release" --strict
+rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 ```
 
 ## Kaggle Bundle

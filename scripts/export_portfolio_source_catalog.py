@@ -1,3 +1,4 @@
+# ONE-SHOT maintainer script: refuse re-running after portfolio catalog is extracted.
 """One-shot exporter: serialize packaged portfolio source records from special.py to JSON.
 
 Run before removing inline catalog literals from special.py:

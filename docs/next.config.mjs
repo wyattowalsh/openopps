@@ -11,6 +11,13 @@ const config = {
   experimental: {
     cpus: 1,
   },
+  // Keep large committed search shards out of serverless function traces.
+  outputFileTracingExcludes: {
+    '*': [
+      './public/data/openopps-search/**/*',
+      'public/data/openopps-search/**/*',
+    ],
+  },
   // `pnpm types:check` is the explicit docs type gate before production builds.
   typescript: {
     ignoreBuildErrors: false,

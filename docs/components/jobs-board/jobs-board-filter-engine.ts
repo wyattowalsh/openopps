@@ -231,13 +231,22 @@ export function filterAndSortJobs(
 ) {
 	const queryTerms = normalize(filters.query).split(/\s+/).filter(Boolean);
 	const filtered = rows.filter((row) => jobMatchesFilters(row, filters));
-	return [...filtered].sort((left, right) => {
-		if (sortKey === "relevance" && queryTerms.length > 0) {
-			return (
-				relevanceScore(right, queryTerms) - relevanceScore(left, queryTerms) ||
-				compareLatestObserved(left, right, "locale")
-			);
-		}
-		return compareLatestObserved(left, right, "locale");
-	});
+	if (sortKey === "relevance" && queryTerms.length > 0) {
+		// Precompute scores once (O(n)); avoid scoring inside the comparator.
+		const scored = filtered.map((row) => ({
+			row,
+			score: relevanceScore(row, queryTerms),
+			observed: text(row[J.latestObserved]),
+		}));
+		scored.sort(
+			(left, right) =>
+				right.score - left.score ||
+				right.observed.localeCompare(left.observed) ||
+				compareLatestObserved(left.row, right.row, "locale"),
+		);
+		return scored.map((entry) => entry.row);
+	}
+	return [...filtered].sort((left, right) =>
+		compareLatestObserved(left, right, "locale"),
+	);
 }

@@ -17,12 +17,14 @@ import type {
 	JobsSearchSummaryResponse,
 } from "@/components/openopps-search/search-types";
 import { J, SearchLoadError, text } from "@/components/openopps-search/search-utils";
+import { resolvePublicSearchUrl } from "@/lib/public-search-url";
 
 export const DEFAULT_JOBS_SEARCH_LIMIT = 250;
 export const MAX_JOBS_SEARCH_LIMIT = 1000;
 export const DEFAULT_JOBS_SEARCH_PAGE_SIZE = 50;
 export const MAX_JOBS_SEARCH_PAGE_SIZE = 100;
 const MAX_CHUNK_FETCHES = 6;
+const FILTER_RESULT_CACHE_MAX = 48;
 const PUBLIC_SEARCH_FETCH_INIT = { cache: "no-store" } satisfies RequestInit;
 
 type SearchPublicJobsIndexOptions = {
@@ -43,6 +45,7 @@ type JobsSearchStore = {
 	jobs: SearchManifest["entities"]["jobs"];
 	rows: SearchRow[];
 	openRows: SearchRow[];
+	rowsById: Map<string, SearchRow>;
 	cacheKey: string;
 };
 
@@ -52,7 +55,8 @@ type JobsSearchStoreStats = {
 };
 
 const storeByBase = new Map<string, Promise<JobsSearchStore>>();
-const filterResultCache = new Map<string, SearchRow[]>();
+/** Bounded FIFO cache of ordered job ids (not full row arrays). */
+const filterResultCache = new Map<string, string[]>();
 const storeStats: JobsSearchStoreStats = {
 	loads: 0,
 	chunkFetches: 0,
@@ -65,10 +69,11 @@ export async function searchPublicJobsIndex({
 	limit = DEFAULT_JOBS_SEARCH_LIMIT,
 	page,
 	pageSize,
+	signal,
 }: SearchPublicJobsIndexOptions): Promise<JobsSearchResponse> {
 	const normalizedPage = normalizePage(page);
 	const normalizedPageSize = normalizePageSize(pageSize ?? limit);
-	const store = await loadJobsSearchStore(baseUrl);
+	const store = await loadJobsSearchStore(baseUrl, signal);
 	const sortedRows = getFilteredSortedRows(store, filters, sortKey);
 	const totalMatches = sortedRows.length;
 	const totalPages = Math.max(1, Math.ceil(totalMatches / normalizedPageSize));
@@ -97,8 +102,9 @@ export async function summarizePublicJobsIndex({
 	filters,
 	sortKey,
 	includeFingerprints = false,
+	signal,
 }: SearchPublicJobsIndexOptions): Promise<JobsSearchSummaryResponse> {
-	const store = await loadJobsSearchStore(baseUrl);
+	const store = await loadJobsSearchStore(baseUrl, signal);
 	const rows = getFilteredSortedRows(store, filters, sortKey);
 	const entries = includeFingerprints
 		? rows
@@ -174,9 +180,16 @@ export function jobsSearchStoreStatsForTests() {
 	return { ...storeStats };
 }
 
-async function loadJobsSearchStore(baseUrl: URL | string): Promise<JobsSearchStore> {
+async function loadJobsSearchStore(
+	baseUrl: URL | string,
+	signal?: AbortSignal,
+): Promise<JobsSearchStore> {
 	const base = normalizeBaseUrl(baseUrl);
 	const baseHref = base.href;
+	// Abortable loads bypass the shared promise cache so a cancelled request cannot poison others.
+	if (signal) {
+		return buildJobsSearchStore(base, signal);
+	}
 	let cached = storeByBase.get(baseHref);
 	if (!cached) {
 		cached = buildJobsSearchStore(base).catch((caught: unknown) => {
@@ -190,9 +203,16 @@ async function loadJobsSearchStore(baseUrl: URL | string): Promise<JobsSearchSto
 	return cached;
 }
 
-async function buildJobsSearchStore(base: URL): Promise<JobsSearchStore> {
+async function buildJobsSearchStore(
+	base: URL,
+	signal?: AbortSignal,
+): Promise<JobsSearchStore> {
 	storeStats.loads += 1;
-	const manifest = await loadPublicJson<SearchManifest>(base, SEARCH_MANIFEST_PATH);
+	const manifest = await loadPublicJson<SearchManifest>(
+		base,
+		SEARCH_MANIFEST_PATH,
+		signal,
+	);
 	validateSearchManifest(manifest);
 	const jobs = manifest.entities.jobs;
 	const refs = jobs.chunks?.length
@@ -206,14 +226,22 @@ async function buildJobsSearchStore(base: URL): Promise<JobsSearchStore> {
 			"Search manifest is missing jobs entity chunks.",
 		);
 	}
-	const chunks = await loadChunkRefs(base, refs);
+	const chunks = await loadChunkRefs(base, refs, signal);
 	const rows = chunks.flatMap((chunk) => chunk.rows);
+	const rowsById = new Map<string, SearchRow>();
+	for (const row of rows) {
+		const id = text(row[J.id]);
+		if (id) {
+			rowsById.set(id, row);
+		}
+	}
 	return {
 		baseHref: base.href,
 		manifest,
 		jobs,
 		rows,
 		openRows: rows.filter((row) => text(row[J.status]) === "open"),
+		rowsById,
 		cacheKey: stableStringify({
 			version: manifest.version,
 			snapshotAt: manifest.snapshotAt,
@@ -236,25 +264,59 @@ function getFilteredSortedRows(
 	sortKey: JobSortKey,
 ) {
 	const key = filterResultCacheKey(store, filters, sortKey);
-	const cached = filterResultCache.get(key);
-	if (cached) {
-		return cached;
+	const cachedIds = filterResultCache.get(key);
+	if (cachedIds) {
+		const reconstructed: SearchRow[] = [];
+		let intact = true;
+		for (const id of cachedIds) {
+			const row = store.rowsById.get(id);
+			if (!row) {
+				intact = false;
+				break;
+			}
+			reconstructed.push(row);
+		}
+		if (intact) {
+			return reconstructed;
+		}
+		filterResultCache.delete(key);
 	}
 	const sourceRows = filters.includeAllIndexed ? store.rows : store.openRows;
 	const sortedRows = filterAndSortJobs(sourceRows, filters, sortKey);
-	filterResultCache.set(key, sortedRows);
+	const ids = sortedRows
+		.map((row) => text(row[J.id]))
+		.filter((id): id is string => Boolean(id));
+	// Only cache when every row has a stable id (otherwise reconstruction is unsafe).
+	if (ids.length === sortedRows.length) {
+		if (filterResultCache.has(key)) {
+			filterResultCache.delete(key);
+		} else if (filterResultCache.size >= FILTER_RESULT_CACHE_MAX) {
+			const oldest = filterResultCache.keys().next().value;
+			if (oldest !== undefined) {
+				filterResultCache.delete(oldest);
+			}
+		}
+		filterResultCache.set(key, ids);
+	}
 	return sortedRows;
 }
 
-async function loadChunkRefs(base: URL, refs: Array<{ path: string }>) {
+async function loadChunkRefs(
+	base: URL,
+	refs: Array<{ path: string }>,
+	signal?: AbortSignal,
+) {
 	const chunks: SearchChunk[] = new Array(refs.length);
 	let cursor = 0;
 	async function worker() {
 		while (cursor < refs.length) {
+			if (signal?.aborted) {
+				throw new DOMException("The operation was aborted.", "AbortError");
+			}
 			const index = cursor;
 			cursor += 1;
 			const ref = refs[index];
-			const chunk = await loadPublicJson<SearchChunk>(base, ref.path);
+			const chunk = await loadPublicJson<SearchChunk>(base, ref.path, signal);
 			validateSearchChunk("jobs", chunk);
 			chunks[index] = chunk;
 		}
@@ -267,21 +329,57 @@ async function loadChunkRefs(base: URL, refs: Array<{ path: string }>) {
 	return chunks;
 }
 
+function isLoopbackBase(baseUrl: URL) {
+	return (
+		baseUrl.hostname === "127.0.0.1" ||
+		baseUrl.hostname === "localhost" ||
+		baseUrl.hostname === "::1"
+	);
+}
+
+async function loadPublicJsonFromFilesystem<T>(publicPath: string): Promise<T> {
+	const { readFile } = await import("node:fs/promises");
+	const { join } = await import("node:path");
+	const relative = publicPath.replace(/^\/+/, "");
+	const filePath = join(process.cwd(), "public", relative);
+	const raw = await readFile(filePath, "utf8");
+	return JSON.parse(raw) as T;
+}
+
 async function loadPublicJson<T>(
 	baseUrl: URL,
 	publicPath: string,
+	signal?: AbortSignal,
 ): Promise<T> {
 	storeStats.chunkFetches += publicPath.includes("/jobs/chunks/") ? 1 : 0;
 	try {
-		const response = await fetch(new URL(publicPath, baseUrl), PUBLIC_SEARCH_FETCH_INIT);
-		if (!response.ok) {
-			throw new Error(String(response.status));
+		const resolved = resolvePublicSearchUrl(baseUrl, publicPath);
+		// Avoid flaky server-side self-HTTP against next start (IPv6/connection races).
+		if (isLoopbackBase(baseUrl) || isLoopbackBase(resolved)) {
+			return await loadPublicJsonFromFilesystem<T>(publicPath);
 		}
-		return response.json() as Promise<T>;
+		const response = await fetch(resolved, {
+			...PUBLIC_SEARCH_FETCH_INIT,
+			signal,
+		});
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+		return (await response.json()) as T;
 	} catch (caught) {
+		if (caught instanceof DOMException && caught.name === "AbortError") {
+			throw caught;
+		}
+		if (caught instanceof Error && caught.name === "AbortError") {
+			throw caught;
+		}
+		const detail =
+			caught instanceof Error
+				? `${caught.name}: ${caught.message || "(empty message)"}`
+				: String(caught);
 		throw new SearchLoadError(
 			"fetch_failed",
-			`Unable to load ${publicPath}: ${errorMessage(caught)}`,
+			`Unable to load ${publicPath}: ${detail}`,
 			publicPath,
 		);
 	}
