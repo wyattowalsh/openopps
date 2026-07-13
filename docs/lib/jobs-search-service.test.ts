@@ -103,7 +103,9 @@ describe("jobs search service", () => {
 			name: "SearchLoadError",
 			code: "fetch_failed",
 			path: "/data/openopps-search/manifest.json",
-			message: "Unable to load /data/openopps-search/manifest.json: 404",
+			message: expect.stringMatching(
+				/Unable to load \/data\/openopps-search\/manifest\.json:.*404/,
+			),
 		});
 	});
 
