@@ -72,7 +72,8 @@ async def test_retrying_json_request_records_http_retries_for_bound_metrics():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_retrying_json_request_records_http_retries_on_client_attribute():
+async def test_retrying_json_request_ignores_client_attribute_metrics():
+    """Retry accounting is ContextVar-only; client attrs are not dual-written."""
     settings = OpenOppsSettings(retry_attempts=2, cache_enabled=False)
     route = respx.get("https://api.example.test/data").mock(
         side_effect=[
@@ -90,7 +91,8 @@ async def test_retrying_json_request_records_http_retries_on_client_attribute():
 
     assert data == {"ok": True}
     assert route.call_count == 2
-    assert metrics.retries == 1
+    # Without bind_http_retry_metrics, retries stay at zero even if client attr is set.
+    assert metrics.retries == 0
 
 
 @pytest.mark.asyncio

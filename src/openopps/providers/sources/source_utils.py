@@ -56,14 +56,28 @@ def catalog_entry_to_source_record(entry: Mapping[str, Any]) -> SourceRecord:
 def portfolio_source_catalog_fingerprint(
     entries: Sequence[Mapping[str, Any]],
 ) -> str:
-    """Stable hash over sorted source keys and canonical URLs."""
+    """Stable hash over full catalog entries (key, url, provider, version, metadata)."""
 
-    pairs = sorted(
-        (str(entry["key"]), str(entry["url"]))
-        for entry in entries
-        if entry.get("key") and entry.get("url")
-    )
-    return canonical_json_hash(pairs)
+    normalized: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        key = entry.get("key")
+        url = entry.get("url")
+        provider_id = entry.get("provider_id")
+        if not key or not url or not provider_id:
+            continue
+        normalized.append(
+            {
+                "key": str(key),
+                "url": str(url),
+                "provider_id": str(provider_id),
+                "version": dict(entry.get("version") or {}),
+                "raw_metadata": dict(entry.get("raw_metadata") or {}),
+            }
+        )
+    normalized.sort(key=lambda item: item["key"])
+    return canonical_json_hash(normalized)
 
 
 @lru_cache(maxsize=1)
@@ -78,25 +92,48 @@ def load_packaged_portfolio_source_records() -> tuple[SourceRecord, ...]:
         raise ValueError(
             f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} must contain an 'entries' list"
         )
+    payload_version = payload.get("version")
+    if not isinstance(payload_version, int) or payload_version < 2:
+        raise ValueError(
+            f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} must declare integer version >= 2"
+        )
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} entries must be objects"
+            )
+        for field in ("key", "url", "provider_id"):
+            value = entry.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} entry missing {field}"
+                )
     records = tuple(
         catalog_entry_to_source_record(entry)
         for entry in entries
         if isinstance(entry, dict)
     )
     expected_count = payload.get("count")
-    if isinstance(expected_count, int) and expected_count != len(records):
+    if not isinstance(expected_count, int):
+        raise ValueError(
+            f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} must include integer count"
+        )
+    if expected_count != len(records):
         raise ValueError(
             f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} count mismatch: "
             f"expected {expected_count}, got {len(records)}"
         )
     fingerprint = payload.get("fingerprint")
-    if isinstance(fingerprint, str):
-        actual = portfolio_source_catalog_fingerprint(entries)
-        if fingerprint != actual:
-            raise ValueError(
-                f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} fingerprint mismatch: "
-                f"expected {fingerprint}, got {actual}"
-            )
+    if not isinstance(fingerprint, str) or not fingerprint.strip():
+        raise ValueError(
+            f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} must include string fingerprint"
+        )
+    actual = portfolio_source_catalog_fingerprint(entries)
+    if fingerprint != actual:
+        raise ValueError(
+            f"{PACKAGED_PORTFOLIO_CATALOG_FILENAME} fingerprint mismatch: "
+            f"expected {fingerprint}, got {actual}"
+        )
     keys = [record.key for record in records]
     if len(keys) != len(set(keys)):
         duplicates = sorted({key for key in keys if keys.count(key) > 1})
@@ -149,17 +186,16 @@ async def fetch_text(
     if url.lower().startswith("manual://"):
         raise ValueError(f"Manual source {url} must provide embedded rows or CSV text")
     settings = getattr(client, "_openopps_settings", None)
-    if isinstance(settings, OpenOppsSettings):
-        return await retrying_text_request(settings)(
-            client,
-            "GET",
-            url,
-            headers={"accept": accept},
-            follow_redirects=True,
-        )
-    response = await client.get(url, headers={"accept": accept}, follow_redirects=True)
-    response.raise_for_status()
-    return response.text
+    if not isinstance(settings, OpenOppsSettings):
+        # Prefer settings attached by the HTTP client factory; fall back to defaults.
+        settings = OpenOppsSettings()
+    return await retrying_text_request(settings)(
+        client,
+        "GET",
+        url,
+        headers={"accept": accept},
+        follow_redirects=True,
+    )
 
 
 def csv_records(text: str) -> list[dict[str, str]]:

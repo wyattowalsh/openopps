@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	DEFAULT_JOB_BOARD_FILTERS,
@@ -12,6 +12,7 @@ import {
 	skillMatches,
 	sourceKeyMatches,
 } from "@/components/jobs-board/jobs-board-filter-engine";
+import * as searchJobCore from "@/lib/search-job-core";
 import type { SearchRow } from "@/components/openopps-search/search-types";
 import { formatSalary, J } from "@/components/openopps-search/search-utils";
 
@@ -328,5 +329,23 @@ describe("jobs-board-filter-engine", () => {
 				postedBefore: "2026-05-31",
 			}),
 		).toBe(false);
+	});
+
+	it("precomputes relevance scores at most once per filtered row", () => {
+		const spy = vi.spyOn(searchJobCore, "relevanceScoreForJobRow");
+		const rows = [
+			makeRow({ id: "a", title: "Platform Engineer" }),
+			makeRow({ id: "b", title: "Platform Lead" }),
+			makeRow({ id: "c", title: "Sales Manager" }),
+		];
+		filterAndSortJobs(
+			rows,
+			{ ...DEFAULT_JOB_BOARD_FILTERS, query: "platform" },
+			"relevance",
+		);
+		// All three rows match empty non-query filters; scoring is once per filtered row.
+		expect(spy.mock.calls.length).toBeLessThanOrEqual(rows.length);
+		expect(spy.mock.calls.length).toBeGreaterThan(0);
+		spy.mockRestore();
 	});
 });

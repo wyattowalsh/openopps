@@ -19,34 +19,47 @@ export async function GET(request: Request) {
 	const dataOrigin = getAllowlistedPublicSearchOrigin();
 	const filters = filtersFromSearchParams(url.searchParams);
 	const sortKey = normalizeJobsSearchSortKey(url.searchParams.get("sort"), filters);
-	if (parseBooleanParam(url.searchParams.get("summary"))) {
-		const summary = await summarizePublicJobsIndex({
+	const signal = request.signal;
+	try {
+		if (parseBooleanParam(url.searchParams.get("summary"))) {
+			const summary = await summarizePublicJobsIndex({
+				baseUrl: dataOrigin,
+				filters,
+				sortKey,
+				signal,
+			});
+			return NextResponse.json(summary, {
+				headers: {
+					"Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+				},
+			});
+		}
+		const result = await searchPublicJobsIndex({
 			baseUrl: dataOrigin,
 			filters,
 			sortKey,
+			limit: normalizeLimit(url.searchParams.get("limit")),
+			page: normalizePage(url.searchParams.get("page")),
+			pageSize: normalizePageSize(
+				url.searchParams.get("pageSize") ?? url.searchParams.get("limit"),
+			),
+			signal,
 		});
-		return NextResponse.json(summary, {
+
+		return NextResponse.json(result, {
 			headers: {
 				"Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
 			},
 		});
+	} catch (caught) {
+		if (
+			(caught instanceof DOMException && caught.name === "AbortError") ||
+			(caught instanceof Error && caught.name === "AbortError")
+		) {
+			return new NextResponse(null, { status: 499 });
+		}
+		throw caught;
 	}
-	const result = await searchPublicJobsIndex({
-		baseUrl: dataOrigin,
-		filters,
-		sortKey,
-		limit: normalizeLimit(url.searchParams.get("limit")),
-		page: normalizePage(url.searchParams.get("page")),
-		pageSize: normalizePageSize(
-			url.searchParams.get("pageSize") ?? url.searchParams.get("limit"),
-		),
-	});
-
-	return NextResponse.json(result, {
-		headers: {
-			"Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
-		},
-	});
 }
 
 function filtersFromSearchParams(params: URLSearchParams): JobBoardFilters {

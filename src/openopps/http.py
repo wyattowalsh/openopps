@@ -643,13 +643,8 @@ def _int_or_default(value: object, default: int) -> int:
 
 
 def _record_http_retry_before_sleep(retry_state: RetryCallState) -> None:
-    if retry_state.args:
-        client = retry_state.args[0]
-        if isinstance(client, httpx.AsyncClient):
-            metrics = getattr(client, "_openopps_sync_metrics", None)
-            if isinstance(metrics, SyncMetrics):
-                metrics.retries += 1
-                return
+    # Prefer ContextVar-bound SyncMetrics from bind_http_retry_metrics().
+    del retry_state
     record_http_retry()
 
 

@@ -1,3 +1,4 @@
+# ONE-SHOT maintainer script: refuse re-running after portfolio catalog is extracted.
 """Phase C: drop inline portfolio catalog from special.py after JSON is written."""
 
 from __future__ import annotations

@@ -11,7 +11,11 @@ from urllib.parse import urlencode, urljoin, urlparse
 import httpx
 from loguru import logger
 
-from openopps.http import retrying_json_request, retrying_text_request
+from openopps.http import (
+    _request_with_public_redirect_validation,
+    retrying_json_request,
+    retrying_text_request,
+)
 from openopps.models import (
     AshbyJobBoardResponse,
     BoardProviderRecord,
@@ -795,7 +799,11 @@ class VentureCapitalCareersSourceAdapter:
                 break
 
     async def _fetch_page(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
-        response = await client.get(
+        # Use public redirect validation (credential strip + URL allowlist) rather
+        # than raw client.get(follow_redirects=True).
+        response = await _request_with_public_redirect_validation(
+            client,
+            "GET",
             url,
             headers={"accept": "text/html", "user-agent": "Mozilla/5.0"},
             follow_redirects=True,
@@ -876,7 +884,9 @@ class VentureLoopSourceAdapter:
         page_size: int,
     ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
         validate_public_https_url(source.url)
-        response = await client.get(
+        response = await _request_with_public_redirect_validation(
+            client,
+            "GET",
             source.url,
             headers={"accept": "text/html", "user-agent": "Mozilla/5.0"},
             follow_redirects=True,

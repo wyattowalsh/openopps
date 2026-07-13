@@ -1,1 +1,0 @@
-"""Catalog contract tests live in test_portfolio_source_catalog.py."""

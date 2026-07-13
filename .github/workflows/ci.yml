@@ -55,9 +55,7 @@ jobs:
           node-version: 24
 
       - name: Show OpenSpec state
-        run: |
-          npx -y @fission-ai/openspec@1.6.0 list --json
-          npx -y @fission-ai/openspec@1.6.0 status --change provider-source-scope-hygiene --json
+        run: npx -y @fission-ai/openspec@1.6.0 list --json
 
       - name: Validate all changes
         run: npx -y @fission-ai/openspec@1.6.0 validate --all --strict

@@ -494,13 +494,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				</div>
 
 				{indexNote ? (
-					<p
-						className="mt-3 text-xs text-muted-foreground"
-						role="status"
-						aria-live="polite"
-					>
-						{indexNote}
-					</p>
+					<p className="mt-3 text-xs text-muted-foreground">{indexNote}</p>
 				) : null}
 
 				{error ? (
