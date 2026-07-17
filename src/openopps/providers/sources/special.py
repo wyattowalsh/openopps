@@ -12,7 +12,7 @@ import httpx
 from loguru import logger
 
 from openopps.http import (
-    _request_with_public_redirect_validation,
+    request_with_public_redirect_validation,
     retrying_json_request,
     retrying_text_request,
 )
@@ -20,6 +20,7 @@ from openopps.models import (
     AshbyJobBoardResponse,
     BoardProviderRecord,
     BoardRecord,
+    GreenhouseJobsResponse,
     ProviderSupport,
     SourceRecord,
     YCombinatorAlgoliaResponse,
@@ -28,6 +29,10 @@ from openopps.models import (
     normalize_public_website_url,
     utc_now,
     validate_public_https_url,
+)
+from openopps.providers.boards.tokens import (
+    greenhouse_token_from_url,
+    lever_token_from_url,
 )
 from openopps.providers.boards.workable import workable_token_from_url
 from openopps.providers.sources.source_utils import (
@@ -417,6 +422,117 @@ def _domain_from_public_page_url(url: str) -> str | None:
     return (parsed.hostname or "").lower().removeprefix("www.") or None
 
 
+class _StaticJobBoardSourceAdapter:
+    route_provider_id: str
+    route_provider_label: str
+
+    def __init__(self, settings: OpenOppsSettings):
+        self.settings = settings
+        self._request_json = retrying_json_request(settings)
+
+    async def iter_boards(
+        self,
+        client: httpx.AsyncClient,
+        source: SourceRecord,
+        *,
+        page_size: int,
+    ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
+        del page_size
+        validate_public_https_url(source.url)
+        token = str(
+            source.raw_metadata.get("token") or self._token_from_url(source.url)
+        )
+        label = str(source.raw_metadata.get("label") or token)
+        remote_slug = slugify(token)
+        board_key = source_board_key(source.key, remote_slug)
+        total = await self._job_count(client, token)
+        now = utc_now()
+        board = BoardRecord(
+            key=board_key,
+            source_key=source.key,
+            remote_id=token,
+            remote_slug=remote_slug,
+            name=label,
+            num_jobs_hint=total,
+            raw_payload={"sourceUrl": source.url, "token": token},
+            synced_at=now,
+        )
+        provider = BoardProviderRecord(
+            id=stable_id(source.key, board_key, self.route_provider_id),
+            source_key=source.key,
+            board_key=board_key,
+            provider_id=self.route_provider_id,
+            label=self.route_provider_label,
+            support_level=ProviderSupport.JOBS,
+            count_hint=total,
+            board_url=source.url,
+            token=token,
+            raw_payload={"sourceUrl": source.url, "token": token},
+            detected_at=now,
+        )
+        yield [board], [provider], {"token": token, "total": total}
+
+    def _token_from_url(self, url: str) -> str:
+        raise NotImplementedError
+
+    async def _job_count(self, client: httpx.AsyncClient, token: str) -> int:
+        raise NotImplementedError
+
+
+class GreenhouseSourceAdapter(_StaticJobBoardSourceAdapter):
+    provider_id = "greenhouse_source"
+    provider_label = "Greenhouse Source"
+    provider_description = (
+        "Direct Greenhouse source adapter that exposes a public job board as one route."
+    )
+    route_provider_id = "greenhouse"
+    route_provider_label = "Greenhouse"
+
+    def _token_from_url(self, url: str) -> str:
+        token = greenhouse_token_from_url(url)
+        if not token:
+            raise ValueError("Greenhouse source URL must include a board token")
+        return token
+
+    async def _job_count(self, client: httpx.AsyncClient, token: str) -> int:
+        data = await self._request_json(
+            client,
+            "GET",
+            f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs",
+            params={"content": "false"},
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Greenhouse jobs endpoint returned invalid JSON")
+        return len(GreenhouseJobsResponse.model_validate(data).jobs)
+
+
+class LeverSourceAdapter(_StaticJobBoardSourceAdapter):
+    provider_id = "lever_source"
+    provider_label = "Lever Source"
+    provider_description = (
+        "Direct Lever source adapter that exposes a public job board as one route."
+    )
+    route_provider_id = "lever"
+    route_provider_label = "Lever"
+
+    def _token_from_url(self, url: str) -> str:
+        token = lever_token_from_url(url)
+        if not token:
+            raise ValueError("Lever source URL must include a board token")
+        return token
+
+    async def _job_count(self, client: httpx.AsyncClient, token: str) -> int:
+        data = await self._request_json(
+            client,
+            "GET",
+            f"https://api.lever.co/v0/postings/{token}",
+            params={"mode": "json"},
+        )
+        if not isinstance(data, list):
+            raise ValueError("Lever postings endpoint returned invalid JSON")
+        return len(data)
+
+
 class WorkableSourceAdapter:
     provider_id = "workable_source"
     provider_label = "Workable Source"
@@ -801,7 +917,7 @@ class VentureCapitalCareersSourceAdapter:
     async def _fetch_page(self, client: httpx.AsyncClient, url: str) -> httpx.Response:
         # Use public redirect validation (credential strip + URL allowlist) rather
         # than raw client.get(follow_redirects=True).
-        response = await _request_with_public_redirect_validation(
+        response = await request_with_public_redirect_validation(
             client,
             "GET",
             url,
@@ -884,7 +1000,7 @@ class VentureLoopSourceAdapter:
         page_size: int,
     ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
         validate_public_https_url(source.url)
-        response = await _request_with_public_redirect_validation(
+        response = await request_with_public_redirect_validation(
             client,
             "GET",
             source.url,

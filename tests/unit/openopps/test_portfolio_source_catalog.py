@@ -19,8 +19,10 @@ _PACKAGED_CATALOG_RESOURCE = "portfolio_source_catalog.json"
 
 def test_packaged_portfolio_catalog_json_integrity() -> None:
     package = "openopps.providers.sources.data"
-    raw = resources.files(package).joinpath(_PACKAGED_CATALOG_RESOURCE).read_text(
-        encoding="utf-8"
+    raw = (
+        resources.files(package)
+        .joinpath(_PACKAGED_CATALOG_RESOURCE)
+        .read_text(encoding="utf-8")
     )
     payload = json.loads(raw)
     entries = payload["entries"]
@@ -30,7 +32,9 @@ def test_packaged_portfolio_catalog_json_integrity() -> None:
     records = load_packaged_portfolio_source_records()
     assert len(records) == len(entries)
     loaded_entries = [source_record_to_catalog_entry(record) for record in records]
-    assert portfolio_source_catalog_fingerprint(loaded_entries) == payload["fingerprint"]
+    assert (
+        portfolio_source_catalog_fingerprint(loaded_entries) == payload["fingerprint"]
+    )
 
 
 def test_portfolio_fingerprint_includes_provider_and_metadata() -> None:
@@ -85,7 +89,6 @@ def test_board_source_catalog_passes_scope_and_https_invariants() -> None:
         assert parsed.hostname, key
 
 
-
 def test_packaged_portfolio_catalog_public_page_urls_are_https() -> None:
     """Packaged portfolio records should use public HTTPS URLs for scrapable pages."""
     invalid: list[str] = []
@@ -99,8 +102,7 @@ def test_packaged_portfolio_catalog_public_page_urls_are_https() -> None:
             validate_public_https_url(record.url)
         except ValueError:
             invalid.append(record.key)
-    # Pre-existing catalog may include a small set of non-public hosts; keep empty when clean.
-    assert len(invalid) <= 5, invalid
+    assert invalid == []
 
 
 def test_getro_and_consider_catalog_metadata_invariants() -> None:
@@ -121,6 +123,59 @@ def test_getro_and_consider_catalog_metadata_invariants() -> None:
         assert str(record.raw_metadata.get("board") or "").strip(), record.key
         parsed = urlparse(record.url)
         assert parsed.scheme == "https" and parsed.hostname, record.key
+
+
+def test_requested_consider_sources_preserve_board_routes() -> None:
+    expected = {
+        "blueprinttalentgroup": "blue-print-talent-group",
+        "kinvie": "kinvie",
+        "midoceanpartners": "midocean-partners",
+        "pretium": "pretium",
+        "quantonation": "quantonation",
+        "singaporeglobalnetwork": "singapore-global-network",
+    }
+    for key, board_slug in expected.items():
+        record = BOARD_SOURCE_CATALOG[key]
+        assert record.provider_id == "consider"
+        assert record.raw_metadata == {"board": board_slug}
+        if urlparse(record.url).hostname == "consider.com":
+            assert f"/boards/vc/{board_slug}/" in record.url
+        else:
+            assert key == "quantonation"
+            assert record.url == "https://jobs.quantonation.com/companies"
+
+
+def test_packaged_direct_ats_sources_have_route_metadata() -> None:
+    provider_hosts = {
+        "ashby": "jobs.ashbyhq.com",
+        "greenhouse_source": "job-boards.greenhouse.io",
+        "lever_source": "jobs.lever.co",
+        "workable_source": "apply.workable.com",
+    }
+    direct_sources = [
+        record
+        for record in load_packaged_portfolio_source_records()
+        if record.provider_id in provider_hosts
+    ]
+    assert direct_sources
+    expected_taxonomy = {
+        "providerType": "job_board",
+        "coverageMode": "portfolio_jobs",
+        "accessType": "public_json_api",
+        "licenseStatus": "public_attribution_required",
+        "refreshCadence": "periodic",
+        "sourceCategory": "startup_ecosystem",
+    }
+    for record in direct_sources:
+        assert str(record.raw_metadata.get("token") or "").strip(), record.key
+        assert str(record.raw_metadata.get("label") or "").strip(), record.key
+        for field, expected in expected_taxonomy.items():
+            assert record.raw_metadata.get(field) == expected, record.key
+        assert str(record.raw_metadata.get("sourceAttribution") or "").strip(), (
+            record.key
+        )
+        assert str(record.raw_metadata.get("inclusionReason") or "").strip(), record.key
+        assert urlparse(record.url).hostname == provider_hosts[record.provider_id]
 
 
 def test_board_source_catalog_special_adapter_entries() -> None:

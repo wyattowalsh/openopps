@@ -21,6 +21,8 @@ from openopps.providers.sources.special import (
     WORKABLE_1871_SOURCE,
     YCOMBINATOR_SOURCE,
     AshbySourceAdapter,
+    GreenhouseSourceAdapter,
+    LeverSourceAdapter,
     PublicPageSourceAdapter,
     SouthParkCommonsSourceAdapter,
     VentureCapitalCareersSourceAdapter,
@@ -675,6 +677,81 @@ async def test_workable_source_adapter_extracts_token_from_api_url():
     assert boards[0].remote_id == "acme"
     assert providers[0].token == "acme"
     assert meta["token"] == "acme"
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    (
+        "adapter_cls",
+        "source",
+        "expected_board_key",
+        "expected_provider",
+        "api_url",
+        "payload",
+        "expected_total",
+    ),
+    [
+        (
+            GreenhouseSourceAdapter,
+            SourceRecord(
+                key="acmegreenhouse",
+                url="https://job-boards.greenhouse.io/acme",
+                provider_id="greenhouse_source",
+                raw_metadata={"label": "Acme", "token": "acme"},
+            ),
+            "acmegreenhouse:acme",
+            "greenhouse",
+            "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=false",
+            {"jobs": [{"id": 1}, {"id": 2}]},
+            2,
+        ),
+        (
+            LeverSourceAdapter,
+            SourceRecord(
+                key="acmelever",
+                url="https://jobs.lever.co/Acme-Corp",
+                provider_id="lever_source",
+                raw_metadata={"label": "Acme", "token": "Acme-Corp"},
+            ),
+            "acmelever:acme-corp",
+            "lever",
+            "https://api.lever.co/v0/postings/Acme-Corp?mode=json",
+            [{"id": "one"}],
+            1,
+        ),
+    ],
+)
+async def test_static_job_board_source_emits_existing_provider_route(
+    adapter_cls,
+    source,
+    expected_board_key,
+    expected_provider,
+    api_url,
+    payload,
+    expected_total,
+):
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(api_url).mock(return_value=httpx.Response(200, json=payload))
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in adapter_cls(settings).iter_boards(
+                client, source, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert boards[0].key == expected_board_key
+    assert boards[0].name == "Acme"
+    assert boards[0].num_jobs_hint == expected_total
+    assert providers[0].provider_id == expected_provider
+    assert providers[0].support_level == "jobs"
+    assert providers[0].count_hint == expected_total
+    assert providers[0].board_url == source.url
+    assert providers[0].token == source.raw_metadata["token"]
+    assert meta == {"token": source.raw_metadata["token"], "total": expected_total}
 
 
 @pytest.mark.asyncio
