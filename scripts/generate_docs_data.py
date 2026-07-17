@@ -71,7 +71,7 @@ def _source_taxonomy_data(raw_metadata: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     output_path = (
         Path(__file__).resolve().parents[1]
-        / "docs"
+        / "web"
         / "lib"
         / "generated"
         / "openopps-data.json"

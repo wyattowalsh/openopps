@@ -84,7 +84,7 @@ def test_verifier_rejects_untracked_generated_files(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     root = write_artifacts(repo)
     subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
-    subprocess.run(["git", "add", "docs/public/data/openopps-search/manifest.json"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "web/public/data/openopps-search/manifest.json"], cwd=repo, check=True)
 
     errors = validate_artifacts(root, require_git_tracked=True)
 
@@ -93,7 +93,7 @@ def test_verifier_rejects_untracked_generated_files(tmp_path: Path) -> None:
 
 
 def write_artifacts(base: Path) -> Path:
-    root = base / "docs" / "public" / "data" / "openopps-search"
+    root = base / "web" / "public" / "data" / "openopps-search"
     write_json(
         root / "manifest.json",
         {

@@ -1,9 +1,11 @@
 ---
 title: Contributing
-description: Local setup, validation, docs generation, source-batch rules, and review expectations.
+description: Local setup, validation, web app generation, source-batch rules, and review expectations.
 ---
 
-OpenOpps changes should keep the CLI, docs, generated artifacts, OpenSpec, and validation recipes aligned. The project is pre-release, but the local workflow should still be reproducible and reviewable.
+OpenOpps changes should keep the CLI, web app, generated artifacts, OpenSpec, and validation recipes aligned. The project is pre-release, but the local workflow should still be reproducible and reviewable.
+
+**Package vs URL:** The Next/Fumadocs package lives under `web/` in the repository. Public docs routes stay under `/docs/*` (for example `/docs/contributing`).
 
 ## Local Setup
 
@@ -11,7 +13,7 @@ OpenOpps changes should keep the CLI, docs, generated artifacts, OpenSpec, and v
 uv sync
 just --list
 uv run openopps --help
-cd docs && pnpm install
+cd web && pnpm install
 ```
 
 Use `uv run openopps ...` inside the repository checkout. Install the editable tool only when you want the `openopps` command available directly:
@@ -23,15 +25,15 @@ openopps status
 
 ## Validation
 
-Use `just` from the repository root for local parity with GitHub Actions:
+Use `just` from the repository root for local parity with GitHub Actions. Prefer the canonical **`web-*`** recipes; transitional **`docs-*`** aliases invoke the same `web-*` recipes.
 
 ```bash
 just quick
 just ci
 just lock-check
 just openspec-validate-all
-just docs-check
-just docs-test
+just web-check
+just web-test
 just cli-help
 ```
 
@@ -42,21 +44,21 @@ uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
 uv lock --check
 rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
-cd docs && pnpm types:check
-cd docs && pnpm build
-cd docs && pnpm lint
-cd docs && pnpm test
-just docs-search-index-check
+cd web && pnpm types:check
+cd web && pnpm build
+cd web && pnpm lint
+cd web && pnpm test
+just web-search-index-check
 ```
 
-`just ci` runs `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not part of the default CI recipe.
+`just ci` runs `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `web-check`, `web-build`, `web-test`, `web-e2e`, `web-a11y`, `web-lint`, `kaggle-meta`, and `cli-help`. `just web-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not part of the default CI recipe.
 
-## Docs Workflow
+## Web App Workflow
 
-Docs content lives in `docs/content/docs/*.mdx`, and navigation order lives in `docs/content/docs/meta.json`.
+Docs content lives in `web/content/docs/*.mdx`, and navigation order lives in `web/content/docs/meta.json`.
 
 ```bash
-cd docs
+cd web
 pnpm data:generate
 pnpm types:check
 pnpm build
@@ -65,16 +67,16 @@ pnpm test
 ```
 
 `pnpm data:generate` refreshes package-derived source/provider/export metadata. `pnpm types:check` also regenerates that metadata before Fumadocs MDX artifacts, Next.js route types, and TypeScript checks.
-Use `just docs-build` from the repository root for production docs build assurance; it also runs the API function trace check.
+Use `just web-build` from the repository root for production web build assurance; it also runs the API function trace check.
 
-The static jobs/explorer index is separate because it requires the ignored local SQLite snapshot:
+The static jobs/explorer index is separate because regeneration requires a **clean** local public `kaggle/openoppsdb.sqlite` snapshot (ignored by git). Recipes fail loud if that file is missing:
 
 ```bash
-just docs-search-index
-just docs-search-index-check
+just web-search-index
+just web-search-index-check
 ```
 
-Run the search-index check before release when refreshing `docs/public/data/openopps-search/`.
+CI never opens SQLite. It validates the **committed** search artifact graph with `just web-search-artifacts-check` and the schema check inside `just web-check` (`pytest -k committed`). Run `just web-search-index-check` before release only when intentionally regenerating `web/public/data/openopps-search/` from a clean local snapshot.
 
 ## Public Workflow Changes
 

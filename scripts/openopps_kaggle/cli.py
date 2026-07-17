@@ -73,7 +73,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "verify-readback":
         from openopps_kaggle.verify_readback import main as readback_main
 
-        readback_argv = ["verify-readback"]
+        # verify_readback.main parses option flags only (no subcommand token).
+        readback_argv: list[str] = []
         if args.dataset:
             readback_argv.extend(["--dataset", args.dataset])
         if args.version is not None:

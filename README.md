@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/public/brand/openopps-logo.png" alt="OpenOpps logo" width="128" height="128">
+  <img src="web/public/brand/openopps-logo.png" alt="OpenOpps logo" width="128" height="128">
 </p>
 
 # OpenOpps
@@ -258,13 +258,13 @@ out of commits.
 | `tests/`                          | Pytest suites split by `unit`, `integration`, and `smoke` scopes.          |
 | `scripts/`                        | Helper scripts, including deterministic docs and Kaggle bundle generation. |
 | `kaggle/`                         | Generated Kaggle dataset metadata, data dictionary, and snapshot notebook. |
-| `docs/`                           | Next.js/Fumadocs developer docs site.                                      |
+| `web/`                           | Next.js/Fumadocs web app (docs + jobs workbench).                                      |
 | `openspec/`                       | OpenSpec specs and change tracking.                                        |
 
 ## Docs Site
 
 ```bash
-cd docs
+cd web
 pnpm install
 pnpm data:generate
 pnpm dev
@@ -274,7 +274,7 @@ pnpm lint
 pnpm test
 ```
 
-Documentation content lives in `docs/content/docs/`; Fumadocs navigation is curated by `docs/content/docs/meta.json`.
+Documentation content lives in `web/content/docs/`; Fumadocs navigation is curated by `web/content/docs/meta.json`.
 The docs IA is organized as `/docs`, `/docs/cli`, `/docs/configuration`, `/docs/data-model`, `/docs/providers`, `/docs/operations`, and `/docs/contributing`; the jobs workbench lives at `/`, and the data dashboard lives at `/explorer`.
 LLM-readable exports are served at `/llms.txt` (compact index) and `/llms-full.txt` (full docs text) when the docs app is running or deployed.
 
@@ -299,18 +299,18 @@ uv run pytest
 uv run pytest --cov=openopps --cov-report=term-missing
 uv lock --check
 rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
-cd docs && pnpm types:check
-cd docs && pnpm build
-cd docs && pnpm test
-cd docs && pnpm exec playwright test --project=chromium
-cd docs && pnpm exec playwright test --project=mobile-chromium accessibility.spec.ts
-just docs-search-index-check
+cd web && pnpm types:check
+cd web && pnpm build
+cd web && pnpm test
+cd web && pnpm exec playwright test --project=chromium
+cd web && pnpm exec playwright test --project=mobile-chromium accessibility.spec.ts
+just web-search-index-check
 just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
 `just ci` runs `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`. `just docs-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not part of the default CI recipe.
-`just docs-search-index-check` is the explicit maintainer release gate for the committed static docs search snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `docs/public/data/openopps-search/`, and fails on remaining snapshot drift.
+`just web-search-index-check` is the explicit maintainer release gate for the committed static docs search snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `web/public/data/openopps-search/`, and fails on remaining snapshot drift.
 
 Renovate is configured in `renovate.json` for Python `pyproject.toml`/`uv.lock` and docs `package.json`/`pnpm-lock.yaml` maintenance. Review dependency PRs with the same `just ci` path used for local release validation.
 
@@ -329,10 +329,10 @@ uv run pytest --cov=openopps --cov-report=term-missing
 uv lock --check
 PYTHONPATH=scripts uv run python -m openopps_kaggle
 PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite
-cd docs && pnpm types:check
-cd docs && pnpm build
-cd docs && pnpm lint
-cd docs && pnpm test
+cd web && pnpm types:check
+cd web && pnpm build
+cd web && pnpm lint
+cd web && pnpm test
 just docs-rtk-lint
 rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 ```
@@ -342,11 +342,15 @@ rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 The generated Kaggle bundle lives in `kaggle/`. It contains dataset metadata (`dataset-metadata.json`, `dataset-cover-image.png`), the connected manager notebook (`kernel-metadata.json`, `openoppsdb-manager.ipynb`), public example notebooks under `kaggle/starter/` and `kaggle/examples/`, and generated SQLite/CSV/Parquet data artifacts when a full snapshot is bundled. `dataset-metadata.json` is the Kaggle UI source of truth for cover image, public file descriptions, and field-level descriptors for every CSV and Parquet export. `openoppsdb.sqlite` remains directly readable and carries `openopps_tables`/`openopps_columns` metadata for SQLite clients; if Kaggle does not expose nested SQLite table previews for a fresh upload, use the mirrored CSV/Parquet exports for Kaggle-rendered table previews and field metadata. The live dataset recipes stage a temporary upload directory containing only Kaggle dataset control files plus `openoppsdb.sqlite`, `exports/csv/*.csv`, and `exports/parquet/*.parquet`; notebooks, manager-run evidence files, and runtime generator files are private or separate Kaggle kernel inputs and are pruned before public dataset publishing.
 
 ```bash
+# Prefer a clean-schema operational DB (never a legacy root DB with sources.enabled).
 OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps admin db init
-OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps sync --metrics-json --refresh-cache
+# Local full workflow for a maintainer ledger; the *manager notebook* uses bounded:
+#   openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120
+OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120
 PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db .tmp/openoppsdb-operational.sqlite
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
-just kaggle-dataset-version "OpenOppsDB daily snapshot"
+# Fail-closed publish: rebuild-from-db is required (allow_stale=1 is a loud override only).
+just kaggle-dataset-version message="OpenOppsDB daily snapshot" db=.tmp/openoppsdb-operational.sqlite
 just kaggle-runtime-generator-version "OpenOppsDB manager runtime generator"
 just kaggle-notebook-push
 just kaggle-example-notebooks-push
@@ -361,8 +365,10 @@ Kaggle notebook schedules are configured in Kaggle after pushing `wyattowalsh/op
 
 The manager must have Kaggle API credentials available inside the scheduled Kaggle notebook environment before it starts. Configure `KAGGLE_USERNAME` and `KAGGLE_KEY`, or `KAGGLE_API_TOKEN`, as Kaggle notebook secrets/environment variables; otherwise the manager fails fast before running the expensive sync.
 
-Use `just kaggle-dataset-create` instead of `just kaggle-dataset-version` for the first public upload, and `just kaggle-runtime-generator-create` instead of `just kaggle-runtime-generator-version` only for the first private manager-runtime upload. The live write recipes stage temporary upload directories and run through the Kaggle CLI, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail before upload when Kaggle credentials are missing and do not run in CI.
+Use `just kaggle-dataset-create db=<clean.sqlite>` instead of `just kaggle-dataset-version message=... db=<clean.sqlite>` for the first public upload, and `just kaggle-runtime-generator-create` instead of `just kaggle-runtime-generator-version` only for the first private manager-runtime upload. Create/version recipes **rebuild from `db=` before staging** so a stale `kaggle/` tree cannot silently ship; pass `allow_stale=1` only as an intentional loud override. The live write recipes stage temporary upload directories and run through the Kaggle CLI, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail before upload when Kaggle credentials are missing and do not run in CI. `just kaggle-bundle-smoke` is the non-secret clean-DB stage smoke used for local/CI confidence.
 `just kaggle-notebook-push` and `just kaggle-example-notebooks-push` pass a one-hour Kaggle kernel timeout by default; override their `timeout` argument only for an intentional longer maintenance run.
+
+Docs/web search index regeneration uses `kaggle/openoppsdb.sqlite` as the maintainer input (`just web-search-index` / `just web-search-index-check`). CI validates **committed** search artifacts only (`just web-search-artifacts-check`) and never regenerates from local SQLite. Always feed a clean public snapshot—not a legacy root ledger with `sources.enabled`.
 
 ## Secret Hygiene
 

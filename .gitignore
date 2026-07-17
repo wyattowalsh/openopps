@@ -124,8 +124,8 @@ eggs/
 .eggs/
 lib/
 lib64/
-!/docs/lib/
-!/docs/lib/**
+!/web/lib/
+!/web/lib/**
 parts/
 sdist/
 var/
@@ -179,8 +179,8 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
-docs/test-results/
+web/_build/
+web/test-results/
 
 # PyBuilder
 .pybuilder/

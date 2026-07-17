@@ -138,6 +138,8 @@ versions = pl.read_parquet('/kaggle/input/openoppsdb/exports/parquet/job_version
 ## Notes and limitations
 
 OpenOpps only uses public endpoints and public pages. Provider payloads are preserved for auditability, but normalized fields should be treated as best-effort public-data extraction rather than official ATS records. Kaggle renders CSV and Parquet exports as the primary tabular preview and column-metadata surfaces; if Kaggle does not expose nested SQLite table previews for a fresh upload, open the SQLite file directly or use the mirrored CSV/Parquet exports. A row can appear across multiple source catalogs; durable keys and sync observation tables are provided so downstream users can reason about provenance and change history.
+
+Public publish quality gates hard-block oversize artifacts (SQLite above 2 GiB or combined CSV/Parquet exports above 4 GiB) so manager notebook disk limits are not exceeded silently. Local maintainer create/version recipes rebuild from an explicit clean-schema DB path before staging; do not upload legacy ledgers that still carry removed columns such as `sources.enabled`.
 """
 
 
@@ -772,9 +774,16 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def _write_dataset_image(output_dir: Path) -> None:
-    source = Path(__file__).resolve().parents[1] / DATASET_IMAGE_SOURCE
+    # _core.py lives at <repo>/scripts/openopps_kaggle/_core.py → parents[2] is repo root.
+    repo_root = Path(__file__).resolve().parents[2]
+    source = repo_root / DATASET_IMAGE_SOURCE
     target = output_dir / DATASET_IMAGE_FILE
     if not source.exists():
+        # Fall back to already-generated cover under kaggle/ when social asset is absent.
+        kaggle_cover = repo_root / "kaggle" / DATASET_IMAGE_FILE
+        if kaggle_cover.is_file():
+            shutil.copy2(kaggle_cover, target)
+            return
         if target.exists():
             return
         try:
@@ -2113,6 +2122,32 @@ def _print_snapshot_quality_summary(report: dict[str, Any]) -> None:
     )
 
 
+def _public_snapshot_size_blockers(
+    *,
+    output_dir: Path,
+    db_path: Path,
+) -> list[str]:
+    """Hard-block oversize public SQLite / export trees before publish."""
+    blockers: list[str] = []
+    if db_path.is_file():
+        size = db_path.stat().st_size
+        if size > PUBLIC_SQLITE_MAX_BYTES:
+            blockers.append(
+                f"public_sqlite_oversize:{size}>{PUBLIC_SQLITE_MAX_BYTES}"
+            )
+    exports_root = output_dir / "exports"
+    if exports_root.is_dir():
+        total = 0
+        for path in exports_root.rglob("*"):
+            if path.is_file():
+                total += path.stat().st_size
+        if total > PUBLIC_EXPORTS_MAX_BYTES:
+            blockers.append(
+                f"public_exports_oversize:{total}>{PUBLIC_EXPORTS_MAX_BYTES}"
+            )
+    return blockers
+
+
 def snapshot_quality_report(
     *,
     output_dir: Path,
@@ -2155,6 +2190,9 @@ def snapshot_quality_report(
         hard_blockers.append(f"sqlite_null_key_error:{issue}")
     for issue in sqlite_report["duplicateErrors"]:
         hard_blockers.append(f"sqlite_duplicate_error:{issue}")
+
+    size_blockers = _public_snapshot_size_blockers(output_dir=output_dir, db_path=db_path)
+    hard_blockers.extend(size_blockers)
 
     status_counts = _nested_dict(status, "database", "counts")
     readiness = _nested_dict(status, "readiness")
@@ -2479,10 +2517,19 @@ def _assert_public_sqlite_logical_integrity(db_path: Path) -> dict[str, Any]:
         + report["duplicateErrors"]
     )
     if errors:
-        raise RuntimeError(
-            "Public SQLite logical integrity failed: "
-            + json.dumps(errors[:20], sort_keys=True)
-        )
+        legacy_hints = [
+            issue
+            for issue in report["extraColumnErrors"]
+            if issue.endswith(".enabled") or "enabled" in issue.split(".", 1)[-1]
+        ]
+        prefix = "Public SQLite logical integrity failed"
+        if legacy_hints:
+            prefix = (
+                "Public SQLite logical integrity failed: legacy or unexpected "
+                f"column(s) {', '.join(legacy_hints)} (use a clean-schema DB; "
+                "do not upload root legacy openoppsdb.sqlite with sources.enabled)"
+            )
+        raise RuntimeError(prefix + ": " + json.dumps(errors[:20], sort_keys=True))
     return report
 
 

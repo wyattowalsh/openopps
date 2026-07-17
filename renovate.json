@@ -15,8 +15,8 @@
     },
     {
       "matchManagers": ["npm"],
-      "matchFileNames": ["docs/package.json"],
-      "groupName": "docs npm dependencies"
+      "matchFileNames": ["web/package.json"],
+      "groupName": "web npm dependencies"
     }
   ]
 }

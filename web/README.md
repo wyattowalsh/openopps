@@ -1,6 +1,6 @@
-# OpenOpps Docs Site
+# OpenOpps Web App
 
-This directory contains the OpenOpps developer documentation site built with Next.js, Fumadocs, MDX, Tailwind CSS, and shadcn/ui.
+This directory contains the OpenOpps web app (Fumadocs docs + jobs/explorer) built with Next.js, Fumadocs, MDX, Tailwind CSS, and shadcn/ui.
 
 ## Commands
 
@@ -19,31 +19,31 @@ pnpm test
 
 The development server opens at `http://localhost:3000`.
 
-From the repository root, the equivalent contributor shortcuts are:
+From the repository root, prefer the canonical `just web-*` shortcuts (transitional `just docs-*` aliases call the same recipes):
 
 ```bash
-just docs-check
-just docs-build
-just docs-function-trace-check
-just docs-search-index
-just docs-search-index-check
-just docs-lint
-just docs-test
-just docs-rtk-lint
+just web-check
+just web-build
+just web-function-trace-check
+just web-search-index
+just web-search-index-check
+just web-lint
+just web-test
+just web-rtk-lint
 ```
 
 `pnpm types:check` and `pnpm build` both refresh `lib/generated/openopps-data.json` through `pnpm data:generate`, so treat generated docs data as part of the docs validation surface.
-`just docs-build` runs the production Next.js build and then `just docs-function-trace-check`, which verifies API route traces do not bundle the committed `public/data/openopps-search/` tree into a server function.
-`pnpm data:generate:search` refreshes the committed static snapshot used by Jobs (`/`) and Explorer (`/explorer`) from `../kaggle/openoppsdb.sqlite`; it is explicit because that SQLite file is local and ignored by git. Run `just docs-search-index-check` from the repository root before release when refreshing the committed snapshot; it requires the local SQLite file, regenerates the search index, and fails if `public/data/openopps-search/` remains dirty. The generated `public/data/openopps-search/` tree is intentionally committed and can be tens of megabytes so the hosted docs can search, dashboard, and preview jobs without a live backend. Job previews show full description text only when the snapshot contains normalized description fields; otherwise they remain metadata-first and link back to the source posting.
-`just docs-rtk-lint` is the optional maintainer lint surface for `rtk`; it is explicit and outside the default `just ci`/GitHub Actions path.
+`just web-build` runs the production Next.js build and then `just web-function-trace-check`, which verifies API route traces do not bundle the committed `public/data/openopps-search/` tree into a server function.
+`pnpm data:generate:search` refreshes the committed static snapshot used by Jobs (`/`) and Explorer (`/explorer`) from `../kaggle/openoppsdb.sqlite`; it is explicit because that SQLite file is local and ignored by git. Run `just web-search-index-check` from the repository root before release when refreshing the committed snapshot; it requires a **clean** local public `kaggle/openoppsdb.sqlite` snapshot (recipes fail loud if missing), regenerates the search index, and fails if `public/data/openopps-search/` remains dirty. CI does not open SQLite—it validates the committed artifact tree only. The generated `public/data/openopps-search/` tree is intentionally committed and can be tens of megabytes so the hosted app can search, dashboard, and preview jobs without a live backend. Job previews show full description text only when the snapshot contains normalized description fields; otherwise they remain metadata-first and link back to the source posting.
+`just web-rtk-lint` is the optional maintainer lint surface for `rtk`; it is explicit and outside the default `just ci`/GitHub Actions path.
 
 Current docs IA routes are `index`, `cli`, `configuration`, `data-model`, `providers`, `operations`, and `contributing`. The jobs workbench lives at `/`; the data dashboard lives at `/explorer`.
 
 ## Telemetry
 
-Docs telemetry is disabled by default. The browser client only sends events when `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true`; the API route accepts sanitized batches at `/api/telemetry` and noops unless a server-side sink or mirror is configured.
+Web telemetry is disabled by default. The browser client only sends events when `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true`; the API route accepts sanitized batches at `/api/telemetry` and noops unless a server-side sink or mirror is configured.
 
-For a local zero-cost event lake, run the docs app with a writable telemetry directory:
+For a local zero-cost event lake, run the web app with a writable telemetry directory:
 
 ```bash
 NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true \
@@ -84,7 +84,7 @@ Useful limits:
 | `lib/source.ts`                 | Fumadocs content loader, LLM text helpers, and Open Graph image helpers. |
 | `lib/shared.ts`                 | Project name, docs routes, and GitHub repository metadata.               |
 | `lib/layout.shared.tsx`         | Shared Fumadocs layout options.                                          |
-| `app/(home)/page.tsx`           | Jobs workbench route for the docs app root.                              |
+| `app/(home)/page.tsx`           | Jobs workbench route for the web app home (`/`).                         |
 | `app/docs/[[...slug]]/page.tsx` | Fumadocs documentation page renderer.                                    |
 | `app/api/search/route.ts`       | Fumadocs search route.                                                   |
 | `app/api/telemetry/route.ts`    | Telemetry intake route with noop, local event-lake, and optional PostHog forwarding. |
@@ -98,8 +98,8 @@ Useful limits:
 - Add or update pages in `content/docs/*.mdx`.
 - Keep `content/docs/meta.json` synchronized whenever pages are added, removed, or reordered.
 - Keep docs IA to the route set documented above unless a product change explicitly expands it.
-- Keep examples runnable from the repository root unless the command first changes into `docs/`.
-- Keep docs command references aligned with the root `Justfile`, GitHub Actions workflow names, and OpenSpec task names.
+- Keep examples runnable from the repository root unless the command first changes into `web/` (this package directory).
+- Keep web command references aligned with the root `Justfile` (`web-*` preferred; `docs-*` aliases), GitHub Actions workflow names, and OpenSpec task names.
 - Keep local credential examples non-secret; real `.env`, Kaggle, registry, and token files are ignored from the repository root.
 - Keep telemetry guidance no-op by default, local event lake as canonical raw sink, and optional hosted adapters as sanitized mirrors.
 - Use Fumadocs-native components for cards, callouts, tables, code blocks, and tabs when they improve scannability.

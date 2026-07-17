@@ -10,8 +10,8 @@ import sys
 from typing import Any
 
 
-DEFAULT_TRACE = Path("docs/.next/server/app/api/jobs/search/route.js.nft.json")
-DEFAULT_FORBIDDEN_ROOT = Path("docs/public/data/openopps-search")
+DEFAULT_TRACE = Path("web/.next/server/app/api/jobs/search/route.js.nft.json")
+DEFAULT_FORBIDDEN_ROOT = Path("web/public/data/openopps-search")
 DEFAULT_MAX_BYTES = 250 * 1024 * 1024
 
 

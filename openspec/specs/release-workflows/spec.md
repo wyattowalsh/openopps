@@ -57,8 +57,8 @@ OpenOpps SHALL publish the public jobs and explorer search surface from committe
 
 #### Scenario: Maintainer refreshes the committed search index
 
-- **WHEN** a maintainer runs `just docs-search-index-check` with `kaggle/openoppsdb.sqlite` available
-- **THEN** the recipe regenerates `docs/public/data/openopps-search/`
+- **WHEN** a maintainer runs `just web-search-index-check` with `kaggle/openoppsdb.sqlite` available
+- **THEN** the recipe regenerates `web/public/data/openopps-search/`
 - **AND** the recipe fails if regenerated artifacts differ from the committed tree
 
 #### Scenario: Public detail shards are written

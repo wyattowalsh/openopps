@@ -631,7 +631,7 @@ def test_safe_job_external_url_requires_absolute_hostless_free_urls() -> None:
 
 def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    artifact_dir = repo_root / "docs" / "public" / "data" / "openopps-search"
+    artifact_dir = repo_root / "web" / "public" / "data" / "openopps-search"
 
     manifest = _read_json(artifact_dir / "manifest.json")
 
@@ -763,7 +763,7 @@ def test_generated_search_index_artifact_matches_local_db_when_available(
 ) -> None:
     repo_root = Path(__file__).resolve().parents[3]
     db_path = repo_root / "kaggle" / "openoppsdb.sqlite"
-    artifact_dir = repo_root / "docs" / "public" / "data" / "openopps-search"
+    artifact_dir = repo_root / "web" / "public" / "data" / "openopps-search"
     if not db_path.exists() or not (artifact_dir / "manifest.json").exists():
         pytest.skip("local SQLite DB or generated docs search index is unavailable")
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Callable, Literal, Union
 from pydantic import BaseModel, Field
 from openopps.models import (
     BoardProviderRow, BoardRow, JobPayloadSnapshotRow, JobRow,
@@ -121,7 +121,7 @@ HIRING_MARKET_NB_ID = "wyattowalsh/openoppsdb-hiring-market-map"
 SKILLS_RADAR_NB_FILE = "openoppsdb-skills-radar.ipynb"
 SKILLS_RADAR_NB_ID = "wyattowalsh/openoppsdb-skills-radar"
 DATASET_IMAGE_FILE = "dataset-cover-image.png"
-DATASET_IMAGE_SOURCE = Path("docs/public/social/openoppsdb.png")
+DATASET_IMAGE_SOURCE = Path("web/public/social/openoppsdb.png")
 DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[2] / "kaggle"
 DEFAULT_MANAGER_DIR = DEFAULT_DATASET_DIR
 DEFAULT_STARTER_DIR = DEFAULT_DATASET_DIR / "starter"
@@ -132,7 +132,7 @@ GENERATOR_SCRIPT_URL = (
 )
 DATASET_IMAGE_URL = (
     "https://raw.githubusercontent.com/wyattowalsh/openopps/main/"
-    "docs/public/social/openoppsdb.png"
+    "web/public/social/openoppsdb.png"
 )
 SQLITE_SIDECAR_SUFFIXES = ("-journal", "-shm", "-wal")
 SQLITE_PREVIEW_TEXT_MAX_CHARS = 512
@@ -309,6 +309,11 @@ NOTEBOOK_SYNC_ENV_DEFAULTS: dict[str, str] = {
 NOTEBOOK_SYNC_TIMEOUT_SECONDS = 3300
 NOTEBOOK_JOB_ROUTE_LIMIT = 120
 
+# Public snapshot size budgets for quality gate (manager + local publish).
+# Full payload SQLite + dual exports are disk-heavy on Kaggle; fail closed above these.
+PUBLIC_SQLITE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+PUBLIC_EXPORTS_MAX_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB combined csv+parquet
+
 
 DATA_TABLES: tuple[Table, ...] = (
     Table(
@@ -452,8 +457,9 @@ EVIDENCE_RESOURCES: tuple[Resource, ...] = (
         name="sync_metrics",
         path=SYNC_METRICS_FILE,
         description=(
-            "JSON metrics emitted by the bounded `openopps jobs sync "
-            "--metrics-json --freshness-seconds --limit` manager run, "
+            "JSON metrics emitted by the bounded manager command "
+            "`openopps jobs sync --metrics-json --freshness-seconds 86400 "
+            "--limit 120` (defaults; overridable via OPENOPPS_JOB_ROUTE_* env), "
             "including provider error summaries."
         ),
         format="json",

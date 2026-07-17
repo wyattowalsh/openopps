@@ -56,9 +56,8 @@ test("jobs board supports local workflow controls without analytics", async ({
 	const firstJob = await searchForFirstJob(page);
 
 	await page.getByRole("button", { name: /save current search/i }).click();
-	const savedDetails = page.locator("details").filter({
-		has: page.getByText("Saved searches", { exact: true }),
-	});
+	// hasText scopes to the details node; page.getByText inside filter({has}) is not reliable.
+	const savedDetails = page.locator("details").filter({ hasText: "Saved searches" });
 	await expect(savedDetails).toBeVisible({ timeout: 20_000 });
 	await savedDetails.locator("summary").click();
 	await expect(savedDetails).toHaveAttribute("open", "");

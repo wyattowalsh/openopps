@@ -151,19 +151,25 @@ def test_kaggle_upload_resources_use_nbadb_style_subset() -> None:
 def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
     repo_root = Path(__file__).resolve().parents[4]
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
-    operations = (repo_root / "docs/content/docs/operations.mdx").read_text(
+    operations = (repo_root / "web/content/docs/operations.mdx").read_text(
         encoding="utf-8"
     )
     spec = (
         repo_root / "openspec/specs/release-workflows/spec.md"
     ).read_text(encoding="utf-8")
 
-    assert "openopps sync --metrics-json --refresh-cache" in readme
-    assert "openopps sync --metrics-json --refresh-cache" in operations
+    # Manager/Kaggle contract is single-sourced as bounded jobs sync.
     assert (
         "openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120"
-        not in readme
+        in readme
     )
+    assert (
+        "openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120"
+        in operations
+        or "openopps jobs sync --metrics-json --freshness-seconds --limit" in operations
+    )
+    assert "db=" in readme and "allow_stale" in readme
+    assert "kaggle-dataset-version" in operations
     assert "just kaggle-runtime-generator-version" in readme
     assert "just kaggle-runtime-generator-version" in operations
     assert "kaggle-runtime-generator-create" in readme
@@ -523,7 +529,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "--live-file-metadata-kaggle-auth" not in metadata_repair_args
     assert "--live-file-metadata-sqlite-timeout-seconds" not in metadata_repair_args
     assert "--live-file-metadata-sqlite-poll-seconds" not in metadata_repair_args
-    assert gen.DATASET_IMAGE_SOURCE.as_posix() == "docs/public/social/openoppsdb.png"
+    assert gen.DATASET_IMAGE_SOURCE.as_posix() == "web/public/social/openoppsdb.png"
 
 
 def test_manager_notebook_rehydrates_public_sqlite_snapshot(
@@ -2213,6 +2219,14 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     )
     assert '{{ kaggle }} datasets create -p "$upload_dir"' in justfile
     assert '{{ kaggle }} datasets version -p "$upload_dir"' in justfile
+    # Fail-closed: default create/version require rebuild-from-db (not silent stage-only).
+    assert "kaggle-dataset-create db=" in justfile
+    assert "kaggle-dataset-version message=" in justfile
+    assert "allow_stale" in justfile
+    assert "requires db=<path-to-clean-openoppsdb.sqlite>" in justfile
+    assert "--data-db" in justfile
+    assert "WARNING: allow_stale=1" in justfile
+    assert "kaggle-bundle-smoke:" in justfile
     assert "{{ kaggle }} datasets status wyattowalsh/openoppsdb" in justfile
     assert "current_version=" in justfile
     assert "next_version=" in justfile

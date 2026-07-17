@@ -42,7 +42,7 @@ def test_build_docs_data_matches_provider_counts() -> None:
 
 def test_generated_docs_data_artifact_is_current() -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    artifact_path = repo_root / "docs" / "lib" / "generated" / "openopps-data.json"
+    artifact_path = repo_root / "web" / "lib" / "generated" / "openopps-data.json"
 
     generated_data = json.loads(artifact_path.read_text(encoding="utf-8"))
 

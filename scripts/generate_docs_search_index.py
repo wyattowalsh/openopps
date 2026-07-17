@@ -28,7 +28,7 @@ DETAIL_DESCRIPTION_TEXT_MAX_LEN = 4000
 # then keep scalar promotion keys; bound compact JSON size for committed shards.
 DETAIL_SURPLUS_JSON_MAX_CHARS = 2048
 DETAIL_SURPLUS_SCALAR_KEYS = frozenset({"posting_kind", "seniority"})
-# Text projection matrix (see docs/content/docs/data-model.mdx):
+# Text projection matrix (see web/content/docs/data-model.mdx):
 # - Kaggle/SQLite export previews: 512 chars (SQLITE_PREVIEW_TEXT_MAX_CHARS)
 # - Docs search T2 detail shards: 4000 chars plain text (HTML stripped)
 # - Parquet/JSONL exports: full normalized fields from SQLite
@@ -1151,7 +1151,7 @@ def _primary_job_external_url(detail: dict[str, Any]) -> str | None:
 
 
 def _is_indexable_job_detail(detail: dict[str, Any]) -> bool:
-    """Mirror docs/lib/jobs-static-data.ts isIndexableJobDetail criteria."""
+    """Mirror web/lib/jobs-static-data.ts isIndexableJobDetail criteria."""
 
     status = _clean_text(detail.get("status")).lower()
     has_open_status = not status or status == "open"
@@ -2419,7 +2419,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=repo_root / "docs" / "public" / "data" / "openopps-search",
+        default=repo_root / "web" / "public" / "data" / "openopps-search",
         help="Directory for generated static search-index JSON files.",
     )
     return parser

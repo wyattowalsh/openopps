@@ -51,7 +51,9 @@ export function useJobsBoardSearch({
 	// Keep callback out of the fetch effect deps — an unstable identity (e.g. inline
 	// arrow in the parent) would abort/restart the search on every parent re-render.
 	const onIndexErrorClearRef = useRef(onIndexErrorClear);
-	onIndexErrorClearRef.current = onIndexErrorClear;
+	useEffect(() => {
+		onIndexErrorClearRef.current = onIndexErrorClear;
+	}, [onIndexErrorClear]);
 
 	useEffect(() => {
 		mountedRef.current = true;

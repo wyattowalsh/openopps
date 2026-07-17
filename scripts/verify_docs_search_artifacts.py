@@ -17,7 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path("docs/public/data/openopps-search"),
+        default=Path("web/public/data/openopps-search"),
         help="Docs search artifact root.",
     )
     parser.add_argument(

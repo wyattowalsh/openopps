@@ -47,7 +47,7 @@ def test_coverage_report_includes_source_scope_rationales(tmp_path: Path) -> Non
 
 def test_committed_providers_snapshot_editorial_hints_are_metadata_only() -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    providers_path = repo_root / "docs" / "public" / "data" / "openopps-search" / "providers.json"
+    providers_path = repo_root / "web" / "public" / "data" / "openopps-search" / "providers.json"
     if not providers_path.is_file():
         return
     chunk = json.loads(providers_path.read_text())
