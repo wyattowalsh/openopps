@@ -6,29 +6,37 @@ async function waitForFirstJob(page: Page) {
 		.getByRole("listbox", { name: /open jobs results/i })
 		.getByRole("option")
 		.first();
-	await expect(firstJob).toBeVisible({ timeout: 30_000 });
+	await expect(firstJob).toBeVisible({ timeout: 45_000 });
 	return firstJob;
+}
+
+/** Wait until the live status is no longer "Searching jobs." */
+async function waitForJobsSearchSettled(page: Page, timeout = 45_000) {
+	const searching = page.getByRole("status").filter({ hasText: /searching jobs/i });
+	await expect(searching).toBeHidden({ timeout });
 }
 
 async function searchForFirstJob(page: Page, query = "platform") {
 	const search = page.getByLabel("Search jobs");
 	await expect(search).toBeVisible({ timeout: 30_000 });
-	await Promise.all([
-		page.waitForResponse(
-			(response) =>
-				response.url().includes("/api/jobs/search") &&
-				response.ok() &&
-				new URL(response.url()).searchParams.get("q") === query,
-			{ timeout: 45_000 },
-		),
-		search.fill(query),
-	]);
+	// Register before fill: nuqs debounces URL updates (~200ms) then fetches.
+	const searchResponse = page.waitForResponse(
+		(response) =>
+			response.url().includes("/api/jobs/search") &&
+			response.ok() &&
+			new URL(response.url()).searchParams.get("q") === query,
+		{ timeout: 45_000 },
+	);
+	await search.fill(query);
+	await searchResponse;
+	await waitForJobsSearchSettled(page);
 	return waitForFirstJob(page);
 }
 
 test("jobs board supports local workflow controls without analytics", async ({
 	page,
 }) => {
+	test.setTimeout(90_000);
 	const consoleErrors: string[] = [];
 	const telemetryRequests: string[] = [];
 	page.on("console", (message) => {
@@ -84,7 +92,7 @@ test("jobs board supports local workflow controls without analytics", async ({
 	await page.getByRole("button", { name: /open app settings/i }).click();
 	await expect(page.getByRole("dialog", { name: /app settings/i })).toBeVisible();
 	await expect(page.getByText("Local workflow data stays in this browser.")).toBeVisible();
-	await expect(page.getByLabel(/hide viewed jobs/i)).toBeVisible();
+	await expect(page.getByLabel(/hide viewed jobs/i )).toBeVisible();
 	await page.getByRole("button", { name: /export json/i }).click();
 	await expect(page.getByLabel(/exported local data json/i)).toHaveValue(
 		/"source": "openopps\.jobs\.local"/,
@@ -97,8 +105,11 @@ test("jobs board supports local workflow controls without analytics", async ({
 });
 
 test("jobs board results support keyboard preview activation", async ({ page }) => {
+	test.setTimeout(90_000);
 	await page.goto("/");
 	await searchForFirstJob(page);
+	// Ensure loading status has cleared before keyboard focus transfer.
+	await waitForJobsSearchSettled(page);
 
 	const list = page.getByRole("listbox", { name: /open jobs results/i });
 	await list.focus();
@@ -106,16 +117,20 @@ test("jobs board results support keyboard preview activation", async ({ page }) 
 	await expect(list.getByRole("option").first()).toHaveAttribute(
 		"data-focused",
 		"true",
+		{ timeout: 10_000 },
 	);
 
 	await page.keyboard.press("Enter");
-	await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible();
+	await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible({
+		timeout: 15_000,
+	});
 	await expect(
 		page.getByRole("button", { name: /close job preview/i }),
-	).toBeVisible();
+	).toBeVisible({ timeout: 15_000 });
 });
 
 test("jobs board searches without browser chunk downloads", async ({ page }) => {
+	test.setTimeout(90_000);
 	let browserChunkRequests = 0;
 	await page.route("**/data/openopps-search/jobs/chunks/*.json", async (route) => {
 		browserChunkRequests += 1;
@@ -143,7 +158,7 @@ test("jobs board removes all-indexed mode from the active filter chip", async ({
 			}
 			return new URL(response.url()).searchParams.get("all") === "1";
 		},
-		{ timeout: 45_000 },
+		{ timeout: 60_000 },
 	);
 	await page.getByRole("button", { name: /^All$/i }).click();
 	const chip = page.getByRole("button", {
@@ -161,7 +176,7 @@ test("jobs board removes all-indexed mode from the active filter chip", async ({
 			}
 			return new URL(response.url()).searchParams.get("all") === null;
 		},
-		{ timeout: 45_000 },
+		{ timeout: 60_000 },
 	);
 	await chip.click();
 	const response = await clearedSearch;

@@ -48,6 +48,10 @@ export function useJobsBoardSearch({
 	const [searchMeta, setSearchMeta] = useState<JobsBoardSearchMeta | null>(null);
 	const searchRequestIdRef = useRef(0);
 	const mountedRef = useRef(false);
+	// Keep callback out of the fetch effect deps — an unstable identity (e.g. inline
+	// arrow in the parent) would abort/restart the search on every parent re-render.
+	const onIndexErrorClearRef = useRef(onIndexErrorClear);
+	onIndexErrorClearRef.current = onIndexErrorClear;
 
 	useEffect(() => {
 		mountedRef.current = true;
@@ -94,7 +98,7 @@ export function useJobsBoardSearch({
 				});
 				if (mountedRef.current && searchRequestIdRef.current === requestId) {
 					setSearchRows(result.rows);
-					onIndexErrorClear?.();
+					onIndexErrorClearRef.current?.();
 					setSearchError(null);
 					setSearchMeta({
 						totalMatches: result.totalMatches,
@@ -146,7 +150,6 @@ export function useJobsBoardSearch({
 		activeFilterCount,
 		deferredFilters,
 		manifest,
-		onIndexErrorClear,
 		page,
 		searchActive,
 		searchRetryKey,

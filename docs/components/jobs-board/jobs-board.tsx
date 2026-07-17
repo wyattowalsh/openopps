@@ -78,6 +78,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	} = useJobBoardFilterState();
 
 	const { manifest, loading, error, setError } = useJobsBoardManifest();
+	const clearIndexError = useCallback(() => {
+		setError(null);
+	}, [setError]);
 
 	const sortKey: JobSortKey = deferredFilters.query ? "relevance" : "latest";
 	const searchActive = activeFilterCount > 0;
@@ -98,7 +101,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		activeFilterCount,
 		sortKey,
 		searchActive,
-		onIndexErrorClear: () => setError(null),
+		onIndexErrorClear: clearIndexError,
 	});
 
 	const { detail, detailLoading, detailError } = useJobDetail(selectedJobId);
