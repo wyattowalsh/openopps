@@ -181,6 +181,14 @@ just kaggle-bundle-check kaggle/openoppsdb.sqlite
 
 `just ci` chains `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`.
 
+`just ci-full` runs `just ci` plus network-dependent checks that mirror the GHA security job and wheel packaging smoke: `security-audit` (Python `pip-audit` + docs `pnpm audit --prod`) and `wheel-catalog-smoke`. Use `ci` for day-to-day PR confidence; use `ci-full` before release or when dependency/security surfaces change.
+
+### Jobs search public data origin (docs app)
+
+Server-side Jobs/Explorer search loads committed shards from an allowlisted origin (`OPENOPPS_PUBLIC_DATA_ORIGIN` and related flags; see [Configuration](/docs/configuration#docs-app-public-data-origin)). On loopback hosts (`127.0.0.1`, `localhost`, `::1`), the search service reads files under `docs/public` directly and honors `AbortSignal` around those reads so cancelled requests do not poison shared caches.
+
+Summary responses (`summary=1`) include one fingerprint entry per matching job so full-scope saved searches can track content drift. Large open indexes increase JSON size and memory for those responses; prefer scoped filters when possible. Runtime payload caps are out of scope for v0.1.
+
 Run Python tests from the repository root:
 
 ```bash

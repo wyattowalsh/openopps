@@ -18,12 +18,15 @@ import {
 	clearJobsSearchStoreForTests,
 	jobsSearchStoreStatsForTests,
 	searchPublicJobsIndex,
+	setJobsSearchFilesystemReadFileForTests,
 	summarizePublicJobsIndex,
 } from "./jobs-search-service";
 
 afterEach(() => {
 	clearJobsSearchStoreForTests();
+	setJobsSearchFilesystemReadFileForTests(null);
 	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 });
 
 describe("jobs search service", () => {
@@ -354,12 +357,70 @@ describe("jobs search service", () => {
 			});
 
 			expect(result.totalMatches).toBe(2);
+			expect(result.entries).toHaveLength(result.totalMatches);
 			expect(result.entries).toEqual([
 				{ id: "newer", fingerprint: "content-newer" },
 				{ id: "older", fingerprint: "content-older" },
 			]);
+			for (const entry of result.entries) {
+				expect(typeof entry.id).toBe("string");
+				expect(entry.id.length).toBeGreaterThan(0);
+				expect(typeof entry.fingerprint).toBe("string");
+				expect(entry.fingerprint.length).toBeGreaterThan(0);
+			}
 			expect(result.filtersHash).toContain('"query":"platform"');
 		});
+
+	describe("abort and loopback filesystem loads", () => {
+		it("throws AbortError when signal is already aborted on loopback base", async () => {
+			const fetchMock = stubFetch({});
+			const controller = new AbortController();
+			controller.abort();
+
+			await expect(
+				searchPublicJobsIndex({
+					baseUrl: "http://127.0.0.1/",
+					filters: filters({ query: "platform" }),
+					sortKey: "relevance",
+					signal: controller.signal,
+				}),
+			).rejects.toMatchObject({ name: "AbortError" });
+
+			// Loopback path must not fall back to network fetch when aborted.
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it("throws AbortError when signal aborts after loopback filesystem read", async () => {
+			const fetchMock = stubFetch({});
+			const controller = new AbortController();
+			const readFile = vi.fn(async (filePath: string) => {
+				const path = String(filePath);
+				const payload = path.endsWith("manifest.json")
+					? manifest
+					: path.includes("0000.json")
+						? chunk([row({ id: "loopback", title: "Platform Engineer" })])
+						: chunk([]);
+				controller.abort();
+				return JSON.stringify(payload);
+			});
+			setJobsSearchFilesystemReadFileForTests(readFile);
+			try {
+				await expect(
+					searchPublicJobsIndex({
+						baseUrl: "http://127.0.0.1/",
+						filters: filters({ query: "platform" }),
+						sortKey: "relevance",
+						signal: controller.signal,
+					}),
+				).rejects.toMatchObject({ name: "AbortError" });
+
+				expect(fetchMock).not.toHaveBeenCalled();
+				expect(readFile).toHaveBeenCalled();
+			} finally {
+				setJobsSearchFilesystemReadFileForTests(null);
+			}
+		});
+	});
 	});
 
 const manifest: SearchManifest = {

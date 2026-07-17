@@ -1,3 +1,10 @@
+"""Getro portfolio source adapters.
+
+HTTP traffic uses ``retrying_json_request`` / ``retrying_text_request``. Redirect
+hops are validated by the shared public-fetch helpers in ``openopps.http``
+(credential stripping and public HTTPS checks), not by raw ``httpx`` redirects.
+"""
+
 from __future__ import annotations
 
 import json

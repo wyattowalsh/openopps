@@ -2,6 +2,9 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+// Axe scans are heavy; keep a11y cases serial within this file to reduce flake.
+test.describe.configure({ mode: "serial" });
+
 async function waitForFirstJob(page: Page) {
 	const firstJob = page
 		.getByRole("listbox", { name: /open jobs results/i })
@@ -12,12 +15,20 @@ async function waitForFirstJob(page: Page) {
 }
 
 async function searchForFirstJob(page: Page) {
-	const searchResponse = page.waitForResponse(
-		(response) => response.url().includes("/api/jobs/search") && response.ok(),
-		{ timeout: 30_000 },
-	);
-	await page.getByLabel("Search jobs").fill("platform");
-	await searchResponse;
+	const search = page.getByLabel("Search jobs");
+	await expect(search).toBeVisible({ timeout: 30_000 });
+	// Register the response waiter in the same turn as fill to avoid race with
+	// debounce/network under mobile projects and no-store fetches.
+	await Promise.all([
+		page.waitForResponse(
+			(response) =>
+				response.url().includes("/api/jobs/search") &&
+				response.ok() &&
+				new URL(response.url()).searchParams.get("q") === "platform",
+			{ timeout: 45_000 },
+		),
+		search.fill("platform"),
+	]);
 	return waitForFirstJob(page);
 }
 
@@ -36,6 +47,8 @@ async function expectNoAxeViolations(
 test("jobs workbench and local settings pass baseline accessibility checks", async ({
 	page,
 }) => {
+	// Axe over the full main surface is slower on cold Next starts.
+	test.setTimeout(120_000);
 	await page.goto("/");
 	await expect(
 		page.getByRole("button", { name: /save current search/i }),
@@ -56,6 +69,7 @@ test("jobs workbench and local settings pass baseline accessibility checks", asy
 });
 
 test("mobile preview sheet keeps dialog semantics", async ({ page }) => {
+	test.setTimeout(90_000);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/");
 

@@ -133,7 +133,7 @@ export async function loadJobsSearchResults(
 	}
 	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
 	const response = await fetch(path, {
-		cache: "force-cache",
+		cache: "no-store",
 		signal: options.signal,
 	});
 	if (!response.ok) {
@@ -157,7 +157,7 @@ export async function loadJobsSearchSummary(
 	params.set("summary", "1");
 	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
 	const response = await fetch(path, {
-		cache: "force-cache",
+		cache: "no-store",
 		signal: options.signal,
 	});
 	if (!response.ok) {

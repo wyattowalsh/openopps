@@ -45,6 +45,7 @@ export async function GET(request: Request) {
 				baseUrl: dataOrigin,
 				filters,
 				sortKey,
+				includeFingerprints: true,
 				signal,
 			});
 			return NextResponse.json(summary, {

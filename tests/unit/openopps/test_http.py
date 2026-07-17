@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 from datetime import datetime, timezone
 import socket
 import sqlite3
@@ -10,6 +11,7 @@ import respx
 from openopps.cache import HttpCache
 from openopps.http import (
     build_async_client,
+    request_with_public_redirect_validation,
     retrying_json_request,
     retrying_json_response,
     retrying_text_request,
@@ -658,3 +660,19 @@ async def test_retrying_text_request_rejects_unsafe_redirect():
             )
 
     assert route.call_count == 1
+
+
+def test_http_public_redirect_validation_export():
+    import openopps.http as http_module
+
+    exported = importlib.import_module("openopps.http")
+    assert (
+        exported.request_with_public_redirect_validation
+        is http_module.request_with_public_redirect_validation
+    )
+    assert (
+        request_with_public_redirect_validation
+        is http_module.request_with_public_redirect_validation
+    )
+    assert "request_with_public_redirect_validation" in http_module.__all__
+    assert "_request_with_public_redirect_validation" not in http_module.__all__

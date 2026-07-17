@@ -400,7 +400,7 @@ describe("search index loader", () => {
 		).resolves.toEqual(response);
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&limit=1&page=2&pageSize=1",
-			{ cache: "force-cache", signal: undefined },
+			{ cache: "no-store", signal: undefined },
 		);
 	});
 
@@ -446,7 +446,7 @@ describe("search index loader", () => {
 		).resolves.toEqual(response);
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&summary=1",
-			{ cache: "force-cache", signal: undefined },
+			{ cache: "no-store", signal: undefined },
 		);
 	});
 

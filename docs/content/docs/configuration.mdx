@@ -45,6 +45,18 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_PLUGIN_ALLOWED`       | empty                                                     | Comma-separated plugin entry-point names allowed to execute.       |
 | `OPENOPPS_NO_INTRO`             | unset                                                     | Suppress the interactive startup portal animation.                 |
 
+### Docs app public data origin
+
+These variables configure the Fumadocs/Next.js docs host when it loads committed search artifacts server-side. They are **not** part of the CLI `OpenOppsSettings` model.
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `OPENOPPS_PUBLIC_DATA_ORIGIN` | site URL | Origin used for server-side fetches of `/data/openopps-search/*` (never the request Host). Must be `https://` in production unless insecure override is set. |
+| `OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_INSECURE` | unset (`1` allows) | Allow non-HTTPS origins. Implicitly allowed in development and Vercel preview. |
+| `OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_HOSTS` | empty | Comma-separated extra hostnames allowlisted in production (alongside the configured site host and `VERCEL_URL`). |
+
+Local `next start` / Playwright e2e prefer loopback `http://127.0.0.1:<port>/` and load shards from `docs/public` on disk so server-side self-HTTP is not required.
+
 ## Examples
 
 ```bash

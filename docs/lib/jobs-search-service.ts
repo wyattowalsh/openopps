@@ -337,12 +337,43 @@ function isLoopbackBase(baseUrl: URL) {
 	);
 }
 
-async function loadPublicJsonFromFilesystem<T>(publicPath: string): Promise<T> {
-	const { readFile } = await import("node:fs/promises");
+type FilesystemReadFile = (
+	path: string,
+	encoding: BufferEncoding,
+) => Promise<string>;
+
+/** Test-only override for loopback filesystem reads (abort / inject fixtures). */
+let filesystemReadFileForTests: FilesystemReadFile | null = null;
+
+export function setJobsSearchFilesystemReadFileForTests(
+	reader: FilesystemReadFile | null,
+) {
+	// Never allow a non-null override in production builds.
+	if (reader !== null && process.env.NODE_ENV === "production") {
+		throw new Error(
+			"setJobsSearchFilesystemReadFileForTests is not available in production",
+		);
+	}
+	filesystemReadFileForTests = reader;
+}
+
+async function loadPublicJsonFromFilesystem<T>(
+	publicPath: string,
+	signal?: AbortSignal,
+): Promise<T> {
+	if (signal?.aborted) {
+		throw new DOMException("The operation was aborted.", "AbortError");
+	}
+	const readFile =
+		filesystemReadFileForTests ??
+		(await import("node:fs/promises")).readFile;
 	const { join } = await import("node:path");
 	const relative = publicPath.replace(/^\/+/, "");
 	const filePath = join(process.cwd(), "public", relative);
 	const raw = await readFile(filePath, "utf8");
+	if (signal?.aborted) {
+		throw new DOMException("The operation was aborted.", "AbortError");
+	}
 	return JSON.parse(raw) as T;
 }
 
@@ -356,7 +387,7 @@ async function loadPublicJson<T>(
 		const resolved = resolvePublicSearchUrl(baseUrl, publicPath);
 		// Avoid flaky server-side self-HTTP against next start (IPv6/connection races).
 		if (isLoopbackBase(baseUrl) || isLoopbackBase(resolved)) {
-			return await loadPublicJsonFromFilesystem<T>(publicPath);
+			return await loadPublicJsonFromFilesystem<T>(publicPath, signal);
 		}
 		const response = await fetch(resolved, {
 			...PUBLIC_SEARCH_FETCH_INIT,

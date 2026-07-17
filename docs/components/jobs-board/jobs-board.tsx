@@ -10,7 +10,6 @@ import {
 import { useJobBoardFilterState } from "@/components/jobs-board/jobs-board-filter-state";
 import { bucketMatchCount, JOBS_BOARD_PAGE_SIZE } from "@/components/jobs-board/jobs-board-constants";
 import {
-	baselineFromRows,
 	baselineFromSearchSummary,
 	baselineLookupFromSavedSearch,
 	isDurableJobWorkflowRecord,
@@ -33,6 +32,7 @@ import {
 	detailRowSnapshot,
 	retainedRowSnapshot,
 } from "@/components/jobs-board/jobs-board-row-snapshots";
+import { resolveCreateSavedSearchBaseline } from "@/components/jobs-board/jobs-board-save-search";
 import { JobsBoardToolbar } from "@/components/jobs-board/jobs-board-toolbar";
 import { useJobDetail } from "@/components/jobs-board/use-job-detail";
 import { useJobsBoardManifest } from "@/components/jobs-board/use-jobs-board-manifest";
@@ -358,17 +358,13 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const handleCreateSavedSearch = async () => {
 		clearSearchError();
 		try {
-			let baseline = baselineFromRows(visibleRows);
-			let baselineScope: "full" | "page" = "page";
-			let baselineTotalMatches: number | null = visibleRows.length;
-			try {
-				const summary = await loadJobsSearchSummary(filters, sortKey);
-				baseline = baselineFromSearchSummary(summary);
-				baselineScope = "full";
-				baselineTotalMatches = summary.totalMatches;
-			} catch {
-				// Fall back to page baseline so saves still work if summary is slow/unavailable.
-			}
+			const { baseline, baselineScope, baselineTotalMatches } =
+				await resolveCreateSavedSearchBaseline({
+					visibleRows,
+					filters,
+					sortKey,
+					loadSummary: loadJobsSearchSummary,
+				});
 			localState.createSavedSearch({
 				filters,
 				rows: visibleRows,

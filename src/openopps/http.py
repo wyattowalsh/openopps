@@ -51,6 +51,19 @@ _RESPONSE_CACHE_MARKER = "__openopps_http_response_v1__"
 JsonResponseData = dict[str, Any] | list[Any]
 HttpResponseBody = JsonResponseData | str
 
+__all__ = [
+    "AsyncSlidingWindowRateLimiter",
+    "HttpResponseData",
+    "PublicFetchTransport",
+    "assert_public_fetch_url",
+    "build_async_client",
+    "request_with_public_redirect_validation",
+    "retrying_json_request",
+    "retrying_json_response",
+    "retrying_text_request",
+    "retrying_text_response",
+]
+
 
 @dataclass(frozen=True)
 class HttpResponseData:
@@ -363,7 +376,7 @@ def _retrying_response_request(
     return _request
 
 
-async def _request_with_public_redirect_validation(
+async def request_with_public_redirect_validation(
     client: httpx.AsyncClient,
     method: str,
     url: str,
@@ -408,6 +421,10 @@ async def _request_with_public_redirect_validation(
             current_method = "GET"
             request_kwargs = _request_kwargs_without_body(request_kwargs)
     raise httpx.TooManyRedirects(f"Exceeded {max_redirects} redirects for {url}")
+
+
+# Private alias for in-module callers; external code must use the public name.
+_request_with_public_redirect_validation = request_with_public_redirect_validation
 
 
 async def _send_public_request(

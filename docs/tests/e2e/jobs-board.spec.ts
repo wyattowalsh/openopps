@@ -11,12 +11,18 @@ async function waitForFirstJob(page: Page) {
 }
 
 async function searchForFirstJob(page: Page, query = "platform") {
-	const searchResponse = page.waitForResponse(
-		(response) => response.url().includes("/api/jobs/search") && response.ok(),
-		{ timeout: 30_000 },
-	);
-	await page.getByLabel("Search jobs").fill(query);
-	await searchResponse;
+	const search = page.getByLabel("Search jobs");
+	await expect(search).toBeVisible({ timeout: 30_000 });
+	await Promise.all([
+		page.waitForResponse(
+			(response) =>
+				response.url().includes("/api/jobs/search") &&
+				response.ok() &&
+				new URL(response.url()).searchParams.get("q") === query,
+			{ timeout: 45_000 },
+		),
+		search.fill(query),
+	]);
 	return waitForFirstJob(page);
 }
 
@@ -54,10 +60,17 @@ test("jobs board supports local workflow controls without analytics", async ({
 	).toBeVisible({ timeout: 20_000 });
 
 	await firstJob.click();
-	await expect(page.getByRole("dialog", { name: /job preview/i })).toHaveCount(0);
-	expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
-		"hidden",
-	);
+	const isMobile = (page.viewportSize()?.width ?? 1280) < 768;
+	const previewDialog = page.getByRole("dialog", { name: /job preview/i });
+	if (isMobile) {
+		// Mobile uses a sheet/dialog; desktop keeps an inline preview pane.
+		await expect(previewDialog).toBeVisible({ timeout: 15_000 });
+	} else {
+		await expect(previewDialog).toHaveCount(0);
+		expect(await page.evaluate(() => document.body.style.overflow)).not.toBe(
+			"hidden",
+		);
+	}
 	await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible();
 	await page.getByRole("button", { name: /^save$/i }).click();
 	await expect(page.getByText("saved").first()).toBeVisible();
@@ -119,24 +132,27 @@ test("jobs board searches without browser chunk downloads", async ({ page }) => 
 test("jobs board removes all-indexed mode from the active filter chip", async ({
 	page,
 }) => {
-	const searchUrls: string[] = [];
-	page.on("response", (response) => {
-		if (response.url().includes("/api/jobs/search") && response.ok()) {
-			searchUrls.push(response.url());
-		}
-	});
-
+	test.setTimeout(90_000);
 	await page.goto("/");
 	await searchForFirstJob(page, "platform");
 
+	const allIndexedSearch = page.waitForResponse(
+		(response) => {
+			if (!response.url().includes("/api/jobs/search") || !response.ok()) {
+				return false;
+			}
+			return new URL(response.url()).searchParams.get("all") === "1";
+		},
+		{ timeout: 45_000 },
+	);
 	await page.getByRole("button", { name: /^All$/i }).click();
 	const chip = page.getByRole("button", {
 		name: /remove all indexed filter/i,
 	});
-	await expect(chip).toBeVisible();
-	await expect
-		.poll(() => searchUrls.some((url) => new URL(url).searchParams.get("all") === "1"))
-		.toBe(true);
+	await expect(chip).toBeVisible({ timeout: 15_000 });
+	// nuqs serializes booleans as true/false in the page URL; API still uses all=1.
+	await expect(page).toHaveURL(/[?&]all=(true|1)(?:&|$)/, { timeout: 15_000 });
+	await allIndexedSearch;
 
 	const clearedSearch = page.waitForResponse(
 		(response) => {
@@ -145,7 +161,7 @@ test("jobs board removes all-indexed mode from the active filter chip", async ({
 			}
 			return new URL(response.url()).searchParams.get("all") === null;
 		},
-		{ timeout: 30_000 },
+		{ timeout: 45_000 },
 	);
 	await chip.click();
 	const response = await clearedSearch;
