@@ -17,6 +17,7 @@ from openopps.models import (
 )
 from openopps.route_select import dedupe_routes, normalize_provider_filter, route_ready
 from openopps.settings import OpenOppsSettings
+from openopps.source_resolution import resolve_effective_sources
 from openopps.storage import OpenOppsStore
 from openopps.providers.boards import BOARD_JOB_PROVIDERS, build_job_provider
 from openopps.providers.sources import build_source_adapter
@@ -183,9 +184,9 @@ def _select_sources(
     provider_filter: str | None,
 ) -> list[SourceRecord]:
     source_catalog = {source.key: source for source in all_board_sources()}
-    sources = store.list_sources()
-    if not sources:
-        sources = list(source_catalog.values())
+    sources = resolve_effective_sources(
+        list(source_catalog.values()), store.list_sources()
+    )
     if source_key:
         sources = [source for source in sources if source.key == source_key]
         if not sources and source_key in source_catalog:

@@ -4,16 +4,47 @@ import httpx
 import pytest
 import respx
 
+import openopps.health as health_module
 from openopps.health import check_provider_health
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
     ProviderSupport,
     SourceRecord,
+    utc_now,
 )
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 from openopps.utils import source_board_key
+
+
+def test_health_source_selection_applies_matching_catalog_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = SourceRecord(
+        key="portfolio",
+        url="https://consider.com/boards/co/allspice.io",
+        provider_id="consider",
+        raw_metadata={"board": "allspice.io"},
+    )
+    stored = catalog.model_copy(
+        update={
+            "raw_metadata": {"board": "allspiceio", "health": {"status": "active"}},
+            "synced_at": utc_now(),
+        }
+    )
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(stored)
+    monkeypatch.setattr(health_module, "all_board_sources", lambda: [catalog])
+
+    selected = health_module._select_sources(store, "portfolio", None)
+
+    assert selected[0].raw_metadata == {
+        "board": "allspice.io",
+        "health": {"status": "active"},
+    }
+    assert selected[0].synced_at is None
 
 
 @pytest.mark.asyncio

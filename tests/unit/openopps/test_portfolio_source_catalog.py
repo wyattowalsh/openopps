@@ -15,6 +15,23 @@ from openopps.providers.sources.source_utils import (
 )
 
 _PACKAGED_CATALOG_RESOURCE = "portfolio_source_catalog.json"
+_DEAD_DIRECT_ATS_KEYS = {"1776", "1848ventures", "54collective", "777partners"}
+_CONSIDER_STAGING_SUFFIX = ".board.staging.consider.com"
+
+
+def _exact_consider_board_from_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if (
+        hostname == "consider.com"
+        and len(path_parts) >= 3
+        and path_parts[:2] in (["boards", "co"], ["boards", "vc"])
+    ):
+        return path_parts[2]
+    if hostname.endswith(_CONSIDER_STAGING_SUFFIX):
+        return hostname[: -len(_CONSIDER_STAGING_SUFFIX)]
+    return None
 
 
 def test_packaged_portfolio_catalog_json_integrity() -> None:
@@ -71,6 +88,41 @@ def test_special_module_uses_packaged_portfolio_catalog() -> None:
     twobear = BOARD_SOURCE_CATALOG.get("twobearcapital")
     assert twobear is not None
     assert twobear.provider_id == "public_page"
+
+
+def test_packaged_portfolio_catalog_keys_and_urls_are_unique() -> None:
+    records = load_packaged_portfolio_source_records()
+    keys = [record.key for record in records]
+    urls = [record.url for record in records]
+    assert len(keys) == len(set(keys))
+    assert len(urls) == len(set(urls))
+
+
+def test_packaged_consider_metadata_preserves_exact_url_board_tokens() -> None:
+    checked = 0
+    for record in load_packaged_portfolio_source_records():
+        if record.provider_id != "consider":
+            continue
+        expected_board = _exact_consider_board_from_url(record.url)
+        if expected_board is None:
+            continue
+        checked += 1
+        assert record.raw_metadata.get("board") == expected_board, record.key
+    assert checked == 1023
+
+
+def test_packaged_catalog_excludes_dead_direct_ats_sources() -> None:
+    packaged_keys = {record.key for record in load_packaged_portfolio_source_records()}
+    assert packaged_keys.isdisjoint(_DEAD_DIRECT_ATS_KEYS)
+    assert set(BOARD_SOURCE_CATALOG).isdisjoint(_DEAD_DIRECT_ATS_KEYS)
+
+
+def test_named_consider_sources_do_not_duplicate_packaged_sources() -> None:
+    from openopps.providers.sources import consider as consider_mod
+
+    packaged_keys = {record.key for record in load_packaged_portfolio_source_records()}
+    named_keys = {record.key for record in consider_mod.SOURCE_RECORDS}
+    assert packaged_keys.isdisjoint(named_keys)
 
 
 def test_board_source_catalog_passes_scope_and_https_invariants() -> None:

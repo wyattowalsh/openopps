@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterable
 from html import unescape
@@ -34,7 +35,11 @@ from openopps.providers.boards.tokens import (
     greenhouse_token_from_url,
     lever_token_from_url,
 )
-from openopps.providers.boards.workable import workable_token_from_url
+from openopps.providers.boards.workable import (
+    WorkablePublicClient,
+    workable_page_budget,
+    workable_token_from_url,
+)
 from openopps.providers.sources.source_utils import (
     load_packaged_portfolio_source_records,
     source_taxonomy_metadata,
@@ -422,7 +427,9 @@ def _domain_from_public_page_url(url: str) -> str | None:
     return (parsed.hostname or "").lower().removeprefix("www.") or None
 
 
-class _StaticJobBoardSourceAdapter:
+class _StaticJobBoardSourceAdapter(ABC):
+    """Shared board/route yield for single-token public job boards (GH, Lever, …)."""
+
     route_provider_id: str
     route_provider_label: str
 
@@ -472,11 +479,13 @@ class _StaticJobBoardSourceAdapter:
         )
         yield [board], [provider], {"token": token, "total": total}
 
+    @abstractmethod
     def _token_from_url(self, url: str) -> str:
-        raise NotImplementedError
+        """Extract the public board token/slug from a source URL."""
 
+    @abstractmethod
     async def _job_count(self, client: httpx.AsyncClient, token: str) -> int:
-        raise NotImplementedError
+        """Return the public job count for a board token."""
 
 
 class GreenhouseSourceAdapter(_StaticJobBoardSourceAdapter):
@@ -541,6 +550,11 @@ class WorkableSourceAdapter:
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
         self._request_json = retrying_json_request(settings)
+        self._public_client = WorkablePublicClient(
+            self._request_json,
+            max_pages=workable_page_budget(settings.source_timeout_seconds),
+            refresh=settings.cache_refresh,
+        )
 
     async def iter_boards(
         self,
@@ -554,18 +568,8 @@ class WorkableSourceAdapter:
             source.raw_metadata.get("token") or self._token_from_url(source.url)
         )
         label = str(source.raw_metadata.get("label") or token)
-        data = await self._request_json(
-            client,
-            "POST",
-            f"https://apply.workable.com/api/v3/accounts/{token}/jobs",
-            json={},
-        )
-        if not isinstance(data, dict):
-            raise ValueError("Workable source API returned invalid JSON")
-        jobs = data.get("results")
-        total = data.get("total") if isinstance(data.get("total"), int) else None
-        if total is None:
-            total = len(jobs) if isinstance(jobs, list) else 0
+        snapshot = await self._public_client.fetch_listing_snapshot(client, token)
+        total = snapshot.total
         remote_slug = slugify(token)
         board_key = source_board_key(source.key, remote_slug)
         now = utc_now()
@@ -577,7 +581,12 @@ class WorkableSourceAdapter:
                 remote_slug=remote_slug,
                 name=label,
                 num_jobs_hint=total,
-                raw_payload={**data, "sourceUrl": source.url, "token": token},
+                raw_payload={
+                    "sourceUrl": source.url,
+                    "token": token,
+                    "total": total,
+                    "pageCount": snapshot.page_count,
+                },
                 synced_at=now,
             )
         ]
@@ -600,7 +609,11 @@ class WorkableSourceAdapter:
                 detected_at=now,
             )
         ]
-        yield boards, providers, {"token": token, "total": total}
+        yield boards, providers, {
+            "token": token,
+            "total": total,
+            "pageCount": snapshot.page_count,
+        }
 
     def _token_from_url(self, url: str) -> str:
         token = workable_token_from_url(url)

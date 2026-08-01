@@ -14,6 +14,7 @@ from openopps.providers.boards.tokens import (
     lever_token_from_url,
     workable_token_from_url,
 )
+from openopps.providers.boards.consider import consider_jobs_token
 from openopps.utils import slugify
 
 
@@ -72,6 +73,10 @@ def dedupe_routes(
 
 def route_request_key(board: BoardRecord, route: BoardProviderRecord) -> str:
     provider = route.provider_id.lower()
+    if provider == "consider_jobs":
+        token = consider_jobs_token(route)
+        if token:
+            return f"consider_jobs:token:{token}"
     if provider == "teamtailor":
         host = _teamtailor_host(route)
         if host:

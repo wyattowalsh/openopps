@@ -9,7 +9,13 @@ from typer.testing import CliRunner
 
 from openopps import __version__
 from openopps.cli import app
-from openopps.models import BoardProviderRecord, BoardRecord, JobRecord, ProviderSupport
+from openopps.models import (
+    BoardProviderRecord,
+    BoardRecord,
+    JobRecord,
+    ProviderSupport,
+    utc_now,
+)
 from openopps.models import SourceRecord
 from openopps.metrics import ProgressUpdate, SyncMetrics
 from openopps.settings import OpenOppsSettings
@@ -910,6 +916,36 @@ def test_sources_show_prefers_persisted_source_over_catalog(tmp_path: Path):
     row = json.loads(result.output)
     assert row["url"] == "https://custom.example/companies"
     assert row["provider_id"] == "consider"
+
+
+def test_sources_show_applies_matching_catalog_configuration(tmp_path: Path):
+    catalog = cli_module._catalog_source("allspiceio")
+    assert catalog is not None
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        catalog.model_copy(
+            update={
+                "version": {"cursor": "next"},
+                "raw_metadata": {
+                    "board": "allspiceio",
+                    "lastPage": {"page": 2},
+                },
+                "synced_at": utc_now(),
+            }
+        )
+    )
+
+    result = invoke(tmp_path, "sources", "show", "allspiceio")
+
+    assert result.exit_code == 0
+    row = json.loads(result.output)
+    assert row["raw_metadata"] == {
+        "board": "allspice.io",
+        "lastPage": {"page": 2},
+    }
+    assert row["version"] == {"cursor": "next"}
+    assert row["synced_at"] is None
 
 
 def test_sources_add_rejects_private_or_deceptive_urls(tmp_path: Path):

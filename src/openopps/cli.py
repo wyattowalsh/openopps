@@ -59,6 +59,10 @@ from openopps.route_registry import BoardRouteRegistry
 from openopps.route_probe import probe_routes
 from openopps.route_select import normalize_provider_filter
 from openopps.settings import OpenOppsSettings, format_settings_validation_error
+from openopps.source_resolution import (
+    resolve_effective_source,
+    resolve_effective_sources,
+)
 from openopps.storage import OpenOppsStore
 from openopps.storage import BoardFilters, JobFilters
 from openopps.utils import slugify, stable_id
@@ -331,6 +335,10 @@ def _settings_with_cache_refresh(refresh_cache: bool) -> OpenOppsSettings:
 
 def _catalog_source(key: str) -> SourceRecord | None:
     return next((source for source in all_board_sources() if source.key == key), None)
+
+
+def _effective_source(store: OpenOppsStore, key: str) -> SourceRecord | None:
+    return resolve_effective_source(_catalog_source(key), store.get_source(key))
 
 
 def _json(data: object) -> None:
@@ -1146,11 +1154,10 @@ def sources_list(
     ] = False,
 ) -> None:
     settings = _settings()
-    records = []
+    stored_records: list[SourceRecord] = []
     if not settings.sqlite_path or settings.sqlite_path.exists():
-        records = OpenOppsStore(settings).list_sources()
-    if not records:
-        records = all_board_sources()
+        stored_records = OpenOppsStore(settings).list_sources()
+    records = resolve_effective_sources(all_board_sources(), stored_records)
     if json_output:
         _json([record.model_dump(mode="json") for record in records])
         return
@@ -1165,7 +1172,7 @@ def sources_list(
 def sources_show(
     key: Annotated[str, typer.Argument(help="Source key to inspect, such as a16z.")],
 ) -> None:
-    record = _store().get_source(key) or _catalog_source(key)
+    record = _effective_source(_store(), key)
     if not record:
         raise typer.BadParameter(f"Unknown source: {key}")
     _json(record.model_dump(mode="json"))
@@ -1206,7 +1213,7 @@ def sources_test(
     async def _run() -> None:
         settings = _settings_with_cache_refresh(refresh_cache)
         store = _store(settings)
-        source = store.get_source(key) or _catalog_source(key)
+        source = _effective_source(store, key)
         if not source:
             raise typer.BadParameter(f"Unknown source: {key}")
         adapter = build_source_adapter(source.provider_id, settings)

@@ -623,19 +623,24 @@ async def test_workable_fetch_jobs():
             },
         )
     )
-    respx.get("https://apply.workable.com/api/v2/accounts/acme/jobs/abc123").mock(
+    # One-shot aggregate details (no per-job fan-out).
+    respx.get("https://www.workable.com/api/accounts/acme?details=true").mock(
         return_value=httpx.Response(
             200,
             json={
-                "shortcode": "abc123",
-                "description": "<p>Help customers.</p>",
-                "url": "https://apply.workable.com/acme/j/abc123",
-                "application_url": "https://apply.workable.com/acme/j/abc123/apply",
-                "salary": {
-                    "minValue": 90000,
-                    "maxValue": 110000,
-                    "currency": "USD",
-                },
+                "jobs": [
+                    {
+                        "shortcode": "abc123",
+                        "description": "<p>Help customers.</p>",
+                        "url": "https://apply.workable.com/acme/j/abc123",
+                        "application_url": "https://apply.workable.com/acme/j/abc123/apply",
+                        "salary": {
+                            "minValue": 90000,
+                            "maxValue": 110000,
+                            "currency": "USD",
+                        },
+                    }
+                ],
             },
         )
     )
@@ -673,8 +678,8 @@ async def test_workable_fetch_jobs_reuses_route_probe_listing_cache(tmp_path):
             httpx.Response(429, json={"error": "rate limited"}),
         ]
     )
-    respx.get("https://apply.workable.com/api/v2/accounts/acme/jobs/abc123").mock(
-        return_value=httpx.Response(200, json={"shortcode": "abc123"})
+    respx.get("https://www.workable.com/api/accounts/acme?details=true").mock(
+        return_value=httpx.Response(200, json={"jobs": [{"shortcode": "abc123"}]})
     )
 
     async with build_async_client(settings) as client:
@@ -712,8 +717,8 @@ async def test_workable_fetch_jobs_uses_shared_rate_limiter(monkeypatch):
             json={"total": 1, "results": [{"shortcode": "abc123", "title": "Support"}]},
         )
     )
-    respx.get("https://apply.workable.com/api/v2/accounts/acme/jobs/abc123").mock(
-        return_value=httpx.Response(200, json={"shortcode": "abc123"})
+    respx.get("https://www.workable.com/api/accounts/acme?details=true").mock(
+        return_value=httpx.Response(200, json={"jobs": [{"shortcode": "abc123"}]})
     )
 
     async with build_async_client(settings) as client:
@@ -785,10 +790,22 @@ def test_workable_route_detection_and_token_derivation():
 async def test_workable_check_jobs_and_invalid_payload():
     settings = OpenOppsSettings(cache_enabled=False)
     respx.post("https://apply.workable.com/api/v3/accounts/acme/jobs").mock(
-        return_value=httpx.Response(200, json={"total": 2, "results": [{}, {}]})
+        return_value=httpx.Response(
+            200,
+            json={
+                "total": 2,
+                "results": [
+                    {"shortcode": "a1", "title": "A"},
+                    {"shortcode": "a2", "title": "B"},
+                ],
+            },
+        )
     )
     respx.post("https://apply.workable.com/api/v3/accounts/broken/jobs").mock(
         return_value=httpx.Response(200, json={"results": "bad"})
+    )
+    respx.post("https://apply.workable.com/api/v3/accounts/noshort/jobs").mock(
+        return_value=httpx.Response(200, json={"total": 1, "results": [{}]})
     )
 
     async with build_async_client(settings) as client:
@@ -807,6 +824,10 @@ async def test_workable_check_jobs_and_invalid_payload():
         with pytest.raises(ValueError, match="invalid JSON"):
             await WorkableProvider(settings).check_jobs(
                 client, board(), route("workable", token="broken")
+            )
+        with pytest.raises(ValueError, match="omitted a job shortcode"):
+            await WorkableProvider(settings).check_jobs(
+                client, board(), route("workable", token="noshort")
             )
 
 

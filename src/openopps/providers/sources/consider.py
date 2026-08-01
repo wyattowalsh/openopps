@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 
@@ -12,10 +10,18 @@ from openopps.models import (
     BoardRecord,
     ConsiderCompaniesResponse,
     ConsiderCompany,
+    ProviderSupport,
     SourceRecord,
     normalize_public_website_url,
     utc_now,
-    validate_public_https_url,
+)
+from openopps.providers.consider import (
+    ConsiderRoute,
+    ConsiderRouteMode,
+    consider_next_sequence,
+    consider_search_payload,
+    parse_consider_route,
+    raise_for_consider_errors,
 )
 from openopps.settings import OpenOppsSettings
 from openopps.utils import slugify, source_board_key, stable_id
@@ -1152,51 +1158,107 @@ class ConsiderSourceAdapter:
         *,
         page_size: int,
     ) -> AsyncIterator[tuple[list[BoardRecord], list[BoardProviderRecord], dict]]:
-        validate_public_https_url(source.url)
-        board = str(source.raw_metadata.get("board") or self.board or source.key)
-        parsed = urlparse(source.url)
-        origin = f"{parsed.scheme}://{parsed.netloc}"
-        endpoint = f"{origin}/api-boards/search-companies"
+        board_hint = source.raw_metadata.get("board") or self.board
+        route = parse_consider_route(
+            source.url,
+            portfolio_board=str(board_hint) if board_hint is not None else None,
+        )
+        if route.mode == ConsiderRouteMode.COMPANY_JOBS:
+            yield self._company_jobs_route(source, route)
+            return
+
+        pages: list[
+            tuple[list[BoardRecord], list[BoardProviderRecord], dict]
+        ] = []
         sequence: str | None = None
+        seen_sequences: set[str] = set()
         while True:
-            meta: dict[str, Any] = {"size": page_size}
-            if sequence:
-                meta["sequence"] = sequence
-            payload = {
-                "query": {"parent": board},
-                "meta": meta,
-                "board": {"id": board, "isParent": True},
-            }
             response = await self._request_json(
                 client,
                 "POST",
-                endpoint,
-                json=payload,
+                route.endpoint,
+                json=consider_search_payload(
+                    route, page_size=page_size, sequence=sequence
+                ),
                 headers={
                     "content-type": "application/json",
                     "referer": source.url,
-                    "origin": origin,
+                    "origin": route.origin,
                 },
             )
             if not isinstance(response, dict):
                 raise ValueError(
                     "Consider companies endpoint returned a non-object JSON payload"
                 )
+            raise_for_consider_errors(response.get("errors"), endpoint="companies")
             payload = ConsiderCompaniesResponse.model_validate(response)
-            boards, providers = self._normalize_companies(source.key, payload.companies)
-            yield (
-                boards,
-                providers,
-                {
-                    "version": payload.version,
-                    "meta": payload.meta,
-                    "total": payload.total,
-                },
+            next_sequence = consider_next_sequence(payload.meta)
+            if next_sequence is not None and not payload.companies:
+                raise ValueError(
+                    "Consider companies endpoint returned an empty page with continuation"
+                )
+            if next_sequence is not None and (
+                next_sequence == sequence or next_sequence in seen_sequences
+            ):
+                raise ValueError("Consider companies endpoint repeated a sequence cursor")
+            boards, providers = self._normalize_companies(
+                source.key, payload.companies
             )
-            next_sequence = payload.meta.get("sequence")
-            if not payload.companies or not next_sequence or next_sequence == sequence:
+            pages.append(
+                (
+                    boards,
+                    providers,
+                    {
+                        "version": payload.version,
+                        "meta": payload.meta,
+                        "total": payload.total,
+                    },
+                )
+            )
+            if next_sequence is None:
                 break
-            sequence = str(next_sequence)
+            seen_sequences.add(next_sequence)
+            sequence = next_sequence
+
+        for page in pages:
+            yield page
+
+    def _company_jobs_route(
+        self,
+        source: SourceRecord,
+        route: ConsiderRoute,
+    ) -> tuple[list[BoardRecord], list[BoardProviderRecord], dict]:
+        board_key = source_board_key(source.key, route.token)
+        now = utc_now()
+        label = source.raw_metadata.get("label")
+        name = str(label).strip() if label else route.token
+        board = BoardRecord(
+            key=board_key,
+            source_key=source.key,
+            remote_id=route.token,
+            remote_slug=route.token,
+            name=name,
+            raw_payload={
+                "board": route.token,
+                "mode": route.mode.value,
+                "url": route.board_url,
+            },
+            synced_at=now,
+        )
+        provider = BoardProviderRecord(
+            id=stable_id(source.key, board_key, "consider_jobs"),
+            source_key=source.key,
+            board_key=board_key,
+            provider_id="consider_jobs",
+            label="Consider Jobs",
+            support_level=ProviderSupport.JOBS,
+            board_url=route.board_url,
+            token=route.token,
+            host="consider.com",
+            raw_payload={"board": route.token, "mode": route.mode.value},
+            detected_at=now,
+        )
+        return [board], [provider], {"mode": route.mode.value, "total": 1}
 
     def _normalize_companies(
         self,

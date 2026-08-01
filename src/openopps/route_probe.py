@@ -20,11 +20,18 @@ from openopps.http import (
 )
 from openopps.models import BoardProviderRecord, BoardRecord, ProviderSupport, utc_now
 from openopps.models import host_matches, validate_provider_host
-from openopps.providers.boards.workable import wait_for_workable_rate_limit
+from openopps.providers.boards.consider import consider_jobs_route
+from openopps.providers.boards.workable import WorkablePublicClient
 from openopps.providers.boards.workday import parse_workday_board_url
 from openopps.providers.boards.wpjobmanager import (
     wpjobmanager_is_ajax_endpoint,
     wpjobmanager_is_rest_endpoint,
+)
+from openopps.providers.consider import (
+    ConsiderJobsResponse,
+    consider_search_payload,
+    raise_for_consider_errors,
+    validate_consider_empty_board_html,
 )
 from openopps.route_select import dedupe_routes, normalize_provider_filter, route_ready
 from openopps.settings import OpenOppsSettings
@@ -318,6 +325,14 @@ async def _probe_route(
     *,
     max_candidates: int,
 ) -> tuple[ProbeMatch | None, ProbeUnknown | None]:
+    if route.provider_id == "consider_jobs":
+        return await _probe_consider_jobs(
+            client,
+            request_json,
+            request_text_response,
+            board,
+            route,
+        )
     if route.provider_id in {
         "greenhouse",
         "lever",
@@ -347,6 +362,54 @@ async def _probe_route(
         provider_id=route.provider_id,
         name=board.name,
         reason="provider_not_probeable",
+    )
+
+
+async def _probe_consider_jobs(
+    client: httpx.AsyncClient,
+    request_json: JsonRequester,
+    request_text_response: ResponseRequester,
+    board: BoardRecord,
+    route: BoardProviderRecord,
+) -> tuple[ProbeMatch | None, ProbeUnknown | None]:
+    consider_route = consider_jobs_route(board, route)
+    response = await request_json(
+        client,
+        "POST",
+        consider_route.endpoint,
+        json=consider_search_payload(consider_route, page_size=1),
+        headers={
+            "content-type": "application/json",
+            "origin": consider_route.origin,
+            "referer": consider_route.board_url,
+        },
+        cache_namespace=_ROUTE_PROBE_CACHE_NAMESPACE,
+    )
+    if not isinstance(response, dict):
+        raise ValueError("Consider jobs endpoint returned a non-object payload")
+    page = ConsiderJobsResponse.model_validate(response)
+    raise_for_consider_errors(page.errors, endpoint="jobs")
+    if not page.jobs:
+        html_response = await request_text_response(
+            client,
+            "GET",
+            consider_route.board_url,
+            headers={"accept": "text/html,application/xhtml+xml"},
+            cache_namespace=_ROUTE_PROBE_CACHE_NAMESPACE,
+        )
+        if not isinstance(html_response.body, str):
+            raise ValueError("Consider board page returned a non-text payload")
+        validate_consider_empty_board_html(html_response.body)
+    return (
+        ProbeMatch(
+            board_key=board.key,
+            provider_id=route.provider_id,
+            token=consider_route.token,
+            board_url=consider_route.board_url,
+            host="consider.com",
+            observed_jobs=page.total if page.total is not None else len(page.jobs),
+        ),
+        None,
     )
 
 
@@ -490,24 +553,15 @@ async def _try_ashby(
 async def _try_workable(
     client: httpx.AsyncClient, request_json: JsonRequester, token: str
 ) -> int | None:
-    await wait_for_workable_rate_limit()
-    data = await _route_probe_json_or_none(
-        client,
-        request_json,
-        "POST",
-        f"https://apply.workable.com/api/v3/accounts/{token}/jobs",
-        json={},
-        provider_id="workable",
-        route_key=token,
-    )
-    if not isinstance(data, dict):
-        return None
-    total = data.get("total")
-    if isinstance(total, int):
-        return total
-    if isinstance(data.get("results"), list):
-        return len(data["results"])
-    return None
+    try:
+        snapshot = await WorkablePublicClient(
+            request_json
+        ).fetch_listing_snapshot(client, token)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in _MISS_STATUS_CODES:
+            return None
+        raise
+    return snapshot.total
 
 
 async def _try_teamtailor(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -556,6 +557,7 @@ async def _sync_jobs_bound(
         provider_filter or "all",
     )
     semaphore = asyncio.Semaphore(settings.board_concurrency)
+    provider_semaphores: dict[str, asyncio.Semaphore] = {}
     write_lock = asyncio.Lock()
     async with build_async_client(settings) as client:
 
@@ -563,8 +565,19 @@ async def _sync_jobs_bound(
             route: BoardProviderRecord, board: BoardRecord, request_key: str
         ) -> None:
             nonlocal completed_routes
-            async with semaphore:
+            async with AsyncExitStack() as stack:
                 provider = build_job_provider(route.provider_id, settings)
+                route_concurrency = getattr(provider, "route_concurrency", None)
+                if (
+                    isinstance(route_concurrency, int)
+                    and not isinstance(route_concurrency, bool)
+                    and route_concurrency > 0
+                ):
+                    provider_semaphore = provider_semaphores.setdefault(
+                        route.provider_id, asyncio.Semaphore(route_concurrency)
+                    )
+                    await stack.enter_async_context(provider_semaphore)
+                await stack.enter_async_context(semaphore)
                 if not provider:
                     metrics.skipped += 1
                     async with progress_lock:
