@@ -60,4 +60,5 @@ dev = [
   "pytest-asyncio>=0.25",
   "pytest-cov>=7.1.0",
   "respx>=0.22",
+  "ty>=0.0.65",
 ]
