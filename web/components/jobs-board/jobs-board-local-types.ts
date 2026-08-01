@@ -7,11 +7,11 @@ import type {
 	SearchRow,
 } from "@/components/openopps-search/search-types";
 
-export const JOBS_LOCAL_SCHEMA_VERSION = 1;
+export const JOBS_LOCAL_SCHEMA_VERSION = 2;
 export const JOBS_LOCAL_SETTINGS_KEY = "openopps.jobs.local.settings.v1";
 export const JOBS_LOCAL_DB_NAME = "openopps.jobs.local";
-export const JOBS_LOCAL_DB_VERSION = 1;
-export const JOBS_LOCAL_IMPORT_MAX_BYTES = 16 * 1024 * 1024;
+export const JOBS_LOCAL_DB_VERSION = 2;
+export const JOBS_LOCAL_IMPORT_MAX_BYTES = 32 * 1024 * 1024;
 export const JOBS_LOCAL_IMPORT_MAX_RECORDS = 5_000;
 
 export type JobsRetentionMonths = 1 | 3 | 6 | 12 | "forever";
@@ -67,8 +67,14 @@ export type SavedSearchRecord = {
 	lastReviewedAt: string | null;
 	manifestVersion: number | null;
 	snapshotAt: string | null;
-	baselineScope: "page" | "full";
+	baselineScope: "page" | "full" | "cursor";
 	baselineTotalMatches: number | null;
+	reviewStatus: "current" | "needs-review";
+	reviewCursor: {
+		semantics: "first-seen-v1";
+		reviewedAt: string;
+		snapshotAt: string | null;
+	} | null;
 	baseline: {
 		reviewedJobIds: string[];
 		reviewedFingerprints: Record<string, string>;

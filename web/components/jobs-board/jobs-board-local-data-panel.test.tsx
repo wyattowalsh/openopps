@@ -101,7 +101,7 @@ function renderPanel(
 }
 
 const settings: JobsLocalSettings = {
-	schemaVersion: 1,
+	schemaVersion: 2,
 	fullDetailRetentionMonths: 6,
 	showHidden: false,
 	hideViewed: false,

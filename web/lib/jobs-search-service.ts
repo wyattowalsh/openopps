@@ -15,6 +15,8 @@ import type {
 	SearchManifest,
 	SearchRow,
 	JobsSearchSummaryResponse,
+	SavedSearchCountQuery,
+	SavedSearchCountsResponse,
 } from "@/components/openopps-search/search-types";
 import { J, SearchLoadError, text } from "@/components/openopps-search/search-utils";
 import { resolvePublicSearchUrl } from "@/lib/public-search-url";
@@ -35,8 +37,6 @@ type SearchPublicJobsIndexOptions = {
 	page?: number;
 	pageSize?: number;
 	signal?: AbortSignal;
-	/** When true, summary responses include per-job id/fingerprint entries (DEC-07). */
-	includeFingerprints?: boolean;
 };
 
 type JobsSearchStore = {
@@ -54,7 +54,13 @@ type JobsSearchStoreStats = {
 	chunkFetches: number;
 };
 
-const storeByBase = new Map<string, Promise<JobsSearchStore>>();
+type CachedStore = {
+	snapshotKey: string | null;
+	promise: Promise<JobsSearchStore>;
+};
+
+const storeByBase = new Map<string, CachedStore>();
+const storeBySnapshot = new Map<string, Promise<JobsSearchStore>>();
 /** Bounded FIFO cache of ordered job ids (not full row arrays). */
 const filterResultCache = new Map<string, string[]>();
 const storeStats: JobsSearchStoreStats = {
@@ -101,26 +107,49 @@ export async function summarizePublicJobsIndex({
 	baseUrl,
 	filters,
 	sortKey,
-	includeFingerprints = false,
 	signal,
 }: SearchPublicJobsIndexOptions): Promise<JobsSearchSummaryResponse> {
 	const store = await loadJobsSearchStore(baseUrl, signal);
 	const rows = getFilteredSortedRows(store, filters, sortKey);
-	const entries = includeFingerprints
-		? rows
-				.map((row) => ({
-					id: text(row[J.id]),
-					fingerprint: jobFingerprint(row),
-				}))
-				.filter((entry) => entry.id)
-		: [];
 	return {
 		version: store.manifest.version,
 		entity: "jobs",
+		snapshotAt: store.manifest.snapshotAt,
 		totalMatches: rows.length,
 		sortKey,
 		filtersHash: stableStringify(filters),
-		entries,
+	};
+}
+
+export async function countSavedSearchMatches({
+	baseUrl,
+	searches,
+	signal,
+}: {
+	baseUrl: URL | string;
+	searches: SavedSearchCountQuery[];
+	signal?: AbortSignal;
+}): Promise<SavedSearchCountsResponse> {
+	const store = await loadJobsSearchStore(baseUrl, signal);
+	return {
+		version: store.manifest.version,
+		entity: "jobs",
+		snapshotAt: store.manifest.snapshotAt,
+		semantics: "first-seen-v1",
+		counts: searches.map((search) => {
+			const rows = getFilteredSortedRows(store, search.filters, search.sortKey);
+			const reviewedAt = Date.parse(search.reviewedAt);
+			return {
+				id: search.id,
+				totalMatches: rows.length,
+				newMatches: rows.reduce((count, row) => {
+					const firstSeenAt = Date.parse(text(row[J.firstSeenAt]));
+					return Number.isFinite(firstSeenAt) && firstSeenAt > reviewedAt
+						? count + 1
+						: count;
+				}, 0),
+			};
+		}),
 	};
 }
 
@@ -171,6 +200,7 @@ export function normalizePageSize(value: number | string | null | undefined) {
 
 export function clearJobsSearchStoreForTests() {
 	storeByBase.clear();
+	storeBySnapshot.clear();
 	filterResultCache.clear();
 	storeStats.loads = 0;
 	storeStats.chunkFetches = 0;
@@ -186,32 +216,68 @@ async function loadJobsSearchStore(
 ): Promise<JobsSearchStore> {
 	const base = normalizeBaseUrl(baseUrl);
 	const baseHref = base.href;
-	// Abortable loads bypass the shared promise cache so a cancelled request cannot poison others.
-	if (signal) {
-		return buildJobsSearchStore(base, signal);
+	if (signal?.aborted) {
+		throw new DOMException("The operation was aborted.", "AbortError");
 	}
 	let cached = storeByBase.get(baseHref);
 	if (!cached) {
-		cached = buildJobsSearchStore(base).catch((caught: unknown) => {
-			if (storeByBase.get(baseHref) === cached) {
-				storeByBase.delete(baseHref);
-			}
-			throw caught;
-		});
-		storeByBase.set(baseHref, cached);
+		const entry: CachedStore = {
+			snapshotKey: null,
+			promise: Promise.resolve(null as never),
+		};
+		entry.promise = buildJobsSearchStore(base)
+			.then((store) => {
+				const snapshotKey = `${baseHref}|${store.cacheKey}`;
+				const existing = storeBySnapshot.get(snapshotKey);
+				const resolved = existing ?? Promise.resolve(store);
+				storeBySnapshot.set(snapshotKey, resolved);
+				entry.snapshotKey = snapshotKey;
+				entry.promise = resolved;
+				return resolved;
+			})
+			.catch((caught: unknown) => {
+				if (storeByBase.get(baseHref) === entry) {
+					storeByBase.delete(baseHref);
+				}
+				throw caught;
+			});
+		cached = entry;
+		storeByBase.set(baseHref, entry);
+	} else if (cached.snapshotKey) {
+		cached.promise = storeBySnapshot.get(cached.snapshotKey) ?? cached.promise;
 	}
-	return cached;
+	return awaitWithCallerAbort(cached.promise, signal);
+}
+
+function awaitWithCallerAbort<T>(promise: Promise<T>, signal?: AbortSignal) {
+	if (!signal) {
+		return promise;
+	}
+	return new Promise<T>((resolve, reject) => {
+		const abort = () => {
+			reject(new DOMException("The operation was aborted.", "AbortError"));
+		};
+		signal.addEventListener("abort", abort, { once: true });
+		promise.then(
+			(value) => {
+				signal.removeEventListener("abort", abort);
+				resolve(value);
+			},
+			(caught) => {
+				signal.removeEventListener("abort", abort);
+				reject(caught);
+			},
+		);
+	});
 }
 
 async function buildJobsSearchStore(
 	base: URL,
-	signal?: AbortSignal,
 ): Promise<JobsSearchStore> {
 	storeStats.loads += 1;
 	const manifest = await loadPublicJson<SearchManifest>(
 		base,
 		SEARCH_MANIFEST_PATH,
-		signal,
 	);
 	validateSearchManifest(manifest);
 	const jobs = manifest.entities.jobs;
@@ -226,7 +292,7 @@ async function buildJobsSearchStore(
 			"Search manifest is missing jobs entity chunks.",
 		);
 	}
-	const chunks = await loadChunkRefs(base, refs, signal);
+	const chunks = await loadChunkRefs(base, refs);
 	const rows = chunks.flatMap((chunk) => chunk.rows);
 	const rowsById = new Map<string, SearchRow>();
 	for (const row of rows) {

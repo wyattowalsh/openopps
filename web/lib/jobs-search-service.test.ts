@@ -295,7 +295,7 @@ describe("jobs search service", () => {
 			filterSpy.mockRestore();
 		});
 
-		it("returns counts-only summary by default without fingerprint entries", async () => {
+		it("returns counts-only summary without fingerprint entries", async () => {
 			const matchingNewer = row({
 				id: "newer",
 				title: "Platform Engineer",
@@ -323,52 +323,10 @@ describe("jobs search service", () => {
 			});
 
 			expect(result.totalMatches).toBe(2);
-			expect(result.entries).toEqual([]);
+			expect(result.entity).toBe("jobs");
+			expect(result.sortKey).toBe("relevance");
 			expect(result.filtersHash).toContain('"query":"platform"');
-		});
-
-		it("returns fingerprint entries when includeFingerprints is enabled", async () => {
-			const matchingNewer = row({
-				id: "newer",
-				title: "Platform Engineer",
-				contentHash: "content-newer",
-			});
-			const matchingOlder = row({
-				id: "older",
-				title: "Platform Lead",
-				latestObserved: "2026-06-01T00:00:00Z",
-				contentHash: "content-older",
-			});
-			stubFetch({
-				"https://openopps.test/data/openopps-search/manifest.json": manifest,
-				"https://openopps.test/data/openopps-search/jobs/chunks/0000.json": chunk([
-					matchingOlder,
-				]),
-				"https://openopps.test/data/openopps-search/jobs/chunks/0001.json": chunk([
-					matchingNewer,
-				]),
-			});
-
-			const result = await summarizePublicJobsIndex({
-				baseUrl: "https://openopps.test/",
-				filters: filters({ query: "platform" }),
-				sortKey: "relevance",
-				includeFingerprints: true,
-			});
-
-			expect(result.totalMatches).toBe(2);
-			expect(result.entries).toHaveLength(result.totalMatches);
-			expect(result.entries).toEqual([
-				{ id: "newer", fingerprint: "content-newer" },
-				{ id: "older", fingerprint: "content-older" },
-			]);
-			for (const entry of result.entries) {
-				expect(typeof entry.id).toBe("string");
-				expect(entry.id.length).toBeGreaterThan(0);
-				expect(typeof entry.fingerprint).toBe("string");
-				expect(entry.fingerprint.length).toBeGreaterThan(0);
-			}
-			expect(result.filtersHash).toContain('"query":"platform"');
+			expect(result).not.toHaveProperty("entries");
 		});
 
 	describe("abort and loopback filesystem loads", () => {

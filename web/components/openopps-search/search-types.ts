@@ -265,18 +265,32 @@ export type JobsSearchResponse = SearchChunk & {
 	truncated: boolean;
 };
 
-export type JobsSearchSummaryEntry = {
-	id: string;
-	fingerprint: string;
-};
-
 export type JobsSearchSummaryResponse = {
 	version: number;
 	entity: "jobs";
+	snapshotAt: string | null;
 	totalMatches: number;
 	sortKey: string;
 	filtersHash: string;
-	entries: JobsSearchSummaryEntry[];
+};
+
+export type SavedSearchCountQuery = {
+	id: string;
+	filters: import("@/components/jobs-board/jobs-board-filter-engine").JobBoardFilters;
+	sortKey: import("@/components/jobs-board/jobs-board-filter-engine").JobSortKey;
+	reviewedAt: string;
+};
+
+export type SavedSearchCountsResponse = {
+	version: number;
+	entity: "jobs";
+	snapshotAt: string | null;
+	semantics: "first-seen-v1";
+	counts: Array<{
+		id: string;
+		totalMatches: number;
+		newMatches: number;
+	}>;
 };
 
 /** Job detail shard payload for preview sheets and deep links. */

@@ -2,6 +2,8 @@ import type {
 	Entity,
 	JobsSearchResponse,
 	JobsSearchSummaryResponse,
+	SavedSearchCountQuery,
+	SavedSearchCountsResponse,
 	LineageAggregate,
 	SearchChunk,
 	SearchChunkRef,
@@ -21,6 +23,7 @@ import {
 
 export const SEARCH_MANIFEST_PATH = "/data/openopps-search/manifest.json";
 export const JOBS_SEARCH_PATH = "/api/jobs/search";
+export const SAVED_SEARCH_COUNT_BATCH_SIZE = 25;
 export const LINEAGE_AGGREGATE_PATH = "/data/openopps-search/lineage-aggregate.json";
 const SUPPORTED_SEARCH_INDEX_VERSIONS = new Set([3, SEARCH_VERSION]);
 const MAX_CHUNK_FETCHES = 6;
@@ -133,7 +136,6 @@ export async function loadJobsSearchResults(
 	}
 	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
 	const response = await fetch(path, {
-		cache: "no-store",
 		signal: options.signal,
 	});
 	if (!response.ok) {
@@ -157,7 +159,6 @@ export async function loadJobsSearchSummary(
 	params.set("summary", "1");
 	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
 	const response = await fetch(path, {
-		cache: "no-store",
 		signal: options.signal,
 	});
 	if (!response.ok) {
@@ -169,6 +170,35 @@ export async function loadJobsSearchSummary(
 	}
 	const payload = (await response.json()) as JobsSearchSummaryResponse;
 	validateJobsSearchSummaryResponse(payload);
+	return payload;
+}
+
+export async function loadSavedSearchCounts(
+	searches: SavedSearchCountQuery[],
+	options: { signal?: AbortSignal } = {},
+) {
+	if (searches.length > SAVED_SEARCH_COUNT_BATCH_SIZE) {
+		throw new SearchLoadError(
+			"invalid_chunk",
+			`Saved-search count batches are limited to ${SAVED_SEARCH_COUNT_BATCH_SIZE}.`,
+		);
+	}
+	const response = await fetch(JOBS_SEARCH_PATH, {
+		method: "POST",
+		cache: "no-store",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ searches }),
+		signal: options.signal,
+	});
+	if (!response.ok) {
+		throw new SearchLoadError(
+			"fetch_failed",
+			`Unable to count saved searches: ${response.status}`,
+			JOBS_SEARCH_PATH,
+		);
+	}
+	const payload = (await response.json()) as SavedSearchCountsResponse;
+	validateSavedSearchCountsResponse(payload, searches);
 	return payload;
 }
 
@@ -236,33 +266,49 @@ export function validateJobsSearchSummaryResponse(response: JobsSearchSummaryRes
 	if (
 		response.entity !== "jobs" ||
 		!SUPPORTED_SEARCH_INDEX_VERSIONS.has(response.version) ||
+		!(response.snapshotAt === null || typeof response.snapshotAt === "string") ||
 		typeof response.totalMatches !== "number" ||
 		typeof response.sortKey !== "string" ||
-		typeof response.filtersHash !== "string" ||
-		!Array.isArray(response.entries)
+		typeof response.filtersHash !== "string"
 	) {
 		throw new SearchLoadError(
 			"invalid_chunk",
 			"Jobs search summary response is missing result metadata.",
 		);
 	}
-	if (response.entries.length !== response.totalMatches) {
-		throw new SearchLoadError(
-			"invalid_chunk",
-			"Jobs search summary count does not match entries.",
-		);
+}
+
+export function validateSavedSearchCountsResponse(
+	response: SavedSearchCountsResponse,
+	request: SavedSearchCountQuery[],
+) {
+	if (
+		response.entity !== "jobs" ||
+		!SUPPORTED_SEARCH_INDEX_VERSIONS.has(response.version) ||
+		response.semantics !== "first-seen-v1" ||
+		!(response.snapshotAt === null || typeof response.snapshotAt === "string") ||
+		!Array.isArray(response.counts) ||
+		response.counts.length !== request.length
+	) {
+		throw new SearchLoadError("invalid_chunk", "Saved-search counts response is invalid.");
 	}
-	for (const entry of response.entries) {
+	const requestedIds = new Set(request.map((item) => item.id));
+	const returnedIds = new Set<string>();
+	for (const count of response.counts) {
 		if (
-			!entry ||
-			typeof entry.id !== "string" ||
-			typeof entry.fingerprint !== "string"
+			!count ||
+			typeof count.id !== "string" ||
+			!requestedIds.has(count.id) ||
+			returnedIds.has(count.id) ||
+			!Number.isInteger(count.totalMatches) ||
+			count.totalMatches < 0 ||
+			!Number.isInteger(count.newMatches) ||
+			count.newMatches < 0 ||
+			count.newMatches > count.totalMatches
 		) {
-			throw new SearchLoadError(
-				"invalid_chunk",
-				"Jobs search summary contains an invalid entry.",
-			);
+			throw new SearchLoadError("invalid_chunk", "Saved-search counts response is invalid.");
 		}
+		returnedIds.add(count.id);
 	}
 }
 

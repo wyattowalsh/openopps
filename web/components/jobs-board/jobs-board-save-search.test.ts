@@ -14,35 +14,37 @@ describe("resolveCreateSavedSearchBaseline", () => {
 	const sortKey = "latest" as const;
 	const visibleRows = [jobRow("job-a"), jobRow("job-b")];
 
-	it("uses full baseline from summary when load succeeds", async () => {
+	it("uses cursor review status when summary load succeeds", async () => {
 		const summary: JobsSearchSummaryResponse = {
 			version: 6,
 			entity: "jobs",
+			snapshotAt: "2026-06-16T00:00:00.000Z",
 			totalMatches: 42,
 			sortKey: "latest",
 			filtersHash: "{}",
-			entries: [
-				{ id: "job-x", fingerprint: "fp-x" },
-				{ id: "job-y", fingerprint: "fp-y" },
-			],
 		};
 		const loadSummary = vi.fn().mockResolvedValue(summary);
+		const now = "2026-06-30T12:00:00.000Z";
 
 		const result = await resolveCreateSavedSearchBaseline({
 			visibleRows,
 			filters,
 			sortKey,
 			loadSummary,
+			now,
 		});
 
 		expect(loadSummary).toHaveBeenCalledWith(filters, sortKey);
 		expect(result).toEqual({
-			baseline: {
-				reviewedJobIds: ["job-x", "job-y"],
-				reviewedFingerprints: { "job-x": "fp-x", "job-y": "fp-y" },
-			},
-			baselineScope: "full",
+			baseline: baselineFromRows(visibleRows),
+			baselineScope: "cursor",
 			baselineTotalMatches: 42,
+			reviewStatus: "current",
+			reviewCursor: {
+				semantics: "first-seen-v1",
+				reviewedAt: now,
+				snapshotAt: summary.snapshotAt,
+			},
 		});
 	});
 
@@ -61,6 +63,8 @@ describe("resolveCreateSavedSearchBaseline", () => {
 			baseline: baselineFromRows(visibleRows),
 			baselineScope: "page",
 			baselineTotalMatches: visibleRows.length,
+			reviewStatus: "needs-review",
+			reviewCursor: null,
 		});
 	});
 
@@ -77,6 +81,8 @@ describe("resolveCreateSavedSearchBaseline", () => {
 		expect(result.baselineScope).toBe("page");
 		expect(result.baselineTotalMatches).toBe(0);
 		expect(result.baseline.reviewedJobIds).toEqual([]);
+		expect(result.reviewStatus).toBe("needs-review");
+		expect(result.reviewCursor).toBeNull();
 	});
 });
 

@@ -10,7 +10,6 @@ import {
 import { useJobBoardFilterState } from "@/components/jobs-board/jobs-board-filter-state";
 import { bucketMatchCount, JOBS_BOARD_PAGE_SIZE } from "@/components/jobs-board/jobs-board-constants";
 import {
-	baselineFromSearchSummary,
 	baselineLookupFromSavedSearch,
 	isDurableJobWorkflowRecord,
 	jobLifecycleIndicators,
@@ -233,16 +232,15 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const savedSearchSummaries = useMemo(
 		() =>
 			localState.savedSearches.map((record) => {
-				const matches = rowsForSavedSearch(record);
 				return {
 					record,
 					newMatches:
-						record.baselineScope === "full"
+						record.reviewStatus === "current" && record.reviewCursor
 							? savedSearchFullCounts[record.id] ?? null
-							: savedSearchNewMatchCount(record, matches),
+							: null,
 				};
 			}),
-		[localState.savedSearches, rowsForSavedSearch, savedSearchFullCounts],
+		[localState.savedSearches, savedSearchFullCounts],
 	);
 
 	useEffect(() => {
@@ -361,19 +359,27 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const handleCreateSavedSearch = async () => {
 		clearSearchError();
 		try {
-			const { baseline, baselineScope, baselineTotalMatches } =
+			const {
+				baseline,
+				baselineScope,
+				baselineTotalMatches,
+				reviewStatus,
+				reviewCursor,
+			} =
 				await resolveCreateSavedSearchBaseline({
 					visibleRows,
 					filters,
 					sortKey,
 					loadSummary: loadJobsSearchSummary,
 				});
-			localState.createSavedSearch({
+			await localState.createSavedSearch({
 				filters,
 				rows: visibleRows,
 				baseline,
 				baselineScope,
 				baselineTotalMatches,
+				reviewStatus,
+				reviewCursor,
 				sortKey,
 				manifest,
 			});
@@ -391,10 +397,12 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const handleRestoreSavedSearch = (record: SavedSearchRecord) => {
 		clearSearchError();
 		setActiveSavedSearchId(record.id);
-		localState.updateSavedSearch({
-			...record,
-			lastOpenedAt: new Date().toISOString(),
-		});
+		void localState
+			.updateSavedSearch({
+				...record,
+				lastOpenedAt: new Date().toISOString(),
+			})
+			.catch((caught) => setSearchError(formatLoadError(caught)));
 		setFilters(record.filters);
 		trackTelemetry("jobs.saved_search_restored", {
 			newMatchBucket: bucketMatchCount(savedSearchNewMatchCount(record, rowsForSavedSearch(record))),
@@ -406,9 +414,8 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		clearSearchError();
 		try {
 			const summary = await loadJobsSearchSummary(record.filters, record.sortKey);
-			localState.markSavedSearchReviewed(record, rowsForSavedSearch(record), manifest, {
-				baseline: baselineFromSearchSummary(summary),
-				baselineScope: "full",
+			await localState.markSavedSearchReviewed(record, rowsForSavedSearch(record), manifest, {
+				baselineScope: "cursor",
 				baselineTotalMatches: summary.totalMatches,
 			});
 			trackTelemetry("jobs.saved_search_reviewed", {
@@ -425,17 +432,21 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		setPendingDeleteSavedSearch(record);
 	};
 
-	const confirmDeleteSavedSearch = () => {
+	const confirmDeleteSavedSearch = async () => {
 		const record = pendingDeleteSavedSearch;
 		if (!record) {
 			return;
 		}
-		if (activeSavedSearchId === record.id) {
-			setActiveSavedSearchId(null);
+		try {
+			await localState.deleteSavedSearch(record.id);
+			if (activeSavedSearchId === record.id) {
+				setActiveSavedSearchId(null);
+			}
+			trackTelemetry("jobs.saved_search_deleted");
+			setPendingDeleteSavedSearch(null);
+		} catch (caught) {
+			setSearchError(formatLoadError(caught));
 		}
-		localState.deleteSavedSearch(record.id);
-		trackTelemetry("jobs.saved_search_deleted");
-		setPendingDeleteSavedSearch(null);
 	};
 
 	const activeSearchMeta = searchMeta;

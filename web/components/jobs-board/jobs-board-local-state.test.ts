@@ -4,7 +4,6 @@ import {
 	DEFAULT_JOBS_LOCAL_SETTINGS,
 	JOBS_LOCAL_SETTINGS_KEY,
 	baselineFromRows,
-	baselineFromSearchSummary,
 	createJobsLocalExportEnvelope,
 	createJobWorkflowRecord,
 	createRetainedJobDetailRecord,
@@ -20,7 +19,6 @@ import {
 	readJobsLocalSettings,
 	reconcileJobsLocalSnapshot,
 	savedSearchNewMatchCount,
-	savedSearchNewMatchCountFromSummary,
 	summarizeJobsLocalData,
 	updateJobWorkflowRecord,
 	type JobsLocalSnapshot,
@@ -112,37 +110,6 @@ describe("jobs board local state", () => {
 				jobRow("job-b"),
 				jobRow("job-c"),
 			]),
-		).toBe(2);
-	});
-
-	it("counts saved-search new matches from full search summaries", () => {
-		const summary = searchSummary([
-			{ id: "job-a", fingerprint: "content-v1" },
-			{ id: "job-b", fingerprint: "content-v1" },
-		]);
-		const record = createSavedSearchRecord({
-			filters: DEFAULT_JOB_BOARD_FILTERS,
-			rows: [],
-			baseline: baselineFromSearchSummary(summary),
-			baselineScope: "full",
-			baselineTotalMatches: summary.totalMatches,
-			sortKey: "latest",
-			manifest: manifest(),
-			now: "2026-06-30T03:00:00.000Z",
-		});
-
-		expect(record.baselineScope).toBe("full");
-		expect(record.baselineTotalMatches).toBe(2);
-		expect(savedSearchNewMatchCountFromSummary(record, summary)).toBe(0);
-		expect(
-			savedSearchNewMatchCountFromSummary(
-				record,
-				searchSummary([
-					{ id: "job-a", fingerprint: "content-v2" },
-					{ id: "job-b", fingerprint: "content-v1" },
-					{ id: "job-c", fingerprint: "content-v1" },
-				]),
-			),
 		).toBe(2);
 	});
 
@@ -389,12 +356,13 @@ describe("jobs board local state", () => {
 			jobRecords: [],
 			savedSearches: [],
 			retainedJobDetails: [],
-				padding: "x".repeat(16 * 1024 * 1024),
+			// Limit is 32MB (JOBS_LOCAL_IMPORT_MAX_BYTES); pad past it.
+			padding: "x".repeat(33 * 1024 * 1024),
 		});
 		const parsed = parseJobsLocalImport(oversized);
 		expect(parsed.ok).toBe(false);
 		if (!parsed.ok) {
-			expect(parsed.errors[0]).toContain("16MB");
+			expect(parsed.errors[0]).toMatch(/32\s*MB|size limit/i);
 		}
 	});
 
@@ -518,17 +486,6 @@ function jobRow(
 		row[J[key as keyof typeof J]] = value;
 	}
 	return row;
-}
-
-function searchSummary(entries: Array<{ id: string; fingerprint: string }>) {
-	return {
-		version: 6,
-		entity: "jobs" as const,
-		totalMatches: entries.length,
-		sortKey: "latest",
-		filtersHash: "{}",
-		entries,
-	};
 }
 
 function manifest(): SearchManifest {

@@ -84,6 +84,7 @@ async function openJobsLocalDatabase() {
 	if (!dbPromise) {
 		dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
 			const request = indexedDB.open(JOBS_LOCAL_DB_NAME, JOBS_LOCAL_DB_VERSION);
+			let settled = false;
 			request.onupgradeneeded = () => {
 				const db = request.result;
 				if (!db.objectStoreNames.contains(JOB_RECORD_STORE)) {
@@ -96,8 +97,31 @@ async function openJobsLocalDatabase() {
 					db.createObjectStore(RETAINED_DETAIL_STORE, { keyPath: "jobId" });
 				}
 			};
-			request.onsuccess = () => resolve(request.result);
-			request.onerror = () => reject(request.error);
+			request.onsuccess = () => {
+				if (settled) {
+					request.result.close();
+					return;
+				}
+				settled = true;
+				const db = request.result;
+				db.onversionchange = () => {
+					db.close();
+					dbPromise = null;
+				};
+				resolve(db);
+			};
+			request.onerror = () => {
+				if (!settled) {
+					settled = true;
+					reject(request.error ?? new Error("Unable to open local jobs storage."));
+				}
+			};
+			request.onblocked = () => {
+				if (!settled) {
+					settled = true;
+					reject(new Error("Local jobs storage upgrade is blocked by another tab."));
+				}
+			};
 		}).catch((error) => {
 			dbPromise = null;
 			throw error;
@@ -126,23 +150,31 @@ export async function readIndexedJobsLocalSnapshot(): Promise<JobsLocalIndexedSn
 export async function writeIndexedSnapshot(
 	snapshot: JobsLocalSnapshot | JobsLocalExportEnvelope,
 ) {
-	await Promise.all([
-		...snapshot.jobRecords.map((record) => writeStoreRecord(JOB_RECORD_STORE, record)),
-		...snapshot.savedSearches.map((record) =>
-			writeStoreRecord(SAVED_SEARCH_STORE, record),
-		),
-		...snapshot.retainedJobDetails.map((record) =>
-			writeStoreRecord(RETAINED_DETAIL_STORE, record),
-		),
-	]);
+	await runIndexedSnapshotTransaction(snapshot, false);
+}
+
+export async function replaceIndexedSnapshot(
+	snapshot: JobsLocalSnapshot | JobsLocalExportEnvelope,
+) {
+	await runIndexedSnapshotTransaction(snapshot, true);
 }
 
 export async function clearIndexedJobsLocalData() {
-	await Promise.all([
-		clearStore(JOB_RECORD_STORE),
-		clearStore(SAVED_SEARCH_STORE),
-		clearStore(RETAINED_DETAIL_STORE),
-	]);
+	const db = await openJobsLocalDatabase();
+	if (!db) {
+		return;
+	}
+	await runTransaction(
+		db.transaction(
+			[JOB_RECORD_STORE, SAVED_SEARCH_STORE, RETAINED_DETAIL_STORE],
+			"readwrite",
+		),
+		(transaction) => {
+			transaction.objectStore(JOB_RECORD_STORE).clear();
+			transaction.objectStore(SAVED_SEARCH_STORE).clear();
+			transaction.objectStore(RETAINED_DETAIL_STORE).clear();
+		},
+	);
 }
 
 export async function writeStoreRecord(storeName: string, value: unknown) {
@@ -150,10 +182,7 @@ export async function writeStoreRecord(storeName: string, value: unknown) {
 	if (!db) {
 		return;
 	}
-	await new Promise<void>((resolve, reject) => {
-		const transaction = db.transaction(storeName, "readwrite");
-		transaction.oncomplete = () => resolve();
-		transaction.onerror = () => reject(transaction.error);
+	await runTransaction(db.transaction(storeName, "readwrite"), (transaction) => {
 		transaction.objectStore(storeName).put(value);
 	});
 }
@@ -163,10 +192,7 @@ export async function deleteStoreRecord(storeName: string, key: string) {
 	if (!db) {
 		return;
 	}
-	await new Promise<void>((resolve, reject) => {
-		const transaction = db.transaction(storeName, "readwrite");
-		transaction.oncomplete = () => resolve();
-		transaction.onerror = () => reject(transaction.error);
+	await runTransaction(db.transaction(storeName, "readwrite"), (transaction) => {
 		transaction.objectStore(storeName).delete(key);
 	});
 }
@@ -176,10 +202,7 @@ export async function clearStore(storeName: string) {
 	if (!db) {
 		return;
 	}
-	await new Promise<void>((resolve, reject) => {
-		const transaction = db.transaction(storeName, "readwrite");
-		transaction.oncomplete = () => resolve();
-		transaction.onerror = () => reject(transaction.error);
+	await runTransaction(db.transaction(storeName, "readwrite"), (transaction) => {
 		transaction.objectStore(storeName).clear();
 	});
 }
@@ -198,7 +221,87 @@ async function readAllFromStore<T>(storeName: string): Promise<T[]> {
 	return new Promise((resolve, reject) => {
 		const transaction = db.transaction(storeName, "readonly");
 		const request = transaction.objectStore(storeName).getAll();
-		request.onsuccess = () => resolve(request.result as T[]);
-		request.onerror = () => reject(request.error);
+		let result: T[] = [];
+		request.onsuccess = () => {
+			result = request.result as T[];
+		};
+		request.onerror = () => transaction.abort();
+		transaction.oncomplete = () => resolve(result);
+		transaction.onerror = () => reject(transaction.error ?? request.error);
+		transaction.onabort = () => reject(transaction.error ?? request.error);
 	});
+}
+
+async function runIndexedSnapshotTransaction(
+	snapshot: JobsLocalSnapshot | JobsLocalExportEnvelope,
+	replace: boolean,
+) {
+	const db = await openJobsLocalDatabase();
+	if (!db) {
+		return;
+	}
+	await runTransaction(
+		db.transaction(
+			[JOB_RECORD_STORE, SAVED_SEARCH_STORE, RETAINED_DETAIL_STORE],
+			"readwrite",
+		),
+		(transaction) => {
+			const jobs = transaction.objectStore(JOB_RECORD_STORE);
+			const searches = transaction.objectStore(SAVED_SEARCH_STORE);
+			const details = transaction.objectStore(RETAINED_DETAIL_STORE);
+			if (replace) {
+				jobs.clear();
+				searches.clear();
+				details.clear();
+			}
+			for (const record of snapshot.jobRecords) {
+				jobs.put(record);
+			}
+			for (const record of snapshot.savedSearches) {
+				searches.put(record);
+			}
+			for (const record of snapshot.retainedJobDetails) {
+				details.put(record);
+			}
+		},
+	);
+}
+
+function runTransaction(
+	transaction: IDBTransaction,
+	mutate: (transaction: IDBTransaction) => void,
+) {
+	return new Promise<void>((resolve, reject) => {
+		let settled = false;
+		const fail = () => {
+			if (!settled) {
+				settled = true;
+				reject(transaction.error ?? new Error("Local jobs storage transaction failed."));
+			}
+		};
+		transaction.oncomplete = () => {
+			if (!settled) {
+				settled = true;
+				resolve();
+			}
+		};
+		transaction.onerror = fail;
+		transaction.onabort = fail;
+		try {
+			mutate(transaction);
+		} catch (caught) {
+			try {
+				transaction.abort();
+			} finally {
+				if (!settled) {
+					settled = true;
+					reject(caught);
+				}
+			}
+		}
+	});
+}
+
+export function resetJobsLocalDatabaseForTests() {
+	dbPromise = null;
 }

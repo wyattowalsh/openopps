@@ -19,7 +19,6 @@ import {
 } from "@/components/jobs-board/jobs-board-local-types";
 import type {
 	JobDetail,
-	JobsSearchSummaryResponse,
 	SearchManifest,
 	SearchRow,
 } from "@/components/openopps-search/search-types";
@@ -150,7 +149,10 @@ export function normalizeSavedSearchRecord(
 	if (!id || !candidate.filters || typeof candidate.filters !== "object") {
 		return null;
 	}
-	const baselineScope = candidate.baselineScope === "full" ? "full" : "page";
+	const baselineScope =
+		candidate.baselineScope === "full" || candidate.baselineScope === "cursor"
+			? candidate.baselineScope
+			: "page";
 	const reviewedJobIds = Array.isArray(candidate.baseline?.reviewedJobIds)
 		? candidate.baseline.reviewedJobIds.map(text).filter(Boolean)
 		: [];
@@ -163,6 +165,13 @@ export function normalizeSavedSearchRecord(
 						.filter(([key, value]) => key && value),
 				)
 			: {};
+	const reviewCursor = normalizeReviewCursor(candidate.reviewCursor);
+	const reviewStatus =
+		candidate.schemaVersion === JOBS_LOCAL_SCHEMA_VERSION &&
+		candidate.reviewStatus === "current" &&
+		reviewCursor
+			? "current"
+			: "needs-review";
 	return {
 		schemaVersion: JOBS_LOCAL_SCHEMA_VERSION,
 		id,
@@ -186,9 +195,11 @@ export function normalizeSavedSearchRecord(
 			typeof candidate.baselineTotalMatches === "number" &&
 			Number.isFinite(candidate.baselineTotalMatches)
 				? Math.max(0, Math.trunc(candidate.baselineTotalMatches))
-				: baselineScope === "full"
+				: baselineScope === "full" || baselineScope === "cursor"
 					? reviewedJobIds.length
 					: null,
+		reviewStatus,
+		reviewCursor,
 		baseline: {
 			reviewedJobIds,
 			reviewedFingerprints,
@@ -348,8 +359,10 @@ export function createSavedSearchRecord({
 	filters,
 	rows,
 	baseline,
-	baselineScope = "page",
+	baselineScope = "cursor",
 	baselineTotalMatches,
+	reviewStatus = "current",
+	reviewCursor,
 	label,
 	sortKey,
 	manifest,
@@ -360,6 +373,8 @@ export function createSavedSearchRecord({
 	baseline?: SavedSearchRecord["baseline"];
 	baselineScope?: SavedSearchRecord["baselineScope"];
 	baselineTotalMatches?: number | null;
+	reviewStatus?: SavedSearchRecord["reviewStatus"];
+	reviewCursor?: SavedSearchRecord["reviewCursor"];
 	label?: string;
 	sortKey: JobSortKey;
 	manifest: SearchManifest | null;
@@ -380,9 +395,18 @@ export function createSavedSearchRecord({
 		snapshotAt: manifest?.snapshotAt ?? null,
 		baselineScope,
 		baselineTotalMatches:
-			baselineScope === "full"
+			baselineScope === "full" || baselineScope === "cursor"
 				? baselineTotalMatches ?? baseline?.reviewedJobIds.length ?? rows.length
 				: baselineTotalMatches ?? null,
+		reviewStatus,
+		reviewCursor:
+			reviewStatus === "current"
+				? reviewCursor ?? {
+						semantics: "first-seen-v1",
+						reviewedAt: now,
+						snapshotAt: manifest?.snapshotAt ?? null,
+					}
+				: null,
 		baseline: baseline ?? baselineFromRows(rows),
 	};
 }
@@ -417,24 +441,6 @@ export function savedSearchNewMatchCount(record: SavedSearchRecord, rows: Search
 	return count;
 }
 
-export function savedSearchNewMatchCountFromSummary(
-	record: SavedSearchRecord,
-	summary: JobsSearchSummaryResponse,
-) {
-	const reviewedIds = new Set(record.baseline.reviewedJobIds);
-	let count = 0;
-	for (const entry of summary.entries) {
-		if (!entry.id) {
-			continue;
-		}
-		const previousFingerprint = record.baseline.reviewedFingerprints[entry.id];
-		if (!reviewedIds.has(entry.id) || previousFingerprint !== entry.fingerprint) {
-			count += 1;
-		}
-	}
-	return count;
-}
-
 export function baselineFromRows(rows: SearchRow[]) {
 	return {
 		reviewedJobIds: rows.map((row) => text(row[J.id])).filter(Boolean),
@@ -442,17 +448,6 @@ export function baselineFromRows(rows: SearchRow[]) {
 			rows
 				.map((row) => [text(row[J.id]), jobFingerprint(row)] as const)
 				.filter(([jobId]) => Boolean(jobId)),
-		),
-	};
-}
-
-export function baselineFromSearchSummary(summary: JobsSearchSummaryResponse) {
-	return {
-		reviewedJobIds: summary.entries.map((entry) => text(entry.id)).filter(Boolean),
-		reviewedFingerprints: Object.fromEntries(
-			summary.entries
-				.map((entry) => [text(entry.id), text(entry.fingerprint)] as const)
-				.filter(([jobId, fingerprint]) => Boolean(jobId && fingerprint)),
 		),
 	};
 }
@@ -674,10 +669,20 @@ export function parseJobsLocalImport(value: string | unknown):
 	if (!parsed || typeof parsed !== "object") {
 		return { ok: false, errors: ["Import payload must be an object."] };
 	}
-	const candidate = parsed as Partial<JobsLocalExportEnvelope>;
+	const candidate = parsed as {
+		source?: string;
+		schemaVersion?: number;
+		exportedAt?: unknown;
+		settings?: unknown;
+		jobRecords?: unknown;
+		savedSearches?: unknown;
+		retainedJobDetails?: unknown;
+	};
+	// Accept schema v1 imports (migrated on normalize) and current schema version.
+	const schemaVersion = candidate.schemaVersion;
 	if (
 		candidate.source !== "openopps.jobs.local" ||
-		candidate.schemaVersion !== JOBS_LOCAL_SCHEMA_VERSION
+		(schemaVersion !== 1 && schemaVersion !== JOBS_LOCAL_SCHEMA_VERSION)
 	) {
 		return {
 			ok: false,
@@ -748,6 +753,26 @@ export function clearPatchForCategory(
 
 function stringOr(value: unknown, fallback: string) {
 	return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function normalizeReviewCursor(value: unknown): SavedSearchRecord["reviewCursor"] {
+	if (!value || typeof value !== "object") {
+		return null;
+	}
+	const candidate = value as Record<string, unknown>;
+	if (
+		candidate.semantics !== "first-seen-v1" ||
+		typeof candidate.reviewedAt !== "string" ||
+		!Number.isFinite(Date.parse(candidate.reviewedAt)) ||
+		!(candidate.snapshotAt === null || typeof candidate.snapshotAt === "string")
+	) {
+		return null;
+	}
+	return {
+		semantics: "first-seen-v1",
+		reviewedAt: candidate.reviewedAt,
+		snapshotAt: candidate.snapshotAt,
+	};
 }
 
 function nullableString(value: unknown) {

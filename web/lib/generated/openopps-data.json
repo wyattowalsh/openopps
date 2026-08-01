@@ -35,6 +35,14 @@
       "supportLevel": "jobs"
     },
     {
+      "description": "Public Consider company job-board API.",
+      "detectsRoutes": true,
+      "id": "consider_jobs",
+      "kind": "board_provider",
+      "label": "Consider Jobs",
+      "supportLevel": "jobs"
+    },
+    {
       "description": "Public Greenhouse job board API.",
       "detectsRoutes": true,
       "id": "greenhouse",
@@ -313,21 +321,6 @@
       "url": "https://consider.com/boards/vc/1517-fund/companies"
     },
     {
-      "key": "1776",
-      "providerId": "lever_source",
-      "taxonomy": {
-        "accessType": "public_json_api",
-        "coverageMode": "portfolio_jobs",
-        "inclusionReason": "Public company job board powered by Lever.",
-        "licenseStatus": "public_attribution_required",
-        "providerType": "job_board",
-        "refreshCadence": "periodic",
-        "sourceAttribution": "1776 public Lever job board.",
-        "sourceCategory": "startup_ecosystem"
-      },
-      "url": "https://jobs.lever.co/1776"
-    },
-    {
       "key": "1835i",
       "providerId": "consider",
       "taxonomy": {},
@@ -347,21 +340,6 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://jobs.lever.co/1840%26Company"
-    },
-    {
-      "key": "1848ventures",
-      "providerId": "greenhouse_source",
-      "taxonomy": {
-        "accessType": "public_json_api",
-        "coverageMode": "portfolio_jobs",
-        "inclusionReason": "Public company job board powered by Greenhouse.",
-        "licenseStatus": "public_attribution_required",
-        "providerType": "job_board",
-        "refreshCadence": "periodic",
-        "sourceAttribution": "1848ventures public Greenhouse job board.",
-        "sourceCategory": "startup_ecosystem"
-      },
-      "url": "https://job-boards.greenhouse.io/1848ventures"
     },
     {
       "key": "1871",
@@ -643,21 +621,6 @@
       "url": "https://jobs.53stations.com/companies"
     },
     {
-      "key": "54collective",
-      "providerId": "lever_source",
-      "taxonomy": {
-        "accessType": "public_json_api",
-        "coverageMode": "portfolio_jobs",
-        "inclusionReason": "Public company job board powered by Lever.",
-        "licenseStatus": "public_attribution_required",
-        "providerType": "job_board",
-        "refreshCadence": "periodic",
-        "sourceAttribution": "54collective public Lever job board.",
-        "sourceCategory": "startup_ecosystem"
-      },
-      "url": "https://jobs.lever.co/54collective"
-    },
-    {
       "key": "59studio",
       "providerId": "greenhouse_source",
       "taxonomy": {
@@ -713,21 +676,6 @@
       "providerId": "getro",
       "taxonomy": {},
       "url": "https://jobs.645ventures.com/companies"
-    },
-    {
-      "key": "777partners",
-      "providerId": "greenhouse_source",
-      "taxonomy": {
-        "accessType": "public_json_api",
-        "coverageMode": "portfolio_jobs",
-        "inclusionReason": "Public company job board powered by Greenhouse.",
-        "licenseStatus": "public_attribution_required",
-        "providerType": "job_board",
-        "refreshCadence": "periodic",
-        "sourceAttribution": "777partners public Greenhouse job board.",
-        "sourceCategory": "startup_ecosystem"
-      },
-      "url": "https://job-boards.greenhouse.io/777partners"
     },
     {
       "key": "7pc",
@@ -25560,8 +25508,8 @@
   ],
   "stats": {
     "exportFormatCount": 4,
-    "jobProviderCount": 9,
+    "jobProviderCount": 10,
     "sourceAdapterCount": 16,
-    "sourceRecordCount": 2874
+    "sourceRecordCount": 2870
   }
 }

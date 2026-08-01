@@ -12,6 +12,7 @@ import {
 	readIndexedJobsLocalSnapshot,
 	readJobsLocalSettings,
 	removeJobsLocalSettings,
+	replaceIndexedSnapshot,
 	writeIndexedSnapshot,
 	writeJobsLocalSettings,
 	writeStoreRecord,
@@ -253,6 +254,8 @@ export function useJobsLocalState() {
 			baseline,
 			baselineScope,
 			baselineTotalMatches,
+			reviewStatus,
+			reviewCursor,
 			sortKey,
 			manifest,
 		}: {
@@ -261,6 +264,8 @@ export function useJobsLocalState() {
 			baseline?: SavedSearchRecord["baseline"];
 			baselineScope?: SavedSearchRecord["baselineScope"];
 			baselineTotalMatches?: number | null;
+			reviewStatus?: SavedSearchRecord["reviewStatus"];
+			reviewCursor?: SavedSearchRecord["reviewCursor"];
 			sortKey: JobSortKey;
 			manifest: SearchManifest | null;
 		}) => {
@@ -271,33 +276,57 @@ export function useJobsLocalState() {
 				baseline,
 				baselineScope,
 				baselineTotalMatches,
+				reviewStatus,
+				reviewCursor,
 				sortKey,
 				manifest,
 				now,
 			});
-			setSavedSearches((current) => [...current, record]);
-			void writeStoreRecord(jobsLocalStoreNames.savedSearches, record);
+			return writeStoreRecord(jobsLocalStoreNames.savedSearches, record)
+				.then(() => {
+					setSavedSearches((current) => [...current, record]);
+					return record;
+				})
+				.catch((caught) => {
+					setStorageStatus("error");
+					throw caught;
+				});
 		},
 		[],
 	);
 
-	const updateSavedSearch = useCallback((record: SavedSearchRecord) => {
+	const updateSavedSearch = useCallback(async (record: SavedSearchRecord) => {
 		const next = { ...record, updatedAt: new Date().toISOString() };
+		try {
+			await writeStoreRecord(jobsLocalStoreNames.savedSearches, next);
+		} catch (caught) {
+			setStorageStatus("error");
+			throw caught;
+		}
 		setSavedSearches((current) =>
 			current.map((candidate) => (candidate.id === next.id ? next : candidate)),
 		);
-		void writeStoreRecord(jobsLocalStoreNames.savedSearches, next);
 	}, []);
 
-	const deleteSavedSearch = useCallback((id: string) => {
+	const deleteSavedSearch = useCallback(async (id: string) => {
+		try {
+			await deleteStoreRecord(jobsLocalStoreNames.savedSearches, id);
+		} catch (caught) {
+			setStorageStatus("error");
+			throw caught;
+		}
 		setSavedSearches((current) => current.filter((record) => record.id !== id));
-		void deleteStoreRecord(jobsLocalStoreNames.savedSearches, id);
 	}, []);
 
-	const duplicateSavedSearch = useCallback((record: SavedSearchRecord) => {
+	const duplicateSavedSearch = useCallback(async (record: SavedSearchRecord) => {
 		const duplicate = duplicateSavedSearchRecord(record);
+		try {
+			await writeStoreRecord(jobsLocalStoreNames.savedSearches, duplicate);
+		} catch (caught) {
+			setStorageStatus("error");
+			throw caught;
+		}
 		setSavedSearches((current) => [...current, duplicate]);
-		void writeStoreRecord(jobsLocalStoreNames.savedSearches, duplicate);
 	}, []);
 
 	const markSavedSearchReviewed = useCallback(
@@ -312,19 +341,25 @@ export function useJobsLocalState() {
 			} = {},
 		) => {
 			const now = new Date().toISOString();
-			updateSavedSearch({
+			return updateSavedSearch({
 				...record,
 				lastReviewedAt: now,
 				lastOpenedAt: now,
 				manifestVersion: manifest?.version ?? record.manifestVersion,
 				snapshotAt: manifest?.snapshotAt ?? record.snapshotAt,
-				baselineScope: options.baselineScope ?? "page",
+				baselineScope: options.baselineScope ?? "cursor",
 				baselineTotalMatches:
 					options.baselineScope === "full"
 						? options.baselineTotalMatches ??
 							options.baseline?.reviewedJobIds.length ??
 							rows.length
 						: options.baselineTotalMatches ?? null,
+				reviewStatus: "current",
+				reviewCursor: {
+					semantics: "first-seen-v1",
+					reviewedAt: now,
+					snapshotAt: manifest?.snapshotAt ?? record.snapshotAt,
+				},
 				baseline: options.baseline ?? baselineFromRows(rows),
 			});
 		},
@@ -344,23 +379,23 @@ export function useJobsLocalState() {
 				| "viewed",
 		) => {
 			if (category === "all") {
+				await clearIndexedJobsLocalData();
 				removeJobsLocalSettings();
 				const nextSettings = { ...DEFAULT_JOBS_LOCAL_SETTINGS };
 				setSettingsState(nextSettings);
 				setJobRecords({});
 				setSavedSearches([]);
 				setRetainedJobDetails({});
-				await clearIndexedJobsLocalData();
 				return;
 			}
 			if (category === "savedSearches") {
-				setSavedSearches([]);
 				await clearStore(jobsLocalStoreNames.savedSearches);
+				setSavedSearches([]);
 				return;
 			}
 			if (category === "details") {
-				setRetainedJobDetails({});
 				await clearStore(jobsLocalStoreNames.retainedJobDetails);
+				setRetainedJobDetails({});
 				return;
 			}
 			setJobRecords((current) => {
@@ -415,14 +450,15 @@ export function useJobsLocalState() {
 					? parsed.data
 					: mergeJobsLocalSnapshots(currentSnapshot, parsed.data);
 			if (mode === "replace") {
-				await clearIndexedJobsLocalData();
+				await replaceIndexedSnapshot(nextSnapshot);
+			} else {
+				await writeIndexedSnapshot(nextSnapshot);
 			}
 			writeJobsLocalSettings(nextSnapshot.settings);
 			setSettingsState(nextSnapshot.settings);
 			setJobRecords(indexByJobId(nextSnapshot.jobRecords));
 			setSavedSearches(nextSnapshot.savedSearches);
 			setRetainedJobDetails(indexByJobId(nextSnapshot.retainedJobDetails));
-			await writeIndexedSnapshot(nextSnapshot);
 			return { ok: true, data: createJobsLocalExportEnvelope(nextSnapshot) };
 		},
 		[jobRecords, retainedJobDetails, savedSearches, settings],

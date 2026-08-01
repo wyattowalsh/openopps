@@ -575,16 +575,18 @@ export function JobsBoardToolbar({
 																: "muted"
 													}
 												>
-													{newMatches === null
-														? "syncing"
-														: `${newMatches} new or changed`}
+													{record.reviewStatus === "needs-review"
+														? "review required"
+														: newMatches === null
+															? "syncing"
+															: `${newMatches} new`}
 												</Badge>
 												<Badge
-													variant={record.baselineScope === "full" ? "success" : "outline"}
+													variant={record.baselineScope === "cursor" ? "success" : "outline"}
 												>
-													{record.baselineScope === "full"
-														? "full baseline"
-														: "page baseline"}
+													{record.baselineScope === "cursor"
+														? "index cursor"
+														: "legacy baseline"}
 												</Badge>
 												{record.lastReviewedAt ? (
 												<Badge variant="outline">
