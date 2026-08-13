@@ -15,6 +15,7 @@ const DOC_ROUTES = [
 	"/docs/data-model",
 	"/docs/providers",
 	"/docs/operations",
+	"/docs/public-data-releases",
 	"/docs/contributing",
 	"/explorer",
 	"/llms.txt",

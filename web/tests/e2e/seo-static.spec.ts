@@ -30,4 +30,7 @@ test("robots and sitemap routes expose the public static surface", async ({
 	const sitemapText = await sitemap.text();
 	expect(sitemapText).toContain("https://openopps.dev/");
 	expect(sitemapText).toContain("https://openopps.dev/explorer");
+	expect(sitemapText).toContain(
+		"https://openopps.dev/docs/public-data-releases",
+	);
 });
