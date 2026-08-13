@@ -1,10 +1,10 @@
 # production-hardening-static-data-v7 - tasks
 
-Reconciled against the 2026-08-13 working tree. A checked task means its
-repository implementation and named local proof are present; it does not claim
-an exact-SHA origin run, credentialed publication, live deployment, remote
+Reconciled against the 2026-08-13 working tree. Unless a task explicitly names
+live evidence, a checked task means its repository implementation and named
+local proof are present; it does not claim credentialed publication, live
 readback, cutover, or destructive cleanup. Those independent gates remain
-unchecked below.
+unchecked unless explicitly recorded below.
 
 ## 0. Contract and red-test barrier
 
@@ -95,7 +95,7 @@ unchecked below.
 - [x] 6.6 Make `just ci` and GitHub Actions execute one canonical gate graph.
 - [x] 6.7 Update config, docs, README, and nested AGENTS for `web/`, v7, recipes, environment, and rollback.
 - [x] 6.8 Run docs stewardship, determinism, full Python/web/E2E/build/OpenSpec gates, and adversarial proof review.
-- [ ] 6.9 Push only with approval; capture exact-SHA CI, both deployments, and production smoke.
+- [x] 6.9 Push only with approval; capture exact-SHA CI, both deployments, and production smoke.
 
 ## 7. Tree and history cleanup
 
