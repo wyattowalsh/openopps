@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import sys
+import tarfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -38,7 +40,22 @@ _GENERATOR = {
     "entrypoint": "scripts/generate_docs_search_index.py",
     "payloadSchemaVersion": 6,
     "components": [
-        {"path": "scripts/generate_docs_search_index.py", "sha256": _DIGEST}
+        {"path": "scripts/generate_docs_search_index.py", "sha256": _DIGEST},
+        {"path": "src/openopps/source_policy.py", "sha256": _DIGEST},
+        {
+            "path": "src/openopps/providers/sources/data/source_policy_evidence.json",
+            "sha256": _DIGEST,
+        },
+        {
+            "path": (
+                "src/openopps/providers/sources/data/source_policy_evidence.schema.json"
+            ),
+            "sha256": _DIGEST,
+        },
+        {
+            "path": "deployment/openopps-data/source-corpus-v6.json",
+            "sha256": _DIGEST,
+        },
     ],
 }
 
@@ -375,10 +392,7 @@ def test_upload_machine_output_is_parsed_into_atomic_minimal_ledger(
     assert entry["stageRootDigest"] == staged.root_digest
     assert entry["uploadExpectedStageRootDigest"] == staged.root_digest
     assert entry["uploadCandidateDigest"] == invocation.upload_candidate_digest
-    assert (
-        entry["uploadExpectedCandidateDigest"]
-        == invocation.upload_candidate_digest
-    )
+    assert entry["uploadExpectedCandidateDigest"] == invocation.upload_candidate_digest
     assert persisted["entries"] == [entry]
     assert "preview_url" not in json.dumps(persisted)
 
@@ -603,29 +617,26 @@ def test_archive_is_deterministic_and_contains_checksums_sbom_and_provenance(
     publication, current, previous = _publication(tmp_path)
     stage = _owned_assets()
     staged = delivery.stage_publication(publication, stage)
-    asset_name = f"openopps-data-{staged.root_digest}.tar.gz"
-    first = tmp_path / "first" / asset_name
-    second = tmp_path / "second" / asset_name
 
     first_result = delivery.build_recovery_archive(
         stage,
-        first,
+        tmp_path / "first",
         created_at="2026-08-12T15:00:00Z",
         source_revision="0123456789abcdef0123456789abcdef01234567",
     )
     second_result = delivery.build_recovery_archive(
         stage,
-        second,
+        tmp_path / "second",
         created_at="2026-08-12T15:00:00Z",
         source_revision="0123456789abcdef0123456789abcdef01234567",
     )
 
+    first = first_result.path
+    second = second_result.path
     assert first.read_bytes() == second.read_bytes()
     assert first_result.sha256 == second_result.sha256
-    assert (
-        first_result.asset_name
-        == f"openopps-data-{first_result.stage_root_digest}.tar.gz"
-    )
+    assert first_result.asset_name == f"openopps-data-{first_result.sha256}.tar.gz"
+    assert first_result.stage_root_digest == staged.root_digest
     members = delivery.inspect_recovery_archive(first)
     assert "SHA256SUMS" in members
     assert "bundle-manifest.json" in members
@@ -653,8 +664,7 @@ def test_archive_streams_stage_files_without_whole_file_reads(
         tmp_path, binary_bytes=2 * 1024 * 1024
     )
     stage = _owned_assets()
-    staged = delivery.stage_publication(publication, stage)
-    archive = tmp_path / f"openopps-data-{staged.root_digest}.tar.gz"
+    delivery.stage_publication(publication, stage)
     original_read_bytes = Path.read_bytes
 
     def reject_stage_read_bytes(path: Path) -> bytes:
@@ -666,12 +676,283 @@ def test_archive_streams_stage_files_without_whole_file_reads(
 
     result = delivery.build_recovery_archive(
         stage,
-        archive,
+        tmp_path / "archives",
         created_at="2026-08-12T15:00:00Z",
         source_revision="0123456789abcdef0123456789abcdef01234567",
     )
 
     assert result.bytes > 0
+
+
+def test_archive_filename_addresses_exact_bytes_not_only_stage(
+    tmp_path: Path,
+) -> None:
+    publication, _current, _previous = _publication(tmp_path)
+    stage = _owned_assets()
+    staged = delivery.stage_publication(publication, stage)
+    first = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "first",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    second = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "second",
+        created_at="2026-08-12T16:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+
+    assert first.stage_root_digest == second.stage_root_digest == staged.root_digest
+    assert first.sha256 != second.sha256
+    assert first.asset_name == f"openopps-data-{first.sha256}.tar.gz"
+    assert second.asset_name == f"openopps-data-{second.sha256}.tar.gz"
+    delivery.inspect_recovery_archive(first.path, expected_archive_sha256=first.sha256)
+    delivery.inspect_recovery_archive(
+        second.path, expected_archive_sha256=second.sha256
+    )
+
+
+def test_archive_output_exclusively_rejects_existing_content_address(
+    tmp_path: Path,
+) -> None:
+    publication, _current, _previous = _publication(tmp_path)
+    stage = _owned_assets()
+    delivery.stage_publication(publication, stage)
+    output = tmp_path / "archives"
+    first = delivery.build_recovery_archive(
+        stage,
+        output,
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+
+    with pytest.raises(delivery.DeliveryError, match="archive output already exists"):
+        delivery.build_recovery_archive(
+            stage,
+            output,
+            created_at="2026-08-12T15:00:00Z",
+            source_revision="0123456789abcdef0123456789abcdef01234567",
+        )
+
+    assert _sha256(first.path) == first.sha256
+    assert not list(output.glob(".openopps-data-archive.*.tmp"))
+
+
+def test_archive_inspection_enforces_expanded_byte_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publication, _current, _previous = _publication(tmp_path)
+    stage = _owned_assets()
+    delivery.stage_publication(publication, stage)
+    bundled = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "archives",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    monkeypatch.setattr(delivery, "MAX_ARCHIVE_UNCOMPRESSED_BYTES", 1)
+
+    with pytest.raises(delivery.DeliveryError, match="byte budget exceeded"):
+        delivery.inspect_recovery_archive(bundled.path)
+
+
+def test_archive_restore_requires_external_identities_and_atomically_restores_stage(
+    tmp_path: Path,
+) -> None:
+    publication, current, previous = _publication(tmp_path)
+    stage = _owned_assets()
+    staged = delivery.stage_publication(publication, stage)
+    bundled = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "archives",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    restore_parent = tmp_path / "private-restore"
+    restore_parent.mkdir(mode=0o700)
+    restored = restore_parent / "assets"
+
+    result = delivery.restore_recovery_archive(
+        bundled.path,
+        restored,
+        expected_archive_sha256=bundled.sha256,
+        expected_stage_root_digest=staged.root_digest,
+        expected_source_revision="0123456789abcdef0123456789abcdef01234567",
+        expected_current_release_id=current,
+        expected_previous_release_id=previous,
+    )
+
+    assert result.destination == restored.resolve()
+    assert result.archive_sha256 == bundled.sha256
+    assert result.stage_root_digest == staged.root_digest
+    assert result.current_release_id == current
+    assert result.previous_release_id == previous
+    assert delivery.verify_stage(restored) == []
+    assert delivery._tree_digest(restored) == staged.root_digest
+    assert not list(restore_parent.glob(".assets.restore-*"))
+
+
+def test_archive_restore_never_overwrites_or_leaves_partial_destination(
+    tmp_path: Path,
+) -> None:
+    publication, current, previous = _publication(tmp_path)
+    stage = _owned_assets()
+    staged = delivery.stage_publication(publication, stage)
+    bundled = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "archives",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    restore_parent = tmp_path / "private-restore"
+    restore_parent.mkdir(mode=0o700)
+    existing = restore_parent / "existing"
+    existing.mkdir()
+    sentinel = existing / "sentinel"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(delivery.DeliveryError, match="new, absent"):
+        delivery.restore_recovery_archive(
+            bundled.path,
+            existing,
+            expected_archive_sha256=bundled.sha256,
+            expected_stage_root_digest=staged.root_digest,
+            expected_source_revision="0123456789abcdef0123456789abcdef01234567",
+            expected_current_release_id=current,
+            expected_previous_release_id=previous,
+        )
+    absent = restore_parent / "absent"
+    with pytest.raises(delivery.DeliveryError, match="expected digest"):
+        delivery.restore_recovery_archive(
+            bundled.path,
+            absent,
+            expected_archive_sha256="f" * 64,
+            expected_stage_root_digest=staged.root_digest,
+            expected_source_revision="0123456789abcdef0123456789abcdef01234567",
+            expected_current_release_id=current,
+            expected_previous_release_id=previous,
+        )
+    wrong_identity = restore_parent / "wrong-identity"
+    with pytest.raises(delivery.DeliveryError, match="source revision"):
+        delivery.restore_recovery_archive(
+            bundled.path,
+            wrong_identity,
+            expected_archive_sha256=bundled.sha256,
+            expected_stage_root_digest=staged.root_digest,
+            expected_source_revision="f" * 40,
+            expected_current_release_id=current,
+            expected_previous_release_id=previous,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert not absent.exists()
+    assert not wrong_identity.exists()
+    assert not list(restore_parent.glob(".absent.restore-*"))
+
+
+def test_archive_restore_exclusive_rename_rejects_concurrent_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publication, current, previous = _publication(tmp_path)
+    stage = _owned_assets()
+    staged = delivery.stage_publication(publication, stage)
+    bundled = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "archives",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    restore_parent = tmp_path / "private-restore"
+    restore_parent.mkdir(mode=0o700)
+    destination = restore_parent / "assets"
+    original = delivery._rename_noreplace
+
+    def collide(source: Path, target: Path, *, kind: str) -> None:
+        if kind == "restore destination":
+            target.mkdir()
+            (target / "sentinel").write_text("concurrent", encoding="utf-8")
+        original(source, target, kind=kind)
+
+    monkeypatch.setattr(delivery, "_rename_noreplace", collide)
+
+    with pytest.raises(delivery.DeliveryError, match="already exists"):
+        delivery.restore_recovery_archive(
+            bundled.path,
+            destination,
+            expected_archive_sha256=bundled.sha256,
+            expected_stage_root_digest=staged.root_digest,
+            expected_source_revision="0123456789abcdef0123456789abcdef01234567",
+            expected_current_release_id=current,
+            expected_previous_release_id=previous,
+        )
+
+    assert (destination / "sentinel").read_text(encoding="utf-8") == "concurrent"
+    assert not list(restore_parent.glob(".assets.restore-*"))
+
+
+@pytest.mark.parametrize("mutation", ["identity", "duplicate-json-key"])
+def test_archive_semantics_reject_tampering_even_with_recomputed_checksums(
+    tmp_path: Path, mutation: str
+) -> None:
+    publication, _current, _previous = _publication(tmp_path)
+    stage = _owned_assets()
+    delivery.stage_publication(publication, stage)
+    bundled = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "archives",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    members = _read_test_archive(bundled.path)
+    manifest = members["bundle-manifest.json"]
+    if mutation == "identity":
+        value = json.loads(manifest)
+        value["currentReleaseId"] = "b" * 64
+        members["bundle-manifest.json"] = delivery._canonical_pretty_json(value)
+    else:
+        members["bundle-manifest.json"] = manifest.replace(
+            b"{\n", b'{\n  "schemaVersion": 1,\n', 1
+        )
+    _close_test_checksums(members)
+    archive = _write_test_archive(bundled.path, members)
+
+    with pytest.raises(
+        delivery.DeliveryError, match="identity does not close|duplicate JSON key"
+    ):
+        delivery.inspect_recovery_archive(
+            archive, expected_archive_sha256=_sha256(archive)
+        )
+
+
+@pytest.mark.parametrize("mutation", ["traversal", "symlink", "case-collision"])
+def test_archive_rejects_unsafe_member_topology(tmp_path: Path, mutation: str) -> None:
+    publication, _current, _previous = _publication(tmp_path)
+    stage = _owned_assets()
+    delivery.stage_publication(publication, stage)
+    bundled = delivery.build_recovery_archive(
+        stage,
+        tmp_path / "archives",
+        created_at="2026-08-12T15:00:00Z",
+        source_revision="0123456789abcdef0123456789abcdef01234567",
+    )
+    members = _read_test_archive(bundled.path)
+    if mutation == "traversal":
+        members["../escape"] = b"escape"
+    elif mutation == "case-collision":
+        members["assets/_HEADERS"] = members["assets/_headers"]
+    _close_test_checksums(members)
+    special = "assets/escape" if mutation == "symlink" else None
+    if special is not None:
+        members[special] = b""
+        _close_test_checksums(members)
+    archive = _write_test_archive(bundled.path, members, symlink=special)
+
+    with pytest.raises(
+        delivery.DeliveryError,
+        match="unsafe recovery archive member|case-colliding",
+    ):
+        delivery.inspect_recovery_archive(archive)
 
 
 def _publication(
@@ -743,6 +1024,14 @@ def _release(
         staging / "publication-policy.json",
         {
             "schemaVersion": 1,
+            "sourcePolicy": {
+                "policyId": "fixture-source-policy",
+                "reviewedAt": "2026-02-03",
+                "moduleSha256": _DIGEST,
+                "evidenceSha256": _DIGEST,
+                "schemaSha256": _DIGEST,
+                "corpusSha256": _DIGEST,
+            },
             "allowedLicenseStatuses": [
                 "official_public",
                 "oss_attribution_required",
@@ -839,3 +1128,60 @@ def _remove_tree(root: Path) -> None:
         else:
             path.unlink()
     root.rmdir()
+
+
+def _read_test_archive(path: Path) -> dict[str, bytes]:
+    members: dict[str, bytes] = {}
+    with tarfile.open(path, mode="r:gz") as archive:
+        for member in archive.getmembers():
+            handle = archive.extractfile(member)
+            assert handle is not None
+            members[member.name] = handle.read()
+    return members
+
+
+def _close_test_checksums(members: dict[str, bytes]) -> None:
+    members["SHA256SUMS"] = (
+        "\n".join(
+            f"{hashlib.sha256(content).hexdigest()}  {name}"
+            for name, content in sorted(members.items())
+            if name != "SHA256SUMS"
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _write_test_archive(
+    path: Path, members: dict[str, bytes], *, symlink: str | None = None
+) -> Path:
+    temporary = path.with_suffix(".tmp")
+    with tarfile.open(temporary, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+        for name, content in sorted(members.items()):
+            info = tarfile.TarInfo(name)
+            info.mode = 0o644
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            info.mtime = 0
+            if name == symlink:
+                info.type = tarfile.SYMTYPE
+                info.linkname = "../outside"
+                info.size = 0
+                archive.addfile(info)
+            else:
+                info.size = len(content)
+                archive.addfile(info, io.BytesIO(content))
+    temporary.replace(path)
+    destination = path.parent / f"openopps-data-{_sha256(path)}.tar.gz"
+    if destination != path:
+        path.rename(destination)
+    return destination
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

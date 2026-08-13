@@ -84,6 +84,8 @@ unchecked unless explicitly recorded below.
 - [ ] 5.6 Promote 100%, roll back, verify, and re-promote; never gradual-split.
 - [ ] 5.7 Build a content-addressed GitHub Release archive with manifest/SBOM/provenance/attestation.
 - [x] 5.8 Stop on undocumented Free limits and report R2 feasibility only.
+- [x] 5.9 Add a dry-run-first, frozen-candidate bootstrap for freshly absent Workers with exact initial version/deployment readback and rollback identity recording.
+- [x] 5.10 Add bounded semantic archive restore plus a least-privilege, manual draft-first immutable-release attestation/readback workflow; keep 5.7 open until live proof succeeds.
 
 ## 6. Dependencies, CI, docs, and proof
 

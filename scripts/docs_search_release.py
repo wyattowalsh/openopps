@@ -14,7 +14,7 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -45,6 +45,7 @@ FORBIDDEN_SECRET_KEYS = frozenset(
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CHANNEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_POLICY_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _PORTABLE_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _MAX_PORTABLE_PATH_BYTES = 1_024
 _MANIFEST_BODY_KEYS = frozenset(
@@ -72,6 +73,7 @@ _PUBLICATION_ATTRIBUTION_REQUIRED = frozenset(
 _PUBLICATION_POLICY_KEYS = frozenset(
     {
         "schemaVersion",
+        "sourcePolicy",
         "allowedLicenseStatuses",
         "attributionRequiredStatuses",
         "sourceCount",
@@ -79,6 +81,26 @@ _PUBLICATION_POLICY_KEYS = frozenset(
         "quality",
     }
 )
+_PUBLICATION_SOURCE_POLICY_KEYS = frozenset(
+    {
+        "policyId",
+        "reviewedAt",
+        "moduleSha256",
+        "evidenceSha256",
+        "schemaSha256",
+        "corpusSha256",
+    }
+)
+_PUBLICATION_SOURCE_POLICY_COMPONENTS = {
+    "moduleSha256": "src/openopps/source_policy.py",
+    "evidenceSha256": (
+        "src/openopps/providers/sources/data/source_policy_evidence.json"
+    ),
+    "schemaSha256": (
+        "src/openopps/providers/sources/data/source_policy_evidence.schema.json"
+    ),
+    "corpusSha256": "deployment/openopps-data/source-corpus-v6.json",
+}
 _PUBLICATION_QUALITY_KEYS = frozenset(
     {
         "snapshotAt",
@@ -685,6 +707,12 @@ def _publication_graph_errors(
         )
     if publication_policy.get("schemaVersion") != 1:
         errors.append(f"{PUBLICATION_POLICY_FILE} schemaVersion must be 1")
+    errors.extend(
+        _publication_source_policy_errors(
+            publication_policy.get("sourcePolicy"),
+            manifest=manifest,
+        )
+    )
     expected_allowed = sorted(_PUBLICATION_ALLOWED_RIGHTS)
     if publication_policy.get("allowedLicenseStatuses") != expected_allowed:
         errors.append(
@@ -782,6 +810,54 @@ def _publication_graph_errors(
             release_snapshot=manifest.get("snapshotAt"),
         )
     )
+    return errors
+
+
+def _publication_source_policy_errors(
+    value: object, *, manifest: dict[str, Any]
+) -> list[str]:
+    """Bind the reviewed policy identity to the release generator provenance."""
+
+    label = f"{PUBLICATION_POLICY_FILE} sourcePolicy"
+    if not isinstance(value, dict):
+        return [f"{label} must be an object"]
+    errors: list[str] = []
+    if set(value) != _PUBLICATION_SOURCE_POLICY_KEYS:
+        errors.append(f"{label} has unexpected or missing fields")
+
+    policy_id = value.get("policyId")
+    if not isinstance(policy_id, str) or not _POLICY_ID_RE.fullmatch(policy_id):
+        errors.append(f"{label}.policyId must be a canonical policy identifier")
+
+    reviewed_at = value.get("reviewedAt")
+    if not isinstance(reviewed_at, str):
+        errors.append(f"{label}.reviewedAt must be an ISO-8601 date")
+    else:
+        try:
+            parsed_reviewed_at = date.fromisoformat(reviewed_at)
+        except ValueError:
+            errors.append(f"{label}.reviewedAt must be an ISO-8601 date")
+        else:
+            if parsed_reviewed_at.isoformat() != reviewed_at:
+                errors.append(f"{label}.reviewedAt must use canonical ISO-8601 form")
+
+    generator = manifest.get("generator")
+    components = generator.get("components") if isinstance(generator, dict) else None
+    component_digests = {
+        entry["path"]: entry["sha256"]
+        for entry in components or []
+        if isinstance(entry, dict)
+        and isinstance(entry.get("path"), str)
+        and isinstance(entry.get("sha256"), str)
+    }
+    for field, component_path in _PUBLICATION_SOURCE_POLICY_COMPONENTS.items():
+        digest = value.get(field)
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+            errors.append(f"{label}.{field} must be a lowercase SHA-256 digest")
+        if component_digests.get(component_path) != digest:
+            errors.append(
+                f"{label}.{field} does not match generator component {component_path!r}"
+            )
     return errors
 
 

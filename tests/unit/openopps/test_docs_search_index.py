@@ -12,6 +12,8 @@ from typing import Any, cast
 
 import pytest
 
+from openopps.models import SourceRecord
+
 _SEARCH_INDEX_SCRIPT = (
     Path(__file__).resolve().parents[3] / "scripts" / "generate_docs_search_index.py"
 )
@@ -43,6 +45,14 @@ is_indexable_job_detail = cast(
 safe_job_external_url = cast(
     "Callable[[Any], str | None]",
     _SEARCH_INDEX_NAMESPACE["_safe_job_external_url"],
+)
+source_policy_denial_errors = cast(
+    "Callable[[dict[str, Any]], list[str]]",
+    _SEARCH_INDEX_NAMESPACE["_source_policy_denial_errors"],
+)
+read_source_policy_inputs = cast(
+    "Callable[[], dict[str, Any]]",
+    _SEARCH_INDEX_NAMESPACE["_read_source_policy_inputs"],
 )
 detail_bucket = cast(
     "Callable[[str], str]",
@@ -821,6 +831,33 @@ def test_v7_release_generation_is_deterministic_and_additive(tmp_path: Path) -> 
     assert publication_policy["sourceCount"] == 3
     assert all(source["publicationAllowed"] for source in publication_policy["sources"])
     assert publication_policy["quality"]["jobs"] == 2
+    policy_identity = publication_policy["sourcePolicy"]
+    assert policy_identity["policyId"] == "source-policy-review-2026-08-13"
+    assert policy_identity["reviewedAt"] == "2026-08-13"
+    component_digests = {
+        component["path"]: component["sha256"]
+        for component in first["generator"]["components"]
+    }
+    assert (
+        policy_identity["moduleSha256"]
+        == component_digests["src/openopps/source_policy.py"]
+    )
+    assert (
+        policy_identity["evidenceSha256"]
+        == component_digests[
+            "src/openopps/providers/sources/data/source_policy_evidence.json"
+        ]
+    )
+    assert (
+        policy_identity["schemaSha256"]
+        == component_digests[
+            "src/openopps/providers/sources/data/source_policy_evidence.schema.json"
+        ]
+    )
+    assert (
+        policy_identity["corpusSha256"]
+        == component_digests["deployment/openopps-data/source-corpus-v6.json"]
+    )
     assert any(
         entry["path"] == "search-manifest.json" and entry["role"] == "search-manifest"
         for entry in first["files"]
@@ -834,6 +871,106 @@ def test_v7_release_generation_is_deterministic_and_additive(tmp_path: Path) -> 
     assert legacy_sentinel.read_text(encoding="utf-8") == '{"version":6}\n'
     assert len(list((publication_root / "releases").iterdir())) == 1
     assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_release_rejects_reviewed_platform_denial_after_positive_rights_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    catalog = build_search_release.__globals__["BOARD_SOURCE_CATALOG"]
+    monkeypatch.setitem(
+        catalog,
+        "fixture-a16z",
+        SourceRecord(
+            key="fixture-a16z",
+            url="https://example.test/fixture-a16z",
+            provider_id="getro",
+            raw_metadata={
+                "licenseStatus": "official_public",
+                "sourceAttribution": "Positive-rights fixture.",
+            },
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="getro-terms-v3-1",
+    ):
+        build_search_release(
+            db_path,
+            publication_root,
+            channel="staging",
+            now=_FRESH_RELEASE_NOW,
+        )
+
+    assert not publication_root.exists()
+    assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_release_validates_policy_graph_before_immutable_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    function_globals = build_search_release.__globals__
+    original_report = function_globals["_build_publication_policy_report"]
+
+    def tampered_report(
+        *args: object, **kwargs: object
+    ) -> tuple[dict[str, Any], list[str]]:
+        report, errors = original_report(*args, **kwargs)
+        report["sourcePolicy"]["evidenceSha256"] = "b" * 64
+        return report, errors
+
+    monkeypatch.setitem(
+        function_globals,
+        "_build_publication_policy_report",
+        tampered_report,
+    )
+
+    with pytest.raises(ValueError, match="does not match generator component"):
+        build_search_release(
+            db_path,
+            publication_root,
+            channel="staging",
+            now=_FRESH_RELEASE_NOW,
+        )
+
+    assert not (publication_root / "channels" / "staging.json").exists()
+    assert not (publication_root / "releases").exists()
+    assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_release_rejects_misresolved_source_policy_module_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = read_source_policy_inputs.__globals__["source_policy_module"]
+    monkeypatch.setattr(module, "__file__", "/tmp/misresolved/source_policy.py")
+
+    with pytest.raises(ValueError, match="module provenance"):
+        read_source_policy_inputs()
+
+
+def test_v7_release_reads_source_policy_corpus_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    function_globals = read_source_policy_inputs.__globals__
+    original_read_bytes = Path.read_bytes
+    corpus_suffix = Path("deployment/openopps-data/source-corpus-v6.json")
+    corpus_reads = 0
+
+    def count_corpus_reads(path: Path) -> bytes:
+        nonlocal corpus_reads
+        if path.as_posix().endswith(corpus_suffix.as_posix()):
+            corpus_reads += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", count_corpus_reads)
+
+    function_globals["_read_source_policy_inputs"]()
+
+    assert corpus_reads == 1
 
 
 def test_v7_release_freezes_one_sidecar_free_sqlite_state_for_all_reads(
@@ -919,6 +1056,30 @@ def test_v7_release_fails_closed_for_unreviewed_source_rights(tmp_path: Path) ->
 
     assert not (tmp_path / "publication-v7" / "channels" / "production.json").exists()
     assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_release_applies_platform_terms_as_a_non_bypassable_deny_overlay(
+    tmp_path: Path,
+) -> None:
+    getro_key = next(
+        key
+        for key, record in _SEARCH_INDEX_NAMESPACE["BOARD_SOURCE_CATALOG"].items()
+        if record.provider_id == "getro"
+    )
+    errors = source_policy_denial_errors({"facets": {"sources": [getro_key]}})
+
+    assert errors == [
+        f"source {getro_key!r} is blocked by source-policy decision 'getro-terms-v3-1'"
+    ]
+
+
+def test_v7_release_deny_overlay_does_not_grant_unknown_sources() -> None:
+    assert (
+        source_policy_denial_errors(
+            {"facets": {"sources": ["uncovered-future-source"]}}
+        )
+        == []
+    )
 
 
 def test_v7_release_does_not_let_stored_metadata_grant_packaged_source_rights(

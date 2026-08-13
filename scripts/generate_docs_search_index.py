@@ -18,9 +18,19 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
+import openopps.source_policy as source_policy_module
 from openopps.models import derive_seniority_from_fields
 from openopps.providers.boards.tokens import greenhouse_token_from_url
 from openopps.providers.sources import BOARD_SOURCE_CATALOG
+from openopps.source_policy import (
+    DEFAULT_EVIDENCE_PATH,
+    DEFAULT_SCHEMA_PATH,
+    audit_source_policy,
+    match_source_policy_denials,
+    parse_source_corpus,
+    parse_source_policy_evidence,
+    validate_source_policy_schema_bytes,
+)
 
 try:
     from scripts.docs_search_release import (
@@ -63,6 +73,7 @@ DETAIL_IDS_FILE = "jobs-detail-ids.json"
 INDEXABLE_IDS_FILE = "jobs-indexable-ids.json"
 LINEAGE_AGGREGATE_FILE = "lineage-aggregate.json"
 PUBLICATION_POLICY_FILE = "publication-policy.json"
+SOURCE_POLICY_CORPUS_FILE = "deployment/openopps-data/source-corpus-v6.json"
 PUBLICATION_ALLOWED_RIGHTS = frozenset(
     {
         "official_public",
@@ -304,6 +315,7 @@ def build_search_release(
                 channel=channel,
                 policy=PromotionPolicy(max_snapshot_age=None),
                 now=existing_validation_now,
+                require_publication_graph=True,
             )
             if existing_errors:
                 raise ValueError(
@@ -328,8 +340,17 @@ def build_search_release(
             # manifest so release-pinned consumers can discover entity files
             # without a naming collision.
             os.replace(staged_legacy_manifest, staged_release / "search-manifest.json")
+            policy_inputs = _read_source_policy_inputs()
             publication_policy, policy_errors = _build_publication_policy_report(
-                snapshot_path, legacy_manifest
+                snapshot_path,
+                legacy_manifest,
+                policy_inputs=policy_inputs,
+            )
+            policy_errors.extend(
+                _source_policy_denial_errors(
+                    legacy_manifest,
+                    policy_inputs=policy_inputs,
+                )
             )
             _write_json(
                 staged_release / PUBLICATION_POLICY_FILE,
@@ -367,6 +388,28 @@ def build_search_release(
                             "sha256": sha256_file(generator_path),
                         },
                         {
+                            "path": "src/openopps/source_policy.py",
+                            "sha256": policy_inputs["moduleSha256"],
+                        },
+                        {
+                            "path": (
+                                "src/openopps/providers/sources/data/"
+                                "source_policy_evidence.json"
+                            ),
+                            "sha256": policy_inputs["evidenceSha256"],
+                        },
+                        {
+                            "path": (
+                                "src/openopps/providers/sources/data/"
+                                "source_policy_evidence.schema.json"
+                            ),
+                            "sha256": policy_inputs["schemaSha256"],
+                        },
+                        {
+                            "path": SOURCE_POLICY_CORPUS_FILE,
+                            "sha256": policy_inputs["corpusSha256"],
+                        },
+                        {
                             "path": "uv.lock",
                             "sha256": sha256_file(
                                 generator_path.parent.parent / "uv.lock"
@@ -377,7 +420,10 @@ def build_search_release(
             )
             write_release_manifest(staged_release, manifest)
             stage_errors = validate_release(
-                staged_release, policy=release_policy, now=validation_now
+                staged_release,
+                policy=release_policy,
+                now=validation_now,
+                require_publication_graph=True,
             )
             if stage_errors:
                 raise ValueError(
@@ -390,7 +436,10 @@ def build_search_release(
             destination = releases_root / manifest["releaseId"]
             if destination.exists():
                 existing_errors = validate_release(
-                    destination, policy=release_policy, now=validation_now
+                    destination,
+                    policy=release_policy,
+                    now=validation_now,
+                    require_publication_graph=True,
                 )
                 if existing_errors:
                     raise ValueError(
@@ -428,6 +477,7 @@ def build_search_release(
                     channel=channel,
                     policy=release_policy,
                     now=validation_now,
+                    require_publication_graph=True,
                 )
                 if publication_errors:
                     raise ValueError(
@@ -467,7 +517,10 @@ def _restore_channel_pointer(pointer_path: Path, content: bytes | None) -> None:
 
 
 def _build_publication_policy_report(
-    db_path: Path, search_manifest: dict[str, Any]
+    db_path: Path,
+    search_manifest: dict[str, Any],
+    *,
+    policy_inputs: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
     """Build a deterministic, sanitized source-rights and quality report.
 
@@ -529,6 +582,14 @@ def _build_publication_policy_report(
     detail_shards = search_manifest.get("detailShards")
     report = {
         "schemaVersion": 1,
+        "sourcePolicy": {
+            "policyId": policy_inputs["evidence"].policy_id,
+            "reviewedAt": policy_inputs["evidence"].reviewed_at.isoformat(),
+            "moduleSha256": policy_inputs["moduleSha256"],
+            "evidenceSha256": policy_inputs["evidenceSha256"],
+            "schemaSha256": policy_inputs["schemaSha256"],
+            "corpusSha256": policy_inputs["corpusSha256"],
+        },
         "allowedLicenseStatuses": sorted(PUBLICATION_ALLOWED_RIGHTS),
         "attributionRequiredStatuses": sorted(PUBLICATION_ATTRIBUTION_REQUIRED),
         "sourceCount": len(entries),
@@ -549,6 +610,89 @@ def _build_publication_policy_report(
         },
     }
     return report, errors
+
+
+def _source_policy_denial_errors(
+    search_manifest: dict[str, Any], *, policy_inputs: dict[str, Any] | None = None
+) -> list[str]:
+    """Apply the reviewed deny overlay without treating absence as permission.
+
+    The existing positive rights report above remains authoritative for inclusion.
+    This second boundary prevents repository catalog metadata from overriding a
+    reviewed platform-terms or exact-source denial.
+    """
+
+    facets = search_manifest.get("facets")
+    source_values = facets.get("sources") if isinstance(facets, dict) else None
+    source_keys = tuple(
+        sorted(
+            {
+                value.strip()
+                for value in source_values or []
+                if isinstance(value, str) and value.strip()
+            }
+        )
+    )
+    if policy_inputs is None:
+        policy_inputs = _read_source_policy_inputs()
+    evidence = policy_inputs["evidence"]
+    matches = match_source_policy_denials(
+        source_keys=source_keys,
+        evidence=evidence,
+    )
+    return [
+        f"source {source_key!r} is blocked by source-policy decision {decision.id!r}"
+        for source_key, decisions in matches.items()
+        for decision in decisions
+    ]
+
+
+def _read_source_policy_inputs() -> dict[str, Any]:
+    """Capture and validate the exact policy bytes used by one release build."""
+
+    repository_root = Path(__file__).resolve().parents[1]
+    policy_module_path = repository_root / "src/openopps/source_policy.py"
+    policy_evidence_path = repository_root / (
+        "src/openopps/providers/sources/data/source_policy_evidence.json"
+    )
+    policy_schema_path = repository_root / (
+        "src/openopps/providers/sources/data/source_policy_evidence.schema.json"
+    )
+    imported_module_path = Path(source_policy_module.__file__).resolve()
+    if imported_module_path != policy_module_path.resolve():
+        raise ValueError(
+            "source-policy module provenance does not match the repository component"
+        )
+    if DEFAULT_EVIDENCE_PATH.resolve() != policy_evidence_path.resolve():
+        raise ValueError(
+            "source-policy evidence provenance does not match the repository component"
+        )
+    if DEFAULT_SCHEMA_PATH.resolve() != policy_schema_path.resolve():
+        raise ValueError(
+            "source-policy schema provenance does not match the repository component"
+        )
+    module_bytes = policy_module_path.read_bytes()
+    evidence_bytes = policy_evidence_path.read_bytes()
+    schema_bytes = policy_schema_path.read_bytes()
+    corpus_path = repository_root / SOURCE_POLICY_CORPUS_FILE
+    corpus_bytes = corpus_path.read_bytes()
+    evidence = parse_source_policy_evidence(
+        evidence_bytes,
+        source=policy_evidence_path,
+    )
+    validate_source_policy_schema_bytes(
+        schema_bytes,
+        source=policy_schema_path,
+    )
+    corpus = parse_source_corpus(corpus_bytes, source=corpus_path)
+    audit_source_policy(corpus=corpus, evidence=evidence)
+    return {
+        "evidence": evidence,
+        "moduleSha256": hashlib.sha256(module_bytes).hexdigest(),
+        "evidenceSha256": hashlib.sha256(evidence_bytes).hexdigest(),
+        "schemaSha256": hashlib.sha256(schema_bytes).hexdigest(),
+        "corpusSha256": hashlib.sha256(corpus_bytes).hexdigest(),
+    }
 
 
 def _stored_source_publication_metadata(db_path: Path) -> dict[str, dict[str, Any]]:

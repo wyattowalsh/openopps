@@ -9,6 +9,7 @@ Python package for the OpenOpps CLI.
 - Keep firm aggregator board source adapters in `providers/sources/` and per-board job providers in `providers/boards/`; these hierarchies must not share adapter registries. Use `providers/registry.py` for provider definitions and `providers/base.py` for shared provider protocols. Built-in and plugin job providers must return the public `JobFetchResult`; set `authoritative=True` only after complete traversal because ingest may close missing jobs only for authoritative snapshots.
 - Treat `--provider any` and `--provider all` as aliases for no provider filter across job-capable providers.
 - Keep each `SourceRecord.key` owned by exactly one module under `providers/sources/`; migrated or special-case Consider boards belong in `special.py`, not duplicated in `consider.py`.
+- Keep public-corpus source eligibility fail-closed in `source_policy.py`: validate the canonical evidence snapshot and exact corpus identity offline, preserve access/license/redistribution/sync/publication as separate axes, and never render a sync selector while any selected source is blocked or unresolved. Repository catalog status mirrors existing metadata; it does not create or broaden legal permission.
 - Preserve overlapping company/board observations during ingestion, but dedupe provider requests before probing or syncing jobs.
 - Prefer async HTTPX clients, bounded concurrency, Tenacity retries, streaming JSONL, and batched DB writes for ingestion work.
 - Preserve raw upstream payloads on normalized records for auditability.

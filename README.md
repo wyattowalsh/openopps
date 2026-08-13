@@ -297,11 +297,13 @@ uv run python scripts/verify_docs_search_artifacts.py \
   --max-snapshot-age-hours 48
 ```
 
-Publication is fail-closed on source rights and required attribution. A degraded stale-snapshot reason can bypass only the 48-hour freshness limit; it cannot bypass rights, privacy, secret, integrity, provenance, or platform-budget gates. Passing tests for that gate does not establish that the current real snapshot is rights-ready: the exact production snapshot must pass the policy check before any upload. Static delivery retains exactly current and previous releases and provides local staging, verification, rollout-plan, and recovery-archive tooling under `scripts/docs_search_delivery.py` and `deployment/openopps-data/`.
+Publication is fail-closed on source rights and required attribution. `just source-policy-check` validates the canonical evidence, schema, and exact committed-v6 corpus identity; it is a structural CI gate, not permission to publish. `just source-policy-audit` is the release-eligibility gate. The current audit is deliberately red: 7 of 695 sources only mirror repository catalog declarations, 0 are independently verified, and 688 are blocked. Do not render a selector, generate or upload a production corpus, bootstrap a Worker, or publish while that audit exits 2. The generator applies the evidence as a deny-only overlay and hashes its module, evidence, schema, and corpus into the v7 release identity, so catalog or stored metadata cannot override a reviewed denial.
+
+A degraded stale-snapshot reason can bypass only the 48-hour freshness limit; it cannot bypass rights, privacy, secret, integrity, provenance, or platform-budget gates. Static delivery retains exactly current and previous releases and provides local staging, verification, rollout-plan, exact-archive-SHA bundle, and identity-closed safe-restore tooling under `scripts/docs_search_delivery.py` and `deployment/openopps-data/`. If a target Worker is freshly proven absent, [`scripts/docs_search_bootstrap.py`](scripts/docs_search_bootstrap.py) and the [bootstrap runbook](deployment/openopps-data/BOOTSTRAP.md) provide the sole dry-run-first initial-deploy exception; they do not prove a live bootstrap.
 
 The browser includes an explicit, default-off offline-search installer for v7. It quota-checks, downloads, hashes, and pins only the bounded search/metadata projection for one immutable release; unit tests cover opt-out, quota, integrity, rollback, retirement, and ownership boundaries. That local implementation is not deployed-offline evidence. A real-release install, disconnect/readback journey, and the complete Chromium/Firefox/WebKit journey remain release gates.
 
-See [Public Data Releases](https://openopps.dev/docs/public-data-releases) and [`deployment/openopps-data/README.md`](deployment/openopps-data/README.md) for schema, governance, staging, remote verification, rollback, archive, correction/takedown, retention, and v6 exit gates. These are preparation surfaces: the current repository and CI do not prove a live Workers rollout or a GitHub Release attestation for the public-data archive.
+See [Public Data Releases](https://openopps.dev/docs/public-data-releases) and [`deployment/openopps-data/README.md`](deployment/openopps-data/README.md) for schema, governance, staging, remote verification, rollback, archive, correction/takedown, retention, and v6 exit gates. The manual `public-data-archive.yml` workflow validates an operator-created one-asset draft, attests its embedded SPDX document, publishes it as a non-latest immutable release, and independently downloads, verifies, and restores it. Repository workflow presence is still preparation evidence: no live Workers rollout, immutable GitHub Release, or archive attestation exists until an authorized exact-SHA run succeeds and its identities are recorded.
 
 ## Contributor Workflow
 
@@ -330,6 +332,8 @@ cd web && pnpm test
 cd web && pnpm exec playwright test --project=chromium
 cd web && pnpm exec playwright test --project=mobile-chromium accessibility.spec.ts
 just web-search-index-check
+just --show public-data-archive-bundle
+just --show public-data-archive-restore
 just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
@@ -337,7 +341,7 @@ just kaggle-bundle-check kaggle/openoppsdb.sqlite
 `just ci` composes `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts`. Those lanes cover the Python release gate, strict OpenSpec validation, web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata/bundle smoke, and repository drift. Network-dependent Python and web audits are added by `just ci-full`; `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe.
 `just web-search-index-check` is the explicit maintainer parity gate for the committed v6 transition snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `web/public/data/openopps-search/`, and fails on remaining snapshot drift.
 
-GitHub Actions also runs supported Python 3.12/3.13/3.14 and lowest-direct dependency lanes. Its non-pull-request supply-chain job builds and attests the Python wheel SBOM; the uploaded workflow artifact has 30-day retention. It does not attest or publish the v7 public-data recovery archive.
+GitHub Actions also runs supported Python 3.12/3.13/3.14 and lowest-direct dependency lanes. Its non-pull-request supply-chain job builds and attests the Python wheel SBOM; the uploaded workflow artifact has 30-day retention. Public-data archive publication is intentionally separate and manual, requires immutable releases plus a pre-created exact draft, and uses isolated least-privilege attest, publish, and readback jobs.
 
 Renovate is configured in `renovate.json` for Python `pyproject.toml`/`uv.lock` and web `package.json`/`pnpm-lock.yaml` maintenance. Review dependency PRs with the same `just ci` path used for local release validation.
 

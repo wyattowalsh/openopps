@@ -32,8 +32,8 @@ ci-openspec: openspec-list openspec-validate-all
 # Web product gate.
 ci-web: web-check web-build web-test web-e2e web-a11y web-lint web-search-artifacts-check
 
-# Generated-artifact and repository-diff gate.
-ci-artifacts: kaggle-generated-diff-check kaggle-bundle-smoke diff-check
+# Generated-artifact, source-policy, and repository-diff gate.
+ci-artifacts: source-policy-check kaggle-generated-diff-check kaggle-bundle-smoke diff-check
 
 # CI plus network-dependent security audits (GHA Security job parity).
 ci-full: ci security-audit test-lowest-direct
@@ -60,6 +60,14 @@ build-wheel:
 wheel-catalog-smoke:
     uv build --wheel --out-dir /tmp/openopps-wheels
     uv run python scripts/smoke_wheel_catalog.py
+
+# Validate the exact committed public-corpus rights evidence offline.
+source-policy-check:
+    uv run python scripts/source_policy_review.py validate
+
+# Audit publication eligibility; this intentionally fails while any source is blocked.
+source-policy-audit:
+    uv run python scripts/source_policy_review.py audit
 
 # Check that uv.lock is current for pyproject.toml.
 lock-check:
@@ -128,6 +136,31 @@ web-search-index-check:
     cd web && pnpm data:generate:search
     uv run python scripts/verify_docs_search_artifacts.py --root web/public/data/openopps-search --require-git-tracked
     git diff --exit-code -- web/public/data/openopps-search
+
+# Build one deterministic, content-addressed dual-release recovery archive.
+public-data-archive-bundle stage="deployment/openopps-data/production/assets" output_directory="" created_at="" source_revision="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stage="$1"; stage="${stage#stage=}"
+    output_directory="$2"; output_directory="${output_directory#output_directory=}"
+    created_at="$3"; created_at="${created_at#created_at=}"
+    source_revision="$4"; source_revision="${source_revision#source_revision=}"
+    [[ -n "$stage" && -n "$output_directory" && -n "$created_at" && -n "$source_revision" ]] || { echo "stage, output_directory, created_at, and source_revision are required" >&2; exit 2; }
+    uv run python scripts/docs_search_delivery.py bundle "$stage" "$output_directory" --created-at "$created_at" --source-revision "$source_revision"
+
+# Restore-test one archive against every externally recorded release identity.
+public-data-archive-restore archive="" destination="" archive_sha256="" stage_root_digest="" source_revision="" current_release_id="" previous_release_id="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    archive="$1"; archive="${archive#archive=}"
+    destination="$2"; destination="${destination#destination=}"
+    archive_sha256="$3"; archive_sha256="${archive_sha256#archive_sha256=}"
+    stage_root_digest="$4"; stage_root_digest="${stage_root_digest#stage_root_digest=}"
+    source_revision="$5"; source_revision="${source_revision#source_revision=}"
+    current_release_id="$6"; current_release_id="${current_release_id#current_release_id=}"
+    previous_release_id="$7"; previous_release_id="${previous_release_id#previous_release_id=}"
+    [[ -n "$archive" && -n "$destination" && -n "$archive_sha256" && -n "$stage_root_digest" && -n "$source_revision" && -n "$current_release_id" && -n "$previous_release_id" ]] || { echo "all archive restore identities are required" >&2; exit 2; }
+    uv run python scripts/docs_search_delivery.py restore "$archive" "$destination" --archive-sha256 "$archive_sha256" --stage-root-digest "$stage_root_digest" --source-revision "$source_revision" --current-release-id "$current_release_id" --previous-release-id "$previous_release_id"
 
 # Generate data, MDX output, Next route types, and TypeScript checks.
 web-check:

@@ -1,0 +1,421 @@
+name: Public data archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact openopps-data-v7-<stage-root-digest> draft release tag
+        required: true
+        type: string
+      archive_sha256:
+        description: SHA-256 of the draft release's only archive asset
+        required: true
+        type: string
+      stage_root_digest:
+        description: SHA-256 tree identity carried by the recovery archive
+        required: true
+        type: string
+      source_revision:
+        description: Exact lowercase Git SHA used to build the promoted stage
+        required: true
+        type: string
+      current_release_id:
+        description: Current immutable v7 release ID in the staged channel
+        required: true
+        type: string
+      previous_release_id:
+        description: Previous immutable v7 release ID retained for recovery
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-data-archive-${{ inputs.stage_root_digest }}
+  cancel-in-progress: false
+
+env:
+  GH_VERSION: 2.97.0
+  GH_LINUX_AMD64_SHA256: a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112
+  SIGNER_WORKFLOW: github.com/${{ github.repository }}/.github/workflows/public-data-archive.yml
+
+jobs:
+  validate-and-attest:
+    name: Validate draft and attest archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+      STAGE_ROOT_DIGEST: ${{ inputs.stage_root_digest }}
+      SOURCE_REVISION: ${{ inputs.source_revision }}
+      CURRENT_RELEASE_ID: ${{ inputs.current_release_id }}
+      PREVIOUS_RELEASE_ID: ${{ inputs.previous_release_id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate dispatch identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='^[0-9a-f]{64}$'
+          revision='^[0-9a-f]{40}$'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SOURCE_REVISION" == "$GITHUB_SHA" ]]
+          [[ "$SOURCE_REVISION" =~ $revision ]]
+          [[ "$ARCHIVE_SHA256" =~ $digest ]]
+          [[ "$STAGE_ROOT_DIGEST" =~ $digest ]]
+          [[ "$CURRENT_RELEASE_ID" =~ $digest ]]
+          [[ "$PREVIOUS_RELEASE_ID" =~ $digest ]]
+          [[ "$CURRENT_RELEASE_ID" != "$PREVIOUS_RELEASE_ID" ]]
+          [[ "$RELEASE_TAG" == "openopps-data-v7-$STAGE_ROOT_DIGEST" ]]
+          printf 'ARCHIVE_NAME=openopps-data-%s.tar.gz\n' "$ARCHIVE_SHA256" >> "$GITHUB_ENV"
+
+      - name: Check out exact source revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_revision }}
+
+      - name: Install checksum-pinned GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d "$RUNNER_TEMP/gh.XXXXXX")"
+          archive="$install_root/gh.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$GH_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$install_root"
+          install -m 0755 "$install_root/gh_${GH_VERSION}_linux_amd64/bin/gh" "$RUNNER_TEMP/gh"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Verify immutable-release setting and exact draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          setting="$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases")"
+          jq -e '(.enabled == true) or (.enforced_by_owner == true)' <<<"$setting"
+          comparison="$(gh api "repos/$GITHUB_REPOSITORY/compare/$SOURCE_REVISION...main" --jq .status)"
+          [[ "$comparison" == ahead || "$comparison" == identical ]]
+          release="$(gh release view "$RELEASE_TAG" \
+            --json assets,isDraft,isImmutable,isPrerelease,tagName,targetCommitish)"
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --arg source "$SOURCE_REVISION" \
+            --arg archive "$ARCHIVE_NAME" \
+            '.tagName == $tag and .targetCommitish == $source and
+             .isDraft == true and .isImmutable == false and .isPrerelease == false and
+             (.assets | length) == 1 and .assets[0].name == $archive and
+             .assets[0].size > 0' <<<"$release"
+          if tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" 2>/dev/null)"; then
+            object_type="$(jq -r .object.type <<<"$tag")"
+            object_sha="$(jq -r .object.sha <<<"$tag")"
+            for _ in {1..8}; do
+              if [[ "$object_type" == commit ]]; then
+                [[ "$object_sha" == "$SOURCE_REVISION" ]]
+                break
+              fi
+              [[ "$object_type" == tag ]]
+              tag="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+              object_type="$(jq -r .object.type <<<"$tag")"
+              object_sha="$(jq -r .object.sha <<<"$tag")"
+            done
+            [[ "$object_type" == commit && "$object_sha" == "$SOURCE_REVISION" ]]
+          fi
+
+      - name: Independently download and restore draft archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_root="$(mktemp -d "$RUNNER_TEMP/openopps-archive.XXXXXX")"
+          chmod 700 "$archive_root"
+          gh release download "$RELEASE_TAG" \
+            --pattern "$ARCHIVE_NAME" \
+            --dir "$archive_root"
+          archive="$archive_root/$ARCHIVE_NAME"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
+          python3 scripts/docs_search_delivery.py restore \
+            "$archive" "$archive_root/restored-assets" \
+            --archive-sha256 "$ARCHIVE_SHA256" \
+            --stage-root-digest "$STAGE_ROOT_DIGEST" \
+            --source-revision "$SOURCE_REVISION" \
+            --current-release-id "$CURRENT_RELEASE_ID" \
+            --previous-release-id "$PREVIOUS_RELEASE_ID"
+          printf 'ARCHIVE_PATH=%s\n' "$archive" >> "$GITHUB_ENV"
+          printf 'SBOM_PATH=%s\n' "$archive_root/sbom.spdx.json" >> "$GITHUB_ENV"
+
+      - name: Recover verified SPDX document
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=scripts python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          from docs_search_delivery import inspect_recovery_archive
+
+          metadata = inspect_recovery_archive(
+              Path(os.environ["ARCHIVE_PATH"]),
+              expected_archive_sha256=os.environ["ARCHIVE_SHA256"],
+              expected_stage_root_digest=os.environ["STAGE_ROOT_DIGEST"],
+              expected_source_revision=os.environ["SOURCE_REVISION"],
+              expected_current_release_id=os.environ["CURRENT_RELEASE_ID"],
+              expected_previous_release_id=os.environ["PREVIOUS_RELEASE_ID"],
+          )
+          destination = Path(os.environ["SBOM_PATH"])
+          flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+          if hasattr(os, "O_NOFOLLOW"):
+              flags |= os.O_NOFOLLOW
+          descriptor = os.open(destination, flags, 0o600)
+          with os.fdopen(descriptor, "wb") as handle:
+              handle.write(metadata["sbom.spdx.json"])
+              handle.flush()
+              os.fsync(handle.fileno())
+          PY
+
+      - name: Attest archive with embedded SPDX SBOM
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ env.ARCHIVE_PATH }}
+          sbom-path: ${{ env.SBOM_PATH }}
+          push-to-registry: false
+          create-storage-record: false
+
+  publish:
+    name: Publish verified non-latest release
+    needs: validate-and-attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+      STAGE_ROOT_DIGEST: ${{ inputs.stage_root_digest }}
+      SOURCE_REVISION: ${{ inputs.source_revision }}
+      CURRENT_RELEASE_ID: ${{ inputs.current_release_id }}
+      PREVIOUS_RELEASE_ID: ${{ inputs.previous_release_id }}
+      ARCHIVE_NAME: openopps-data-${{ inputs.archive_sha256 }}.tar.gz
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Install checksum-pinned GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d "$RUNNER_TEMP/gh.XXXXXX")"
+          archive="$install_root/gh.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$GH_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$install_root"
+          install -m 0755 "$install_root/gh_${GH_VERSION}_linux_amd64/bin/gh" "$RUNNER_TEMP/gh"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Recheck draft asset and archive attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='^[0-9a-f]{64}$'
+          revision='^[0-9a-f]{40}$'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SOURCE_REVISION" == "$GITHUB_SHA" && "$SOURCE_REVISION" =~ $revision ]]
+          [[ "$ARCHIVE_SHA256" =~ $digest && "$STAGE_ROOT_DIGEST" =~ $digest ]]
+          [[ "$CURRENT_RELEASE_ID" =~ $digest && "$PREVIOUS_RELEASE_ID" =~ $digest ]]
+          [[ "$CURRENT_RELEASE_ID" != "$PREVIOUS_RELEASE_ID" ]]
+          [[ "$RELEASE_TAG" == "openopps-data-v7-$STAGE_ROOT_DIGEST" ]]
+          setting="$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases")"
+          jq -e '(.enabled == true) or (.enforced_by_owner == true)' <<<"$setting"
+          release="$(gh release view "$RELEASE_TAG" \
+            --json assets,isDraft,isImmutable,isPrerelease,tagName,targetCommitish)"
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --arg source "$SOURCE_REVISION" \
+            --arg archive "$ARCHIVE_NAME" \
+            '.tagName == $tag and .targetCommitish == $source and
+             .isDraft == true and .isImmutable == false and .isPrerelease == false and
+             (.assets | length) == 1 and .assets[0].name == $archive and
+             .assets[0].size > 0' <<<"$release"
+          if tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" 2>/dev/null)"; then
+            object_type="$(jq -r .object.type <<<"$tag")"
+            object_sha="$(jq -r .object.sha <<<"$tag")"
+            for _ in {1..8}; do
+              if [[ "$object_type" == commit ]]; then
+                [[ "$object_sha" == "$SOURCE_REVISION" ]]
+                break
+              fi
+              [[ "$object_type" == tag ]]
+              tag="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+              object_type="$(jq -r .object.type <<<"$tag")"
+              object_sha="$(jq -r .object.sha <<<"$tag")"
+            done
+            [[ "$object_type" == commit && "$object_sha" == "$SOURCE_REVISION" ]]
+          fi
+          archive_root="$(mktemp -d "$RUNNER_TEMP/openopps-publish.XXXXXX")"
+          chmod 700 "$archive_root"
+          gh release download "$RELEASE_TAG" --pattern "$ARCHIVE_NAME" --dir "$archive_root"
+          archive="$archive_root/$ARCHIVE_NAME"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
+          gh attestation verify "$archive" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-digest "$SOURCE_REVISION" \
+            --source-ref refs/heads/main \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+      - name: Publish without latest-release status
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false
+          release="$(gh release view "$RELEASE_TAG" \
+            --json assets,isDraft,isImmutable,isPrerelease,tagName,targetCommitish)"
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --arg source "$SOURCE_REVISION" \
+            --arg archive "$ARCHIVE_NAME" \
+            '.tagName == $tag and .targetCommitish == $source and
+             .isDraft == false and .isImmutable == true and .isPrerelease == false and
+             (.assets | length) == 1 and .assets[0].name == $archive and
+             .assets[0].size > 0' <<<"$release"
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          object_type="$(jq -r .object.type <<<"$tag")"
+          object_sha="$(jq -r .object.sha <<<"$tag")"
+          for _ in {1..8}; do
+            if [[ "$object_type" == commit ]]; then
+              [[ "$object_sha" == "$SOURCE_REVISION" ]]
+              break
+            fi
+            [[ "$object_type" == tag ]]
+            tag="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+            object_type="$(jq -r .object.type <<<"$tag")"
+            object_sha="$(jq -r .object.sha <<<"$tag")"
+          done
+          [[ "$object_type" == commit && "$object_sha" == "$SOURCE_REVISION" ]]
+
+  verify-published:
+    name: Independently verify published release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+      STAGE_ROOT_DIGEST: ${{ inputs.stage_root_digest }}
+      SOURCE_REVISION: ${{ inputs.source_revision }}
+      CURRENT_RELEASE_ID: ${{ inputs.current_release_id }}
+      PREVIOUS_RELEASE_ID: ${{ inputs.previous_release_id }}
+      ARCHIVE_NAME: openopps-data-${{ inputs.archive_sha256 }}.tar.gz
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_revision }}
+
+      - name: Install checksum-pinned GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d "$RUNNER_TEMP/gh.XXXXXX")"
+          archive="$install_root/gh.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$GH_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$install_root"
+          install -m 0755 "$install_root/gh_${GH_VERSION}_linux_amd64/bin/gh" "$RUNNER_TEMP/gh"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Verify immutable release and exact tag target
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='^[0-9a-f]{64}$'
+          revision='^[0-9a-f]{40}$'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SOURCE_REVISION" == "$GITHUB_SHA" && "$SOURCE_REVISION" =~ $revision ]]
+          [[ "$ARCHIVE_SHA256" =~ $digest && "$STAGE_ROOT_DIGEST" =~ $digest ]]
+          [[ "$CURRENT_RELEASE_ID" =~ $digest && "$PREVIOUS_RELEASE_ID" =~ $digest ]]
+          [[ "$CURRENT_RELEASE_ID" != "$PREVIOUS_RELEASE_ID" ]]
+          [[ "$RELEASE_TAG" == "openopps-data-v7-$STAGE_ROOT_DIGEST" ]]
+          release=""
+          for attempt in {1..12}; do
+            release="$(gh release view "$RELEASE_TAG" \
+              --json assets,isDraft,isImmutable,isPrerelease,tagName,targetCommitish)"
+            if jq -e '.isDraft == false and .isImmutable == true' <<<"$release" >/dev/null; then
+              break
+            fi
+            [[ "$attempt" -lt 12 ]] || { echo "immutable release not visible after 120 seconds" >&2; exit 1; }
+            sleep 10
+          done
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --arg source "$SOURCE_REVISION" \
+            --arg archive "$ARCHIVE_NAME" \
+            '.tagName == $tag and .targetCommitish == $source and
+             .isDraft == false and .isImmutable == true and .isPrerelease == false and
+             (.assets | length) == 1 and .assets[0].name == $archive and
+             .assets[0].size > 0' <<<"$release"
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          object_type="$(jq -r .object.type <<<"$tag")"
+          object_sha="$(jq -r .object.sha <<<"$tag")"
+          for _ in {1..8}; do
+            if [[ "$object_type" == commit ]]; then
+              [[ "$object_sha" == "$SOURCE_REVISION" ]]
+              break
+            fi
+            [[ "$object_type" == tag ]]
+            tag="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+            object_type="$(jq -r .object.type <<<"$tag")"
+            object_sha="$(jq -r .object.sha <<<"$tag")"
+          done
+          [[ "$object_type" == commit && "$object_sha" == "$SOURCE_REVISION" ]]
+          if latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null)"; then
+            [[ "$latest" != "$RELEASE_TAG" ]]
+          fi
+
+      - name: Fresh download, release verification, and restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_root="$(mktemp -d "$RUNNER_TEMP/openopps-readback.XXXXXX")"
+          chmod 700 "$archive_root"
+          gh release download "$RELEASE_TAG" --pattern "$ARCHIVE_NAME" --dir "$archive_root"
+          archive="$archive_root/$ARCHIVE_NAME"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" "$archive" | sha256sum --check --strict
+          verified=0
+          for attempt in {1..12}; do
+            if gh release verify "$RELEASE_TAG" && \
+               gh release verify-asset "$RELEASE_TAG" "$archive"; then
+              verified=1
+              break
+            fi
+            [[ "$attempt" -lt 12 ]] || break
+            sleep 10
+          done
+          [[ "$verified" == 1 ]] || { echo "release attestation not visible after 120 seconds" >&2; exit 1; }
+          gh attestation verify "$archive" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-digest "$SOURCE_REVISION" \
+            --source-ref refs/heads/main \
+            --predicate-type https://spdx.dev/Document/v2.3
+          python3 scripts/docs_search_delivery.py restore \
+            "$archive" "$archive_root/restored-assets" \
+            --archive-sha256 "$ARCHIVE_SHA256" \
+            --stage-root-digest "$STAGE_ROOT_DIGEST" \
+            --source-revision "$SOURCE_REVISION" \
+            --current-release-id "$CURRENT_RELEASE_ID" \
+            --previous-release-id "$PREVIOUS_RELEASE_ID"

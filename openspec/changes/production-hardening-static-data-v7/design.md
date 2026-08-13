@@ -10,7 +10,7 @@ Create a pending sync run before network access, commit `db_batch_size` progress
 
 ### Immutable artifact v7
 
-Generate only in an owned sibling candidate directory. Immutable assets live under `/releases/<root-digest>/`; `/channels/production.json` names current and previous releases. A canonical manifest enumerates each safe path, byte length, media type, SHA-256, role, semantic count, source/input/generator/lock provenance, schema, and snapshot time. The release ID hashes canonical manifest content without a self-referential root. Promotion requires exact-set, rights, freshness, and platform-budget verification.
+Generate only in an owned sibling candidate directory. Immutable assets live under `/releases/<root-digest>/`; `/channels/production.json` names current and previous releases. A canonical manifest enumerates each safe path, byte length, media type, SHA-256, role, semantic count, source/input/generator/lock provenance, schema, and snapshot time. The release ID hashes canonical manifest content without a self-referential root. Source policy has separate structural and eligibility gates: canonical evidence/schema/corpus closure may validate while blocked sources keep the eligibility audit red. The deny-only policy module, evidence, schema, and reference corpus are hashed into generator provenance and cross-checked against `publication-policy.json`; catalog metadata cannot override a reviewed provider or source denial. Promotion requires exact-set, rights, freshness, and platform-budget verification.
 
 ### Release-pinned web product
 
@@ -18,7 +18,7 @@ One `SnapshotClient` resolves and validates the channel once per request/session
 
 ### Free serving, governance, and supply chain
 
-Use separate assets-only staging/production Workers on the Free plan, initially via `workers.dev`: no script, bindings, `run_worker_first`, or Workers Cache. A serving version contains current and previous releases, promotes 100% atomically, and applies immutable/revalidated cache policy, CORS, `nosniff`, and `noindex`. GitHub Releases holds one content-addressed archive with manifest, SBOM, provenance, and attestation. Public sources are fail-closed on rights state, required attribution is emitted, and Kaggle installs immutable source/tool inputs and verifies a recomputed canonical package root.
+Use separate assets-only staging/production Workers on the Free plan, initially via `workers.dev`: no script, bindings, `run_worker_first`, or Workers Cache. A serving version contains current and previous releases, promotes 100% atomically, and applies immutable/revalidated cache policy, CORS, `nosniff`, and `noindex`. Ordinary upload requires an existing Worker. A first bootstrap is a separate, dry-run-first exception: bind one frozen candidate to fresh absent-target account/name evidence, use the pinned Wrangler deploy, require exactly one version/deployment in readback, and record that initial version as `rollbackWorkerVersionId` before ordinary uploads. GitHub Releases holds one exact-archive-SHA-addressed asset with manifest, SBOM, provenance, and attestation; its tag separately addresses the stage-root digest. Archive restore requires external archive/stage/source/current/prior identities, a 4-GiB expanded-byte ceiling, bounded no-follow streaming extraction, semantic manifest/provenance/SPDX closure, stage verification, and OS-native exclusive naming of an absent destination. Archive publication is manual and draft-first: an immutable-release setting and exact one-asset draft precede isolated attest, publish, and fresh read-only verification jobs. Public sources are fail-closed on rights state, required attribution is emitted, and Kaggle installs immutable source/tool inputs and verifies a recomputed canonical package root.
 
 ## Compatibility and ownership
 
@@ -34,5 +34,6 @@ Use separate assets-only staging/production Workers on the Free plan, initially 
 - Stop release on non-determinism, digest/set/path/symlink, rights/privacy/freshness, provenance, or budget failure.
 - Stop Free hosting on actual full-corpus rejection; report R2 feasibility without activating it.
 - Stop cutover if web consumers mix releases or require the committed full tree.
-- Stop live publication without exact target, credentials, previous-good version, and rollback proof.
+- Stop live publication without exact target, credentials, previous-good version, and rollback proof. For an absent Worker, stop unless the one-time bootstrap records its initial version/deployment as the rollback identity.
+- Stop archive publication unless immutable releases are enabled, the exact `main` SHA owns a non-latest one-asset draft, and independent download, GitHub/SPDX attestation verification, and safe dual-release restore all pass.
 - Stop ordinary tree removal until serving and archive recovery pass; stop history rewriting until backup, ref inventory, SHA mapping, freeze, and separate force-push approval exist.

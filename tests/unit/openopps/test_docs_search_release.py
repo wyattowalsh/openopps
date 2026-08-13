@@ -49,7 +49,22 @@ _GENERATOR = {
     "entrypoint": "scripts/generate_docs_search_index.py",
     "payloadSchemaVersion": 6,
     "components": [
-        {"path": "scripts/generate_docs_search_index.py", "sha256": _DIGEST}
+        {"path": "scripts/generate_docs_search_index.py", "sha256": _DIGEST},
+        {"path": "src/openopps/source_policy.py", "sha256": _DIGEST},
+        {
+            "path": ("src/openopps/providers/sources/data/source_policy_evidence.json"),
+            "sha256": _DIGEST,
+        },
+        {
+            "path": (
+                "src/openopps/providers/sources/data/source_policy_evidence.schema.json"
+            ),
+            "sha256": _DIGEST,
+        },
+        {
+            "path": "deployment/openopps-data/source-corpus-v6.json",
+            "sha256": _DIGEST,
+        },
     ],
 }
 
@@ -407,6 +422,7 @@ def test_production_publication_requires_complete_governance_graph(
         ("source-set", "source set does not match search-manifest facets.sources"),
         ("source-count", "sourceCount does not match sources length"),
         ("status-contract", "allowedLicenseStatuses does not match"),
+        ("source-policy-digest", "does not match generator component"),
     ],
 )
 def test_publication_graph_rejects_semantically_tampered_rights_policy(
@@ -430,10 +446,14 @@ def test_publication_graph_rejects_semantically_tampered_rights_policy(
         first["key"] = "substituted-source"
     elif mutation == "source-count":
         policy["sourceCount"] = 999
-    else:
+    elif mutation == "status-contract":
         allowed = policy["allowedLicenseStatuses"]
         assert isinstance(allowed, list)
         allowed.append("needs_review")
+    else:
+        source_policy = policy["sourcePolicy"]
+        assert isinstance(source_policy, dict)
+        source_policy["evidenceSha256"] = "b" * 64
     _write_json(policy_path, policy, pretty=True)
     _rewrite_manifest(governed)
 
@@ -618,6 +638,14 @@ def _write_governed_release(root: Path) -> Path:
         root / "publication-policy.json",
         {
             "schemaVersion": 1,
+            "sourcePolicy": {
+                "policyId": "fixture-source-policy",
+                "reviewedAt": "2026-02-03",
+                "moduleSha256": _DIGEST,
+                "evidenceSha256": _DIGEST,
+                "schemaSha256": _DIGEST,
+                "corpusSha256": _DIGEST,
+            },
             "allowedLicenseStatuses": [
                 "official_public",
                 "oss_attribution_required",

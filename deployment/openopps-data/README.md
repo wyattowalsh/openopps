@@ -17,7 +17,7 @@ Nothing in this directory proves that a live staging or production rollout occur
 - Install locked Python and web dependencies.
 - Use the pinned Wrangler version from `web/package.json`; the delivery validator currently requires `4.122.0` exactly.
 - Start from a clean public `kaggle/openoppsdb.sqlite` snapshot containing no private payload surfaces.
-- Confirm packaged source-rights metadata is reviewed for every included source.
+- Require both structural source-policy validation and a green release-eligibility audit for the exact included corpus. Repository catalog declarations are not independent permission evidence.
 - Know the exact Cloudflare account, staging/production Worker names, staging/production `workers.dev` origins, current previous-good Worker version IDs, and rollback owner.
 - Preserve the previous-good staged tree or verified recovery archive so rollback readback can be compared to the correct bytes.
 
@@ -33,9 +33,11 @@ cd web && pnpm install --frozen-lockfile
 cd ..
 just ci
 just security-audit
+just source-policy-check
+just source-policy-audit
 ```
 
-`just ci` is the canonical local graph for Python, OpenSpec, web, browser, and generated-artifact gates. `just security-audit` is network-dependent. Neither command deploys the public-data Worker.
+`just ci` is the canonical local graph for Python, OpenSpec, web, browser, and generated-artifact gates. `source-policy-check` is intentionally structural: it validates canonical bytes, schema, evidence, and the exact v6 corpus identity. `source-policy-audit` is the release-eligibility gate and must exit zero before generation or upload. The current committed-v6 audit is release-ineligible: 7 of 695 sources mirror repository catalog declarations, 0 are independently verified, and 688 are blocked, so the audit exits 2 and no selector may be rendered. `just security-audit` is network-dependent. None of these commands deploys the public-data Worker.
 
 Keep the exact source SHA and command outputs with the release evidence. Local success is not origin-CI success; require the GitHub Actions run for the same SHA before production promotion.
 
@@ -70,6 +72,8 @@ Before staging, inspect these generated files:
 - `releases/<releaseId>/search-manifest.json`
 
 Stop on any missing/`needs_review` source rights state, missing required attribution, stale snapshot without approved degraded evidence, or verifier error.
+
+The generated `publication-policy.json` separates license, access, redistribution, synchronization, and publication decisions. Its `sourcePolicy` identity and SHA-256 values must match the policy module, evidence, schema, and exact reference corpus listed in the release manifest's generator components. The reviewed policy is a deny-only overlay: a provider-scoped or exact-source denial overrides catalog or persisted metadata, while absence from the overlay never grants publication rights.
 
 ## 3. Validate configs and stage exact dual-release trees
 
@@ -129,7 +133,7 @@ WRANGLER_OUTPUT_FILE_PATH="$PWD/.tmp/openopps-data-release/staging-upload.jsonl"
   --strict
 ```
 
-Do not copy this command into an unauthorized session. If the expected Worker does not already exist or account/Free-plan identity is ambiguous, stop and resolve the bootstrap procedure before upload; do not substitute `wrangler deploy`, because that couples version creation to live traffic.
+Do not copy this command into an unauthorized session. If the expected Worker does not already exist or account/Free-plan identity is ambiguous, stop and follow the separately gated [first-Worker bootstrap runbook](BOOTSTRAP.md); do not substitute an ad hoc `wrangler deploy`. The bootstrap helper is the one-time, dry-run-first exception: it binds a frozen candidate to a freshly proven absent target and records the single initial version/deployment as the rollback identity before ordinary version uploads begin.
 
 After an authorized upload, strictly parse and append its sanitized identity to a local ledger:
 
@@ -191,41 +195,67 @@ Repeat the gated sequence for production only after staging proof, exact-SHA CI,
 
 ## 6. Build and verify the recovery archive
 
-The `stage` command prints `root_digest`. The output filename must use it exactly:
+The `stage` command prints `root_digest`; retain it as the stage identity used by the release tag. The archive filename is addressed separately by the exact archive SHA-256:
+
+```bash
+source_revision=<40-character-lowercase-git-sha>
+archive_directory="$PWD/.tmp/openopps-data-release"
+
+just public-data-archive-bundle \
+  stage=deployment/openopps-data/production/assets \
+  output_directory="$archive_directory" \
+  created_at=2026-08-12T00:00:00.000000Z \
+  source_revision="$source_revision"
+```
+
+The command prints `path`, `asset_name`, `sha256`, and `stage_root_digest`. Its output filename is `openopps-data-<archive-sha256>.tar.gz`: the asset name addresses the exact archive bytes, while the later release tag addresses the stage tree. The bundle streams the dual-release tree and includes `SHA256SUMS`, `bundle-manifest.json`, `sbom.spdx.json`, and `provenance.json`. It refuses to replace an existing archive at the same content address. Record the printed identities outside the archive, then restore-test every identity from the release ledger into a new directory:
 
 ```bash
 stage_digest=<64-character-stage-root-digest>
-source_revision=<40-character-lowercase-git-sha>
-archive_path="$PWD/.tmp/openopps-data-release/openopps-data-$stage_digest.tar.gz"
+archive_sha256=<64-character-archive-sha256>
+archive_path="$archive_directory/openopps-data-$archive_sha256.tar.gz"
+current_release_id=<64-character-current-release-id>
+previous_release_id=<64-character-previous-release-id>
+restore_parent="$(mktemp -d)"
 
-uv run python scripts/docs_search_delivery.py bundle \
-  deployment/openopps-data/production/assets \
-  "$archive_path" \
-  --created-at 2026-08-12T00:00:00.000000Z \
-  --source-revision "$source_revision"
+just public-data-archive-restore \
+  archive="$archive_path" \
+  destination="$restore_parent/assets" \
+  archive_sha256="$archive_sha256" \
+  stage_root_digest="$stage_digest" \
+  source_revision="$source_revision" \
+  current_release_id="$current_release_id" \
+  previous_release_id="$previous_release_id"
 ```
 
-The deterministic archive streams the dual-release asset tree and includes `SHA256SUMS`, `bundle-manifest.json`, `sbom.spdx.json`, and `provenance.json`. Verify it independently before upload:
-
-```bash
-PYTHONPATH=scripts uv run python - "$archive_path" <<'PY'
-from pathlib import Path
-import sys
-
-from docs_search_delivery import inspect_recovery_archive
-
-metadata = inspect_recovery_archive(Path(sys.argv[1]))
-print("verified archive metadata:", ", ".join(sorted(metadata)))
-PY
-```
-
-Restore testing must extract into a newly created temporary directory with a safe archive reader, rerun `verify-stage` on the restored `assets/` tree, and compare the current release ID, previous release ID, stage-root digest, and source revision with the release ledger. Do not extract an unverified archive over a working directory or publication root.
+`restore` requires a regular archive, an absent destination under a non-shared parent, and all five external identities. It verifies the raw archive SHA-256, SHA-addressed filename, member path/type/order/count/size bounds, a 4-GiB expanded-byte ceiling, checksum closure, duplicate-free JSON, bundle/provenance/SPDX semantics, current and prior release trees, and the final stage-root digest. Files stream through no-follow, exclusive creates into a private sibling candidate; an OS-native exclusive rename (`RENAME_NOREPLACE`/`RENAME_EXCL`) names the verified candidate only after `verify-stage` passes. It fails closed on unsupported filesystems/platforms and never overwrites a concurrently created destination. Do not use `tar -x` or extract an unverified archive over a working directory or publication root.
 
 ## 7. GitHub archive and attestation gate
 
-The current `.github/workflows/ci.yml` supply-chain job covers the Python wheel only. It generates an SPDX SBOM, attests `dist/*.whl`, and retains its workflow artifact for 30 days. It does not build or attest this public-data archive, publish a GitHub Release, download the archive independently, or restore-test its dual-release contents.
+The manual `.github/workflows/public-data-archive.yml` workflow is the reviewed archive publication path. It cannot create a draft or upload an asset. Before dispatch, a maintainer must separately enable GitHub immutable releases, build and restore-test the archive, verify that `source_revision` is the current `main` SHA, and create one non-latest draft whose only asset is the exact archive:
 
-Until a separately reviewed, least-privilege workflow performs those public-data steps for the exact promoted SHA and digest, archive construction is local evidence only. Do not call the independent archive/attestation gate complete.
+```bash
+release_tag="openopps-data-v7-$stage_digest"
+gh release create "$release_tag" "$archive_path" \
+  --draft \
+  --latest=false \
+  --target "$source_revision" \
+  --title "$release_tag" \
+  --notes "OpenOpps v7 public-data recovery archive."
+
+gh workflow run public-data-archive.yml \
+  --ref main \
+  -f release_tag="$release_tag" \
+  -f archive_sha256="$archive_sha256" \
+  -f stage_root_digest="$stage_digest" \
+  -f source_revision="$source_revision" \
+  -f current_release_id="$current_release_id" \
+  -f previous_release_id="$previous_release_id"
+```
+
+The workflow rejects any non-`main` dispatch, source SHA mismatch, disabled immutable-release setting, non-draft/already-immutable/prerelease record, wrong tag namespace, extra asset, filename/digest/identity drift, or source SHA not on `main`. If the release tag already exists, it must peel—whether lightweight or annotated—to that exact source commit. Its first read-only job freshly downloads and restores the draft, then adds only `id-token: write` and `attestations: write` for the pinned `actions/attest` step; registry push and storage records remain explicitly disabled. A separate `contents: write` job rechecks the immutable-release setting, tag target, archive, and attestation before publishing with `latest=false`, then requires the record to report immutable immediately. A fresh `contents: read` job independently peels the final tag, requires exactly one asset, runs `gh release verify`, `gh release verify-asset`, workflow/source-bound SPDX v2.3 attestation verification, and restores again. Because GitHub release immutability and automatic release attestations can become visible asynchronously, that final job retries the immutable flag and release/asset verification at 10-second intervals for no more than 120 seconds per gate, then fails exactly.
+
+The ordinary CI supply-chain job still covers the Python wheel separately. Repository workflow presence, local archive success, or draft creation alone does not satisfy task 5.7. Record the successful archive workflow run, immutable release URL/tag, archive digest, attestation verification, and restore output for the exact promoted SHA before calling the independent archive gate complete. Do not dispatch until immutable releases and the exact draft are intentionally prepared; this repository change does not enable the setting or create a release.
 
 ## 8. v6 retirement and history boundary
 

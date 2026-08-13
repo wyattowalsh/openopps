@@ -8,6 +8,8 @@ rollout commands. It intentionally never executes Wrangler or GitHub commands.
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import gzip
 import hashlib
 import io
@@ -16,6 +18,7 @@ import os
 import re
 import shutil
 import stat
+import sys
 import tarfile
 import tempfile
 import urllib.error
@@ -35,6 +38,9 @@ ROLLOUT_SCHEMA_VERSION = 1
 MAX_WORKER_FILES = 20_000
 MAX_WORKER_FILE_BYTES = 24 * 1024 * 1024
 MAX_ARCHIVE_METADATA_BYTES = 64 * 1024 * 1024
+MAX_ATTESTATION_PREDICATE_BYTES = 16 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = MAX_WORKER_FILES + 4
+MAX_ARCHIVE_UNCOMPRESSED_BYTES = 4 * 1024 * 1024 * 1024
 CONFIG_ENVIRONMENTS = ("staging", "production")
 CONFIG_FILE = "wrangler.jsonc"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -135,6 +141,20 @@ class ArchiveResult:
 
 
 @dataclass(frozen=True)
+class RestoreResult:
+    """Exact identities restored from one independently verified archive."""
+
+    destination: Path
+    archive_sha256: str
+    source_revision: str
+    current_release_id: str
+    previous_release_id: str
+    file_count: int
+    total_bytes: int
+    stage_root_digest: str
+
+
+@dataclass(frozen=True)
 class _ArchiveFile:
     """Bounded metadata for one streamed archive member."""
 
@@ -142,6 +162,18 @@ class _ArchiveFile:
     path: Path
     bytes: int
     sha256: str
+
+
+@dataclass(frozen=True)
+class _ArchiveIdentity:
+    """Semantically closed identities carried by a recovery archive."""
+
+    source_revision: str
+    current_release_id: str
+    previous_release_id: str
+    stage_root_digest: str
+    file_count: int
+    total_bytes: int
 
 
 def validate_configs(config_root: Path) -> list[str]:
@@ -507,9 +539,7 @@ def _prepare_upload_candidate(
     candidate_parent = output_parent / "upload-candidates" / environment
     _reject_symlink_path(output_parent, candidate_parent)
     candidate_parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(
-        tempfile.mkdtemp(prefix=".candidate-", dir=candidate_parent)
-    )
+    temporary = Path(tempfile.mkdtemp(prefix=".candidate-", dir=candidate_parent))
     try:
         shutil.copytree(
             stage_root,
@@ -526,8 +556,7 @@ def _prepare_upload_candidate(
         )
         if candidate_errors:
             raise DeliveryError(
-                "prepared upload candidate is invalid: "
-                + "; ".join(candidate_errors)
+                "prepared upload candidate is invalid: " + "; ".join(candidate_errors)
             )
         candidate_digest = _tree_digest(temporary)
         destination = candidate_parent / candidate_digest
@@ -608,7 +637,9 @@ def _upload_candidate_errors(
     else:
         try:
             if config_path.read_bytes() != canonical_config.read_bytes():
-                errors.append("upload candidate config drifted from the validated config")
+                errors.append(
+                    "upload candidate config drifted from the validated config"
+                )
         except OSError as exc:
             errors.append(f"upload candidate config could not be read: {exc}")
 
@@ -655,7 +686,9 @@ def _upload_candidate_errors(
 def _make_tree_read_only(root: Path) -> None:
     files, dirs, errors = _walk_tree(root)
     if errors:
-        raise DeliveryError("cannot freeze unsafe upload candidate: " + "; ".join(errors))
+        raise DeliveryError(
+            "cannot freeze unsafe upload candidate: " + "; ".join(errors)
+        )
     for relative in sorted(files):
         (root / relative).chmod(stat.S_IRUSR)
     for relative in sorted(dirs, key=lambda path: len(path.parts), reverse=True):
@@ -691,7 +724,9 @@ def _reject_symlink_path(ancestor: Path, descendant: Path) -> None:
     try:
         descendant.relative_to(ancestor)
     except ValueError as exc:
-        raise DeliveryError("upload candidate path escaped its output directory") from exc
+        raise DeliveryError(
+            "upload candidate path escaped its output directory"
+        ) from exc
     current = descendant
     while current != ancestor:
         if os.path.lexists(current) and current.is_symlink():
@@ -927,7 +962,7 @@ def build_rollout_plan(
 
 def build_recovery_archive(
     stage_root: Path,
-    output_path: Path,
+    output_directory: Path,
     *,
     created_at: str,
     source_revision: str,
@@ -999,6 +1034,12 @@ def build_recovery_archive(
         "sbom.spdx.json": _canonical_pretty_json(sbom),
         "provenance.json": _canonical_pretty_json(provenance),
     }
+    if len(metadata["sbom.spdx.json"]) > MAX_ATTESTATION_PREDICATE_BYTES:
+        raise DeliveryError(
+            "archive SPDX document exceeds the GitHub attestation predicate limit"
+        )
+    if any(len(content) > MAX_ARCHIVE_METADATA_BYTES for content in metadata.values()):
+        raise DeliveryError("archive metadata exceeds the bounded metadata limit")
     checksums = {member.name: member.sha256 for member in staged_members}
     checksums.update(
         {
@@ -1008,17 +1049,14 @@ def build_recovery_archive(
     )
     checksum_lines = [f"{digest}  {name}" for name, digest in sorted(checksums.items())]
     metadata["SHA256SUMS"] = ("\n".join(checksum_lines) + "\n").encode("utf-8")
-    output_path = output_path.absolute()
-    asset_name = f"openopps-data-{stage_digest}.tar.gz"
-    if output_path.name != asset_name:
-        raise DeliveryError(
-            f"archive output name must be content-addressed: {asset_name}"
-        )
-    if output_path.is_symlink():
-        raise DeliveryError("archive output must not be a symlink")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_directory = output_directory.absolute()
+    if output_directory.is_symlink():
+        raise DeliveryError("archive output directory must not be a symlink")
+    output_directory.mkdir(parents=True, exist_ok=True)
+    if not output_directory.is_dir():
+        raise DeliveryError("archive output directory must be a directory")
     descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{output_path.name}.", suffix=".tmp", dir=output_path.parent
+        prefix=".openopps-data-archive.", suffix=".tmp", dir=output_directory
     )
     os.close(descriptor)
     temporary = Path(temporary_name)
@@ -1048,67 +1086,279 @@ def build_recovery_archive(
                             )
             raw.flush()
             os.fsync(raw.fileno())
-        os.replace(temporary, output_path)
-        _fsync_directory(output_path.parent)
+        archive_sha256 = release.sha256_file(temporary)
+        asset_name = f"openopps-data-{archive_sha256}.tar.gz"
+        output_path = output_directory / asset_name
+        _rename_noreplace(temporary, output_path, kind="archive output")
+        temporary = Path()
+        _fsync_directory(output_directory)
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary != Path():
+            temporary.unlink(missing_ok=True)
     return ArchiveResult(
         path=output_path,
         asset_name=asset_name,
-        sha256=release.sha256_file(output_path),
+        sha256=archive_sha256,
         bytes=output_path.stat().st_size,
         stage_root_digest=stage_digest,
     )
 
 
-def inspect_recovery_archive(path: Path) -> dict[str, bytes]:
-    """Stream-verify a recovery archive and retain only its bounded metadata."""
+def inspect_recovery_archive(
+    path: Path,
+    *,
+    expected_archive_sha256: str | None = None,
+    expected_stage_root_digest: str | None = None,
+    expected_source_revision: str | None = None,
+    expected_current_release_id: str | None = None,
+    expected_previous_release_id: str | None = None,
+) -> dict[str, bytes]:
+    """Stream-verify archive bytes, checksums, and semantic identity closure."""
+
+    if expected_archive_sha256 is not None:
+        expected_archive_sha256 = _require_release_id(
+            expected_archive_sha256, "expected archive SHA-256"
+        )
+    with _open_archive(path) as handle:
+        archive_sha256 = _sha256_handle(handle)
+        if (
+            expected_archive_sha256 is not None
+            and archive_sha256 != expected_archive_sha256
+        ):
+            raise DeliveryError(
+                "recovery archive SHA-256 does not match the expected digest"
+            )
+        handle.seek(0)
+        metadata, identity = _inspect_recovery_archive_handle(
+            handle, path=path, archive_sha256=archive_sha256
+        )
+        handle.seek(0)
+        if _sha256_handle(handle) != archive_sha256:
+            raise DeliveryError("recovery archive changed during inspection")
+    _match_archive_identity(
+        identity,
+        expected_stage_root_digest=expected_stage_root_digest,
+        expected_source_revision=expected_source_revision,
+        expected_current_release_id=expected_current_release_id,
+        expected_previous_release_id=expected_previous_release_id,
+    )
+    return metadata
+
+
+def restore_recovery_archive(
+    path: Path,
+    destination: Path,
+    *,
+    expected_archive_sha256: str,
+    expected_stage_root_digest: str,
+    expected_source_revision: str,
+    expected_current_release_id: str,
+    expected_previous_release_id: str,
+) -> RestoreResult:
+    """Safely restore a verified stage into one new, atomically named directory."""
+
+    archive_sha256 = _require_release_id(
+        expected_archive_sha256, "expected archive SHA-256"
+    )
+    expected_stage_root_digest = _require_release_id(
+        expected_stage_root_digest, "expected stage root digest"
+    )
+    if not _GIT_REVISION_RE.fullmatch(expected_source_revision):
+        raise DeliveryError(
+            "expected source revision must be a lowercase 40-character Git SHA"
+        )
+    expected_current_release_id = _require_release_id(
+        expected_current_release_id, "expected current release ID"
+    )
+    expected_previous_release_id = _require_release_id(
+        expected_previous_release_id, "expected previous release ID"
+    )
+    if expected_current_release_id == expected_previous_release_id:
+        raise DeliveryError(
+            "expected current and previous release IDs must be distinct"
+        )
+
+    destination = _validate_restore_destination(destination)
+    candidate = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.restore-", dir=destination.parent)
+    )
+    try:
+        with _open_archive(path) as handle:
+            initial_digest = _sha256_handle(handle)
+            if initial_digest != archive_sha256:
+                raise DeliveryError(
+                    "recovery archive SHA-256 does not match the expected digest"
+                )
+            handle.seek(0)
+            _metadata, identity = _inspect_recovery_archive_handle(
+                handle, path=path, archive_sha256=initial_digest
+            )
+            _match_archive_identity(
+                identity,
+                expected_stage_root_digest=expected_stage_root_digest,
+                expected_source_revision=expected_source_revision,
+                expected_current_release_id=expected_current_release_id,
+                expected_previous_release_id=expected_previous_release_id,
+            )
+            handle.seek(0)
+            _extract_archive_assets(handle, candidate)
+            handle.seek(0)
+            if _sha256_handle(handle) != archive_sha256:
+                raise DeliveryError("recovery archive changed during restore")
+
+        errors = verify_stage(candidate)
+        if errors:
+            raise DeliveryError("restored stage is invalid: " + "; ".join(errors))
+        stage = _stage_result(candidate, destination=destination)
+        if stage.root_digest != expected_stage_root_digest:
+            raise DeliveryError(
+                "restored stage root digest does not match the expected digest"
+            )
+        if stage.current_release_id != expected_current_release_id:
+            raise DeliveryError(
+                "restored current release ID does not match expectation"
+            )
+        if stage.previous_release_id != expected_previous_release_id:
+            raise DeliveryError(
+                "restored previous release ID does not match expectation"
+            )
+        _fsync_directory(candidate)
+        _rename_noreplace(candidate, destination, kind="restore destination")
+        candidate = Path()
+        _fsync_directory(destination.parent)
+        return RestoreResult(
+            destination=destination,
+            archive_sha256=archive_sha256,
+            source_revision=expected_source_revision,
+            current_release_id=stage.current_release_id,
+            previous_release_id=stage.previous_release_id,
+            file_count=stage.file_count,
+            total_bytes=stage.total_bytes,
+            stage_root_digest=stage.root_digest,
+        )
+    finally:
+        if candidate != Path() and candidate.exists():
+            _force_remove_tree(candidate)
+
+
+def _open_archive(path: Path) -> IO[bytes]:
+    """Open one regular archive without following a final symlink."""
+
+    path = path.absolute()
+    try:
+        before = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise DeliveryError(f"recovery archive is unavailable: {path}") from exc
+    if not stat.S_ISREG(before.st_mode):
+        raise DeliveryError("recovery archive must be a regular file")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise DeliveryError("recovery archive could not be opened safely") from exc
+    after = os.fstat(descriptor)
+    if not stat.S_ISREG(after.st_mode) or (before.st_dev, before.st_ino) != (
+        after.st_dev,
+        after.st_ino,
+    ):
+        os.close(descriptor)
+        raise DeliveryError("recovery archive identity changed while opening")
+    return os.fdopen(descriptor, "rb")
+
+
+def _sha256_handle(handle: IO[bytes]) -> str:
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _inspect_recovery_archive_handle(
+    handle: IO[bytes], *, path: Path, archive_sha256: str
+) -> tuple[dict[str, bytes], _ArchiveIdentity]:
+    """Verify one already-open archive while retaining only bounded metadata."""
 
     result: dict[str, bytes] = {}
     member_digests: dict[str, str] = {}
+    member_sizes: dict[str, int] = {}
     metadata_names = {
         "SHA256SUMS",
         "bundle-manifest.json",
         "sbom.spdx.json",
         "provenance.json",
     }
-    with tarfile.open(path, mode="r|gz") as archive:
-        for member in archive:
-            pure = PurePosixPath(member.name)
-            if (
-                not member.isfile()
-                or pure.is_absolute()
-                or any(part in {"", ".", ".."} for part in pure.parts)
-                or pure.as_posix() != member.name
-            ):
-                raise DeliveryError(f"unsafe recovery archive member: {member.name!r}")
-            if member.name in member_digests:
-                raise DeliveryError(f"duplicate recovery archive member: {member.name}")
-            handle = archive.extractfile(member)
-            if handle is None:
-                raise DeliveryError(
-                    f"unreadable recovery archive member: {member.name}"
-                )
-            digest = hashlib.sha256()
-            retained = io.BytesIO() if member.name in metadata_names else None
-            retained_bytes = 0
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-                if retained is not None:
-                    retained_bytes += len(chunk)
-                    if retained_bytes > MAX_ARCHIVE_METADATA_BYTES:
+    casefolded: dict[str, str] = {}
+    previous_name: str | None = None
+    total_bytes = 0
+    try:
+        with tarfile.open(fileobj=handle, mode="r|gz") as archive:
+            for member_number, member in enumerate(archive, start=1):
+                if member_number > MAX_ARCHIVE_MEMBERS:
+                    raise DeliveryError("recovery archive contains too many members")
+                _validate_archive_member(member, metadata_names=metadata_names)
+                if previous_name is not None and member.name <= previous_name:
+                    raise DeliveryError(
+                        "recovery archive members must be uniquely sorted"
+                    )
+                previous_name = member.name
+                folded = member.name.casefold()
+                if folded in casefolded:
+                    raise DeliveryError(
+                        "recovery archive contains case-colliding members: "
+                        f"{casefolded[folded]} and {member.name}"
+                    )
+                casefolded[folded] = member.name
+                total_bytes += member.size
+                if total_bytes > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                    raise DeliveryError(
+                        "recovery archive uncompressed byte budget exceeded"
+                    )
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    raise DeliveryError(
+                        f"unreadable recovery archive member: {member.name}"
+                    )
+                digest = hashlib.sha256()
+                retained = io.BytesIO() if member.name in metadata_names else None
+                read_bytes = 0
+                for chunk in iter(lambda: extracted.read(1024 * 1024), b""):
+                    read_bytes += len(chunk)
+                    if read_bytes > member.size:
                         raise DeliveryError(
-                            f"recovery archive metadata is too large: {member.name}"
+                            f"recovery archive member exceeded declared size: {member.name}"
                         )
-                    retained.write(chunk)
-            member_digests[member.name] = digest.hexdigest()
-            result[member.name] = retained.getvalue() if retained is not None else b""
+                    digest.update(chunk)
+                    if retained is not None:
+                        retained.write(chunk)
+                if read_bytes != member.size:
+                    raise DeliveryError(
+                        f"recovery archive member size is inconsistent: {member.name}"
+                    )
+                member_digests[member.name] = digest.hexdigest()
+                member_sizes[member.name] = member.size
+                result[member.name] = (
+                    retained.getvalue() if retained is not None else b""
+                )
+    except (tarfile.TarError, EOFError) as exc:
+        raise DeliveryError("recovery archive is not a valid gzip tar stream") from exc
+
     if not metadata_names <= set(result):
         raise DeliveryError("recovery archive is missing required metadata")
+    try:
+        checksum_text = result["SHA256SUMS"].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise DeliveryError("recovery archive SHA256SUMS is not UTF-8") from exc
     checksums: dict[str, str] = {}
-    for line in result["SHA256SUMS"].decode("utf-8").splitlines():
+    for line in checksum_text.splitlines():
         digest, separator, name = line.partition("  ")
-        if not separator or not _SHA256_RE.fullmatch(digest) or name in checksums:
+        if (
+            not separator
+            or not _SHA256_RE.fullmatch(digest)
+            or name in checksums
+            or name == "SHA256SUMS"
+        ):
             raise DeliveryError("recovery archive SHA256SUMS is invalid")
         checksums[name] = digest
     expected_names = set(result) - {"SHA256SUMS"}
@@ -1117,7 +1367,465 @@ def inspect_recovery_archive(path: Path) -> dict[str, bytes]:
     for name, digest in checksums.items():
         if member_digests[name] != digest:
             raise DeliveryError(f"recovery archive member failed checksum: {name}")
-    return result
+
+    identity = _validate_archive_semantics(
+        result,
+        member_digests=member_digests,
+        member_sizes=member_sizes,
+    )
+    expected_name = f"openopps-data-{archive_sha256}.tar.gz"
+    if path.name != expected_name:
+        raise DeliveryError(
+            f"recovery archive filename must be content-addressed: {expected_name}"
+        )
+    return result, identity
+
+
+def _validate_archive_member(
+    member: tarfile.TarInfo, *, metadata_names: set[str]
+) -> None:
+    pure = PurePosixPath(member.name)
+    if (
+        not member.isfile()
+        or pure.is_absolute()
+        or any(part in {"", ".", ".."} for part in pure.parts)
+        or pure.as_posix() != member.name
+        or len(member.name.encode("utf-8")) > 4096
+        or any(len(part.encode("utf-8")) > 255 for part in pure.parts)
+    ):
+        raise DeliveryError(f"unsafe recovery archive member: {member.name!r}")
+    if member.name not in metadata_names and (
+        len(pure.parts) < 2 or pure.parts[0] != "assets"
+    ):
+        raise DeliveryError(
+            f"unexpected recovery archive member namespace: {member.name}"
+        )
+    if member.mode != 0o644 or member.uid != 0 or member.gid != 0 or member.mtime != 0:
+        raise DeliveryError(
+            f"recovery archive member metadata is non-canonical: {member.name}"
+        )
+    if member.name == "sbom.spdx.json":
+        limit = MAX_ATTESTATION_PREDICATE_BYTES
+    elif member.name in metadata_names:
+        limit = MAX_ARCHIVE_METADATA_BYTES
+    else:
+        limit = MAX_WORKER_FILE_BYTES - 1
+    if member.size < 0 or member.size > limit:
+        raise DeliveryError(f"recovery archive member is too large: {member.name}")
+
+
+def _archive_json_object(content: bytes, *, name: str) -> dict[str, Any]:
+    def pairs_hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise DeliveryError(
+                    f"duplicate JSON key {key!r} in recovery archive {name}"
+                )
+            value[key] = item
+        return value
+
+    try:
+        text = content.decode("utf-8")
+        value = json.loads(text, object_pairs_hook=pairs_hook)
+    except UnicodeDecodeError as exc:
+        raise DeliveryError(f"recovery archive {name} is not UTF-8") from exc
+    except json.JSONDecodeError as exc:
+        raise DeliveryError(f"recovery archive {name} is invalid JSON") from exc
+    if not isinstance(value, dict):
+        raise DeliveryError(f"recovery archive {name} must be a JSON object")
+    return value
+
+
+def _validate_archive_semantics(
+    metadata: Mapping[str, bytes],
+    *,
+    member_digests: Mapping[str, str],
+    member_sizes: Mapping[str, int],
+) -> _ArchiveIdentity:
+    manifest = _archive_json_object(
+        metadata["bundle-manifest.json"], name="bundle-manifest.json"
+    )
+    expected_manifest_keys = {
+        "schemaVersion",
+        "currentReleaseId",
+        "previousReleaseId",
+        "stageRootDigest",
+        "fileCount",
+        "totalBytes",
+        "files",
+    }
+    if (
+        set(manifest) != expected_manifest_keys
+        or manifest.get("schemaVersion") != DELIVERY_SCHEMA_VERSION
+    ):
+        raise DeliveryError("recovery archive bundle manifest schema is invalid")
+    current = _require_release_id(
+        manifest.get("currentReleaseId"), "archive current release ID"
+    )
+    previous = _require_release_id(
+        manifest.get("previousReleaseId"), "archive previous release ID"
+    )
+    if current == previous:
+        raise DeliveryError("archive current and previous release IDs must be distinct")
+    stage_digest = _require_release_id(
+        manifest.get("stageRootDigest"), "archive stage root digest"
+    )
+    files_value = manifest.get("files")
+    if not isinstance(files_value, list):
+        raise DeliveryError("recovery archive bundle manifest files must be an array")
+    manifest_files: dict[str, tuple[int, str]] = {}
+    previous_path: str | None = None
+    for item in files_value:
+        if not isinstance(item, dict) or set(item) != {"path", "bytes", "sha256"}:
+            raise DeliveryError("recovery archive bundle manifest file is invalid")
+        name = item.get("path")
+        size = item.get("bytes")
+        digest = item.get("sha256")
+        if (
+            not isinstance(name, str)
+            or not name.startswith("assets/")
+            or type(size) is not int
+            or size < 0
+            or not isinstance(digest, str)
+            or not _SHA256_RE.fullmatch(digest)
+            or name in manifest_files
+            or (previous_path is not None and name <= previous_path)
+        ):
+            raise DeliveryError("recovery archive bundle manifest file is invalid")
+        manifest_files[name] = (size, digest)
+        previous_path = name
+    archive_assets = {
+        name: (member_sizes[name], member_digests[name])
+        for name in member_digests
+        if name.startswith("assets/")
+    }
+    if manifest_files != archive_assets:
+        raise DeliveryError(
+            "recovery archive bundle manifest does not close over asset members"
+        )
+    expected_file_count = manifest.get("fileCount")
+    expected_total_bytes = manifest.get("totalBytes")
+    if type(expected_file_count) is not int or expected_file_count != len(
+        manifest_files
+    ):
+        raise DeliveryError("recovery archive bundle manifest file count is invalid")
+    total_asset_bytes = sum(size for size, _digest in manifest_files.values())
+    if (
+        type(expected_total_bytes) is not int
+        or expected_total_bytes != total_asset_bytes
+    ):
+        raise DeliveryError("recovery archive bundle manifest byte count is invalid")
+
+    provenance = _archive_json_object(
+        metadata["provenance.json"], name="provenance.json"
+    )
+    expected_provenance_keys = {
+        "schemaVersion",
+        "createdAt",
+        "sourceRevision",
+        "currentReleaseId",
+        "previousReleaseId",
+        "stageRootDigest",
+        "wranglerVersion",
+        "materials",
+    }
+    if (
+        set(provenance) != expected_provenance_keys
+        or provenance.get("schemaVersion") != DELIVERY_SCHEMA_VERSION
+    ):
+        raise DeliveryError("recovery archive provenance schema is invalid")
+    created_at = provenance.get("createdAt")
+    if not isinstance(created_at, str):
+        raise DeliveryError("recovery archive provenance createdAt is invalid")
+    try:
+        if release.canonical_utc_timestamp(created_at) != created_at:
+            raise DeliveryError(
+                "recovery archive provenance createdAt is not canonical"
+            )
+    except ValueError as exc:
+        raise DeliveryError("recovery archive provenance createdAt is invalid") from exc
+    source_revision = provenance.get("sourceRevision")
+    if not isinstance(source_revision, str) or not _GIT_REVISION_RE.fullmatch(
+        source_revision
+    ):
+        raise DeliveryError("recovery archive provenance source revision is invalid")
+    if (
+        provenance.get("currentReleaseId") != current
+        or provenance.get("previousReleaseId") != previous
+        or provenance.get("stageRootDigest") != stage_digest
+        or provenance.get("wranglerVersion") != WRANGLER_VERSION
+    ):
+        raise DeliveryError("recovery archive provenance identity does not close")
+    materials = provenance.get("materials")
+    expected_material_names = {
+        "channelPointerSha256",
+        "deliveryScriptSha256",
+        "headersSha256",
+        "productionConfigSha256",
+        "stagingConfigSha256",
+        "webLockSha256",
+        "webPackageSha256",
+    }
+    if not isinstance(materials, dict) or set(materials) != expected_material_names:
+        raise DeliveryError("recovery archive provenance materials are invalid")
+    if any(
+        not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest)
+        for digest in materials.values()
+    ):
+        raise DeliveryError("recovery archive provenance material digest is invalid")
+    if materials["channelPointerSha256"] != member_digests.get(
+        "assets/channels/production.json"
+    ) or materials["headersSha256"] != member_digests.get("assets/_headers"):
+        raise DeliveryError(
+            "recovery archive provenance staged material digest does not close"
+        )
+    expected_tools = _tool_materials()
+    if any(materials[name] != digest for name, digest in expected_tools.items()):
+        raise DeliveryError(
+            "recovery archive provenance tool material does not match source checkout"
+        )
+
+    _validate_archive_sbom(
+        metadata["sbom.spdx.json"],
+        stage_digest=stage_digest,
+        manifest_files=manifest_files,
+    )
+    return _ArchiveIdentity(
+        source_revision=source_revision,
+        current_release_id=current,
+        previous_release_id=previous,
+        stage_root_digest=stage_digest,
+        file_count=len(manifest_files),
+        total_bytes=total_asset_bytes,
+    )
+
+
+def _validate_archive_sbom(
+    content: bytes,
+    *,
+    stage_digest: str,
+    manifest_files: Mapping[str, tuple[int, str]],
+) -> None:
+    sbom = _archive_json_object(content, name="sbom.spdx.json")
+    if set(sbom) != {
+        "spdxVersion",
+        "dataLicense",
+        "SPDXID",
+        "name",
+        "documentNamespace",
+        "creationInfo",
+        "files",
+    }:
+        raise DeliveryError("recovery archive SPDX schema is invalid")
+    if (
+        sbom.get("spdxVersion") != "SPDX-2.3"
+        or sbom.get("dataLicense") != "CC0-1.0"
+        or sbom.get("SPDXID") != "SPDXRef-DOCUMENT"
+        or sbom.get("name") != "openopps-data-recovery"
+        or sbom.get("documentNamespace")
+        != f"https://openopps.dev/spdx/openopps-data/{stage_digest}"
+        or sbom.get("creationInfo")
+        != {
+            "created": "1970-01-01T00:00:00Z",
+            "creators": ["Tool: scripts/docs_search_delivery.py"],
+        }
+    ):
+        raise DeliveryError("recovery archive SPDX document identity is invalid")
+    files = sbom.get("files")
+    if not isinstance(files, list) or len(files) != len(manifest_files):
+        raise DeliveryError("recovery archive SPDX file closure is invalid")
+    for index, ((name, (_size, digest)), item) in enumerate(
+        zip(manifest_files.items(), files, strict=True), start=1
+    ):
+        expected = {
+            "SPDXID": f"SPDXRef-File-{index}",
+            "fileName": name,
+            "checksums": [{"algorithm": "SHA256", "checksumValue": digest}],
+        }
+        if item != expected:
+            raise DeliveryError("recovery archive SPDX file closure is invalid")
+
+
+def _match_archive_identity(
+    identity: _ArchiveIdentity,
+    *,
+    expected_stage_root_digest: str | None,
+    expected_source_revision: str | None,
+    expected_current_release_id: str | None,
+    expected_previous_release_id: str | None,
+) -> None:
+    expected = {
+        "stage root digest": (
+            expected_stage_root_digest,
+            identity.stage_root_digest,
+            _SHA256_RE,
+        ),
+        "current release ID": (
+            expected_current_release_id,
+            identity.current_release_id,
+            _SHA256_RE,
+        ),
+        "previous release ID": (
+            expected_previous_release_id,
+            identity.previous_release_id,
+            _SHA256_RE,
+        ),
+        "source revision": (
+            expected_source_revision,
+            identity.source_revision,
+            _GIT_REVISION_RE,
+        ),
+    }
+    for label, (value, actual, pattern) in expected.items():
+        if value is None:
+            continue
+        if not isinstance(value, str) or not pattern.fullmatch(value):
+            raise DeliveryError(f"expected {label} has an invalid shape")
+        if value != actual:
+            raise DeliveryError(f"recovery archive {label} does not match expectation")
+
+
+def _validate_restore_destination(destination: Path) -> Path:
+    destination = destination.absolute()
+    if destination.name in {"", ".", ".."} or os.path.lexists(destination):
+        raise DeliveryError("restore destination must be a new, absent directory")
+    parent = destination.parent
+    if not parent.is_dir() or parent.is_symlink():
+        raise DeliveryError("restore destination parent must be a regular directory")
+    parent = parent.resolve()
+    destination = parent / destination.name
+    parent_mode = parent.stat(follow_symlinks=False).st_mode
+    if parent_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise DeliveryError(
+            "restore destination parent must not be group- or world-writable"
+        )
+    return destination
+
+
+def _rename_noreplace(source: Path, destination: Path, *, kind: str) -> None:
+    """Atomically name one sibling path without replacing any destination."""
+
+    if source.parent != destination.parent:
+        raise DeliveryError(f"{kind} candidate and destination must be siblings")
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename_exclusive = getattr(libc, "renamex_np", None)
+        if rename_exclusive is None:
+            raise DeliveryError(f"exclusive {kind} rename is unavailable")
+        rename_exclusive.argtypes = [
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(source_bytes, destination_bytes, 0x00000004)
+    elif sys.platform.startswith("linux"):
+        rename_exclusive = getattr(libc, "renameat2", None)
+        if rename_exclusive is None:
+            raise DeliveryError(f"exclusive {kind} rename is unavailable")
+        rename_exclusive.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(
+            -100, source_bytes, -100, destination_bytes, 0x00000001
+        )
+    else:
+        raise DeliveryError(f"exclusive {kind} rename is unsupported on this platform")
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise DeliveryError(f"{kind} already exists")
+    if error_number in {errno.ENOSYS, errno.ENOTSUP}:
+        raise DeliveryError(f"exclusive {kind} rename is unavailable")
+    raise OSError(
+        error_number,
+        os.strerror(error_number),
+        str(destination),
+    )
+
+
+def _extract_archive_assets(handle: IO[bytes], candidate: Path) -> None:
+    """Stream only the verified assets namespace into a private candidate."""
+
+    seen: set[str] = set()
+    total_bytes = 0
+    try:
+        with tarfile.open(fileobj=handle, mode="r|gz") as archive:
+            for member_number, member in enumerate(archive, start=1):
+                if member_number > MAX_ARCHIVE_MEMBERS:
+                    raise DeliveryError("recovery archive contains too many members")
+                _validate_archive_member(
+                    member,
+                    metadata_names={
+                        "SHA256SUMS",
+                        "bundle-manifest.json",
+                        "sbom.spdx.json",
+                        "provenance.json",
+                    },
+                )
+                folded = member.name.casefold()
+                if folded in seen:
+                    raise DeliveryError(
+                        "recovery archive contains duplicate or case-colliding members"
+                    )
+                seen.add(folded)
+                total_bytes += member.size
+                if total_bytes > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                    raise DeliveryError(
+                        "recovery archive uncompressed byte budget exceeded"
+                    )
+                if not member.name.startswith("assets/"):
+                    continue
+                relative = Path(*PurePosixPath(member.name).parts[1:])
+                destination = candidate / relative
+                destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                if hasattr(os, "O_NOFOLLOW"):
+                    flags |= os.O_NOFOLLOW
+                descriptor = os.open(destination, flags, 0o600)
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    os.close(descriptor)
+                    raise DeliveryError(
+                        f"unreadable recovery archive member: {member.name}"
+                    )
+                written = 0
+                try:
+                    with os.fdopen(descriptor, "wb") as output:
+                        for chunk in iter(lambda: extracted.read(1024 * 1024), b""):
+                            written += len(chunk)
+                            if written > member.size:
+                                raise DeliveryError(
+                                    "recovery archive member exceeded declared size: "
+                                    f"{member.name}"
+                                )
+                            output.write(chunk)
+                        if written != member.size:
+                            raise DeliveryError(
+                                "recovery archive member size is inconsistent: "
+                                f"{member.name}"
+                            )
+                        output.flush()
+                        os.fsync(output.fileno())
+                    destination.chmod(0o644)
+                except Exception:
+                    destination.unlink(missing_ok=True)
+                    raise
+    except (tarfile.TarError, EOFError) as exc:
+        raise DeliveryError("recovery archive is not a valid gzip tar stream") from exc
+    for directory, _dirnames, _filenames in os.walk(candidate, topdown=False):
+        directory_path = Path(directory)
+        directory_path.chmod(0o755)
+        _fsync_directory(directory_path)
 
 
 def _stage_result(root: Path, *, destination: Path) -> StageResult:
@@ -1601,9 +2309,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     bundle = subparsers.add_parser("bundle")
     bundle.add_argument("stage_root", type=Path)
-    bundle.add_argument("output", type=Path)
+    bundle.add_argument("output_directory", type=Path)
     bundle.add_argument("--created-at", required=True)
     bundle.add_argument("--source-revision", required=True)
+    restore = subparsers.add_parser("restore")
+    restore.add_argument("archive", type=Path)
+    restore.add_argument("destination", type=Path)
+    restore.add_argument("--archive-sha256", required=True)
+    restore.add_argument("--stage-root-digest", required=True)
+    restore.add_argument("--source-revision", required=True)
+    restore.add_argument("--current-release-id", required=True)
+    restore.add_argument("--previous-release-id", required=True)
     return parser
 
 
@@ -1650,12 +2366,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config=args.config,
                 dry_run=not args.live_command,
             )
-        else:
+        elif args.command == "bundle":
             payload = build_recovery_archive(
                 args.stage_root,
-                args.output,
+                args.output_directory,
                 created_at=args.created_at,
                 source_revision=args.source_revision,
+            ).__dict__
+        else:
+            payload = restore_recovery_archive(
+                args.archive,
+                args.destination,
+                expected_archive_sha256=args.archive_sha256,
+                expected_stage_root_digest=args.stage_root_digest,
+                expected_source_revision=args.source_revision,
+                expected_current_release_id=args.current_release_id,
+                expected_previous_release_id=args.previous_release_id,
             ).__dict__
     except (DeliveryError, OSError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, sort_keys=True))

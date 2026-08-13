@@ -25,12 +25,18 @@ def main() -> int:
         code = (
             "from importlib import resources; "
             "import json; "
-            "text = resources.files('openopps.providers.sources.data')"
-            ".joinpath('portfolio_source_catalog.json').read_text(encoding='utf-8'); "
+            "root = resources.files('openopps.providers.sources.data'); "
+            "text = root.joinpath('portfolio_source_catalog.json').read_text(encoding='utf-8'); "
             "payload = json.loads(text); "
             "assert isinstance(payload.get('version'), int) and payload['version'] >= 2; "
             "assert isinstance(payload.get('count'), int) and payload['count'] > 0; "
             "assert isinstance(payload.get('fingerprint'), str) and payload['fingerprint']; "
+            "evidence = json.loads(root.joinpath('source_policy_evidence.json')"
+            ".read_text(encoding='utf-8')); "
+            "schema = json.loads(root.joinpath('source_policy_evidence.schema.json')"
+            ".read_text(encoding='utf-8')); "
+            "assert evidence['schemaVersion'] == 1 and evidence['decisions']; "
+            "assert schema['title'] == 'SourcePolicyEvidence'; "
             "print(payload['version'], payload['count'], payload['fingerprint'][:12])"
         )
         subprocess.check_call([str(python), "-c", code])
