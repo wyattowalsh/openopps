@@ -1,9 +1,8 @@
 """OpenOpps Kaggle constants and schema tables."""
 from __future__ import annotations
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Callable, Literal, Union
+from typing import Any, Callable
 from pydantic import BaseModel, Field
 from openopps.models import (
     BoardProviderRow, BoardRow, JobPayloadSnapshotRow, JobRow,
@@ -532,4 +531,3 @@ PUBLIC_UPLOAD_DATA_FILES: tuple[str, ...] = (
     + tuple(f"{CSV_DIR}/{table.name}.csv" for table in TABLES)
     + tuple(f"{PARQUET_DIR}/{table.name}.parquet" for table in TABLES)
 )
-

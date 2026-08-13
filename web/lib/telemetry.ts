@@ -131,7 +131,6 @@ export const TELEMETRY_EVENT_PROPERTY_ALLOWLIST = {
 		"activeFilterCount",
 		"page",
 		"pageSize",
-		"query",
 		"rows",
 		"sortKey",
 		"totalMatches",
@@ -231,14 +230,15 @@ export function createTelemetryClient(
 	options: TelemetryClientOptions = {},
 ): TelemetryClient {
 	const disabledByEnv =
-		readPublicBoolean("NEXT_PUBLIC_OPENOPPS_ANALYTICS_DISABLED") ||
-		readPublicBoolean("NEXT_PUBLIC_OPENOPPS_TELEMETRY_DISABLED");
+		isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_ANALYTICS_DISABLED) ||
+		isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_DISABLED);
 	const enabled =
 		!disabledByEnv &&
-		(options.enabled ?? readPublicBoolean("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED"));
+		(options.enabled ??
+			isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED));
 	const endpoint =
 		options.endpoint ??
-		readPublicString("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENDPOINT") ??
+		process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENDPOINT ??
 		TELEMETRY_DEFAULT_ENDPOINT;
 	const flushIntervalMs =
 		options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
@@ -647,15 +647,7 @@ function normalizeEventName(eventName: string) {
 	return normalized.length > 0 ? normalized.slice(0, 120) : "";
 }
 
-function readPublicString(name: string) {
-	if (typeof process === "undefined") {
-		return undefined;
-	}
-	return process.env?.[name];
-}
-
-function readPublicBoolean(name: string) {
-	const value = readPublicString(name);
+function isPublicBoolean(value: string | undefined) {
 	return value === "1" || value === "true" || value === "yes";
 }
 

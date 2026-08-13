@@ -307,7 +307,11 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "0 6 * * *" in source
     assert "0 */6 * * *" not in source
     assert gen.DATASET_ID in source
-    assert "git+https://github.com/wyattowalsh/openopps.git@main" in source
+    assert "git+https://github.com/wyattowalsh/openopps.git@main" not in source
+    assert "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__" in source
+    assert "OPENOPPS_PACKAGE_SPEC" in source
+    assert "def require_immutable_openopps_package_spec()" in source
+    assert "kaggle==2.2.4" in source
     assert "/kaggle/input" in source
     assert "openopps-*.whl" not in source
     assert "**/openoppsdb.sqlite" in source
@@ -409,9 +413,9 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
         "--prune-private-upload-files",
         "--stage-public-upload-dir",
         "--skip-notebooks",
-        "--wait-live-dataset-ready",
-        "--wait-live-dataset-min-version",
-        "--update-live-file-metadata",
+        "--existing-stage",
+        "--expected-current-version",
+        "--execute",
     ):
         assert flag in source
 
@@ -503,17 +507,22 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
         '"-m", "openopps_kaggle", *args'
     )
     generator_call = source.index("run_openopps_kaggle(generator_args)")
-    publish_call = source.index('"datasets"', generator_call)
+    publish_call = source.index('"publication"', generator_call)
     assert generator_call < publish_call
-    assert '"-p",\nstr(PUBLIC_UPLOAD_DIR)' in compact_source
-    metadata_repair_call = source.rindex("metadata_repair_ok = try_run_openopps_kaggle([")
-    assert source.index('"zip"', source.index('"datasets"')) < metadata_repair_call
-    assert metadata_repair_call < source.index(
-        'run(["kaggle", "datasets", "status", DATASET_ID, "--format", "json"]'
-    )
-    assert "OpenOpps live metadata repair:" in source
-    assert '"databundle": "skipped_in_notebook"' in source
-    assert '"mode": "kaggle-api"' in source
+    publication_args = source[publish_call : source.index("])\n", publish_call)]
+    assert '"--kind"' in publication_args
+    assert '"public"' in publication_args
+    assert '"--action"' in publication_args
+    assert '"version"' in publication_args
+    assert '"--stage-dir"' in publication_args
+    assert "str(PUBLIC_UPLOAD_DIR)" in publication_args
+    assert '"--existing-stage"' in publication_args
+    assert '"--ledger"' in publication_args
+    assert '"--expected-current-version"' in publication_args
+    assert '"--execute"' in publication_args
+    assert 'run([\n    "kaggle",\n    "datasets",\n    "version"' not in source
+    assert "OpenOpps exact publication/readback ledger:" in source
+    assert '"metadataRepair": "separate-maintainer-action"' in source
     assert 'emit_disk_usage("before_artifact_export")' in source
     assert 'emit_disk_usage("after_artifact_export")' in source
     assert 'emit_disk_usage("before_dataset_publish")' in source
@@ -521,14 +530,8 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     export_generator_call = source.index("run_openopps_kaggle(generator_args)")
     assert export_disk_call < export_generator_call
     publish_disk_call = source.index('emit_disk_usage("before_dataset_publish")')
-    publish_command = source.index('"datasets"', export_generator_call)
+    publish_command = source.index('"publication"', export_generator_call)
     assert publish_disk_call < publish_command
-    metadata_repair_args = source[
-        metadata_repair_call : source.index("])", metadata_repair_call)
-    ]
-    assert "--live-file-metadata-kaggle-auth" not in metadata_repair_args
-    assert "--live-file-metadata-sqlite-timeout-seconds" not in metadata_repair_args
-    assert "--live-file-metadata-sqlite-poll-seconds" not in metadata_repair_args
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "web/public/social/openoppsdb.png"
 
 
@@ -689,7 +692,7 @@ def test_manager_notebook_rehydrates_public_sqlite_snapshot(
             for table_name in namespace["APP_TABLE_NAMES"]
         }
 
-        assert version == ("0003_jobs_current_version_fk",)
+        assert version == ("0004_job_sync_run_lifecycle",)
         assert "openopps_tables" not in tables
         assert "openopps_columns" not in tables
         assert all(count == 1 for count in counts.values())
@@ -2210,41 +2213,44 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     kaggle_dir = repo_root / "kaggle"
 
     assert "--stage-public-upload-dir" in justfile
-    assert "--stage-runtime-generator-dir" in justfile
-    assert 'kaggle := "uv run --with kaggle kaggle"' in justfile
-    assert "kaggle-runtime-generator-create:" in justfile
-    assert (
-        'kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator":'
-        in justfile
-    )
-    assert '{{ kaggle }} datasets create -p "$upload_dir"' in justfile
-    assert '{{ kaggle }} datasets version -p "$upload_dir"' in justfile
+    assert "publication publish --kind runtime" in justfile
+    assert 'kaggle := "uv run --frozen --group ops kaggle"' in justfile
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"kaggle==2.2.4"' in pyproject
+    assert "kaggle-runtime-generator-create message=" in justfile
+    assert "kaggle-runtime-generator-version message=" in justfile
+    assert "publication publish --kind runtime --action create" in justfile
+    assert "publication publish --kind runtime --action version" in justfile
+    assert '{{ kaggle }} datasets create -p "$upload_dir"' not in justfile
+    assert '{{ kaggle }} datasets version -p "$upload_dir"' not in justfile
     # Fail-closed: default create/version require rebuild-from-db (not silent stage-only).
     assert "kaggle-dataset-create db=" in justfile
     assert "kaggle-dataset-version message=" in justfile
     assert "allow_stale" in justfile
-    assert "requires db=<path-to-clean-openoppsdb.sqlite>" in justfile
     assert "--data-db" in justfile
-    assert "WARNING: allow_stale=1" in justfile
+    assert "--allow-stale" in justfile
+    assert "--expected-current-version" in justfile
+    assert "--allow-no-rollback" in justfile
+    assert "execute=\"0\"" in justfile
     assert "kaggle-bundle-smoke:" in justfile
     assert "{{ kaggle }} datasets status wyattowalsh/openoppsdb" in justfile
-    assert "current_version=" in justfile
-    assert "next_version=" in justfile
-    assert "--wait-live-dataset-ready" in justfile
-    assert '--wait-live-dataset-min-version "$next_version"' in justfile
     assert "--live-file-metadata-browser-cookies" in justfile
-    assert "--with browser-cookie3" in justfile
+    assert (
+        'kaggle-ops-gen := "PYTHONPATH=scripts uv run --frozen --group ops '
+        'python -m openopps_kaggle"'
+        in justfile
+    )
+    assert '"browser-cookie3==0.20.1"' in pyproject
     assert "kagglehub-live-readback" in justfile
-    assert "openopps_kaggle verify-readback" in justfile
-    assert "kagglehub[polars-datasets]" in justfile
-    assert 'kaggle-example-notebooks-push timeout="3600":' in justfile
+    assert "args=(verify-readback --dataset" in justfile
+    assert '{{ kaggle-ops-gen }} "${args[@]}"' in justfile
+    assert '"kagglehub[polars-datasets]==1.0.2"' in pyproject
+    assert 'kaggle-example-notebooks-push timeout="3600" execute="0":' in justfile
+    assert "publication kernel-push --bundle examples" in justfile
     assert "kaggle-example-notebooks-status:" in justfile
     assert "kaggle-example-notebooks-pull-check:" in justfile
     assert 'kaggle-example-notebooks-files page_size="200":' in justfile
     assert "openopps_kaggle verify-notebooks" in justfile
-    assert "kaggle/examples/advanced-usage" in justfile
-    assert "kaggle/examples/hiring-market-map" in justfile
-    assert "kaggle/examples/skills-radar" in justfile
     for kernel_dir in [
         kaggle_dir,
         kaggle_dir / "starter",
@@ -3137,6 +3143,31 @@ def test_snapshot_quality_report_blocks_dominant_provider_failures(
     assert "dominant_provider_failures" in report["hardBlockers"]
 
 
+def test_snapshot_quality_report_requires_current_authoritative_success(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path, jobs=1, job_sync_runs=1)
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(
+            job_sync_attempts=1,
+            job_sync_runs=0,
+            jobs_persisted=0,
+            provider_errors={"workable": 1},
+            provider_error_details={"workable": {"rate_limited": 1}},
+        ),
+        status=_status(jobs=1),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "fail"
+    assert "missing_job_sync_run_evidence" in report["hardBlockers"]
+    assert report["counts"]["jobSyncAttempts"] == 1
+    assert report["counts"]["jobSyncRuns"] == 0
+
+
 def _write_quality_bundle(
     output_dir: Path,
     *,
@@ -3464,8 +3495,9 @@ def _insert_representative_app_rows(db_path: Path) -> None:
             INSERT INTO job_sync_runs (
                 id, board_key, provider_id, synced_at, success, error, job_count,
                 new_count, unchanged_count, changed_count, reopened_count,
-                closed_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                closed_count, started_at, finished_at, status, error_kind,
+                authoritative, committed_batch_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "sync-run-1",
@@ -3480,6 +3512,12 @@ def _insert_representative_app_rows(db_path: Path) -> None:
                 0,
                 0,
                 0,
+                observed_at,
+                observed_at,
+                "succeeded",
+                None,
+                1,
+                1,
             ),
         )
         conn.execute(
@@ -3583,6 +3621,7 @@ def _png_dimensions(path: Path) -> tuple[int, int]:
 
 def _sync_metrics(
     *,
+    job_sync_attempts: int | None = None,
     job_sync_runs: int = 1,
     jobs_persisted: int = 1,
     provider_errors: dict[str, int] | None = None,
@@ -3591,6 +3630,9 @@ def _sync_metrics(
     return {
         "name": "sync",
         "jobsPersisted": jobs_persisted,
+        "jobSyncAttempts": (
+            job_sync_runs if job_sync_attempts is None else job_sync_attempts
+        ),
         "jobSyncRuns": job_sync_runs,
         "jobsDeduped": 0,
         "providerErrors": provider_errors or {},

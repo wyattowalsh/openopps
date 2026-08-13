@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+import httpx
+
+from openopps.models import BoardProviderRecord, BoardRecord
 from openopps.plugins import (
     PluginCapability,
     PluginContribution,
     PluginContext,
     PluginMetadata,
 )
+from openopps.providers import JobFetchResult
+
+
+class MinimalJobProvider:
+    """Safe no-op example that never claims a complete board snapshot."""
+
+    provider_id = "minimal_jobs"
+
+    async def fetch_jobs(
+        self,
+        _client: httpx.AsyncClient,
+        _board: BoardRecord,
+        _route: BoardProviderRecord,
+    ) -> JobFetchResult:
+        return JobFetchResult(jobs=[], authoritative=False)
+
+    async def check_jobs(
+        self,
+        _client: httpx.AsyncClient,
+        _board: BoardRecord,
+        _route: BoardProviderRecord,
+    ) -> int:
+        return 200
 
 
 def plugin(_context: PluginContext) -> PluginContribution:
@@ -16,6 +42,11 @@ def plugin(_context: PluginContext) -> PluginContribution:
             description="Minimal OpenOpps v0.1 plugin template.",
         ),
         capabilities=(
+            PluginCapability(
+                kind="job_provider",
+                name=MinimalJobProvider.provider_id,
+                description="Non-authoritative no-op job provider contract example.",
+            ),
             PluginCapability(
                 kind="metadata_enricher",
                 name="minimal_metadata",
@@ -32,6 +63,9 @@ def plugin(_context: PluginContext) -> PluginContribution:
                 description="Example CLI command registration.",
             ),
         ),
+        job_providers={
+            MinimalJobProvider.provider_id: lambda _settings: MinimalJobProvider()
+        },
         metadata_enrichers={"minimal_metadata": enrich_metadata},
         cache_policies={"minimal_cache": cache_policy},
         cli_commands={"minimal_cli": cli_command},

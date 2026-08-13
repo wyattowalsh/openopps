@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, overload
 
 import httpx
 
@@ -32,6 +32,26 @@ class ProviderRouteMatch:
 
 
 ProviderRouteDetector = Callable[[str], ProviderRouteMatch | None]
+
+
+@dataclass(frozen=True)
+class JobFetchResult(Sequence[JobRecord]):
+    """Normalized jobs plus whether the fetch represents a complete snapshot."""
+
+    jobs: list[JobRecord]
+    authoritative: bool
+
+    def __len__(self) -> int:
+        return len(self.jobs)
+
+    @overload
+    def __getitem__(self, index: int) -> JobRecord: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[JobRecord]: ...
+
+    def __getitem__(self, index: int | slice) -> JobRecord | Sequence[JobRecord]:
+        return self.jobs[index]
 
 
 @dataclass(frozen=True)
@@ -77,7 +97,7 @@ class BoardJobProvider(Protocol):
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]: ...
+    ) -> JobFetchResult: ...
 
     async def check_jobs(
         self,

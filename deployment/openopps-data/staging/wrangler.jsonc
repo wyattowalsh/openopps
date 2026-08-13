@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../web/node_modules/wrangler/config-schema.json",
+  "name": "openopps-data-staging",
+  "compatibility_date": "2026-08-12",
+  "workers_dev": true,
+  "preview_urls": false,
+  "send_metrics": false,
+  "assets": {
+    "directory": "./assets",
+    "html_handling": "none",
+    "not_found_handling": "none"
+  }
+}

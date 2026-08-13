@@ -15,7 +15,8 @@ from openopps.models import (
     strip_html,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
+from openopps.providers.boards.tokens import ashby_token_from_url
 from openopps.providers.normalize import salary_components, salary_display
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
@@ -44,10 +45,10 @@ class AshbyProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         token = ashby_token(route)
         if not token:
-            return []
+            raise ValueError("Ashby route is missing a public board token")
         data = await self._request_json(
             client,
             "GET",
@@ -57,11 +58,14 @@ class AshbyProvider:
         if not isinstance(data, dict):
             raise ValueError("Ashby posting API returned invalid JSON")
         response = AshbyJobBoardResponse.model_validate(data)
-        return [
-            self._normalize(board, posting)
-            for posting in response.jobs
-            if posting.is_listed is not False
-        ]
+        return JobFetchResult(
+            jobs=[
+                self._normalize(board, posting)
+                for posting in response.jobs
+                if posting.is_listed is not False
+            ],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,
@@ -133,16 +137,7 @@ def ashby_token(route: BoardProviderRecord) -> str | None:
     if route.token:
         return route.token.strip()
     if route.board_url:
-        parsed = urlparse(route.board_url)
-        parts = [part for part in parsed.path.split("/") if part]
-        if (
-            parsed.netloc.lower() == "api.ashbyhq.com"
-            and parts[:2] == ["posting-api", "job-board"]
-            and len(parts) > 2
-        ):
-            return parts[2]
-        if parts:
-            return parts[0]
+        return ashby_token_from_url(route.board_url)
     return None
 
 
@@ -154,6 +149,3 @@ def _locations(posting: AshbyJobPosting) -> list[str]:
         if secondary.location:
             values.append(secondary.location)
     return list(dict.fromkeys(values))
-
-
-

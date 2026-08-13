@@ -677,7 +677,22 @@
             "type": "datetime"
           },
           {
-            "description": "Whether the route sync completed.",
+            "description": "UTC timestamp captured before provider network access.",
+            "name": "started_at",
+            "type": "datetime"
+          },
+          {
+            "description": "UTC timestamp when this route sync reached a terminal state.",
+            "name": "finished_at",
+            "type": "datetime"
+          },
+          {
+            "description": "Durable lifecycle state: pending, succeeded, or failed.",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Whether the route sync completed authoritatively.",
             "name": "success",
             "type": "boolean"
           },
@@ -685,6 +700,21 @@
             "description": "Error message captured for failed route syncs.",
             "name": "error",
             "type": "string"
+          },
+          {
+            "description": "Bounded machine-readable failure category.",
+            "name": "error_kind",
+            "type": "string"
+          },
+          {
+            "description": "Whether the fetched snapshot was complete and authoritative.",
+            "name": "authoritative",
+            "type": "boolean"
+          },
+          {
+            "description": "Number of durable job batches committed by this run.",
+            "name": "committed_batch_count",
+            "type": "integer"
           },
           {
             "description": "Total jobs observed in the route sync.",
@@ -1544,7 +1574,22 @@
             "type": "datetime"
           },
           {
-            "description": "Whether the route sync completed.",
+            "description": "UTC timestamp captured before provider network access.",
+            "name": "started_at",
+            "type": "datetime"
+          },
+          {
+            "description": "UTC timestamp when this route sync reached a terminal state.",
+            "name": "finished_at",
+            "type": "datetime"
+          },
+          {
+            "description": "Durable lifecycle state: pending, succeeded, or failed.",
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "description": "Whether the route sync completed authoritatively.",
             "name": "success",
             "type": "boolean"
           },
@@ -1552,6 +1597,21 @@
             "description": "Error message captured for failed route syncs.",
             "name": "error",
             "type": "string"
+          },
+          {
+            "description": "Bounded machine-readable failure category.",
+            "name": "error_kind",
+            "type": "string"
+          },
+          {
+            "description": "Whether the fetched snapshot was complete and authoritative.",
+            "name": "authoritative",
+            "type": "boolean"
+          },
+          {
+            "description": "Number of durable job batches committed by this run.",
+            "name": "committed_batch_count",
+            "type": "integer"
           },
           {
             "description": "Total jobs observed in the route sync.",

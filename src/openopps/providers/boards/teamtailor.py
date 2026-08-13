@@ -18,7 +18,7 @@ from openopps.models import (
     validate_provider_host,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.normalize import string as _string
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
@@ -50,9 +50,12 @@ class TeamtailorProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         feed = await self._fetch_feed(client, route)
-        return [self._normalize(board, item) for item in _rss_items(feed)]
+        return JobFetchResult(
+            jobs=[self._normalize(board, item) for item in _rss_items(feed)],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,
@@ -134,7 +137,7 @@ def teamtailor_host(route: BoardProviderRecord) -> str | None:
 def _rss_items(root: ET.Element) -> list[ET.Element]:
     channel = root.find("channel")
     if channel is None:
-        return []
+        raise ValueError("Teamtailor RSS feed is missing a channel")
     return list(channel.findall("item"))
 
 
@@ -172,6 +175,3 @@ def _rss_date(value: object) -> str | None:
         return parsedate_to_datetime(text).isoformat()
     except (TypeError, ValueError):
         return text
-
-
-

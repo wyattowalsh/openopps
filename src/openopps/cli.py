@@ -6,12 +6,13 @@ import runpy
 import sqlite3
 from collections.abc import Callable
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, cast
 
 import typer
-from click import ClickException, Context, get_current_context
+from click import ClickException
 from loguru import logger
 from pydantic import ValidationError
 from rich.console import Console
@@ -130,6 +131,10 @@ REFRESH_CACHE_OPTION_FLAGS = ("--refresh-cache", "-r", "-R")
 SOURCE_OPTION_FLAGS = ("--source", "-s", "-S")
 VERBOSE_OPTION_FLAGS = ("--verbose", "-v", "-V")
 SETTINGS_CONTEXT_KEY = "openopps_settings"
+_ACTIVE_CLI_CONTEXT: ContextVar[Any | None] = ContextVar(
+    "openopps_active_cli_context",
+    default=None,
+)
 
 
 def _example_data_script_path() -> Path:
@@ -157,7 +162,7 @@ def _load_example_dataset_builder() -> Callable[..., Any]:
 
 
 class OpenOppsRootGroup(TyperGroup):
-    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
         # Handle --version before command validation so bare
         # `openopps --version` does not require a subcommand (exit 2).
         if "--version" in args:
@@ -172,7 +177,7 @@ class OpenOppsRootGroup(TyperGroup):
         ctx.meta["openopps_show_help_intro"] = show_intro
         return super().parse_args(ctx, args)
 
-    def get_help(self, ctx: Context) -> str:
+    def get_help(self, ctx: Any) -> str:
         if ctx.parent is None and ctx.meta.get("openopps_show_help_intro", True):
             Console(
                 color_system=None,
@@ -181,11 +186,19 @@ class OpenOppsRootGroup(TyperGroup):
             ).print(render_intro_frame(0, "opening opportunity portal"))
         return super().get_help(ctx)
 
-    def invoke(self, ctx: Context) -> Any:
+    def invoke(self, ctx: Any) -> Any:
+        context_token = _ACTIVE_CLI_CONTEXT.set(ctx)
         try:
             return super().invoke(ctx)
         except DatabaseSchemaError as exc:
-            raise ClickException(str(exc)) from exc
+            error = ClickException(str(exc))
+            error.show()
+            raise typer.Exit(code=error.exit_code) from exc
+        except ClickException as exc:
+            exc.show()
+            raise typer.Exit(code=exc.exit_code) from exc
+        finally:
+            _ACTIVE_CLI_CONTEXT.reset(context_token)
 
 
 app = typer.Typer(
@@ -285,7 +298,7 @@ def main(
 
 
 def _settings() -> OpenOppsSettings:
-    ctx = get_current_context(silent=True)
+    ctx = _ACTIVE_CLI_CONTEXT.get()
     if ctx is not None:
         cached = ctx.meta.get(SETTINGS_CONTEXT_KEY)
         if isinstance(cached, OpenOppsSettings):
@@ -372,7 +385,8 @@ def _metrics(
         if profile:
             provider_error_count = sum(data["providerErrors"].values())
             summary = (
-                f"{summary} jobSyncRuns={data['jobSyncRuns']} "
+                f"{summary} jobSyncAttempts={data['jobSyncAttempts']} "
+                f"jobSyncRuns={data['jobSyncRuns']} "
                 f"jobsDeduped={data['jobsDeduped']} pages={data['pages']} "
                 f"skipped={data['skipped']} "
                 f"duplicateRoutesSkipped={data['duplicateRoutesSkipped']} "
@@ -441,6 +455,7 @@ def _combine_sync_metrics(name: str, *metrics: SyncMetrics) -> SyncMetrics:
         combined.board_providers += item.board_providers
         combined.jobs += item.jobs
         combined.jobs_persisted += item.jobs_persisted
+        combined.job_sync_attempts += item.job_sync_attempts
         combined.job_sync_runs += item.job_sync_runs
         combined.jobs_deduped += item.jobs_deduped
         combined.skipped += item.skipped

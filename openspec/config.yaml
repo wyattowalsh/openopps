@@ -2,7 +2,7 @@ schema: spec-driven
 context: |
   Repository: openopps.
   Purpose: high-performance CLI for discovering opportunity boards from aggregate sources and fetching jobs from supported public board providers.
-  Source tree: src/openopps contains the Python package; docs contains the Fumadocs site.
+  Source tree: src/openopps contains the Python package; web contains the Fumadocs/Next.js site.
   Tooling: uv with pyproject.toml, Typer CLI, Pydantic/Pydantic Settings, SQLModel, Tenacity, HTTPX, Polars, Loguru.
 rules:
   proposal:

@@ -5,6 +5,7 @@ import sqlite3
 import polars as pl
 from pydantic import ValidationError
 import pytest
+from sqlalchemy import event
 
 import openopps.storage as storage_module
 from openopps.export import export_records
@@ -224,9 +225,7 @@ def test_storage_roundtrip_and_export(tmp_path: Path):
 
 @pytest.mark.parametrize("field_name", ["enabled", "disabled"])
 @pytest.mark.parametrize("payload_wrapper", ["top-level", "extra-payload"])
-def test_source_enablement_extras_are_rejected(
-    field_name: str, payload_wrapper: str
-):
+def test_source_enablement_extras_are_rejected(field_name: str, payload_wrapper: str):
     payload = (
         {field_name: True}
         if payload_wrapper == "top-level"
@@ -315,6 +314,244 @@ def test_job_sync_tracks_versions_raw_drift_and_lifecycle(tmp_path: Path):
         "changed",
         "closed",
     ]
+
+
+def test_job_sync_commits_progress_in_configured_batches_and_closes_once(
+    tmp_path: Path,
+):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{db_path}",
+        db_batch_size=2,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="acme", name="Acme")]
+    )
+    stale = JobRecord(
+        id="acme:lever:stale",
+        board_key="acme",
+        provider_id="lever",
+        remote_id="stale",
+        title="Stale",
+    )
+    store.sync_jobs_for_route("acme", "lever", [stale])
+    jobs = [
+        JobRecord(
+            id=f"acme:lever:{index}",
+            board_key="acme",
+            provider_id="lever",
+            remote_id=str(index),
+            title=f"Engineer {index}",
+        )
+        for index in range(5)
+    ]
+
+    pending = store.begin_job_sync_run("acme", "lever")
+    completed = store.complete_job_sync_run(
+        pending.id,
+        jobs,
+        authoritative=True,
+        close_missing=True,
+    )
+
+    assert completed.status == "succeeded"
+    assert completed.success is True
+    assert completed.authoritative is True
+    assert completed.committed_batch_count == 3
+    assert completed.job_count == 5
+    assert completed.new_count == 5
+    assert completed.closed_count == 1
+    assert completed.finished_at is not None
+    with sqlite3.connect(db_path) as conn:
+        closed_observations = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM job_sync_observations
+            WHERE sync_run_id = ? AND observation_kind = 'closed'
+            """,
+            (pending.id,),
+        ).fetchone()[0]
+    assert closed_observations == 1
+
+
+def test_job_sync_batch_failure_preserves_progress_without_authoritative_closure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{db_path}",
+        db_batch_size=2,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="acme", name="Acme")]
+    )
+    stale = JobRecord(
+        id="acme:lever:stale",
+        board_key="acme",
+        provider_id="lever",
+        remote_id="stale",
+        title="Stale",
+    )
+    store.sync_jobs_for_route("acme", "lever", [stale])
+    jobs = [
+        JobRecord(
+            id=f"acme:lever:{index}",
+            board_key="acme",
+            provider_id="lever",
+            remote_id=str(index),
+            title=f"Engineer {index}",
+        )
+        for index in range(4)
+    ]
+    original_sync_job_record = storage_module._sync_job_record
+
+    def fail_in_second_batch(session, job, observed_at):
+        if job.remote_id == "2":
+            raise RuntimeError("simulated persistence failure")
+        return original_sync_job_record(session, job, observed_at)
+
+    monkeypatch.setattr(storage_module, "_sync_job_record", fail_in_second_batch)
+    pending = store.begin_job_sync_run("acme", "lever")
+
+    with pytest.raises(RuntimeError, match="simulated persistence failure"):
+        store.complete_job_sync_run(
+            pending.id,
+            jobs,
+            authoritative=True,
+            close_missing=True,
+        )
+
+    with sqlite3.connect(db_path) as conn:
+        run = conn.execute(
+            """
+            SELECT status, success, error_kind, job_count,
+                   committed_batch_count, closed_count, finished_at, authoritative,
+                   error
+            FROM job_sync_runs
+            WHERE id = ?
+            """,
+            (pending.id,),
+        ).fetchone()
+        stored_jobs = conn.execute(
+            "SELECT remote_id, status FROM jobs ORDER BY remote_id"
+        ).fetchall()
+
+    assert run is not None
+    assert run[:6] == ("failed", 0, "persistence", 2, 1, 0)
+    assert run[6] is not None
+    assert run[7] == 1
+    assert run[8] == (
+        "Persistence failed while committing normalized job batches: RuntimeError."
+    )
+    assert "simulated persistence failure" not in run[8]
+    assert stored_jobs == [("0", "open"), ("1", "open"), ("stale", "open")]
+
+
+def test_job_sync_failure_metadata_is_bounded(tmp_path: Path):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="acme", name="Acme")]
+    )
+    pending = store.begin_job_sync_run("acme", "lever")
+
+    failed = store.fail_job_sync_run(
+        pending.id,
+        error_kind="k" * 256,
+        error="e" * 4096,
+    )
+
+    assert failed.status == "failed"
+    assert failed.success is False
+    assert failed.authoritative is False
+    assert len(failed.error_kind or "") == 128
+    assert len(failed.error or "") == 2048
+
+
+def test_current_job_hydration_uses_latest_payload_hash_without_mutating_version(
+    tmp_path: Path,
+):
+    store = seeded_filter_store(tmp_path)
+    original = JobRecord(
+        id="acme:ashbyhq:payload-drift",
+        board_key="acme",
+        provider_id="ashbyhq",
+        remote_id="payload-drift",
+        title="Engineer",
+        raw_listing={"id": "payload-drift", "revision": "original"},
+    )
+    raw_drift = original.model_copy(
+        update={"raw_listing": {"id": "payload-drift", "revision": "latest"}}
+    )
+
+    store.sync_jobs_for_route("acme", "ashbyhq", [original], close_missing=False)
+    store.sync_jobs_for_route("acme", "ashbyhq", [raw_drift], close_missing=False)
+
+    current = store.get_job(original.id)
+    listed = [
+        job
+        for job in store.list_jobs(
+            filters=JobFilters(board_key="acme", provider_id="ashbyhq")
+        )
+        if job.id == original.id
+    ]
+    versions = store.list_job_versions(original.id)
+    assert current is not None
+    assert current.payload_hash == job_payload_hash(raw_drift)
+    assert listed[0].payload_hash == job_payload_hash(raw_drift)
+    assert versions[0].payload_hash == job_payload_hash(original)
+
+
+def test_list_jobs_bulk_hydration_query_count_is_not_per_record(tmp_path: Path):
+    store = seeded_filter_store(tmp_path)
+    store.upsert_jobs(
+        [
+            JobRecord(
+                id=f"acme:ashbyhq:bulk-{index}",
+                board_key="acme",
+                provider_id="ashbyhq",
+                remote_id=f"bulk-{index}",
+                title=f"Engineer {index}",
+                locations=["Remote"],
+                responsibilities=["Build"],
+                qualifications=["Test"],
+                skills=[{"name": "Backend", "keywords": ["Python"]}],
+                raw_listing={"id": f"bulk-{index}"},
+            )
+            for index in range(12)
+        ]
+    )
+    select_count = 0
+
+    def count_selects(_conn, _cursor, statement, _parameters, _context, _many):
+        nonlocal select_count
+        if statement.lstrip().upper().startswith("SELECT"):
+            select_count += 1
+
+    event.listen(store.engine, "before_cursor_execute", count_selects)
+    try:
+        store.list_jobs(filters=JobFilters(limit=1))
+        one_record_queries = select_count
+        select_count = 0
+        jobs = store.list_jobs()
+        many_record_queries = select_count
+    finally:
+        event.remove(store.engine, "before_cursor_execute", count_selects)
+
+    assert len(jobs) >= 12
+    assert many_record_queries <= one_record_queries + 1
+    assert many_record_queries < len(jobs)
 
 
 def test_job_sync_dedupes_duplicate_jobs_in_one_route_run(tmp_path: Path):
@@ -453,6 +690,37 @@ def test_jsonl_export_streams_iterable_records(tmp_path: Path):
     ]
 
 
+def test_export_failure_preserves_existing_destination_and_removes_temp_file(
+    tmp_path: Path,
+):
+    output = tmp_path / "records.jsonl"
+    output.write_text("existing\n", encoding="utf-8")
+
+    def failing_records():
+        yield {"id": "1"}
+        raise RuntimeError("simulated export failure")
+
+    with pytest.raises(RuntimeError, match="simulated export failure"):
+        export_records(failing_records(), output, ExportFormat.JSONL)
+
+    assert output.read_text(encoding="utf-8") == "existing\n"
+    assert list(tmp_path.glob(f".{output.name}.*.tmp")) == []
+
+
+def test_sqlite_export_refuses_to_delete_existing_sidecars(tmp_path: Path) -> None:
+    output = tmp_path / "records.sqlite"
+    output.write_bytes(b"existing database sentinel")
+    wal = output.with_name(f"{output.name}-wal")
+    wal.write_bytes(b"existing wal sentinel")
+
+    with pytest.raises(RuntimeError, match="SQLite export.*sidecars"):
+        export_records([{"id": "1"}], output, ExportFormat.SQLITE)
+
+    assert output.read_bytes() == b"existing database sentinel"
+    assert wal.read_bytes() == b"existing wal sentinel"
+    assert list(tmp_path.glob(f".{output.name}.*.tmp")) == []
+
+
 def test_exports_sort_record_keys_and_nested_json(tmp_path: Path):
     records = [
         {
@@ -561,10 +829,10 @@ def test_storage_pushes_sql_limit_before_job_materialization(
     original = storage_module._job_from_identity_and_version
     converted = 0
 
-    def counting_job_from_row(session, row, version):
+    def counting_job_from_row(session, row, version, **kwargs):
         nonlocal converted
         converted += 1
-        return original(session, row, version)
+        return original(session, row, version, **kwargs)
 
     monkeypatch.setattr(
         storage_module, "_job_from_identity_and_version", counting_job_from_row

@@ -28,6 +28,7 @@ from openopps.providers.boards.wpjobmanager import (
     wpjobmanager_is_ajax_endpoint,
     wpjobmanager_is_rest_endpoint,
 )
+from openopps.providers.base import JobFetchResult
 from openopps.settings import OpenOppsSettings
 
 
@@ -45,6 +46,14 @@ def route(provider_id: str, **updates: object) -> BoardProviderRecord:
     }
     data.update(updates)
     return BoardProviderRecord.model_validate(data)
+
+
+def _wp_listing(job_id: int) -> dict[str, object]:
+    return {
+        "id": job_id,
+        "title": {"rendered": f"Job {job_id}"},
+        "link": f"https://jobs.example.com/jobs/{job_id}",
+    }
 
 
 def test_validate_provider_host_rejects_url_like_host_spoofing() -> None:
@@ -104,6 +113,7 @@ async def test_greenhouse_fetch_jobs():
     async with build_async_client(settings) as client:
         jobs = await GreenhouseProvider(settings).fetch_jobs(client, board(), route)
 
+    assert isinstance(jobs, JobFetchResult)
     assert jobs[0].title == "Engineer"
     assert jobs[0].company == "Acme"
     assert jobs[0].locations == ["Remote", "United States"]
@@ -312,6 +322,7 @@ async def test_lever_fetch_jobs():
     async with build_async_client(settings) as client:
         jobs = await LeverProvider(settings).fetch_jobs(client, board(), route)
 
+    assert isinstance(jobs, JobFetchResult)
     assert jobs[0].title == "Designer"
     assert jobs[0].company == "Acme"
     assert jobs[0].locations == ["New York"]
@@ -448,6 +459,7 @@ async def test_ashby_fetch_jobs():
     async with build_async_client(settings) as client:
         jobs = await AshbyProvider(settings).fetch_jobs(client, board(), route)
 
+    assert isinstance(jobs, JobFetchResult)
     assert jobs[0].title == "Product Manager"
     assert jobs[0].locations == ["Houston, TX", "San Francisco"]
     assert jobs[0].department == "Product"
@@ -650,6 +662,7 @@ async def test_workable_fetch_jobs():
             client, board(), route("workable", token="acme")
         )
 
+    assert isinstance(jobs, JobFetchResult)
     assert jobs[0].title == "Support Engineer"
     assert jobs[0].locations == ["Austin, US"]
     assert jobs[0].department == "Support"
@@ -864,6 +877,7 @@ async def test_teamtailor_fetch_jobs():
             client, board(), route("teamtailor", host="acme.teamtailor.com")
         )
 
+    assert isinstance(jobs, JobFetchResult)
     assert jobs[0].title == "Designer"
     assert jobs[0].locations == ["Stockholm"]
     assert jobs[0].department == "Product"
@@ -1302,6 +1316,8 @@ def test_wpjobmanager_route_detection_and_endpoint_derivation():
     assert WPJobManagerProvider.detect_route("https://jobs.example.com/careers") is None
     assert wpjobmanager_is_rest_endpoint(rest_url)
     assert wpjobmanager_is_ajax_endpoint(ajax_url)
+    assert not wpjobmanager_is_rest_endpoint(f"{rest_url}/123")
+    assert not wpjobmanager_is_ajax_endpoint(f"{ajax_url}123")
     assert wpjobmanager_endpoint(route("wpjobmanager", board_url=rest_url)) == rest_url
     assert wpjobmanager_endpoint(route("wpjobmanager", board_url=ajax_url)) == ajax_url
     assert (
@@ -1420,3 +1436,229 @@ def test_public_page_normalize_candidates_counts_board_key_collisions() -> None:
 
     assert len(boards) == 1
     assert meta["boardKeyCollisions"] == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rippling_rejects_empty_page_while_total_requires_more_jobs():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    endpoint = "https://ats.rippling.com/api/v2/board/acme/jobs"
+    respx.get(endpoint, params={"page": 0, "pageSize": 100}).mock(
+        return_value=httpx.Response(
+            200,
+            json={"totalPages": 2, "totalItems": 2, "items": [{"id": "one"}]},
+        )
+    )
+    respx.get(endpoint, params={"page": 1, "pageSize": 100}).mock(
+        return_value=httpx.Response(
+            200, json={"totalPages": 2, "totalItems": 2, "items": []}
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="incomplete pagination"):
+            await RipplingProvider(settings).fetch_jobs(
+                client, board(), route("rippling", token="acme")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rippling_rejects_repeated_listing_page():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    endpoint = "https://ats.rippling.com/api/v2/board/acme/jobs"
+    repeated = {"totalPages": 2, "totalItems": 2, "items": [{"id": "one"}]}
+    respx.get(endpoint, params={"page": 0, "pageSize": 100}).mock(
+        return_value=httpx.Response(200, json=repeated)
+    )
+    respx.get(endpoint, params={"page": 1, "pageSize": 100}).mock(
+        return_value=httpx.Response(200, json=repeated)
+    )
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="repeated pagination"):
+            await RipplingProvider(settings).fetch_jobs(
+                client, board(), route("rippling", token="acme")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_workday_rejects_advertised_total_mismatch():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    endpoint = (
+        "https://pwc.wd3.myworkdayjobs.com/wday/cxs/pwc/US_Experienced_Careers/jobs"
+    )
+    respx.post(endpoint).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "total": 2,
+                "jobPostings": [{"title": "Only", "externalPath": "only"}],
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="advertised total"):
+            await WorkdayProvider(settings).fetch_jobs(
+                client,
+                board(),
+                route(
+                    "workday",
+                    host="pwc.wd3.myworkdayjobs.com",
+                    tenant="pwc",
+                    site="US_Experienced_Careers",
+                ),
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_rest_rejects_advertised_total_mismatch():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    endpoint = "https://jobs.example.com/wp-json/wp/v2/job-listings"
+    respx.get(endpoint, params={"per_page": 100, "page": 1}).mock(
+        return_value=httpx.Response(
+            200, json=[_wp_listing(1)], headers={"x-wp-total": "2"}
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="advertised total"):
+            await WPJobManagerProvider(settings).fetch_jobs(
+                client,
+                board(),
+                route("wpjobmanager", board_url=endpoint),
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_ajax_rejects_empty_page_with_continuation():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    endpoint = "https://jobs.example.com/jm-ajax/get_listings"
+    first_html = (
+        '<ul><li class="job_listing"><a href="https://jobs.example.com/one">'
+        "One</a></li></ul>"
+    )
+    respx.get(endpoint, params={"page": 1, "per_page": 100}).mock(
+        return_value=httpx.Response(
+            200, json={"html": first_html, "max_num_pages": 2, "found": 2}
+        )
+    )
+    respx.get(endpoint, params={"page": 2, "per_page": 100}).mock(
+        return_value=httpx.Response(
+            200, json={"html": "", "max_num_pages": 2, "found": 2}
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="incomplete pagination"):
+            await WPJobManagerProvider(settings).fetch_jobs(
+                client,
+                board(),
+                route("wpjobmanager", board_url=endpoint),
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bamboohr_rejects_advertised_total_mismatch():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    respx.get("https://acme.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(
+            200,
+            json={"meta": {"totalCount": 2}, "result": [{"id": 1}]},
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="advertised total"):
+            await BambooHRProvider(settings).fetch_jobs(
+                client, board(), route("bamboohr", token="acme")
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_risky_providers_return_explicit_authoritative_results():
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    respx.get("https://empty.bamboohr.com/careers/list").mock(
+        return_value=httpx.Response(200, json={"meta": {"totalCount": 0}, "result": []})
+    )
+
+    async with build_async_client(settings) as client:
+        result = await BambooHRProvider(settings).fetch_jobs(
+            client, board(), route("bamboohr", token="empty")
+        )
+
+    assert isinstance(result, JobFetchResult)
+    assert result.authoritative is True
+    assert list(result) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "provider_id"),
+    [
+        (GreenhouseProvider, "greenhouse"),
+        (LeverProvider, "lever"),
+        (AshbyProvider, "ashbyhq"),
+        (WorkableProvider, "workable"),
+    ],
+)
+@pytest.mark.parametrize(
+    "route_updates",
+    [{}, {"board_url": "https://example.com/jobs"}],
+    ids=["no-metadata", "unrecognized-board-url"],
+)
+async def test_job_providers_reject_missing_executable_route_metadata(
+    provider: type, provider_id: str, route_updates: dict[str, object]
+):
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+
+    async with build_async_client(settings) as client:
+        with pytest.raises(ValueError, match="missing"):
+            await provider(settings).fetch_jobs(
+                client,
+                board(),
+                route(provider_id, **route_updates),
+            )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_wpjobmanager_accepts_verified_empty_rest_and_ajax_snapshots():
+    from openopps.providers.base import JobFetchResult
+
+    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+    rest_endpoint = "https://jobs.example.com/wp-json/wp/v2/job-listings"
+    ajax_endpoint = "https://jobs.example.com/jm-ajax/get_listings"
+    respx.get(rest_endpoint, params={"per_page": 100, "page": 1}).mock(
+        return_value=httpx.Response(
+            200,
+            json=[],
+            headers={"x-wp-total": "0", "x-wp-totalpages": "0"},
+        )
+    )
+    respx.get(ajax_endpoint, params={"page": 1, "per_page": 100}).mock(
+        return_value=httpx.Response(
+            200, json={"found_jobs": False, "max_num_pages": 0, "html": ""}
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        rest_result = await WPJobManagerProvider(settings).fetch_jobs(
+            client, board(), route("wpjobmanager", board_url=rest_endpoint)
+        )
+        ajax_result = await WPJobManagerProvider(settings).fetch_jobs(
+            client, board(), route("wpjobmanager", board_url=ajax_endpoint)
+        )
+
+    assert isinstance(rest_result, JobFetchResult)
+    assert isinstance(ajax_result, JobFetchResult)
+    assert rest_result.authoritative is True
+    assert ajax_result.authoritative is True
+    assert list(rest_result) == []
+    assert list(ajax_result) == []

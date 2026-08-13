@@ -154,21 +154,27 @@ def test_root_help_groups_commands_by_user_journey():
 
 
 def test_filter_help_describes_actual_scope_semantics():
-    boards_result = runner.invoke(app, ["boards", "list", "--help"])
-    jobs_result = runner.invoke(app, ["jobs", "list", "--help"])
+    boards_result = runner.invoke(
+        app, ["boards", "list", "--help"], terminal_width=HELP_TERMINAL_WIDTH
+    )
+    jobs_result = runner.invoke(
+        app, ["jobs", "list", "--help"], terminal_width=HELP_TERMINAL_WIDTH
+    )
 
     assert boards_result.exit_code == 0
     assert jobs_result.exit_code == 0
-    assert "remove" in boards_result.output
-    assert "provider filter" in boards_result.output
-    assert "source job hint" in boards_result.output
-    assert "provider job" in boards_result.output
-    assert "synced job" in boards_result.output
-    assert "normalized salary range" in jobs_result.output
-    assert "overlaps this lower bound" in jobs_result.output or (
-        "salary range" in jobs_result.output and "overlap" in jobs_result.output
+    boards_help = " ".join(plain(boards_result.output).replace("│", " ").split())
+    jobs_help = " ".join(plain(jobs_result.output).replace("│", " ").split())
+    assert "remove" in boards_help
+    assert "provider filter" in boards_help
+    assert "source job hint" in boards_help
+    assert "provider job" in boards_help
+    assert "synced job" in boards_help
+    assert "normalized salary range" in jobs_help
+    assert "overlaps this lower bound" in jobs_help or (
+        "salary range" in jobs_help and "overlap" in jobs_help
     )
-    assert "Inclusive YYYY-MM-DD" in jobs_result.output
+    assert "Inclusive YYYY-MM-DD" in jobs_help
 
 
 def test_cli_default_intro_skips_non_interactive_runner(tmp_path: Path):
@@ -462,6 +468,7 @@ def test_combined_sync_metrics_span_stage_timings():
         name="jobs.sync",
         jobs=3,
         jobs_persisted=2,
+        job_sync_attempts=2,
         job_sync_runs=1,
         jobs_deduped=1,
     )
@@ -479,6 +486,7 @@ def test_combined_sync_metrics_span_stage_timings():
     assert combined.as_dict()["boardProviders"] == 1
     assert combined.as_dict()["jobs"] == 3
     assert combined.as_dict()["jobsPersisted"] == 2
+    assert combined.as_dict()["jobSyncAttempts"] == 2
     assert combined.as_dict()["jobSyncRuns"] == 1
     assert combined.as_dict()["jobsDeduped"] == 1
 
@@ -598,7 +606,7 @@ def test_metrics_summary_always_prints_for_human_output(capsys):
 
 
 def test_profile_metrics_include_provider_errors_and_warning(capsys):
-    metrics = SyncMetrics(name="jobs.sync")
+    metrics = SyncMetrics(name="jobs.sync", job_sync_attempts=2, job_sync_runs=1)
     metrics.error("ashbyhq")
     metrics.finish()
 
@@ -606,6 +614,8 @@ def test_profile_metrics_include_provider_errors_and_warning(capsys):
     captured = capsys.readouterr()
 
     assert "jobs.sync completed in" in captured.out
+    assert "jobSyncAttempts=2" in captured.out
+    assert "jobSyncRuns=1" in captured.out
     assert "providerErrors=1" in captured.out
     assert "skipped=0" in captured.out
     assert "Warning: jobs.sync completed with skipped=0" in captured.err

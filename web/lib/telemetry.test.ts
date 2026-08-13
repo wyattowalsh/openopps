@@ -219,6 +219,32 @@ describe("telemetry client", () => {
 		expect(event.properties).toEqual({ path: "/", title: "OpenOpps" });
 	});
 
+	it("drops raw job-search queries before transport", async () => {
+		const transport = vi.fn().mockResolvedValue(undefined);
+		const client = createTelemetryClient({
+			enabled: true,
+			flushIntervalMs: 0,
+			transport,
+			idGenerator: deterministicIds(),
+		});
+
+		client.track("jobs.search_loaded", {
+			activeFilterCount: 1,
+			query: "private employer and medical history",
+			rows: 20,
+			totalMatches: 41,
+		});
+		await client.flush("test");
+
+		const event = transport.mock.calls[0][1].events[0];
+		expect(event.properties).toEqual({
+			activeFilterCount: 1,
+			rows: 20,
+			totalMatches: 41,
+		});
+		expect(JSON.stringify(event)).not.toContain("private employer");
+	});
+
 	it("uses sendBeacon when the default transport can enqueue the payload", async () => {
 		const sendBeacon = vi.fn().mockReturnValue(true);
 		vi.stubGlobal("navigator", { sendBeacon });

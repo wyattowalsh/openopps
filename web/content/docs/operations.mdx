@@ -63,11 +63,11 @@ The default database path is controlled by `OPENOPPS_DB_URL` and resolves to `op
 
 All sync commands in this section write local SQLite records unless they explicitly use `--no-db` or are documented as dry-run diagnostics.
 
-`admin db init` applies the current v0.1 Alembic schema head for the durable app SQLite database. HTTP response cache rows live in that same SQLite database and are managed by `cache.py`, not by the Alembic schema history. If a pre-release local SQLite database was stamped before the v0.1 schema was finalized, OpenOpps reports the missing schema columns and asks you to reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file.
+`admin db init` applies the current v0.1 Alembic schema head for the durable app file-backed SQLite database. HTTP response cache rows live in that same SQLite database and are managed by `cache.py`, not by the Alembic schema history. Unsupported or partial pre-release schemas fail closed; reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file instead of relying on silent repair.
 
 Job storage separates stable posting identity from changing content. The `jobs` table tracks lifecycle fields such as `status`, `first_seen_at`, `last_seen_at`, `closed_at`, and current hashes. `job_versions` stores one normalized content state per posting, with child tables for locations, skills, skill keywords, and responsibility or qualification bullets. `job_payload_snapshots` stores distinct raw listing/detail payloads so raw upstream JSON is never discarded.
 
-Every successful provider-route job sync writes a `job_sync_runs` row and `job_sync_observations` rows for `new`, `unchanged`, `changed`, `reopened`, and `closed` outcomes. Raw payload drift means provider JSON changed but normalized content stayed the same, such as an ignored metadata key, key order change, or provider-internal token change. Raw-only drift updates payload snapshots and observations but does not create a new `job_versions` row.
+Every provider-route job sync creates a pending `job_sync_runs` row before network access and finishes it as succeeded or failed with bounded error classification, authority, timing, and committed-batch metadata. A route may close unseen jobs only after its provider returns a complete authoritative snapshot. Truncated pagination, count mismatch, continuation loops, access/schema failures, and ambiguous empty results preserve existing job state and fail the run. Successful runs write `job_sync_observations` rows for `new`, `unchanged`, `changed`, `reopened`, and `closed` outcomes. Raw payload drift means provider JSON changed but normalized content stayed the same; raw-only drift updates payload snapshots and observations but does not create a new `job_versions` row.
 
 Use `status` or `doctor` to inspect the full local runtime state:
 
@@ -78,7 +78,7 @@ uv run openopps doctor --json
 
 ## Cache
 
-The shared request cache stores successful JSON request payloads in the configured SQLite application database for source adapters and job providers. It records deterministic request identity, payload hash, selected headers, freshness timestamps, ETag/Last-Modified validators, and stale-on-error eligibility.
+The shared request cache stores successful JSON response payloads in the configured SQLite application database for source adapters and job providers. Cache schema version 2 stores a SHA-256 request identity and redacted canonical location, never a raw request body, URL user information, or credential-bearing query value. It records the response payload hash, an allowlist of response headers, freshness timestamps, ETag/Last-Modified validators, and stale-on-error eligibility. Legacy cache rows are invalidated.
 
 ```bash
 uv run openopps cache status
@@ -112,7 +112,7 @@ For one-off source extraction without persistence, use explicit JSONL output:
 uv run openopps sources sync a16z --no-db --output /tmp/a16z-boards.jsonl
 ```
 
-Human sync commands use a brief dynamic progress display by default. The top-level `sync` command reports source, board, and job stages in order; individual `sources sync`, `boards sync`, and `jobs sync` commands report the stage they own. Add `--verbose` when you need detailed provider warnings on stderr. Machine-readable modes such as `--metrics-json` keep stdout parseable.
+Human sync commands use a brief dynamic progress display by default. The top-level `sync` command reports source, board, and job stages in order; individual `sources sync`, `boards sync`, and `jobs sync` commands report the stage they own. Add `--verbose` when you need detailed provider warnings on stderr. Machine-readable modes such as `--metrics-json` keep stdout parseable. `jobSyncAttempts` counts durable route attempts, while `jobSyncRuns` counts only authoritative successes; failed, invalid, and partial snapshots therefore cannot masquerade as release-quality success evidence.
 
 ## Exports
 
@@ -179,15 +179,19 @@ just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-`just ci` chains `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`.
+`just ci` composes `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts`. These lanes cover the Python release gate, strict OpenSpec validation, web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata and clean-bundle smoke, and repository drift.
 
-`just ci-full` runs `just ci` plus network-dependent checks that mirror the GHA security job and wheel packaging smoke: `security-audit` (Python `pip-audit` + docs `pnpm audit --prod`) and `wheel-catalog-smoke`. Use `ci` for day-to-day PR confidence; use `ci-full` before release or when dependency/security surfaces change.
+`just ci-full` runs `just ci` plus the network-dependent `security-audit` (Python `pip-audit` and the full web dependency graph via `pnpm audit --audit-level high`) and `test-lowest-direct`. Use `ci` for day-to-day PR confidence; use `ci-full` before release or when dependency/security surfaces change.
 
-### Jobs search public data origin (docs app)
+### Jobs search public data release
 
-Server-side Jobs/Explorer search loads committed shards from an allowlisted origin (`OPENOPPS_PUBLIC_DATA_ORIGIN` and related flags; see [Configuration](/docs/configuration#docs-app-public-data-origin)). On loopback hosts (`127.0.0.1`, `localhost`, `::1`), the search service reads files under `docs/public` directly and honors `AbortSignal` around those reads so cancelled requests do not poison shared caches.
+The committed v6 tree is a transition fallback when no channel is configured. For v7, set matching server and browser origins/channels as described in [Configuration](/docs/configuration#web-app-public-data-release). The shared snapshot client resolves the mutable channel once, pins the immutable release, and verifies manifest membership, byte length, and SHA-256 before serving search, details, metadata, or sitemap reads.
 
-Summary responses (`summary=1`) include one fingerprint entry per matching job so full-scope saved searches can track content drift. Large open indexes increase JSON size and memory for those responses; prefer scoped filters when possible. Runtime payload caps are out of scope for v0.1.
+Jobs search runs in a dedicated browser Web Worker using release-pinned chunks. The `/api/jobs/search` route is retained only as a fail-closed stale-client boundary and returns HTTP `410` with `browser_worker_required`; it never loads or scans the full production corpus. Saved-search counts use the same worker/session snapshot. Local saved jobs, searches, and retained details commit to IndexedDB before visible state advances; validated replacement imports are transactional and retain at most three bounded pre-import backups.
+
+The default-off offline-search installer is implemented for v7. An explicit opt-in performs a two-times-size quota preflight, downloads and verifies a bounded search/metadata projection, pins one immutable release, preserves the previous verified release until replacement succeeds, and removes only OpenOpps-owned caches on opt-out. Unit tests cover those local invariants. Deployed offline readiness is still unproven: the release gate remains open until a real deployed v7 release passes install, disconnect/readback, update/rollback, and complete Chromium/Firefox/WebKit journeys.
+
+See [Public Data Releases](/docs/public-data-releases) and `deployment/openopps-data/README.md` for v7 generation, rights/freshness gates, assets-only staging, exact remote readback, promote/rollback/re-promote barriers, archive recovery, and v6 exit criteria. Those tools prepare or verify a rollout; they do not prove that a live rollout occurred.
 
 Run Python tests from the repository root:
 
@@ -197,7 +201,7 @@ uv run pytest --cov=openopps --cov-report=term-missing
 uv lock --check
 ```
 
-Run docs checks from the docs app:
+Run web checks from the web app:
 
 ```bash
 cd web
@@ -212,9 +216,9 @@ pnpm test
 `pnpm data:generate` refreshes package-derived provider/source metadata. `pnpm types:check` also regenerates that metadata before generating Fumadocs MDX artifacts, generating Next.js route types, and running TypeScript without emitting files. `pnpm lint` runs the Next ESLint surface. `pnpm test` runs the docs Vitest suite.
 `just web-build` runs the production docs build and the function trace guard that keeps committed search artifacts out of API route bundles.
 Use `just web-rtk-lint` from the repository root for the optional maintainer `rtk lint` surface; it requires `rtk` locally and is not silently skipped inside `just ci`.
-`pnpm data:generate:search` refreshes the committed static search index used by [Jobs](/) and [Explorer](/explorer) from `kaggle/openoppsdb.sqlite`; run it after updating the local OpenOppsDB snapshot. From the repository root you can also use `just web-search-index`. The generated `web/public/data/openopps-search/` tree is intentionally committed so the docs host can serve search, filters, dashboard aggregates, and job preview/detail shards without a live backend. Preview descriptions are limited to the normalized description fields present in that snapshot; when those fields are empty, the jobs surface shows metadata and links back to the source posting.
+`pnpm data:generate:search` refreshes the committed v6 transition index used by [Jobs](/) and [Explorer](/explorer) when no v7 channel is configured. Run it after updating the local OpenOppsDB snapshot; from the repository root you can also use `just web-search-index`. Preview descriptions are limited to the normalized description fields present in that snapshot; when those fields are empty, the jobs surface shows metadata and links back to the source posting.
 
-`just web-search-index-check` requires the ignored local `kaggle/openoppsdb.sqlite` snapshot and fails clearly when that file is unavailable. Do not remove committed search-index compatibility for the current artifact version unless the v4 generator has been run from that snapshot and `web/public/data/openopps-search/` has been refreshed.
+`just web-search-index-check` requires the ignored local `kaggle/openoppsdb.sqlite` snapshot and fails clearly when that file is unavailable. Do not remove the v6 tree until every v7 cutover exit criterion in [Public Data Releases](/docs/public-data-releases#version-6-transition-exit-criteria) has passed for one exact SHA.
 
 Run OpenSpec checks from the repository root. Pin `@fission-ai/openspec@1.6.0` in copy-paste commands for parity with CI; do not use a floating `@latest`. Override the `Justfile` default with `OPENOPPS_OPENSPEC='npx -y @fission-ai/openspec@1.6.0'` when `just openspec-*` should run a different invocation.
 
@@ -227,7 +231,7 @@ OpenSpec-backed changes should keep proposal, design, specs, tasks, docs, nested
 
 ## Dependency And Secret Hygiene
 
-`uv.lock` and `docs/pnpm-lock.yaml` are committed reproducibility artifacts. Local validation and CI both run `uv lock --check`, and docs installs use `pnpm install --frozen-lockfile`. Renovate is configured at the repo root for Python `pyproject.toml`/`uv.lock` and docs npm/pnpm dependency maintenance.
+`uv.lock` and `web/pnpm-lock.yaml` are committed reproducibility artifacts. Local validation and CI both run `uv lock --check`, and web installs use `pnpm install --frozen-lockfile`. Renovate is configured at the repo root for Python `pyproject.toml`/`uv.lock` and web npm/pnpm dependency maintenance. Dependabot owns GitHub Actions pin updates only.
 
 Keep credentials local. `.env`, `.env.*`, `.envrc`, Kaggle `kaggle.json`, local package-registry credential files, `.netrc`, key bundles, and token or credential JSON files are ignored; `.env.example` remains the tracked non-secret template. Do not print secrets in logs, docs, CI output, or generated artifacts.
 
@@ -264,6 +268,7 @@ Telemetry operations should preserve the event lake, cap payload sizes, record r
 | -------- | ------- | --------------- |
 | `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED` | disabled | Enables the browser client only when explicitly set. |
 | `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY` | unset | Optional browser PostHog key for masked session replay; ignored unless browser telemetry is enabled. |
+| `NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING` | disabled | Explicit replay opt-in. The PostHog client is initialized with session recording disabled unless this is `true`. |
 | `NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST` | `https://us.i.posthog.com` | Optional browser PostHog ingestion host. |
 | `OPENOPPS_TELEMETRY_SINK` | `noop` | Use `local-event-lake` only when persistent storage is available. |
 | `OPENOPPS_TELEMETRY_DIR` | unset | Required for `local-event-lake`; events are partitioned by UTC date. |
@@ -297,18 +302,27 @@ OPENOPPS_DB_URL="sqlite:///$PWD/.tmp/openoppsdb-operational.sqlite" uv run openo
 PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db .tmp/openoppsdb-operational.sqlite
 ```
 
-The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run installs OpenOpps from `git+https://github.com/wyattowalsh/openopps.git@main` by default, reads public snapshot input from `wyattowalsh/openoppsdb`, copies the verified `openopps_kaggle` runtime package from the private `wyattowalsh/openoppsdb-manager-runtime` input, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, may restore large columns from prior Parquet exports when upgrading legacy thin snapshots, rehydrates the public SQLite snapshot into a fresh operational Alembic schema when needed, and runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit` (defaults: freshness 86400s, route limit 120). It writes private status and coverage evidence, then runs `python -m openopps_kaggle` to backfill derived tables, export parquet-first artifacts, regenerate metadata, prune private evidence, stage the public upload directory, and attempt best-effort live Kaggle file metadata repair. Run `just kaggle-live-file-metadata` from a browser-authenticated local maintainer environment after live publishes when the Kaggle DataBundle checklist or column-description score must be repaired authoritatively. Refresh the private runtime dataset with the current `openopps_kaggle` package before pushing the manager. The notebook seeds bounded Kaggle runtime defaults for source freshness, job-route freshness, route limits, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
+The manager notebook should be scheduled in Kaggle as one daily full snapshot, for example `0 6 * * *`. Each run reads public snapshot input from `wyattowalsh/openoppsdb`, copies the verified `openopps_kaggle` runtime package from the private `wyattowalsh/openoppsdb-manager-runtime` input, copies the newest `/kaggle/input/**/openoppsdb.sqlite` ledger into `/kaggle/working/openoppsdb/openoppsdb.sqlite`, may restore large columns from prior Parquet exports when upgrading legacy thin snapshots, rehydrates the public SQLite snapshot into a fresh operational Alembic schema when needed, and runs bounded `openopps jobs sync --metrics-json --freshness-seconds --limit` (defaults: freshness 86400s, route limit 120). It writes private status and coverage evidence, runs `python -m openopps_kaggle` to backfill derived tables, export parquet-first artifacts, regenerate metadata, prune private evidence, and stage the exact public upload, then publishes and reads back one immutable version through the publication ledger.
+
+The manager has no mutable OpenOpps package default. Set `OPENOPPS_PACKAGE_SPEC` to `git+https://github.com/wyattowalsh/openopps.git@<exact-40-or-64-character-commit-sha>`; branches, tags, ranges, and unpinned packages fail before installation. The generated notebook also pins the canonical runtime-package digest through `OPENOPPS_RUNTIME_PACKAGE_SHA256` (currently `1ca2765ac2726a0bcd51138f96b9b4faa5151437cf0b667a64030d7af157977d`), which must match the private runtime dataset's `runtime-manifest.json`. Regenerate the manager notebook and refresh the private runtime dataset together whenever that package changes. The notebook seeds bounded Kaggle runtime defaults for source freshness, job-route freshness, route limits, concurrency, connection limits, timeouts, and retries while allowing `OPENOPPS_` environment overrides.
+
+Live file/column metadata repair is not part of dataset publication or immutable-version readback. After a verified live publish, run `just kaggle-live-file-metadata` separately from a browser-authenticated maintainer environment when the Kaggle DataBundle checklist or column-description score needs authoritative repair, and record its outcome independently.
 
 The scheduled Kaggle notebook environment must expose Kaggle API credentials before the manager starts. Configure `KAGGLE_USERNAME` and `KAGGLE_KEY`, or `KAGGLE_API_TOKEN`, as Kaggle notebook secrets/environment variables; otherwise the manager fails fast before running the expensive sync.
 
-Live deployment remains a local maintainer action with Kaggle CLI credentials. Create/version recipes **rebuild from `db=` before staging** so a stale `kaggle/` tree cannot silently ship (`allow_stale=1` is a loud override only):
+Live deployment remains a local maintainer action with Kaggle CLI credentials. Every create, version, and kernel-push recipe is dry-run by default. Create/version recipes rebuild from `db=` before staging so a stale `kaggle/` tree cannot silently ship (`allow_stale=1` is a loud override only):
 
 ```bash
-just kaggle-dataset-create db=.tmp/openoppsdb-operational.sqlite
-just kaggle-dataset-version message="OpenOppsDB daily snapshot" db=.tmp/openoppsdb-operational.sqlite
-just kaggle-runtime-generator-version "OpenOppsDB manager runtime generator"
+# Review dry-run ledgers first. Replace 42/7 with the exact live versions.
+just kaggle-dataset-version message="OpenOppsDB daily snapshot" db=.tmp/openoppsdb-operational.sqlite expected_current_version=42
+just kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator" expected_current_version=7
 just kaggle-notebook-push
 just kaggle-example-notebooks-push
+# Execute only after reviewing those plans.
+just kaggle-dataset-version message="OpenOppsDB daily snapshot" db=.tmp/openoppsdb-operational.sqlite expected_current_version=42 execute=1
+just kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator" expected_current_version=7 execute=1
+just kaggle-notebook-push execute=1
+just kaggle-example-notebooks-push execute=1
 just kaggle-example-notebooks-status
 just kaggle-example-notebooks-pull-check
 just kaggle-live-verify
@@ -316,8 +330,18 @@ just kaggle-live-verify
 
 The public example notebooks are generated from the repo source of truth and pushed as separate Kaggle kernels: `wyattowalsh/openoppsdb-starter-notebook`, `wyattowalsh/openoppsdb-advanced-usage`, `wyattowalsh/openoppsdb-hiring-market-map`, and `wyattowalsh/openoppsdb-skills-radar`. They are read-only, internet-disabled, credential-free, and attached only to `wyattowalsh/openoppsdb`. After pushing, run `just kaggle-example-notebooks-pull-check` to pull and verify the live source bundles; `just kaggle-example-notebooks-files page_size=200` lists output files emitted by those notebook runs.
 
-Use `just kaggle-dataset-create db=<clean.sqlite>` only for the first public upload; use `just kaggle-dataset-version message=... db=<clean.sqlite>` after the dataset exists. Use `just kaggle-runtime-generator-create` only for the first private manager-runtime upload; use `just kaggle-runtime-generator-version` before pushing the manager notebook after generator changes. The live write recipes stage temporary upload directories and run through the Kaggle CLI, so run `kaggle auth login` before publishing and retry with `kaggle auth login --force` if Kaggle write endpoints return `401`. They fail clearly when Kaggle credentials are unavailable and are intentionally outside CI. `just kaggle-bundle-smoke` is the non-secret clean-DB stage smoke used for local/CI confidence.
-`just kaggle-notebook-push` and `just kaggle-example-notebooks-push` pass a one-hour Kaggle kernel timeout by default; override their `timeout` argument only for a deliberate longer maintenance run.
+Use `just kaggle-dataset-create db=<clean.sqlite>` only to prepare the first public upload and `just kaggle-runtime-generator-create` only to prepare the first private manager-runtime upload. After inspecting the dry-run ledger, a first create requires both `execute=1` and `allow_no_rollback=1`; this is the explicit acknowledgment that no immutable rollback target exists yet:
+
+```bash
+just kaggle-dataset-create db=.tmp/openoppsdb-operational.sqlite
+just kaggle-dataset-create db=.tmp/openoppsdb-operational.sqlite execute=1 allow_no_rollback=1
+just kaggle-runtime-generator-create
+just kaggle-runtime-generator-create execute=1 allow_no_rollback=1
+```
+
+Subsequent version writes require `expected_current_version=<n>` and `execute=1`; the live preflight must observe that exact version, and the ledger preserves it as the rollback target. The live write path stages a temporary upload directory, requires Kaggle CLI credentials, verifies the new immutable version by exact remote readback, and remains intentionally outside CI. `just kaggle-bundle-smoke` is the non-secret clean-DB stage smoke used for local/CI confidence.
+
+`just kaggle-notebook-push` and `just kaggle-example-notebooks-push` pass a one-hour Kaggle kernel timeout by default and render only a plan unless `execute=1` is supplied; override `timeout` only for a deliberate longer maintenance run.
 
 ## CI/CD
 
@@ -326,9 +350,12 @@ GitHub Actions mirrors local validation instead of inventing a second build path
 - Python package tests and coverage through `uv`.
 - Lock-file consistency through `uv lock --check`.
 - OpenSpec strict validation for every active change.
-- Docs generated data, MDX/type-check, build, tests, and lint through `pnpm`.
+- Web generated data, MDX/type-check, build, tests, browser checks, and lint through `pnpm`.
 - Kaggle metadata generation for exported schema changes.
-- Workflow lint and whitespace checks.
+- Dependency review on pull requests, supported Python 3.12/3.13/3.14 lanes, lowest-direct dependency testing, and network-dependent security audits.
+- A non-pull-request supply-chain lane that builds the Python wheel, generates its SPDX SBOM, attests the wheel subject, and retains the workflow artifact for 30 days.
+
+The supply-chain lane does not build, attest, restore-test, or publish the v7 public-data recovery archive. That remains a separate production-readiness gate.
 
 The broader `rtk lint` docs checklist remains an explicit maintainer recipe (`just web-rtk-lint`) rather than a conditional CI step.
 

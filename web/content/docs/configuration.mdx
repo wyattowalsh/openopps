@@ -45,17 +45,30 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_PLUGIN_ALLOWED`       | empty                                                     | Comma-separated plugin entry-point names allowed to execute.       |
 | `OPENOPPS_NO_INTRO`             | unset                                                     | Suppress the interactive startup portal animation.                 |
 
-### Docs app public data origin
+### Web app public data release
 
-These variables configure the Fumadocs/Next.js docs host when it loads committed search artifacts server-side. They are **not** part of the CLI `OpenOppsSettings` model.
+These variables configure the Fumadocs/Next.js host when it loads public search artifacts. They are **not** part of the CLI `OpenOppsSettings` model. Server and browser values should select the same v7 origin and channel; the `NEXT_PUBLIC_` values are embedded into the browser build.
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `OPENOPPS_PUBLIC_DATA_ORIGIN` | site URL | Origin used for server-side fetches of `/data/openopps-search/*` (never the request Host). Must be `https://` in production unless insecure override is set. |
+| `OPENOPPS_PUBLIC_DATA_ORIGIN` | site URL | Trusted origin for server-side snapshot reads (never the request Host). Must be `https://` in production unless the insecure override is explicit. |
+| `OPENOPPS_PUBLIC_DATA_CHANNEL` | unset | Safe lowercase v7 channel, normally `production`. When unset, server consumers use the bounded v6 transition reader. |
 | `OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_INSECURE` | unset (`1` allows) | Allow non-HTTPS origins. Implicitly allowed in development and Vercel preview. |
 | `OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_HOSTS` | empty | Comma-separated extra hostnames allowlisted in production (alongside the configured site host and `VERCEL_URL`). |
+| `NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_ORIGIN` | unset | Browser-visible v7 publication origin used by Jobs/Explorer and its search worker. |
+| `NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_CHANNEL` | unset | Browser-visible safe lowercase v7 channel; normally the same value as `OPENOPPS_PUBLIC_DATA_CHANNEL`. |
 
-Local `next start` / Playwright e2e prefer loopback `http://127.0.0.1:<port>/` and load shards from `docs/public` on disk so server-side self-HTTP is not required.
+When neither channel is set, the web app reads the committed v6 transition tree. When v7 is enabled, both browser and server clients resolve the channel once, validate the manifest, pin its immutable release, and verify each asset before use. Production origins require HTTPS. Server-side production origins must also pass the explicit hostname allowlist; add the Workers hostname to `OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_HOSTS` when it differs from the site host.
+
+```dotenv
+OPENOPPS_PUBLIC_DATA_ORIGIN=https://openopps-data-production.<account-subdomain>.workers.dev
+OPENOPPS_PUBLIC_DATA_CHANNEL=production
+OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_HOSTS=openopps-data-production.<account-subdomain>.workers.dev
+NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_ORIGIN=https://openopps-data-production.<account-subdomain>.workers.dev
+NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_CHANNEL=production
+```
+
+Local `next start` / Playwright e2e may use an explicitly allowed loopback origin. Do not enable `OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_INSECURE=1` in production merely to bypass a configuration error.
 
 ## Examples
 
@@ -84,7 +97,7 @@ OPENOPPS_PLUGIN_DISABLED=broken-plugin
 
 Unscoped `jobs sync` targets all persisted ready routes. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs.
 
-The docs [Jobs](/) and [Explorer](/explorer) surfaces read a committed static search snapshot generated from your local `kaggle/openoppsdb.sqlite` export. Refresh it with `just docs-search-index` after updating the database; see [Operations](/docs/operations) for validation commands.
+The [Jobs](/) and [Explorer](/explorer) surfaces use the committed v6 snapshot only while no v7 channel is configured. Refresh that transition artifact with `just web-search-index` after updating the local `kaggle/openoppsdb.sqlite` export. See [Public Data Releases](/docs/public-data-releases) for v7 configuration, governance, delivery, and cutover gates.
 
 Docs-app telemetry is configured separately from CLI runtime settings. When instrumentation is enabled, keep collection env-gated: default to a no-op sink in local development, use `local-event-lake` for canonical raw events on persistent disk, and set `OPENOPPS_POSTHOG_PROJECT_API_KEY` only when a sanitized hosted product-analytics mirror is desired. Browser PostHog replay is a separate opt-in through `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY`; it remains gated by `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true`, disables automatic PostHog pageview/autocapture events, masks text and inputs, disables network body/header capture, and leaves replay sampling plus trigger controls to the PostHog project. See [Data Model](/docs/data-model#telemetry-event-lake) for the event shape and [Operations](/docs/operations#telemetry-operations) for operating guidance.
 

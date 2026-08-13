@@ -6,6 +6,8 @@ import {
 } from "@/lib/jobs-sitemap-data";
 import { siteUrl } from "@/lib/shared";
 
+export const dynamic = "force-dynamic";
+
 const DOC_ROUTES = [
 	"/docs",
 	"/docs/cli",
@@ -19,11 +21,11 @@ const DOC_ROUTES = [
 	"/llms-full.txt",
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 	if (shouldNoIndexDeployment()) {
 		return [];
 	}
-	const snapshotAt = getSitemapSearchManifest().snapshotAt;
+	const snapshotAt = (await getSitemapSearchManifest()).snapshotAt;
 	const lastModified = snapshotAt ? new Date(snapshotAt) : new Date();
 	return [
 		{

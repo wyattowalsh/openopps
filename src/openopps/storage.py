@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import re
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import SQLColumnExpression, func, or_, text
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, SQLModel, col, create_engine, select
 
 from openopps.models import (
@@ -95,6 +96,22 @@ class JobFilters:
     posted_before: str | None = None
     status: str = "open"
     limit: int | None = None
+
+
+@dataclass(frozen=True)
+class _JobHydration:
+    locations: dict[str, list[str]]
+    bullets: dict[tuple[str, str], list[str]]
+    skills: dict[str, list[dict]]
+    payloads: dict[tuple[str, str], dict]
+
+
+class CoverageJobSummary(TypedDict):
+    total: int
+    byProvider: dict[str, int]
+    byBoard: dict[str, int]
+    byBoardProvider: dict[tuple[str, str], int]
+    dataQuality: dict[str, object]
 
 
 @runtime_checkable
@@ -259,52 +276,163 @@ class OpenOppsStore:
     ) -> JobSyncRunRow:
         """Record one successful provider-route sync with versions and observations."""
 
-        self.init_db()
         observed_at = synced_at or utc_now()
-        unique_jobs = _unique_jobs_by_id(jobs)
+        run = self.begin_job_sync_run(
+            board_key,
+            provider_id,
+            started_at=observed_at,
+        )
+        return self.complete_job_sync_run(
+            run.id,
+            jobs,
+            authoritative=True,
+            close_missing=close_missing,
+            finished_at=observed_at,
+        )
+
+    def begin_job_sync_run(
+        self,
+        board_key: str,
+        provider_id: str,
+        *,
+        started_at: datetime | None = None,
+    ) -> JobSyncRunRow:
+        """Durably create a pending provider-route run before network access."""
+
+        self.init_db()
+        observed_at = started_at or utc_now()
         run = JobSyncRunRow(
-            id=stable_id(board_key, provider_id, observed_at.isoformat()),
+            id=stable_id(
+                board_key,
+                provider_id,
+                observed_at.isoformat(),
+                "pending",
+            ),
             board_key=board_key,
             provider_id=provider_id,
             synced_at=observed_at,
-            success=True,
-            job_count=len(unique_jobs),
+            started_at=observed_at,
+            status="pending",
+            success=False,
         )
-        seen_job_ids: set[str] = set()
         with Session(self.engine) as session:
-            session.add(run)
-            for job in unique_jobs:
-                seen_job_ids.add(job.id)
-                observation_kind, version_row = _sync_job_record(
-                    session,
-                    job,
-                    observed_at,
-                )
-                _increment_sync_count(run, observation_kind)
-                _add_job_observation(
-                    session,
-                    run.id,
-                    job.id,
-                    version_row.id if version_row else None,
-                    observation_kind,
-                    job_content_hash(job),
-                    job_payload_hash(job),
-                    observed_at,
-                )
-            if close_missing:
-                closed_rows = _close_missing_jobs(
-                    session,
-                    run.id,
-                    board_key,
-                    provider_id,
-                    seen_job_ids,
-                    observed_at,
-                )
-                run.closed_count += closed_rows
             session.add(run)
             session.commit()
             session.refresh(run)
             return run
+
+    def fail_job_sync_run(
+        self,
+        run_id: str,
+        *,
+        error_kind: str,
+        error: str,
+        authoritative: bool = False,
+        finished_at: datetime | None = None,
+    ) -> JobSyncRunRow:
+        """Finish a pending run as failed while preserving committed progress."""
+
+        self.init_db()
+        with Session(self.engine) as session:
+            run = _required_pending_job_sync_run(session, run_id)
+            _finish_failed_job_sync_run(
+                run,
+                error_kind=error_kind,
+                error=error,
+                authoritative=authoritative,
+                finished_at=finished_at or utc_now(),
+            )
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+            return run
+
+    def complete_job_sync_run(
+        self,
+        run_id: str,
+        jobs: Sequence[JobRecord],
+        *,
+        authoritative: bool,
+        close_missing: bool,
+        finished_at: datetime | None = None,
+    ) -> JobSyncRunRow:
+        """Commit job progress in bounded batches, then reconcile once if authoritative."""
+
+        self.init_db()
+        observed_at = finished_at or utc_now()
+        unique_jobs = _unique_jobs_by_id(jobs)
+        seen_job_ids = {job.id for job in unique_jobs}
+        batch_size = self.settings.db_batch_size
+        if not authoritative:
+            return self.fail_job_sync_run(
+                run_id,
+                error_kind="non_authoritative_snapshot",
+                error="Provider result was not an authoritative snapshot.",
+                finished_at=observed_at,
+            )
+        try:
+            for offset in range(0, len(unique_jobs), batch_size):
+                batch = unique_jobs[offset : offset + batch_size]
+                with Session(self.engine) as session:
+                    run = _required_pending_job_sync_run(session, run_id)
+                    for job in batch:
+                        observation_kind, version_row = _sync_job_record(
+                            session,
+                            job,
+                            observed_at,
+                        )
+                        _increment_sync_count(run, observation_kind)
+                        _add_job_observation(
+                            session,
+                            run.id,
+                            job.id,
+                            version_row.id,
+                            observation_kind,
+                            job_content_hash(job),
+                            job_payload_hash(job),
+                            observed_at,
+                        )
+                    run.job_count += len(batch)
+                    run.committed_batch_count += 1
+                    session.add(run)
+                    session.commit()
+            with Session(self.engine) as session:
+                run = _required_pending_job_sync_run(session, run_id)
+                if close_missing:
+                    run.closed_count += _close_missing_jobs(
+                        session,
+                        run.id,
+                        run.board_key,
+                        run.provider_id,
+                        seen_job_ids,
+                        observed_at,
+                    )
+                run.status = "succeeded"
+                run.success = True
+                run.authoritative = True
+                run.synced_at = observed_at
+                run.finished_at = observed_at
+                run.error = None
+                run.error_kind = None
+                session.add(run)
+                session.commit()
+                session.refresh(run)
+                return run
+        except Exception as exc:
+            try:
+                self.fail_job_sync_run(
+                    run_id,
+                    error_kind="persistence",
+                    error=(
+                        "Persistence failed while committing normalized job batches: "
+                        f"{type(exc).__name__}."
+                    ),
+                    authoritative=True,
+                )
+            except ValueError:
+                # Do not obscure the triggering exception if a commit became terminal.
+                pass
+            raise
 
     def _merge_batches(self, rows: Sequence[SQLModel]) -> None:
         if not rows:
@@ -517,10 +645,23 @@ class OpenOppsStore:
             hydrate_records = hydrate_related or _job_needs_python_filter(filters)
             rows = session.exec(statement).all()
             if hydrate_records:
-                jobs = [
-                    _job_from_identity_and_version(session, row, version)
-                    for row, version in rows
-                ]
+                jobs = []
+                for offset in range(0, len(rows), self.settings.db_batch_size):
+                    batch = rows[offset : offset + self.settings.db_batch_size]
+                    hydration = _load_job_hydration(
+                        session,
+                        batch,
+                        batch_size=self.settings.db_batch_size,
+                    )
+                    jobs.extend(
+                        _job_from_identity_and_version(
+                            session,
+                            row,
+                            version,
+                            hydration=hydration,
+                        )
+                        for row, version in batch
+                    )
             else:
                 jobs = [
                     _job_from_identity_and_version(
@@ -545,33 +686,39 @@ class OpenOppsStore:
         provider_id: str | None = None,
         board_keys: Iterable[str] | None = None,
         status: str = "open",
-    ) -> dict[str, object]:
+    ) -> CoverageJobSummary:
         provider_id = _normalize_provider_alias(provider_id)
         selected_board_keys = tuple(dict.fromkeys(board_keys or ()))
         if board_keys is not None and not selected_board_keys:
             return _empty_coverage_job_summary()
         self.init_db()
         with Session(self.engine) as session:
-            filters = []
+            filters: list[ColumnElement[bool]] = []
             if status != "all":
-                filters.append(JobRow.status == status)
+                filters.append(col(JobRow.status) == status)
             if provider_id:
-                filters.append(JobRow.provider_id == provider_id)
+                filters.append(col(JobRow.provider_id) == provider_id)
             if board_keys is not None:
                 filters.append(col(JobRow.board_key).in_(selected_board_keys))
             total = _coverage_job_count(session, filters)
             by_provider = _coverage_job_group_count(
-                session, filters, JobRow.provider_id
+                session, filters, col(JobRow.provider_id)
             )
-            by_board = _coverage_job_group_count(session, filters, JobRow.board_key)
+            by_board = _coverage_job_group_count(
+                session, filters, col(JobRow.board_key)
+            )
             by_board_provider = {
                 (str(board_key), str(provider)): int(count)
                 for board_key, provider, count in session.exec(
-                    select(JobRow.board_key, JobRow.provider_id, func.count())
+                    select(
+                        col(JobRow.board_key),
+                        col(JobRow.provider_id),
+                        func.count(),
+                    )
                     .select_from(JobRow)
                     .join(
                         JobVersionRow,
-                        JobRow.current_version_id == JobVersionRow.id,
+                        col(JobRow.current_version_id) == col(JobVersionRow.id),
                     )
                     .where(*filters)
                     .group_by(JobRow.board_key, JobRow.provider_id)
@@ -579,42 +726,44 @@ class OpenOppsStore:
             }
             present = {
                 "postingUrl": _coverage_job_count(
-                    session, filters, _present_text(JobVersionRow.posting_url)
+                    session, filters, _present_text(col(JobVersionRow.posting_url))
                 ),
                 "applyUrl": _coverage_job_count(
-                    session, filters, _present_text(JobVersionRow.apply_url)
+                    session, filters, _present_text(col(JobVersionRow.apply_url))
                 ),
                 "locations": _coverage_job_count(
                     session,
                     filters,
-                    func.json_array_length(JobVersionRow.locations) > 0,
+                    func.json_array_length(col(JobVersionRow.locations)) > 0,
                 ),
                 "department": _coverage_job_count(
-                    session, filters, _present_text(JobVersionRow.department)
+                    session, filters, _present_text(col(JobVersionRow.department))
                 ),
                 "description": _coverage_job_count(
                     session,
                     filters,
                     or_(
-                        _present_text(JobVersionRow.description),
-                        _present_text(JobVersionRow.description_html),
+                        _present_text(col(JobVersionRow.description)),
+                        _present_text(col(JobVersionRow.description_html)),
                     ),
                 ),
                 "compensationSalary": _coverage_job_count(
                     session,
                     filters,
                     or_(
-                        _present_json(JobVersionRow.compensation),
-                        _present_text(JobVersionRow.salary),
-                        JobVersionRow.salary_min.is_not(None),
-                        JobVersionRow.salary_max.is_not(None),
+                        _present_json(col(JobVersionRow.compensation)),
+                        _present_text(col(JobVersionRow.salary)),
+                        col(JobVersionRow.salary_min).is_not(None),
+                        col(JobVersionRow.salary_max).is_not(None),
                     ),
                 ),
                 "remote": _coverage_job_count(
-                    session, filters, _present_text(JobVersionRow.remote)
+                    session, filters, _present_text(col(JobVersionRow.remote))
                 ),
                 "employmentType": _coverage_job_count(
-                    session, filters, _present_text(JobVersionRow.employment_type)
+                    session,
+                    filters,
+                    _present_text(col(JobVersionRow.employment_type)),
                 ),
             }
         return {
@@ -650,7 +799,12 @@ class OpenOppsStore:
                 .order_by(col(JobVersionRow.version))
             ).all()
             return [
-                _job_from_identity_and_version(session, row, version)
+                _job_from_identity_and_version(
+                    session,
+                    row,
+                    version,
+                    use_current_payload_hash=False,
+                )
                 for version in versions
             ]
 
@@ -668,8 +822,8 @@ def append_jsonl(path: Path, records: Iterable[object]) -> int:
 def _canonical_jsonl_line(record: object) -> str:
     if isinstance(record, JsonDumpable):
         payload = json.loads(record.model_dump_json())
-    elif hasattr(record, "model_dump"):
-        payload = record.model_dump(mode="json")  # type: ignore[union-attr]
+    elif callable(model_dump := getattr(record, "model_dump", None)):
+        payload = model_dump(mode="json")
     else:
         payload = record
     return canonical_json_dumps(payload)
@@ -694,7 +848,11 @@ def report_job_version_dual_write_mismatches(
             issues = _job_version_dual_write_issues(session, version)
             if issues:
                 mismatches.append(
-                    {"jobVersionId": version.id, "jobId": version.job_id, "issues": issues}
+                    {
+                        "jobVersionId": version.id,
+                        "jobId": version.job_id,
+                        "issues": issues,
+                    }
                 )
                 if limit is not None and len(mismatches) >= limit:
                     break
@@ -755,7 +913,7 @@ def _count_rows(session: Session, row_type: type[SQLModel]) -> int:
     return int(value or 0)
 
 
-def _empty_coverage_job_summary() -> dict[str, object]:
+def _empty_coverage_job_summary() -> CoverageJobSummary:
     return {
         "total": 0,
         "byProvider": {},
@@ -765,34 +923,46 @@ def _empty_coverage_job_summary() -> dict[str, object]:
     }
 
 
-def _coverage_job_count(session: Session, filters: Sequence[object], *extra) -> int:
+def _coverage_job_count(
+    session: Session,
+    filters: Sequence[ColumnElement[bool]],
+    *extra: ColumnElement[bool],
+) -> int:
     value = session.exec(
         select(func.count())
         .select_from(JobRow)
-        .join(JobVersionRow, JobRow.current_version_id == JobVersionRow.id)
+        .join(
+            JobVersionRow,
+            col(JobRow.current_version_id) == col(JobVersionRow.id),
+        )
         .where(*filters, *extra)
     ).one()
     return int(value or 0)
 
 
 def _coverage_job_group_count(
-    session: Session, filters: Sequence[object], column
+    session: Session,
+    filters: Sequence[ColumnElement[bool]],
+    column: SQLColumnExpression[Any],
 ) -> dict[str, int]:
     rows = session.exec(
         select(column, func.count())
         .select_from(JobRow)
-        .join(JobVersionRow, JobRow.current_version_id == JobVersionRow.id)
+        .join(
+            JobVersionRow,
+            col(JobRow.current_version_id) == col(JobVersionRow.id),
+        )
         .where(*filters)
         .group_by(column)
     ).all()
     return dict(sorted((str(key), int(count)) for key, count in rows))
 
 
-def _present_text(column):
+def _present_text(column: SQLColumnExpression[Any]) -> ColumnElement[bool]:
     return column.is_not(None) & (column != "")
 
 
-def _present_json(column):
+def _present_json(column: SQLColumnExpression[Any]) -> ColumnElement[bool]:
     return column.is_not(None) & (func.json(column).not_in(["null", "{}", "[]"]))
 
 
@@ -1235,6 +1405,38 @@ def _increment_sync_count(run: JobSyncRunRow, observation_kind: str) -> None:
         run.unchanged_count += 1
 
 
+def _required_job_sync_run(session: Session, run_id: str) -> JobSyncRunRow:
+    run = session.get(JobSyncRunRow, run_id)
+    if run is None:
+        raise ValueError(f"Unknown job sync run: {run_id}")
+    return run
+
+
+def _required_pending_job_sync_run(session: Session, run_id: str) -> JobSyncRunRow:
+    run = _required_job_sync_run(session, run_id)
+    if run.status != "pending":
+        raise ValueError(
+            f"Job sync run {run_id} is already terminal with status {run.status}."
+        )
+    return run
+
+
+def _finish_failed_job_sync_run(
+    run: JobSyncRunRow,
+    *,
+    error_kind: str,
+    error: str,
+    authoritative: bool,
+    finished_at: datetime,
+) -> None:
+    run.status = "failed"
+    run.success = False
+    run.authoritative = authoritative
+    run.error_kind = error_kind[:128]
+    run.error = error[:2048]
+    run.finished_at = finished_at
+
+
 def _add_job_observation(
     session: Session,
     sync_run_id: str,
@@ -1296,12 +1498,111 @@ def _close_missing_jobs(
     return closed_count
 
 
+def _load_job_hydration(
+    session: Session,
+    rows: Sequence[tuple[JobRow, JobVersionRow]],
+    *,
+    batch_size: int,
+) -> _JobHydration:
+    locations: dict[str, list[str]] = {}
+    bullets: dict[tuple[str, str], list[str]] = {}
+    skills: dict[str, list[dict]] = {}
+    payloads: dict[tuple[str, str], dict] = {}
+    for offset in range(0, len(rows), batch_size):
+        batch = rows[offset : offset + batch_size]
+        version_ids = [version.id for _, version in batch]
+        job_ids = [row.id for row, _ in batch]
+
+        location_rows = session.exec(
+            select(JobVersionLocationRow)
+            .where(col(JobVersionLocationRow.job_version_id).in_(version_ids))
+            .order_by(
+                JobVersionLocationRow.job_version_id,
+                col(JobVersionLocationRow.ordinal),
+            )
+        ).all()
+        for location in location_rows:
+            locations.setdefault(location.job_version_id, []).append(location.label)
+
+        bullet_rows = session.exec(
+            select(JobVersionBulletRow)
+            .where(col(JobVersionBulletRow.job_version_id).in_(version_ids))
+            .order_by(
+                JobVersionBulletRow.job_version_id,
+                JobVersionBulletRow.kind,
+                col(JobVersionBulletRow.ordinal),
+            )
+        ).all()
+        for bullet in bullet_rows:
+            bullets.setdefault((bullet.job_version_id, bullet.kind), []).append(
+                bullet.text
+            )
+
+        skill_rows = session.exec(
+            select(JobVersionSkillRow)
+            .where(col(JobVersionSkillRow.job_version_id).in_(version_ids))
+            .order_by(
+                JobVersionSkillRow.job_version_id,
+                col(JobVersionSkillRow.ordinal),
+            )
+        ).all()
+        keywords: dict[str, list[str]] = {}
+        if skill_rows:
+            keyword_rows = session.exec(
+                select(JobVersionSkillKeywordRow)
+                .where(
+                    col(JobVersionSkillKeywordRow.skill_id).in_(
+                        [skill.id for skill in skill_rows]
+                    )
+                )
+                .order_by(
+                    JobVersionSkillKeywordRow.skill_id,
+                    col(JobVersionSkillKeywordRow.ordinal),
+                )
+            ).all()
+            for keyword in keyword_rows:
+                keywords.setdefault(keyword.skill_id, []).append(keyword.keyword)
+        for skill in skill_rows:
+            skills.setdefault(skill.job_version_id, []).append(
+                {
+                    "name": skill.name,
+                    "level": skill.level,
+                    "keywords": keywords.get(skill.id, []),
+                }
+            )
+
+        payload_rows = session.exec(
+            select(JobPayloadSnapshotRow)
+            .where(col(JobPayloadSnapshotRow.job_id).in_(job_ids))
+            .order_by(
+                JobPayloadSnapshotRow.job_id,
+                JobPayloadSnapshotRow.payload_kind,
+                col(JobPayloadSnapshotRow.observed_at).desc(),
+                col(JobPayloadSnapshotRow.id).desc(),
+            )
+        ).all()
+        for payload in payload_rows:
+            payloads.setdefault(
+                (payload.job_id, payload.payload_kind),
+                dict(payload.payload),
+            )
+
+    return _JobHydration(
+        locations=locations,
+        bullets=bullets,
+        skills=skills,
+        payloads=payloads,
+    )
+
+
 def _job_from_identity_and_version(
     session: Session,
     row: JobRow,
     version: JobVersionRow,
     *,
     hydrate_related: bool = True,
+    hydration: _JobHydration | None = None,
+    use_current_payload_hash: bool = True,
 ) -> JobRecord:
     data = version.model_dump()
     extra_payload = data.pop("extra_payload", {}) or {}
@@ -1317,36 +1618,70 @@ def _job_from_identity_and_version(
             "status": row.status,
             "version": version.version,
             "content_hash": version.content_hash,
-            "payload_hash": version.payload_hash,
+            "payload_hash": (
+                row.current_payload_hash or version.payload_hash
+                if use_current_payload_hash
+                else version.payload_hash
+            ),
             "first_seen_at": _ensure_aware(version.first_seen_at),
             "last_seen_at": _ensure_aware(version.last_seen_at),
             "closed_at": _ensure_aware(row.closed_at),
             "synced_at": _ensure_aware(version.last_seen_at),
             "locations": (
-                _version_locations(session, version)
+                (
+                    hydration.locations.get(version.id) or list(version.locations or [])
+                    if hydration is not None
+                    else _version_locations(session, version)
+                )
                 if hydrate_related
                 else list(version.locations or [])
             ),
             "responsibilities": (
-                _version_bullets(session, version, "responsibility")
+                (
+                    hydration.bullets.get((version.id, "responsibility"))
+                    or list(version.responsibilities or [])
+                    if hydration is not None
+                    else _version_bullets(session, version, "responsibility")
+                )
                 if hydrate_related
                 else list(version.responsibilities or [])
             ),
             "qualifications": (
-                _version_bullets(session, version, "qualification")
+                (
+                    hydration.bullets.get((version.id, "qualification"))
+                    or list(version.qualifications or [])
+                    if hydration is not None
+                    else _version_bullets(session, version, "qualification")
+                )
                 if hydrate_related
                 else list(version.qualifications or [])
             ),
             "skills": (
-                _version_skills(session, version)
+                (
+                    hydration.skills.get(version.id) or list(version.skills or [])
+                    if hydration is not None
+                    else _version_skills(session, version)
+                )
                 if hydrate_related
                 else list(version.skills or [])
             ),
             "raw_listing": (
-                _latest_payload(session, row.id, "listing") if hydrate_related else {}
+                (
+                    hydration.payloads.get((row.id, "listing"), {})
+                    if hydration is not None
+                    else _latest_payload(session, row.id, "listing")
+                )
+                if hydrate_related
+                else {}
             ),
             "raw_detail": (
-                _latest_payload(session, row.id, "detail") if hydrate_related else {}
+                (
+                    hydration.payloads.get((row.id, "detail"), {})
+                    if hydration is not None
+                    else _latest_payload(session, row.id, "detail")
+                )
+                if hydrate_related
+                else {}
             ),
         }
     )

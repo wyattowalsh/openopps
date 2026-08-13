@@ -14,7 +14,7 @@ from openopps.models import (
     strip_html,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.boards.tokens import lever_token_from_url
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
@@ -40,20 +40,21 @@ class LeverProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         token = _token_from_route(route)
         if not token:
-            return []
+            raise ValueError("Lever route is missing a public board token")
         url = f"https://api.lever.co/v0/postings/{token}"
         data = await self._request_json(client, "GET", url, params={"mode": "json"})
         if not isinstance(data, list):
             raise ValueError("Lever postings endpoint returned invalid JSON")
-        postings = [
-            LeverPosting.model_validate(posting)
-            for posting in data
-            if isinstance(posting, dict)
-        ]
-        return [self._normalize(board, posting) for posting in postings]
+        if any(not isinstance(posting, dict) for posting in data):
+            raise ValueError("Lever postings endpoint returned invalid JSON")
+        postings = [LeverPosting.model_validate(posting) for posting in data]
+        return JobFetchResult(
+            jobs=[self._normalize(board, posting) for posting in postings],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,

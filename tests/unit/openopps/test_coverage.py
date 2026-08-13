@@ -13,7 +13,6 @@ from openopps.coverage import (
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
-    JobRecord,
     ProviderSupport,
     SourceRecord,
 )

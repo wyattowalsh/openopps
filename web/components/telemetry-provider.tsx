@@ -157,29 +157,31 @@ async function initializePostHogBrowserClient() {
 async function initializePostHogBrowserClientOnce() {
 	if (
 		typeof window === "undefined" ||
-		!readPublicBoolean("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED") ||
-		readPublicBoolean("NEXT_PUBLIC_OPENOPPS_ANALYTICS_DISABLED") ||
-		readPublicBoolean("NEXT_PUBLIC_OPENOPPS_TELEMETRY_DISABLED")
+		!isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED) ||
+		isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_ANALYTICS_DISABLED) ||
+		isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_DISABLED)
 	) {
 		return;
 	}
-	const projectApiKey = readPublicString(
-		"NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY",
-	);
+	const projectApiKey = process.env.NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY;
 	if (!projectApiKey) {
 		return;
 	}
+	const recordingEnabled = isPublicBoolean(
+		process.env.NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING,
+	);
 	const { default: posthog } = await import("posthog-js");
 	if (posthog.__loaded) {
 		return;
 	}
 	const config = {
 		api_host:
-			readPublicString("NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST") ??
+			process.env.NEXT_PUBLIC_OPENOPPS_POSTHOG_HOST ??
 			POSTHOG_DEFAULT_HOST,
 		autocapture: false,
 		capture_pageleave: false,
 		capture_pageview: false,
+		disable_session_recording: !recordingEnabled,
 		session_recording: {
 			blockSelector:
 				"[data-openopps-private], [data-telemetry-private], [data-sensitive]",
@@ -190,20 +192,12 @@ async function initializePostHogBrowserClientOnce() {
 		},
 	} satisfies Partial<PostHogConfig>;
 	posthog.init(projectApiKey, config);
-	if (readPublicBoolean("NEXT_PUBLIC_OPENOPPS_POSTHOG_RECORDING")) {
+	if (recordingEnabled) {
 		posthog.startSessionRecording();
 	}
 }
 
-function readPublicString(name: string) {
-	if (typeof process === "undefined") {
-		return undefined;
-	}
-	return process.env?.[name];
-}
-
-function readPublicBoolean(name: string) {
-	const value = readPublicString(name);
+function isPublicBoolean(value: string | undefined) {
 	return value === "1" || value === "true" || value === "yes";
 }
 

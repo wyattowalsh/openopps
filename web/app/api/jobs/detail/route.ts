@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 		return NextResponse.json({ error: "Missing job id." }, { status: 400 });
 	}
 
-	const detail = await getPublicJobDetail(jobId, url.origin);
+	const detail = await getPublicJobDetail(jobId);
 	if (!detail) {
 		return NextResponse.json({ error: "Job detail not found." }, { status: 404 });
 	}

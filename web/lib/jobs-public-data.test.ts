@@ -4,7 +4,10 @@ import { clearStaticJobDataCachesForTests, getStaticJobDetailIds } from "@/lib/j
 import { siteUrl } from "@/lib/shared";
 
 import { getPublicJobDetail } from "./jobs-public-data";
-import { getAllowlistedPublicSearchOrigin } from "./jobs-public-origin";
+import {
+	getAllowlistedPublicSearchOrigin,
+	getConfiguredPublicDataChannel,
+} from "./jobs-public-origin";
 
 describe("jobs public data", () => {
 	const originalEnv = { ...process.env };
@@ -57,5 +60,12 @@ describe("jobs public data", () => {
 		delete process.env.OPENOPPS_PUBLIC_DATA_ORIGIN_ALLOW_INSECURE;
 		process.env.OPENOPPS_PUBLIC_DATA_ORIGIN = siteUrl;
 		expect(getAllowlistedPublicSearchOrigin().href).toBe(`${siteUrl}/`);
+	});
+
+	it("accepts only normalized safe public-data channel names", () => {
+		process.env.OPENOPPS_PUBLIC_DATA_CHANNEL = "production";
+		expect(getConfiguredPublicDataChannel()).toBe("production");
+		process.env.OPENOPPS_PUBLIC_DATA_CHANNEL = "../preview";
+		expect(() => getConfiguredPublicDataChannel()).toThrow(/channel/i);
 	});
 });

@@ -21,7 +21,7 @@ from openopps.models import (
 )
 from openopps.settings import OpenOppsSettings
 from openopps.models import validate_provider_host, validate_public_https_url
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.utils import first_present, stable_id
 
 
@@ -77,10 +77,10 @@ class WorkdayProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         workday = self._route(route)
         if not workday:
-            return []
+            return JobFetchResult(jobs=[], authoritative=False)
         listings = await self._fetch_listings(client, workday)
         semaphore = asyncio.Semaphore(self.settings.workday_concurrency)
 
@@ -92,10 +92,13 @@ class WorkdayProvider:
                 return await self._fetch_detail(client, workday, external_path)
 
         details = await asyncio.gather(*(detail_for(listing) for listing in listings))
-        return [
-            self._normalize(board, workday, listing, detail)
-            for listing, detail in zip(listings, details, strict=False)
-        ]
+        return JobFetchResult(
+            jobs=[
+                self._normalize(board, workday, listing, detail)
+                for listing, detail in zip(listings, details, strict=True)
+            ],
+            authoritative=True,
+        )
 
     def _route(self, route: BoardProviderRecord) -> WorkdayRoute | None:
         if route.host and route.tenant and route.site:
@@ -116,7 +119,9 @@ class WorkdayProvider:
         offset = 0
         limit = 20
         total: int | None = None
-        while total is None or offset < total:
+        seen_pages: set[tuple[str, ...]] = set()
+        seen_listing_ids: set[str] = set()
+        while True:
             payload = {
                 "appliedFacets": {},
                 "limit": limit,
@@ -137,11 +142,45 @@ class WorkdayProvider:
             if not isinstance(data, dict):
                 raise ValueError("Workday listings endpoint returned invalid JSON")
             response = WorkdayJobsResponse.model_validate(data)
-            total = response.total or len(response.job_postings)
-            listings.extend(response.job_postings)
-            if not response.job_postings:
+            reported_total = int(response.total) if response.total is not None else None
+            if (
+                total is not None
+                and reported_total is not None
+                and reported_total != total
+            ):
+                raise ValueError("Workday advertised total changed during pagination")
+            if reported_total is not None:
+                total = reported_total
+            page_postings = response.job_postings
+            page_signature = tuple(
+                posting.model_dump_json(by_alias=True) for posting in page_postings
+            )
+            if page_postings and page_signature in seen_pages:
+                raise ValueError("Workday repeated pagination page")
+            seen_pages.add(page_signature)
+            for posting in page_postings:
+                listing_id = str(
+                    first_present(posting.id, posting.external_path, posting.title)
+                )
+                if listing_id in seen_listing_ids:
+                    raise ValueError("Workday repeated pagination listing")
+                seen_listing_ids.add(listing_id)
+            listings.extend(page_postings)
+            if total is not None and len(listings) > total:
+                raise ValueError("Workday advertised total does not match jobs")
+            if total is not None and len(listings) == total:
                 break
-            offset += limit
+            if not page_postings:
+                if total is not None:
+                    raise ValueError("Workday advertised total does not match jobs")
+                break
+            if len(page_postings) < limit:
+                if total is not None:
+                    raise ValueError("Workday advertised total does not match jobs")
+                break
+            offset += len(page_postings)
+        if total is not None and len(listings) != total:
+            raise ValueError("Workday advertised total does not match jobs")
         return listings
 
     async def check_jobs(

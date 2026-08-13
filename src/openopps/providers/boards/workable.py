@@ -17,7 +17,7 @@ from openopps.models import (
     strip_html,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.boards.tokens import workable_token_from_url
 from openopps.providers.normalize import (
     salary_components,
@@ -95,10 +95,14 @@ class WorkablePublicClient:
             cache_identity={"provider": "workable", "route": token},
         )
         if not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
-            raise ValueError("Workable aggregate details endpoint returned invalid JSON")
+            raise ValueError(
+                "Workable aggregate details endpoint returned invalid JSON"
+            )
         jobs = data["jobs"]
         if any(not isinstance(item, dict) for item in jobs):
-            raise ValueError("Workable aggregate details endpoint returned invalid JSON")
+            raise ValueError(
+                "Workable aggregate details endpoint returned invalid JSON"
+            )
         return {
             shortcode: item
             for item in jobs
@@ -234,10 +238,10 @@ class WorkableProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         token = workable_token(route)
         if not token:
-            return []
+            raise ValueError("Workable route is missing a public board token")
         snapshot = await self._public_client.fetch_listing_snapshot(client, token)
         try:
             details_by_shortcode = await self._public_client.fetch_details_by_shortcode(
@@ -250,15 +254,20 @@ class WorkableProvider:
                 type(exc).__name__,
             )
             details_by_shortcode = {}
-        return [
-            self._normalize(
-                board,
-                token,
-                listing,
-                details_by_shortcode.get(_string(listing.get("shortcode")) or "", {}),
-            )
-            for listing in snapshot.listings
-        ]
+        return JobFetchResult(
+            jobs=[
+                self._normalize(
+                    board,
+                    token,
+                    listing,
+                    details_by_shortcode.get(
+                        _string(listing.get("shortcode")) or "", {}
+                    ),
+                )
+                for listing in snapshot.listings
+            ],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,

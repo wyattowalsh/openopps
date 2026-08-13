@@ -22,7 +22,7 @@ from openopps.models import (
     validate_public_host,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.normalize import string as _string
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
@@ -54,15 +54,21 @@ class WPJobManagerProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         endpoint = wpjobmanager_endpoint(route)
         if not endpoint:
-            return []
+            return JobFetchResult(jobs=[], authoritative=False)
         if wpjobmanager_is_ajax_endpoint(endpoint):
             listings = await self._fetch_ajax_listings(client, endpoint)
-            return [self._normalize_ajax(board, item) for item in listings]
+            return JobFetchResult(
+                jobs=[self._normalize_ajax(board, item) for item in listings],
+                authoritative=True,
+            )
         listings = await self._fetch_listings(client, endpoint)
-        return [self._normalize(board, item) for item in listings]
+        return JobFetchResult(
+            jobs=[self._normalize(board, item) for item in listings],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,
@@ -95,6 +101,9 @@ class WPJobManagerProvider:
         page = 1
         per_page = 100
         total: int | None = None
+        total_pages: int | None = None
+        seen_pages: set[tuple[str, ...]] = set()
+        seen_listing_ids: set[str] = set()
         while True:
             response = await self._request_json_response(
                 client,
@@ -107,11 +116,54 @@ class WPJobManagerProvider:
                 raise ValueError(
                     "WP Job Manager listings endpoint returned invalid JSON"
                 )
-            total = total if total is not None else _wp_total(response)
-            listings.extend(item for item in data if isinstance(item, dict))
-            if (total is not None and len(listings) >= total) or len(data) < per_page:
+            if any(not isinstance(item, dict) for item in data):
+                raise ValueError(
+                    "WP Job Manager listings endpoint returned invalid JSON"
+                )
+            page_listings = cast(list[dict[str, Any]], data)
+            total = _consistent_total(total, _wp_total(response), label="total")
+            total_pages = _consistent_total(
+                total_pages, _wp_total_pages(response), label="total pages"
+            )
+            page_signature = tuple(
+                str(item.get("id") or item.get("link") or item)
+                for item in page_listings
+            )
+            if page_listings and page_signature in seen_pages:
+                raise ValueError("WP Job Manager repeated pagination page")
+            seen_pages.add(page_signature)
+            for listing_id in page_signature:
+                if listing_id in seen_listing_ids:
+                    raise ValueError("WP Job Manager repeated pagination listing")
+                seen_listing_ids.add(listing_id)
+            if not page_listings and (
+                (total is not None and len(listings) < total)
+                or (total_pages is not None and page < total_pages)
+            ):
+                raise ValueError(
+                    "WP Job Manager incomplete pagination returned empty page"
+                )
+            listings.extend(page_listings)
+            if total is not None and len(listings) > total:
+                raise ValueError("WP Job Manager advertised total does not match jobs")
+            if total is not None and len(listings) == total:
+                break
+            if total_pages is not None:
+                if page >= total_pages:
+                    if total is not None and len(listings) != total:
+                        raise ValueError(
+                            "WP Job Manager advertised total does not match jobs"
+                        )
+                    break
+            elif len(page_listings) < per_page:
+                if total is not None:
+                    raise ValueError(
+                        "WP Job Manager advertised total does not match jobs"
+                    )
                 break
             page += 1
+        if total is not None and len(listings) != total:
+            raise ValueError("WP Job Manager advertised total does not match jobs")
         return listings
 
     async def _fetch_ajax_listings(
@@ -120,6 +172,10 @@ class WPJobManagerProvider:
         listings: list[dict[str, Any]] = []
         page = 1
         per_page = 100
+        expected_pages: int | None = None
+        expected_total: int | None = None
+        seen_pages: set[tuple[str, ...]] = set()
+        seen_listing_ids: set[str] = set()
         while True:
             data = await self._request_json(
                 client,
@@ -130,10 +186,48 @@ class WPJobManagerProvider:
             if not isinstance(data, dict):
                 raise ValueError("WP Job Manager AJAX endpoint returned invalid JSON")
             page_listings = _ajax_listings(endpoint, data)
+            expected_pages = _consistent_total(
+                expected_pages,
+                _int(data.get("max_num_pages")),
+                label="AJAX total pages",
+            )
+            expected_total = _consistent_total(
+                expected_total, _ajax_reported_total(data), label="AJAX total"
+            )
+            page_signature = tuple(
+                str(item.get("link") or item.get("title") or item)
+                for item in page_listings
+            )
+            if page_listings and page_signature in seen_pages:
+                raise ValueError("WP Job Manager repeated AJAX pagination page")
+            seen_pages.add(page_signature)
+            for listing_id in page_signature:
+                if listing_id in seen_listing_ids:
+                    raise ValueError("WP Job Manager repeated AJAX pagination listing")
+                seen_listing_ids.add(listing_id)
+            if not page_listings and (
+                (expected_pages is not None and page < expected_pages)
+                or (expected_total is not None and len(listings) < expected_total)
+            ):
+                raise ValueError(
+                    "WP Job Manager incomplete pagination returned empty AJAX page"
+                )
             listings.extend(page_listings)
-            if not _ajax_has_next_page(data, page) or not page_listings:
+            if expected_total is not None and len(listings) > expected_total:
+                raise ValueError("WP Job Manager advertised total does not match jobs")
+            if not _ajax_has_next_page(data, page):
                 break
             page += 1
+        if (
+            expected_pages is not None
+            and page != expected_pages
+            and not (expected_pages == 0 and not listings)
+        ):
+            raise ValueError(
+                "WP Job Manager advertised page count does not match pages"
+            )
+        if expected_total is not None and len(listings) != expected_total:
+            raise ValueError("WP Job Manager advertised total does not match jobs")
         return listings
 
     def _normalize(self, board: BoardRecord, posting: dict[str, Any]) -> JobRecord:
@@ -230,7 +324,7 @@ def wpjobmanager_endpoint(route: BoardProviderRecord) -> str | None:
 def wpjobmanager_is_rest_endpoint(url: str) -> bool:
     parsed = urlparse(url)
     parts = [part for part in parsed.path.split("/") if part]
-    return parsed.scheme == "https" and parts[:4] == [
+    return parsed.scheme == "https" and parts == [
         "wp-json",
         "wp",
         "v2",
@@ -241,7 +335,7 @@ def wpjobmanager_is_rest_endpoint(url: str) -> bool:
 def wpjobmanager_is_ajax_endpoint(url: str) -> bool:
     parsed = urlparse(url)
     parts = [part for part in parsed.path.split("/") if part]
-    return parsed.scheme == "https" and parts[:2] == ["jm-ajax", "get_listings"]
+    return parsed.scheme == "https" and parts == ["jm-ajax", "get_listings"]
 
 
 def _ajax_params(*, page: int, per_page: int) -> dict[str, int]:
@@ -257,8 +351,30 @@ def _ajax_count(data: dict[str, Any]) -> int:
     return len(_ajax_listings("", data))
 
 
+def _ajax_reported_total(data: dict[str, Any]) -> int | None:
+    if data.get("found_jobs") is False:
+        return 0
+    return _int(data.get("total") or data.get("total_found") or data.get("found"))
+
+
 def _wp_total(response: HttpResponseData) -> int | None:
     return _int(response.headers.get("x-wp-total"))
+
+
+def _wp_total_pages(response: HttpResponseData) -> int | None:
+    return _int(response.headers.get("x-wp-totalpages"))
+
+
+def _consistent_total(
+    expected: int | None, reported: int | None, *, label: str
+) -> int | None:
+    if reported is None:
+        return expected
+    if reported < 0:
+        raise ValueError(f"WP Job Manager {label} must be non-negative")
+    if expected is not None and reported != expected:
+        raise ValueError(f"WP Job Manager advertised {label} changed during pagination")
+    return reported
 
 
 def _ajax_has_next_page(data: dict[str, Any], page: int) -> bool:
@@ -335,6 +451,3 @@ def _rendered(value: object) -> str | None:
         data = cast(dict[str, Any], value)
         return _string(data.get("rendered"))
     return _string(value)
-
-
-

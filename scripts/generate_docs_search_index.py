@@ -8,10 +8,11 @@ import os
 import re
 import shutil
 import sqlite3
+import tempfile
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,30 @@ from urllib.parse import quote, urlparse
 
 from openopps.models import derive_seniority_from_fields
 from openopps.providers.boards.tokens import greenhouse_token_from_url
+from openopps.providers.sources import BOARD_SOURCE_CATALOG
+
+try:
+    from scripts.docs_search_release import (
+        DEFAULT_PRODUCTION_MAX_SNAPSHOT_AGE,
+        PromotionPolicy,
+        atomic_write_channel_pointer,
+        build_release_manifest,
+        sha256_file,
+        validate_publication,
+        validate_release,
+        write_release_manifest,
+    )
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from docs_search_release import (  # type: ignore[no-redef]
+        DEFAULT_PRODUCTION_MAX_SNAPSHOT_AGE,
+        PromotionPolicy,
+        atomic_write_channel_pointer,
+        build_release_manifest,
+        sha256_file,
+        validate_publication,
+        validate_release,
+        write_release_manifest,
+    )
 
 SEARCH_INDEX_VERSION = 6
 DESCRIPTION_SNIPPET_LEN = 200
@@ -37,6 +62,17 @@ DETAIL_BUCKET_COUNT = 1024
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
 INDEXABLE_IDS_FILE = "jobs-indexable-ids.json"
 LINEAGE_AGGREGATE_FILE = "lineage-aggregate.json"
+PUBLICATION_POLICY_FILE = "publication-policy.json"
+PUBLICATION_ALLOWED_RIGHTS = frozenset(
+    {
+        "official_public",
+        "oss_attribution_required",
+        "public_attribution_required",
+    }
+)
+PUBLICATION_ATTRIBUTION_REQUIRED = frozenset(
+    {"oss_attribution_required", "public_attribution_required"}
+)
 JOB_CHUNK_SIZE = 1000
 INITIAL_JOB_LIMIT = 250
 TOP_DASHBOARD_LIMIT = 20
@@ -185,15 +221,378 @@ def build_search_index(db_path: Path, output_dir: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"SQLite database not found: {db_path}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    with _search_index_build_lock(output_dir):
-        return _build_search_index_unlocked(db_path, output_dir)
+    with (
+        _search_index_build_lock(output_dir),
+        _frozen_sqlite_snapshot(db_path) as snapshot_path,
+    ):
+        return _build_search_index_unlocked(
+            snapshot_path, output_dir, source_path=db_path
+        )
+
+
+def build_search_release(
+    db_path: Path,
+    publication_root: Path,
+    *,
+    channel: str = "production",
+    max_snapshot_age: timedelta = timedelta(hours=48),
+    now: datetime | None = None,
+    allow_stale_reason: str | None = None,
+) -> dict[str, Any]:
+    """Stage, validate, and atomically publish an immutable v7 release.
+
+    Payload generation happens only under a tool-owned sibling temporary
+    directory.  The immutable release directory is renamed into place after it
+    passes validation, then the small channel pointer is atomically replaced.
+    Existing releases and the legacy v6 production tree are never rewritten.
+    """
+
+    if not db_path.is_file():
+        raise FileNotFoundError(f"SQLite database not found: {db_path}")
+    publication_root = publication_root.expanduser()
+    publication_root.parent.mkdir(parents=True, exist_ok=True)
+    if (publication_root / "manifest.json").exists():
+        raise ValueError(
+            "v7 publication root must not be an existing legacy artifact directory"
+        )
+    if max_snapshot_age.total_seconds() <= 0:
+        raise ValueError("max snapshot age must be greater than zero")
+    if (
+        channel == "production"
+        and max_snapshot_age > DEFAULT_PRODUCTION_MAX_SNAPSHOT_AGE
+    ):
+        raise ValueError(
+            "production max snapshot age cannot exceed 48 hours; "
+            "use allow_stale_reason for an auditable degraded release"
+        )
+    degraded_reason = allow_stale_reason.strip() if allow_stale_reason else None
+    if allow_stale_reason is not None and not degraded_reason:
+        raise ValueError("stale override reason must contain non-whitespace text")
+    strict_policy = PromotionPolicy(max_snapshot_age=max_snapshot_age)
+    release_policy = (
+        PromotionPolicy(max_snapshot_age=None) if degraded_reason else strict_policy
+    )
+    validation_now = now or datetime.now(timezone.utc)
+    with (
+        _search_index_build_lock(publication_root),
+        _frozen_sqlite_snapshot(db_path) as snapshot_path,
+    ):
+        existing_pointer_path = publication_root / "channels" / f"{channel}.json"
+        existing_pointer: dict[str, Any] | None = None
+        existing_pointer_bytes: bytes | None = None
+        if os.path.lexists(existing_pointer_path):
+            existing_pointer_bytes = existing_pointer_path.read_bytes()
+            try:
+                parsed_pointer = json.loads(existing_pointer_bytes)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                parsed_pointer = None
+            existing_validation_now = validation_now
+            if isinstance(parsed_pointer, dict):
+                promoted_at = parsed_pointer.get("promotedAt")
+                if isinstance(promoted_at, str):
+                    try:
+                        parsed_promoted_at = datetime.fromisoformat(
+                            promoted_at.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        pass
+                    else:
+                        if parsed_promoted_at.tzinfo is not None:
+                            existing_validation_now = parsed_promoted_at
+            existing_errors = validate_publication(
+                publication_root,
+                channel=channel,
+                policy=PromotionPolicy(max_snapshot_age=None),
+                now=existing_validation_now,
+            )
+            if existing_errors:
+                raise ValueError(
+                    "existing channel failed pre-promotion validation:\n- "
+                    + "\n- ".join(existing_errors)
+                )
+            if not isinstance(
+                parsed_pointer, dict
+            ):  # Defensive after strict validation.
+                raise ValueError("existing channel pointer must be a JSON object")
+            existing_pointer = parsed_pointer
+        stage_prefix = f".{publication_root.name}.openopps-stage-"
+        with tempfile.TemporaryDirectory(
+            prefix=stage_prefix, dir=publication_root.parent
+        ) as temporary_directory:
+            staged_release = Path(temporary_directory) / "release"
+            legacy_manifest = _build_search_index_unlocked(
+                snapshot_path, staged_release, source_path=db_path
+            )
+            staged_legacy_manifest = staged_release / "manifest.json"
+            # Keep the payload/search graph distinct from the v7 integrity
+            # manifest so release-pinned consumers can discover entity files
+            # without a naming collision.
+            os.replace(staged_legacy_manifest, staged_release / "search-manifest.json")
+            publication_policy, policy_errors = _build_publication_policy_report(
+                snapshot_path, legacy_manifest
+            )
+            _write_json(
+                staged_release / PUBLICATION_POLICY_FILE,
+                publication_policy,
+                compact=False,
+            )
+            if policy_errors:
+                raise ValueError(
+                    "public release failed non-bypassable rights policy:\n- "
+                    + "\n- ".join(policy_errors)
+                )
+
+            generator_path = Path(__file__).resolve()
+            release_helper_path = generator_path.with_name("docs_search_release.py")
+            manifest = build_release_manifest(
+                staged_release,
+                snapshot_at=legacy_manifest["snapshotAt"],
+                source={
+                    "kind": "sqlite",
+                    "path": _stable_path(db_path),
+                    "bytes": snapshot_path.stat().st_size,
+                    "sha256": sha256_file(snapshot_path),
+                },
+                generator={
+                    "name": "openopps-docs-search-index",
+                    "entrypoint": "scripts/generate_docs_search_index.py",
+                    "payloadSchemaVersion": SEARCH_INDEX_VERSION,
+                    "components": [
+                        {
+                            "path": "scripts/docs_search_release.py",
+                            "sha256": sha256_file(release_helper_path),
+                        },
+                        {
+                            "path": "scripts/generate_docs_search_index.py",
+                            "sha256": sha256_file(generator_path),
+                        },
+                        {
+                            "path": "uv.lock",
+                            "sha256": sha256_file(
+                                generator_path.parent.parent / "uv.lock"
+                            ),
+                        },
+                    ],
+                },
+            )
+            write_release_manifest(staged_release, manifest)
+            stage_errors = validate_release(
+                staged_release, policy=release_policy, now=validation_now
+            )
+            if stage_errors:
+                raise ValueError(
+                    "staged v7 release failed validation:\n- "
+                    + "\n- ".join(stage_errors)
+                )
+
+            releases_root = publication_root / "releases"
+            releases_root.mkdir(parents=True, exist_ok=True)
+            destination = releases_root / manifest["releaseId"]
+            if destination.exists():
+                existing_errors = validate_release(
+                    destination, policy=release_policy, now=validation_now
+                )
+                if existing_errors:
+                    raise ValueError(
+                        "existing immutable release failed validation:\n- "
+                        + "\n- ".join(existing_errors)
+                    )
+                if (destination / "manifest.json").read_bytes() != (
+                    staged_release / "manifest.json"
+                ).read_bytes():
+                    raise ValueError(
+                        "release ID collision: existing canonical manifest differs"
+                    )
+            else:
+                os.replace(staged_release, destination)
+
+            current_release_id = (
+                existing_pointer.get("releaseId") if existing_pointer else None
+            )
+            prior_release_id = (
+                existing_pointer.get("priorReleaseId")
+                if current_release_id == manifest["releaseId"] and existing_pointer
+                else current_release_id
+            )
+            try:
+                atomic_write_channel_pointer(
+                    publication_root,
+                    manifest,
+                    channel=channel,
+                    prior_release_id=prior_release_id,
+                    degraded_reason=degraded_reason,
+                    promoted_at=validation_now.isoformat(),
+                )
+                publication_errors = validate_publication(
+                    publication_root,
+                    channel=channel,
+                    policy=release_policy,
+                    now=validation_now,
+                )
+                if publication_errors:
+                    raise ValueError(
+                        "published v7 release failed validation:\n- "
+                        + "\n- ".join(publication_errors)
+                    )
+            except BaseException:
+                _restore_channel_pointer(
+                    existing_pointer_path,
+                    existing_pointer_bytes,
+                )
+                raise
+            return manifest
+
+
+def _restore_channel_pointer(pointer_path: Path, content: bytes | None) -> None:
+    """Restore the pre-promotion pointer after any post-swap failure."""
+
+    if content is None:
+        pointer_path.unlink(missing_ok=True)
+        return
+    pointer_path.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        dir=pointer_path.parent,
+        prefix=f".{pointer_path.stem}.restore-",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(file_descriptor, "wb") as file_handle:
+            file_handle.write(content)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+        os.replace(temporary_path, pointer_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _build_publication_policy_report(
+    db_path: Path, search_manifest: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Build a deterministic, sanitized source-rights and quality report.
+
+    Packaged catalog metadata is canonical when present. Persisted metadata is
+    used only for explicit user/plugin sources that are absent from the package.
+    No arbitrary raw metadata is copied into the public artifact.
+    """
+
+    facets = search_manifest.get("facets")
+    source_values = facets.get("sources") if isinstance(facets, dict) else None
+    source_keys = sorted(
+        {
+            value.strip()
+            for value in source_values or []
+            if isinstance(value, str) and value.strip()
+        }
+    )
+    stored = _stored_source_publication_metadata(db_path)
+    entries: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for source_key in source_keys:
+        stored_source = stored.get(source_key, {})
+        packaged_source = BOARD_SOURCE_CATALOG.get(source_key)
+        metadata: dict[str, Any]
+        if packaged_source is not None:
+            # A persisted row must never grant publication rights to a packaged
+            # source whose repository-reviewed catalog metadata has not done so.
+            metadata = dict(packaged_source.raw_metadata)
+            source_url = packaged_source.url
+        else:
+            metadata = dict(stored_source.get("metadata") or {})
+            source_url = stored_source.get("url")
+        license_status = _clean_text(metadata.get("licenseStatus"))
+        attribution = _clean_text(metadata.get("sourceAttribution"))
+        allowed = license_status in PUBLICATION_ALLOWED_RIGHTS
+        if not license_status:
+            errors.append(f"source {source_key!r} has no licenseStatus")
+        elif not allowed:
+            errors.append(
+                f"source {source_key!r} has non-publication rights state "
+                f"{license_status!r}"
+            )
+        if license_status in PUBLICATION_ATTRIBUTION_REQUIRED and not attribution:
+            allowed = False
+            errors.append(f"source {source_key!r} requires sourceAttribution")
+        entry: dict[str, Any] = {
+            "key": source_key,
+            "licenseStatus": license_status or None,
+            "sourceAttribution": attribution or None,
+            "publicationAllowed": allowed,
+        }
+        safe_url = _safe_job_external_url(source_url)
+        if safe_url:
+            entry["sourceUrl"] = safe_url
+        entries.append(entry)
+
+    counts = search_manifest.get("counts")
+    snapshot_counts = counts.get("snapshot") if isinstance(counts, dict) else {}
+    detail_shards = search_manifest.get("detailShards")
+    report = {
+        "schemaVersion": 1,
+        "allowedLicenseStatuses": sorted(PUBLICATION_ALLOWED_RIGHTS),
+        "attributionRequiredStatuses": sorted(PUBLICATION_ATTRIBUTION_REQUIRED),
+        "sourceCount": len(entries),
+        "sources": entries,
+        "quality": {
+            "snapshotAt": search_manifest.get("snapshotAt"),
+            "sourceRows": _nonnegative_int(snapshot_counts, "sourceRows"),
+            "providerRoutes": _nonnegative_int(snapshot_counts, "providerRoutes"),
+            "boards": _nonnegative_int(snapshot_counts, "boards"),
+            "jobs": _nonnegative_int(snapshot_counts, "jobs"),
+            "openJobs": _nonnegative_int(snapshot_counts, "openJobs"),
+            "detailTiers": (
+                detail_shards.get("tierCounts", {})
+                if isinstance(detail_shards, dict)
+                and isinstance(detail_shards.get("tierCounts"), dict)
+                else {}
+            ),
+        },
+    }
+    return report, errors
+
+
+def _stored_source_publication_metadata(db_path: Path) -> dict[str, dict[str, Any]]:
+    with sqlite3.connect(db_path) as conn:
+        if not _has_table(conn, "sources"):
+            return {}
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                f"PRAGMA table_info({_sqlite_identifier('sources')})"
+            )
+        }
+        if not {"key", "url", "raw_metadata"} <= columns:
+            return {}
+        rows = conn.execute(
+            "SELECT key, url, raw_metadata FROM sources ORDER BY key"
+        ).fetchall()
+    result: dict[str, dict[str, Any]] = {}
+    for key, url, raw_metadata in rows:
+        source_key = str(key or "").strip()
+        if not source_key:
+            continue
+        metadata: dict[str, Any] = {}
+        if isinstance(raw_metadata, str):
+            try:
+                candidate = json.loads(raw_metadata)
+            except json.JSONDecodeError:
+                candidate = None
+            if isinstance(candidate, dict):
+                metadata = candidate
+        result[source_key] = {"url": url, "metadata": metadata}
+    return result
+
+
+def _nonnegative_int(value: Any, key: str) -> int:
+    if not isinstance(value, dict):
+        return 0
+    candidate = value.get(key)
+    return candidate if isinstance(candidate, int) and candidate >= 0 else 0
 
 
 @contextmanager
-def _search_index_build_lock(output_dir: Path) -> Iterable[None]:
-    digest = hashlib.sha256(str(output_dir.resolve()).encode("utf-8")).hexdigest()[
-        :16
-    ]
+def _search_index_build_lock(output_dir: Path) -> Iterator[None]:
+    digest = hashlib.sha256(str(output_dir.resolve()).encode("utf-8")).hexdigest()[:16]
     lock_path = Path(os.environ.get("TMPDIR", "/tmp")) / (
         f"openopps-search-index-{digest}.lock"
     )
@@ -205,7 +604,48 @@ def _search_index_build_lock(output_dir: Path) -> Iterable[None]:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
-def _build_search_index_unlocked(db_path: Path, output_dir: Path) -> dict[str, Any]:
+@contextmanager
+def _frozen_sqlite_snapshot(db_path: Path) -> Iterator[Path]:
+    """Yield one sidecar-free online backup without writing to the source DB."""
+
+    source_path = db_path.expanduser().resolve(strict=True)
+    if not source_path.is_file():
+        raise FileNotFoundError(f"SQLite database not found: {db_path}")
+    with tempfile.TemporaryDirectory(prefix="openopps-sqlite-snapshot-") as temp_dir:
+        snapshot_path = Path(temp_dir) / "source.sqlite"
+        source_uri = f"{source_path.as_uri()}?mode=ro"
+        with (
+            sqlite3.connect(source_uri, uri=True) as source,
+            sqlite3.connect(snapshot_path) as destination,
+        ):
+            source.execute("PRAGMA query_only = ON")
+            source.backup(destination)
+            journal_mode = destination.execute(
+                "PRAGMA journal_mode = DELETE"
+            ).fetchone()
+            if journal_mode != ("delete",):
+                raise RuntimeError(
+                    "frozen SQLite backup could not switch to sidecar-free journal mode"
+                )
+        sidecars = [
+            Path(f"{snapshot_path}{suffix}")
+            for suffix in ("-journal", "-shm", "-wal")
+            if Path(f"{snapshot_path}{suffix}").exists()
+        ]
+        if sidecars:
+            raise RuntimeError(
+                "frozen SQLite backup unexpectedly retained sidecars: "
+                + ", ".join(path.name for path in sidecars)
+            )
+        yield snapshot_path
+
+
+def _build_search_index_unlocked(
+    db_path: Path,
+    output_dir: Path,
+    *,
+    source_path: Path | None = None,
+) -> dict[str, Any]:
     """Write a compact static docs search index from an OpenOpps SQLite DB."""
 
     if not db_path.exists():
@@ -306,7 +746,7 @@ def _build_search_index_unlocked(db_path: Path, output_dir: Path) -> dict[str, A
     )
     _progress("build manifest")
     manifest = _build_manifest(
-        db_path=db_path,
+        db_path=source_path or db_path,
         output_dir=output_dir,
         snapshot_at=snapshot_at,
         providers=providers,
@@ -600,7 +1040,9 @@ def _fetch_version_skill_tokens(
 def _fetch_version_extras(
     conn: sqlite3.Connection, current_version_ids: set[str]
 ) -> dict[str, dict[str, Any]]:
-    if not current_version_ids or not _has_column(conn, "job_versions", "extra_payload"):
+    if not current_version_ids or not _has_column(
+        conn, "job_versions", "extra_payload"
+    ):
         return {}
 
     rows = conn.execute(
@@ -723,9 +1165,7 @@ def _plain_snippet(value: str) -> str:
 
 def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     job_closed_at = _column_expr(conn, "jobs", "j", "closed_at")
-    job_current_content_hash = _column_expr(
-        conn, "jobs", "j", "current_content_hash"
-    )
+    job_current_content_hash = _column_expr(conn, "jobs", "j", "current_content_hash")
     job_current_payload_hash = _column_expr(conn, "jobs", "j", "current_payload_hash")
     job_extra = "NULL"
     version_number = _column_expr(conn, "job_versions", "v", "version")
@@ -734,13 +1174,9 @@ def _fetch_job_details(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     version_responsibilities = _column_expr(
         conn, "job_versions", "v", "responsibilities"
     )
-    version_qualifications = _column_expr(
-        conn, "job_versions", "v", "qualifications"
-    )
+    version_qualifications = _column_expr(conn, "job_versions", "v", "qualifications")
     version_skills = _column_expr(conn, "job_versions", "v", "skills")
-    version_job_description = _column_expr(
-        conn, "job_versions", "v", "job_description"
-    )
+    version_job_description = _column_expr(conn, "job_versions", "v", "job_description")
     version_compensation = _column_expr(conn, "job_versions", "v", "compensation")
     version_extra = _column_expr(conn, "job_versions", "v", "extra_payload")
 
@@ -995,7 +1431,10 @@ def _has_table(conn: sqlite3.Connection, table_name: str) -> bool:
 def _has_column(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
     if not _has_table(conn, table_name):
         return False
-    return any(row[1] == column_name for row in conn.execute(f"PRAGMA table_info({_sqlite_identifier(table_name)})"))
+    return any(
+        row[1] == column_name
+        for row in conn.execute(f"PRAGMA table_info({_sqlite_identifier(table_name)})")
+    )
 
 
 def _column_expr(
@@ -1213,7 +1652,9 @@ def _bounded_public_text(value: str, limit: int) -> str:
     return text[:limit].rstrip()
 
 
-def _public_job_description(value: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
+def _public_job_description(
+    value: Any, payload: dict[str, Any]
+) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     if "description" not in value:
@@ -1450,8 +1891,7 @@ def _build_manifest(
             "jobs": jobs_manifest,
         },
         "facets": {
-            key: _facet_values(counter)
-            for key, counter in counters["facets"].items()
+            key: _facet_values(counter) for key, counter in counters["facets"].items()
         },
         "suggestions": {
             key: _suggestion_values(counter)
@@ -1518,9 +1958,7 @@ def _manifest_counters(
         "supportLevels": _counter_from_rows(
             providers, PROVIDER_COLUMNS, "supportLevel"
         ),
-        "routeStatuses": _counter_from_rows(
-            providers, PROVIDER_COLUMNS, "lastStatus"
-        ),
+        "routeStatuses": _counter_from_rows(providers, PROVIDER_COLUMNS, "lastStatus"),
         "workplaces": _combined_counter(
             _counter_from_rows(jobs, JOB_COLUMNS, "workplaceType"),
             _counter_from_rows(jobs, JOB_COLUMNS, "remote"),
@@ -2021,7 +2459,13 @@ def _fetch_sync_dashboard_stats(
         """,
         params,
     ).fetchone()
-    new_7d, changed_7d, closed_7d, reopened_7d, run_count = totals_row or (0, 0, 0, 0, 0)
+    new_7d, changed_7d, closed_7d, reopened_7d, run_count = totals_row or (
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
 
     median_days_by_provider: list[dict[str, Any]] = []
     if _has_table(conn, "jobs"):
@@ -2052,7 +2496,11 @@ def _fetch_sync_dashboard_stats(
                 else (sorted_values[mid - 1] + sorted_values[mid]) / 2
             )
             median_days_by_provider.append(
-                {"providerId": provider_id, "medianDaysOpen": median, "count": len(values)}
+                {
+                    "providerId": provider_id,
+                    "medianDaysOpen": median,
+                    "count": len(values),
+                }
             )
 
     churn_rows = conn.execute(
@@ -2110,7 +2558,12 @@ def _job_quality_metrics(jobs: Sequence[Sequence[Any]]) -> list[dict[str, Any]]:
                 for column in ("salaryMin", "salaryMax", "salaryCurrency")
             ),
         ),
-        ("skills", lambda row: bool(_skill_token_values(row[JOB_COLUMNS.index("skillTokens")]))),
+        (
+            "skills",
+            lambda row: bool(
+                _skill_token_values(row[JOB_COLUMNS.index("skillTokens")])
+            ),
+        ),
     ]
     total = len(jobs)
     metrics: list[dict[str, Any]] = []
@@ -2416,20 +2869,72 @@ def _parser() -> argparse.ArgumentParser:
         default=repo_root / "kaggle" / "openoppsdb.sqlite",
         help="Path to the SQLite database snapshot.",
     )
-    parser.add_argument(
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument(
         "--output-dir",
         type=Path,
         default=repo_root / "web" / "public" / "data" / "openopps-search",
-        help="Directory for generated static search-index JSON files.",
+        help="Directory for legacy v6 static search-index JSON files.",
+    )
+    output_group.add_argument(
+        "--release-root",
+        type=Path,
+        help=(
+            "Publication root for additive v7 channels/ and immutable releases/. "
+            "The legacy v6 output is not changed."
+        ),
+    )
+    parser.add_argument(
+        "--channel",
+        default="production",
+        help="v7 channel pointer to update (default: production).",
+    )
+    parser.add_argument(
+        "--max-snapshot-age-hours",
+        type=float,
+        default=48.0,
+        help="Reject v7 promotion when the snapshot is older than this many hours (default: 48).",
+    )
+    parser.add_argument(
+        "--allow-stale-reason",
+        help=(
+            "Auditable reason for a degraded stale-snapshot promotion. This never "
+            "bypasses rights, privacy, integrity, or platform-budget gates."
+        ),
     )
     return parser
 
 
 def main() -> None:
-    args = _parser().parse_args()
+    parser = _parser()
+    args = parser.parse_args()
+    if args.max_snapshot_age_hours <= 0:
+        parser.error("--max-snapshot-age-hours must be greater than zero")
+    if args.release_root is not None:
+        if args.channel == "production" and args.max_snapshot_age_hours > 48.0:
+            parser.error(
+                "production max snapshot age cannot exceed 48 hours; "
+                "use --allow-stale-reason for an auditable degraded release"
+            )
+        manifest = build_search_release(
+            db_path=args.data_db.expanduser(),
+            publication_root=args.release_root.expanduser(),
+            channel=args.channel,
+            max_snapshot_age=timedelta(hours=args.max_snapshot_age_hours),
+            allow_stale_reason=args.allow_stale_reason,
+        )
+        print(
+            "Published docs search release: "
+            f"{manifest['releaseId']} -> {args.channel} "
+            f"({manifest['fileCount']} files, {manifest['totalBytes']} bytes)"
+        )
+        return
+    if args.max_snapshot_age_hours != 48.0:
+        parser.error("--max-snapshot-age-hours requires --release-root")
+    if args.allow_stale_reason is not None:
+        parser.error("--allow-stale-reason requires --release-root")
     manifest = build_search_index(
-        db_path=args.data_db.expanduser(),
-        output_dir=args.output_dir.expanduser(),
+        db_path=args.data_db.expanduser(), output_dir=args.output_dir.expanduser()
     )
     counts = {
         entity: details["count"] for entity, details in manifest["entities"].items()

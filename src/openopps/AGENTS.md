@@ -6,7 +6,7 @@ Python package for the OpenOpps CLI.
 - Keep CLI help docs user-facing and stable: group commands by workflow, explain JSON/metrics output for automation, prefer concise examples in epilog text, and cover help changes with semantic Typer runner tests.
 - Use Pydantic models as the normalized boundary between providers, storage, exports, and tests.
 - Provider adapters must report or preserve support levels: `detect`, `jobs`, or `unsupported`.
-- Keep firm aggregator board source adapters in `providers/sources/` and per-board job providers in `providers/boards/`; these hierarchies must not share adapter registries. Use `providers/registry.py` for provider definitions and `providers/base.py` for shared provider protocols.
+- Keep firm aggregator board source adapters in `providers/sources/` and per-board job providers in `providers/boards/`; these hierarchies must not share adapter registries. Use `providers/registry.py` for provider definitions and `providers/base.py` for shared provider protocols. Built-in and plugin job providers must return the public `JobFetchResult`; set `authoritative=True` only after complete traversal because ingest may close missing jobs only for authoritative snapshots.
 - Treat `--provider any` and `--provider all` as aliases for no provider filter across job-capable providers.
 - Keep each `SourceRecord.key` owned by exactly one module under `providers/sources/`; migrated or special-case Consider boards belong in `special.py`, not duplicated in `consider.py`.
 - Preserve overlapping company/board observations during ingestion, but dedupe provider requests before probing or syncing jobs.

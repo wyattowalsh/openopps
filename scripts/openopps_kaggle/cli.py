@@ -7,16 +7,12 @@ import sys
 from pathlib import Path
 
 from openopps_kaggle.constants import (
-    COVERAGE_FILE,
     DATASET_ID,
     DB_FILE,
     DEFAULT_DATASET_DIR,
     DEFAULT_EXAMPLES_DIR,
     DEFAULT_MANAGER_DIR,
     DEFAULT_STARTER_DIR,
-    SNAPSHOT_QUALITY_FILE,
-    STATUS_FILE,
-    SYNC_METRICS_FILE,
 )
 from openopps_kaggle.bundle.disk import MIN_FREE_BYTES_FOR_EXPORT, require_disk_headroom
 from openopps_kaggle._core import (
@@ -40,6 +36,13 @@ from openopps_kaggle._core import (
 
 
 def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "publication":
+        from openopps_kaggle.publication import main as publication_main
+
+        raise SystemExit(publication_main(argv[1:]))
+
     parser = argparse.ArgumentParser(
         description="Generate Kaggle dataset metadata from OpenOpps package models.",
         prog="openopps_kaggle",

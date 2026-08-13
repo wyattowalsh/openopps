@@ -22,6 +22,19 @@ def test_settings_rejects_non_url_database_value() -> None:
         OpenOppsSettings(db_url="openoppsdb.sqlite")
 
 
+@pytest.mark.parametrize(
+    "db_url",
+    [
+        "sqlite:///:memory:",
+        "postgresql://openopps@example.test/openopps",
+        "sqlite+pysqlite:///openopps.db",
+    ],
+)
+def test_settings_rejects_non_file_backed_sqlite_database_urls(db_url: str) -> None:
+    with pytest.raises(ValidationError, match="file-backed SQLite"):
+        OpenOppsSettings(db_url=db_url)
+
+
 def test_settings_validation_error_message_is_redacted() -> None:
     raw_db_url = "openoppsdb.sqlite?password=supersecret"
 

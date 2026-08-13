@@ -31,6 +31,17 @@ def _validate_db_url(value: str) -> str:
         raise ValueError(
             "db_url must be a SQLAlchemy-style URL such as sqlite:///openoppsdb.sqlite"
         )
+    if not value.startswith("sqlite:///"):
+        raise ValueError("db_url must identify a file-backed SQLite database")
+    database_path = value.removeprefix("sqlite:///")
+    if (
+        not database_path
+        or database_path == ":memory:"
+        or database_path.startswith("file:")
+        or "?" in database_path
+        or "#" in database_path
+    ):
+        raise ValueError("db_url must identify a file-backed SQLite database")
     return value
 
 
@@ -68,10 +79,10 @@ class OpenOppsSettings(BaseSettings):
     db_url: DatabaseUrl = Field(
         default="sqlite:///openoppsdb.sqlite",
         description=(
-            "SQLAlchemy database URL used by storage, migrations, and status output. "
+            "File-backed SQLite URL used by storage, migrations, and status output. "
             "Use sqlite:///relative/path.db for local project data, "
-            "sqlite:////absolute/path.db for absolute SQLite files, or another "
-            "SQLAlchemy URL when running against a supported external database."
+            "or sqlite:////absolute/path.db for absolute SQLite files. In-memory and "
+            "external database URLs are not supported."
         ),
         examples=["sqlite:///openoppsdb.sqlite", "sqlite:////tmp/openoppsdb.sqlite"],
     )
@@ -277,8 +288,8 @@ class OpenOppsSettings(BaseSettings):
 
     @computed_field(
         description=(
-            "Resolved filesystem path for sqlite:/// database URLs, or None when the "
-            "database URL is not a local SQLite file."
+            "Resolved filesystem path for the configured file-backed sqlite:/// "
+            "database URL."
         ),
         return_type=Path | None,
         repr=False,

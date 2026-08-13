@@ -1,20 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { JobBoardFilters, JobSortKey } from "@/components/jobs-board/jobs-board-filter-engine";
+import type {
+	JobBoardFilters,
+	JobSortKey,
+} from "@/components/jobs-board/jobs-board-filter-engine";
 import {
 	clearIndexedJobsLocalData,
-	clearStore,
 	deleteStoreRecord,
 	hasBrowserIndexedDb,
+	importIndexedSnapshot,
 	jobsLocalStoreNames,
 	readIndexedJobsLocalSnapshot,
 	readJobsLocalSettings,
 	removeJobsLocalSettings,
 	replaceIndexedSnapshot,
-	writeIndexedSnapshot,
 	writeJobsLocalSettings,
+	writeJobWorkflowTransaction,
 	writeStoreRecord,
 } from "@/components/jobs-board/jobs-board-local-idb";
 import {
@@ -27,6 +30,7 @@ import {
 	indexByJobId,
 	mergeJobsLocalSnapshots,
 	normalizeJobsLocalSettings,
+	normalizeSavedSearchRecord,
 	parseJobsLocalImport,
 	pruneRetainedJobDetailsForWorkflowRecords,
 	reconcileJobsLocalSnapshot,
@@ -49,6 +53,26 @@ import type {
 	SearchRow,
 } from "@/components/openopps-search/search-types";
 
+type LocalMutationResult<T> = {
+	snapshot: JobsLocalSnapshot;
+	value: T;
+	changed?: boolean;
+	committed?: boolean;
+};
+
+function formatStorageError(caught: unknown) {
+	return caught instanceof Error && caught.message.trim()
+		? caught.message
+		: "Local jobs data could not be saved. Your previous data is unchanged.";
+}
+
+function snapshotWithSettings(
+	snapshot: JobsLocalSnapshot,
+	settings: JobsLocalSettings,
+): JobsLocalSnapshot {
+	return { ...snapshot, settings };
+}
+
 export function useJobsLocalState() {
 	const [settings, setSettingsState] = useState<JobsLocalSettings>(() =>
 		readJobsLocalSettings(),
@@ -60,43 +84,108 @@ export function useJobsLocalState() {
 	>({});
 	const [storageStatus, setStorageStatus] =
 		useState<JobsLocalStorageStatus>("loading");
+	const [storageError, setStorageError] = useState<string | null>(null);
+	const snapshotRef = useRef<JobsLocalSnapshot>({
+		settings,
+		jobRecords: [],
+		savedSearches: [],
+		retainedJobDetails: [],
+	});
+	const mutationTailRef = useRef<Promise<void>>(Promise.resolve());
+
+	const applyVisibleSnapshot = useCallback((next: JobsLocalSnapshot) => {
+		const committed = cloneLocalSnapshot(next);
+		snapshotRef.current = committed;
+		setSettingsState(committed.settings);
+		setJobRecords(indexByJobId(committed.jobRecords));
+		setSavedSearches(committed.savedSearches);
+		setRetainedJobDetails(indexByJobId(committed.retainedJobDetails));
+	}, []);
+
+	const enqueueLocalMutation = useCallback(
+		<T,>(
+			operation: (current: JobsLocalSnapshot) => Promise<LocalMutationResult<T>>,
+		): Promise<T> => {
+			const execute = () => operation(snapshotRef.current);
+			const pending = mutationTailRef.current.then(execute, execute).then(
+				(result) => {
+					if (result.changed !== false) {
+						applyVisibleSnapshot(result.snapshot);
+					}
+					if (result.committed !== false) {
+						setStorageStatus(hasBrowserIndexedDb() ? "available" : "unavailable");
+						setStorageError(null);
+					}
+					return result.value;
+				},
+				(caught) => {
+					setStorageStatus("error");
+					setStorageError(formatStorageError(caught));
+					throw caught;
+				},
+			);
+			mutationTailRef.current = pending.then(
+				() => undefined,
+				() => undefined,
+			);
+			return pending;
+		},
+		[applyVisibleSnapshot],
+	);
 
 	useEffect(() => {
 		let mounted = true;
-		async function load() {
+		const load = async () => {
 			try {
-				const snapshot = await readIndexedJobsLocalSnapshot();
+				const indexed = await readIndexedJobsLocalSnapshot();
 				if (!mounted) {
 					return;
 				}
-				setJobRecords(indexByJobId(snapshot.jobRecords));
-				setSavedSearches(snapshot.savedSearches);
-				setRetainedJobDetails(indexByJobId(snapshot.retainedJobDetails));
+				const next = { ...indexed, settings: snapshotRef.current.settings };
+				applyVisibleSnapshot(next);
 				setStorageStatus(hasBrowserIndexedDb() ? "available" : "unavailable");
-			} catch {
+				setStorageError(null);
+			} catch (caught) {
 				if (mounted) {
 					setStorageStatus("error");
+					setStorageError(formatStorageError(caught));
 				}
 			}
-		}
-		void load();
+		};
+		const pendingLoad = mutationTailRef.current.then(load, load);
+		mutationTailRef.current = pendingLoad.then(
+			() => undefined,
+			() => undefined,
+		);
 		return () => {
 			mounted = false;
 		};
-	}, []);
+	}, [applyVisibleSnapshot]);
 
-	const setSettings = useCallback((patch: Partial<JobsLocalSettings>) => {
-		setSettingsState((current) => {
-			const next = normalizeJobsLocalSettings({ ...current, ...patch });
-			writeJobsLocalSettings(next);
-			return next;
-		});
-	}, []);
+	const setSettings = useCallback(
+		(patch: Partial<JobsLocalSettings>) => {
+			void enqueueLocalMutation(async (current) => {
+				const nextSettings = normalizeJobsLocalSettings({
+					...current.settings,
+					...patch,
+				});
+				writeJobsLocalSettings(nextSettings);
+				return {
+					snapshot: snapshotWithSettings(current, nextSettings),
+					value: undefined,
+				};
+			}).catch(() => undefined);
+		},
+		[enqueueLocalMutation],
+	);
 
 	const upsertJobRecord = useCallback(
 		(
 			jobId: string,
-			updater: (record: JobWorkflowRecord | null, now: string) => JobWorkflowRecord,
+			updater: (
+				record: JobWorkflowRecord | null,
+				now: string,
+			) => JobWorkflowRecord,
 			options: {
 				row?: SearchRow | null;
 				detail?: JobDetail | null;
@@ -107,58 +196,62 @@ export function useJobsLocalState() {
 			if (!normalizedJobId) {
 				return;
 			}
-			const now = new Date().toISOString();
-			setJobRecords((current) => {
-				const nextRecord = updater(current[normalizedJobId] ?? null, now);
-				void writeStoreRecord(jobsLocalStoreNames.jobRecords, nextRecord);
+			void enqueueLocalMutation(async (current) => {
+				const now = new Date().toISOString();
+				const jobsById = indexByJobId(current.jobRecords);
+				const detailsById = indexByJobId(current.retainedJobDetails);
+				const nextRecord = updater(jobsById[normalizedJobId] ?? null, now);
+				let retainedDetail: RetainedJobDetailRecord | null | undefined;
+
 				if (
-					options.detail &&
-					options.detail.id === normalizedJobId &&
+					options.detail?.id === normalizedJobId &&
 					shouldRetainJobDetail(nextRecord)
 				) {
-					const retained = createRetainedJobDetailRecord({
+					retainedDetail = createRetainedJobDetailRecord({
 						row: options.row ?? null,
 						detail: options.detail,
 						now,
 						snapshotAt: options.snapshotAt ?? null,
 					});
-					void writeStoreRecord(jobsLocalStoreNames.retainedJobDetails, retained);
-					setRetainedJobDetails((details) => ({
-						...details,
-						[normalizedJobId]: retained,
-					}));
 				} else if (!shouldRetainJobDetail(nextRecord)) {
-					void deleteStoreRecord(
-						jobsLocalStoreNames.retainedJobDetails,
-						normalizedJobId,
-					);
-					setRetainedJobDetails((details) => {
-						if (!(normalizedJobId in details)) {
-							return details;
-						}
-						const next = { ...details };
-						delete next[normalizedJobId];
-						return next;
-					});
+					retainedDetail = null;
 				}
-				return { ...current, [normalizedJobId]: nextRecord };
-			});
+
+				await writeJobWorkflowTransaction({
+					record: nextRecord,
+					retainedDetail,
+				});
+				jobsById[normalizedJobId] = nextRecord;
+				if (retainedDetail === null) {
+					delete detailsById[normalizedJobId];
+				} else if (retainedDetail) {
+					detailsById[normalizedJobId] = retainedDetail;
+				}
+				return {
+					snapshot: {
+						...current,
+						jobRecords: Object.values(jobsById),
+						retainedJobDetails: Object.values(detailsById),
+					},
+					value: undefined,
+				};
+			}).catch(() => undefined);
 		},
-		[],
+		[enqueueLocalMutation],
 	);
 
 	const markViewed = useCallback(
 		(jobId: string, row: SearchRow | null, snapshotAt: string | null) => {
-			upsertJobRecord(jobId, (record, now) => {
-				if (record?.viewedAt) {
-					return updateJobWorkflowRecord(record, {}, { jobId, now, row, snapshotAt });
-				}
-				return updateJobWorkflowRecord(
-					record,
-					{ viewedAt: now },
-					{ jobId, now, row, snapshotAt },
-				);
-			});
+			upsertJobRecord(
+				jobId,
+				(record, now) =>
+					updateJobWorkflowRecord(
+						record,
+						record?.viewedAt ? {} : { viewedAt: now },
+						{ jobId, now, row, snapshotAt },
+					),
+				{ row, snapshotAt },
+			);
 		},
 		[upsertJobRecord],
 	);
@@ -222,55 +315,50 @@ export function useJobsLocalState() {
 	);
 
 	const retainJobDetail = useCallback(
-		(jobId: string, row: SearchRow | null, detail: JobDetail, snapshotAt: string | null) => {
+		(
+			jobId: string,
+			row: SearchRow | null,
+			detail: JobDetail,
+			snapshotAt: string | null,
+		) => {
 			const normalizedJobId = jobId.trim();
 			if (!normalizedJobId || detail.id !== normalizedJobId) {
 				return;
 			}
-			const record = jobRecords[normalizedJobId];
-			if (!shouldRetainJobDetail(record)) {
-				return;
-			}
-			const now = new Date().toISOString();
-			const retained = createRetainedJobDetailRecord({
-				row,
-				detail,
-				now,
-				snapshotAt,
-			});
-			setRetainedJobDetails((current) => ({
-				...current,
-				[normalizedJobId]: retained,
-			}));
-			void writeStoreRecord(jobsLocalStoreNames.retainedJobDetails, retained);
+			void enqueueLocalMutation(async (current) => {
+				const record = indexByJobId(current.jobRecords)[normalizedJobId];
+				if (!shouldRetainJobDetail(record)) {
+					return {
+						snapshot: current,
+						value: undefined,
+						changed: false,
+						committed: false,
+					};
+				}
+				const retained = createRetainedJobDetailRecord({
+					row,
+					detail,
+					now: new Date().toISOString(),
+					snapshotAt,
+				});
+				await writeStoreRecord(jobsLocalStoreNames.retainedJobDetails, retained);
+				const detailsById = indexByJobId(current.retainedJobDetails);
+				detailsById[normalizedJobId] = retained;
+				return {
+					snapshot: {
+						...current,
+						retainedJobDetails: Object.values(detailsById),
+					},
+					value: undefined,
+				};
+			}).catch(() => undefined);
 		},
-		[jobRecords],
+		[enqueueLocalMutation],
 	);
 
 	const createSavedSearch = useCallback(
-		({
-			filters,
-			rows,
-			baseline,
-			baselineScope,
-			baselineTotalMatches,
-			reviewStatus,
-			reviewCursor,
-			sortKey,
-			manifest,
-		}: {
-			filters: JobBoardFilters;
-			rows: SearchRow[];
-			baseline?: SavedSearchRecord["baseline"];
-			baselineScope?: SavedSearchRecord["baselineScope"];
-			baselineTotalMatches?: number | null;
-			reviewStatus?: SavedSearchRecord["reviewStatus"];
-			reviewCursor?: SavedSearchRecord["reviewCursor"];
-			sortKey: JobSortKey;
-			manifest: SearchManifest | null;
-		}) => {
-			const now = new Date().toISOString();
-			const record = createSavedSearchRecord({
+		(
+			{
 				filters,
 				rows,
 				baseline,
@@ -280,54 +368,101 @@ export function useJobsLocalState() {
 				reviewCursor,
 				sortKey,
 				manifest,
-				now,
-			});
-			return writeStoreRecord(jobsLocalStoreNames.savedSearches, record)
-				.then(() => {
-					setSavedSearches((current) => [...current, record]);
-					return record;
-				})
-				.catch((caught) => {
-					setStorageStatus("error");
-					throw caught;
+			}: {
+				filters: JobBoardFilters;
+				rows: SearchRow[];
+				baseline?: SavedSearchRecord["baseline"];
+				baselineScope?: SavedSearchRecord["baselineScope"];
+				baselineTotalMatches?: number | null;
+				reviewStatus?: SavedSearchRecord["reviewStatus"];
+				reviewCursor?: SavedSearchRecord["reviewCursor"];
+				sortKey: JobSortKey;
+				manifest: SearchManifest | null;
+			},
+		) =>
+			enqueueLocalMutation(async (current) => {
+				const record = createSavedSearchRecord({
+					filters,
+					rows,
+					baseline,
+					baselineScope,
+					baselineTotalMatches,
+					reviewStatus,
+					reviewCursor,
+					sortKey,
+					manifest,
+					now: new Date().toISOString(),
 				});
-		},
-		[],
+				await writeStoreRecord(jobsLocalStoreNames.savedSearches, record);
+				return {
+					snapshot: {
+						...current,
+						savedSearches: [...current.savedSearches, record],
+					},
+					value: record,
+				};
+			}),
+		[enqueueLocalMutation],
 	);
 
-	const updateSavedSearch = useCallback(async (record: SavedSearchRecord) => {
-		const next = { ...record, updatedAt: new Date().toISOString() };
-		try {
-			await writeStoreRecord(jobsLocalStoreNames.savedSearches, next);
-		} catch (caught) {
-			setStorageStatus("error");
-			throw caught;
-		}
-		setSavedSearches((current) =>
-			current.map((candidate) => (candidate.id === next.id ? next : candidate)),
-		);
-	}, []);
+	const updateSavedSearch = useCallback(
+		(record: SavedSearchRecord) =>
+			enqueueLocalMutation(async (current) => {
+				const now = new Date().toISOString();
+				const next = normalizeSavedSearchRecord(
+					{ ...record, updatedAt: now },
+					now,
+				);
+				if (!next) {
+					throw new Error("The saved search is invalid and was not changed.");
+				}
+				await writeStoreRecord(jobsLocalStoreNames.savedSearches, next);
+				return {
+					snapshot: {
+						...current,
+						savedSearches: current.savedSearches.map((candidate) =>
+							candidate.id === next.id ? next : candidate,
+						),
+					},
+					value: undefined,
+				};
+			}),
+		[enqueueLocalMutation],
+	);
 
-	const deleteSavedSearch = useCallback(async (id: string) => {
-		try {
-			await deleteStoreRecord(jobsLocalStoreNames.savedSearches, id);
-		} catch (caught) {
-			setStorageStatus("error");
-			throw caught;
-		}
-		setSavedSearches((current) => current.filter((record) => record.id !== id));
-	}, []);
+	const deleteSavedSearch = useCallback(
+		(id: string) =>
+			enqueueLocalMutation(async (current) => {
+				await deleteStoreRecord(jobsLocalStoreNames.savedSearches, id);
+				return {
+					snapshot: {
+						...current,
+						savedSearches: current.savedSearches.filter(
+							(record) => record.id !== id,
+						),
+					},
+					value: undefined,
+				};
+			}),
+		[enqueueLocalMutation],
+	);
 
-	const duplicateSavedSearch = useCallback(async (record: SavedSearchRecord) => {
-		const duplicate = duplicateSavedSearchRecord(record);
-		try {
-			await writeStoreRecord(jobsLocalStoreNames.savedSearches, duplicate);
-		} catch (caught) {
-			setStorageStatus("error");
-			throw caught;
-		}
-		setSavedSearches((current) => [...current, duplicate]);
-	}, []);
+	const duplicateSavedSearch = useCallback(
+		(record: SavedSearchRecord) => {
+			void enqueueLocalMutation(async (current) => {
+				const duplicate = duplicateSavedSearchRecord(record);
+				await writeStoreRecord(jobsLocalStoreNames.savedSearches, duplicate);
+				return {
+					snapshot: {
+						...current,
+						savedSearches: [...current.savedSearches, duplicate],
+					},
+					value: undefined,
+				};
+			}).catch(() => undefined);
+		},
+		[enqueueLocalMutation],
+	);
 
 	const markSavedSearchReviewed = useCallback(
 		(
@@ -341,15 +476,16 @@ export function useJobsLocalState() {
 			} = {},
 		) => {
 			const now = new Date().toISOString();
+			const baselineScope = options.baselineScope ?? "page";
 			return updateSavedSearch({
 				...record,
 				lastReviewedAt: now,
 				lastOpenedAt: now,
 				manifestVersion: manifest?.version ?? record.manifestVersion,
 				snapshotAt: manifest?.snapshotAt ?? record.snapshotAt,
-				baselineScope: options.baselineScope ?? "cursor",
+				baselineScope,
 				baselineTotalMatches:
-					options.baselineScope === "full"
+					baselineScope === "full"
 						? options.baselineTotalMatches ??
 							options.baseline?.reviewedJobIds.length ??
 							rows.length
@@ -378,60 +514,76 @@ export function useJobsLocalState() {
 				| "savedSearches"
 				| "viewed",
 		) => {
-			if (category === "all") {
-				await clearIndexedJobsLocalData();
-				removeJobsLocalSettings();
-				const nextSettings = { ...DEFAULT_JOBS_LOCAL_SETTINGS };
-				setSettingsState(nextSettings);
-				setJobRecords({});
-				setSavedSearches([]);
-				setRetainedJobDetails({});
-				return;
-			}
-			if (category === "savedSearches") {
-				await clearStore(jobsLocalStoreNames.savedSearches);
-				setSavedSearches([]);
-				return;
-			}
-			if (category === "details") {
-				await clearStore(jobsLocalStoreNames.retainedJobDetails);
-				setRetainedJobDetails({});
-				return;
-			}
-			setJobRecords((current) => {
-				const now = new Date().toISOString();
-				const next: Record<string, JobWorkflowRecord> = {};
-				for (const [jobId, record] of Object.entries(current)) {
-					const patch = clearPatchForCategory(category);
-					const nextRecord = updateJobWorkflowRecord(record, patch, { jobId, now });
-					next[jobId] = nextRecord;
-					void writeStoreRecord(jobsLocalStoreNames.jobRecords, nextRecord);
-				}
-				const pruned = pruneRetainedJobDetailsForWorkflowRecords({
-					jobRecords: next,
-					retainedJobDetails,
-				});
-				if (pruned.prunedJobIds.length > 0) {
-					setRetainedJobDetails(pruned.retained);
-					for (const jobId of pruned.prunedJobIds) {
-						void deleteStoreRecord(jobsLocalStoreNames.retainedJobDetails, jobId);
+			try {
+				await enqueueLocalMutation(async (current) => {
+					let next: JobsLocalSnapshot;
+					if (category === "all") {
+						next = {
+							settings: { ...DEFAULT_JOBS_LOCAL_SETTINGS },
+							jobRecords: [],
+							savedSearches: [],
+							retainedJobDetails: [],
+						};
+					} else if (category === "savedSearches") {
+						next = { ...current, savedSearches: [] };
+					} else if (category === "details") {
+						next = { ...current, retainedJobDetails: [] };
+					} else {
+						const now = new Date().toISOString();
+						const nextRecords = Object.fromEntries(
+							current.jobRecords.map((record) => [
+								record.jobId,
+								updateJobWorkflowRecord(
+									record,
+									clearPatchForCategory(category),
+									{ jobId: record.jobId, now },
+								),
+							]),
+						);
+						const pruned = pruneRetainedJobDetailsForWorkflowRecords({
+							jobRecords: nextRecords,
+							retainedJobDetails: indexByJobId(current.retainedJobDetails),
+						});
+						next = {
+							...current,
+							jobRecords: Object.values(nextRecords),
+							retainedJobDetails: Object.values(pruned.retained),
+						};
 					}
-				}
-				return next;
-			});
+
+					if (category === "all") {
+						removeJobsLocalSettings();
+					}
+					try {
+						if (category === "all") {
+							await clearIndexedJobsLocalData();
+						} else {
+							await replaceIndexedSnapshot(next);
+						}
+					} catch (caught) {
+						if (category === "all") {
+							writeJobsLocalSettings(current.settings);
+						}
+						throw caught;
+					}
+					return { snapshot: next, value: undefined };
+				});
+			} catch {
+				// The queue records the actionable error while keeping prior visible state.
+			}
 		},
-		[retainedJobDetails],
+		[enqueueLocalMutation],
 	);
 
-	const exportLocalData = useCallback(() => {
-		const snapshot: JobsLocalSnapshot = {
-			settings,
-			jobRecords: Object.values(jobRecords),
-			savedSearches,
-			retainedJobDetails: Object.values(retainedJobDetails),
-		};
-		return JSON.stringify(createJobsLocalExportEnvelope(snapshot), null, 2);
-	}, [jobRecords, retainedJobDetails, savedSearches, settings]);
+	const exportLocalData = useCallback(
+		() =>
+			JSON.stringify(
+				createJobsLocalExportEnvelope(snapshotRef.current),
+				null,
+				2,
+			),
+		[],
+	);
 
 	const importLocalData = useCallback(
 		async (raw: string, mode: "merge" | "replace") => {
@@ -439,29 +591,38 @@ export function useJobsLocalState() {
 			if (!parsed.ok) {
 				return parsed;
 			}
-			const currentSnapshot: JobsLocalSnapshot = {
-				settings,
-				jobRecords: Object.values(jobRecords),
-				savedSearches,
-				retainedJobDetails: Object.values(retainedJobDetails),
-			};
-			const nextSnapshot =
-				mode === "replace"
-					? parsed.data
-					: mergeJobsLocalSnapshots(currentSnapshot, parsed.data);
-			if (mode === "replace") {
-				await replaceIndexedSnapshot(nextSnapshot);
-			} else {
-				await writeIndexedSnapshot(nextSnapshot);
+			try {
+				return await enqueueLocalMutation(async (current) => {
+					const imported: JobsLocalSnapshot = {
+						settings: parsed.data.settings,
+						jobRecords: parsed.data.jobRecords,
+						savedSearches: parsed.data.savedSearches,
+						retainedJobDetails: parsed.data.retainedJobDetails,
+					};
+					const next =
+						mode === "replace"
+							? imported
+							: mergeJobsLocalSnapshots(current, imported);
+					writeJobsLocalSettings(next.settings);
+					try {
+						await importIndexedSnapshot({ next, current, mode });
+					} catch (caught) {
+						writeJobsLocalSettings(current.settings);
+						throw caught;
+					}
+					return {
+						snapshot: next,
+						value: {
+							ok: true as const,
+							data: createJobsLocalExportEnvelope(next),
+						},
+					};
+				});
+			} catch (caught) {
+				return { ok: false as const, errors: [formatStorageError(caught)] };
 			}
-			writeJobsLocalSettings(nextSnapshot.settings);
-			setSettingsState(nextSnapshot.settings);
-			setJobRecords(indexByJobId(nextSnapshot.jobRecords));
-			setSavedSearches(nextSnapshot.savedSearches);
-			setRetainedJobDetails(indexByJobId(nextSnapshot.retainedJobDetails));
-			return { ok: true, data: createJobsLocalExportEnvelope(nextSnapshot) };
 		},
-		[jobRecords, retainedJobDetails, savedSearches, settings],
+		[enqueueLocalMutation],
 	);
 
 	const snapshot = useMemo(
@@ -475,25 +636,40 @@ export function useJobsLocalState() {
 	);
 
 	const reconcileSnapshot = useCallback(
-		(rows: SearchRow[], manifest: SearchManifest | null) => {
-			if (!rows.length) {
-				return;
-			}
-			const result = reconcileJobsLocalSnapshot({
-				snapshot,
-				rows,
-				manifest,
-			});
-			setJobRecords(indexByJobId(result.jobRecords));
-			setRetainedJobDetails(indexByJobId(result.retainedJobDetails));
-			for (const record of result.jobRecords) {
-				void writeStoreRecord(jobsLocalStoreNames.jobRecords, record);
-			}
-			for (const jobId of result.prunedRetainedJobIds) {
-				void deleteStoreRecord(jobsLocalStoreNames.retainedJobDetails, jobId);
+		async (
+			rows: SearchRow[],
+			manifest: SearchManifest | null,
+			complete = false,
+		) => {
+			try {
+				return await enqueueLocalMutation(async (current) => {
+					const result = reconcileJobsLocalSnapshot({
+						snapshot: current,
+						rows,
+						manifest,
+						complete,
+					});
+					if (!result) {
+						return {
+							snapshot: current,
+							value: false,
+							changed: false,
+							committed: false,
+						};
+					}
+					const next = {
+						...current,
+						jobRecords: result.jobRecords,
+						retainedJobDetails: result.retainedJobDetails,
+					};
+					await replaceIndexedSnapshot(next);
+					return { snapshot: next, value: true };
+				});
+			} catch {
+				return false;
 			}
 		},
-		[snapshot],
+		[enqueueLocalMutation],
 	);
 
 	return {
@@ -503,6 +679,7 @@ export function useJobsLocalState() {
 		savedSearches,
 		retainedJobDetails,
 		storageStatus,
+		storageError,
 		summary: summarizeJobsLocalData(snapshot),
 		markViewed,
 		toggleJobFlag,
@@ -518,4 +695,11 @@ export function useJobsLocalState() {
 		importLocalData,
 		reconcileSnapshot,
 	};
+}
+
+function cloneLocalSnapshot(snapshot: JobsLocalSnapshot): JobsLocalSnapshot {
+	if (typeof structuredClone === "function") {
+		return structuredClone(snapshot);
+	}
+	return JSON.parse(JSON.stringify(snapshot)) as JobsLocalSnapshot;
 }

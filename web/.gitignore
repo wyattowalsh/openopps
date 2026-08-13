@@ -9,6 +9,10 @@
 /.next/
 /out/
 /build
+/test-results/
+/playwright-report/
+/blob-report/
+/.wrangler/
 *.tsbuildinfo
 
 # misc

@@ -10,9 +10,10 @@ import type {
 export const JOBS_LOCAL_SCHEMA_VERSION = 2;
 export const JOBS_LOCAL_SETTINGS_KEY = "openopps.jobs.local.settings.v1";
 export const JOBS_LOCAL_DB_NAME = "openopps.jobs.local";
-export const JOBS_LOCAL_DB_VERSION = 2;
+export const JOBS_LOCAL_DB_VERSION = 3;
 export const JOBS_LOCAL_IMPORT_MAX_BYTES = 32 * 1024 * 1024;
 export const JOBS_LOCAL_IMPORT_MAX_RECORDS = 5_000;
+export const JOBS_LOCAL_IMPORT_BACKUP_LIMIT = 3;
 
 export type JobsRetentionMonths = 1 | 3 | 6 | 12 | "forever";
 export type JobsLocalStorageStatus = "loading" | "available" | "unavailable" | "error";
@@ -124,6 +125,14 @@ export type JobLifecycleBaseline = {
 };
 
 export type JobsLocalIndexedSnapshot = Omit<JobsLocalSnapshot, "settings">;
+
+export type JobsLocalImportBackup = {
+	id: string;
+	createdAt: string;
+	mode: "merge" | "replace";
+	bytes: number;
+	snapshot: JobsLocalSnapshot;
+};
 
 export const DEFAULT_JOBS_LOCAL_SETTINGS: JobsLocalSettings = {
 	schemaVersion: JOBS_LOCAL_SCHEMA_VERSION,

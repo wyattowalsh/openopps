@@ -11,6 +11,7 @@ import type {
 	JobsLocalSummary,
 	JobsRetentionMonths,
 } from "@/components/jobs-board/jobs-board-local-state";
+import type { JobsOfflineCacheView } from "@/components/jobs-board/use-jobs-offline-cache";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -29,7 +30,9 @@ type JobsBoardLocalDataPanelProps = {
 	open: boolean;
 	settings: JobsLocalSettings;
 	storageStatus: JobsLocalStorageStatus;
+	storageError: string | null;
 	summary: JobsLocalSummary;
+	offlineCache: JobsOfflineCacheView;
 	onClose: () => void;
 	onSettingsChange: (patch: Partial<JobsLocalSettings>) => void;
 	onClearCategory: (category: ClearCategory) => Promise<void> | void;
@@ -55,7 +58,9 @@ export function JobsBoardLocalDataPanel({
 	open,
 	settings,
 	storageStatus,
+	storageError,
 	summary,
+	offlineCache,
 	onClose,
 	onSettingsChange,
 	onClearCategory,
@@ -170,6 +175,18 @@ export function JobsBoardLocalDataPanel({
 								~{Math.ceil(summary.approximateBytes / 1024)} KB local data
 							</Badge>
 						</div>
+						{storageError ? (
+							<div
+								role="alert"
+								className="rounded-[var(--opps-radius-md)] border border-destructive/45 bg-destructive/10 p-3 text-sm text-destructive"
+							>
+								<p className="font-semibold">Local data was not changed.</p>
+								<p className="mt-1">
+									{storageError} Check browser storage permissions or free space,
+									then retry the action.
+								</p>
+							</div>
+						) : null}
 						<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
 							<SummaryCard label="Viewed" value={summary.viewed} />
 							<SummaryCard label="Saved" value={summary.saved} />
@@ -180,6 +197,86 @@ export function JobsBoardLocalDataPanel({
 							<SummaryCard label="Details" value={summary.retainedDetails} />
 							<SummaryCard label="Stale" value={summary.staleDurableJobs} />
 						</div>
+					</section>
+
+					<section className="space-y-3 border-t border-border/70 pt-4">
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<div>
+								<h3 className="font-mono text-xs font-semibold text-muted-foreground">
+									Offline search
+								</h3>
+								<p className="mt-1 text-xs leading-5 text-muted-foreground">
+									Off by default. Stores only a verified, release-pinned search and
+									metadata projection on this device. Queries, workflow data, and full
+									job details are not added to this cache.
+								</p>
+							</div>
+							<Badge
+								variant={offlineCache.status === "ready" ? "success" : "outline"}
+							>
+								{offlineCache.status === "checking" ||
+								offlineCache.status === "downloading" ? (
+									<Loader2 className="size-3 animate-spin" />
+								) : null}
+								{offlineCache.status}
+							</Badge>
+						</div>
+						<label className="flex items-start gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={offlineCache.optedIn}
+								disabled={
+									offlineCache.status === "checking" ||
+									offlineCache.status === "downloading"
+								}
+								onChange={(event) => {
+									void (event.target.checked
+										? offlineCache.enable()
+										: offlineCache.disable());
+								}}
+							/>
+							<span>Keep verified search data available offline</span>
+						</label>
+						{offlineCache.progress ? (
+							<p className="text-xs text-muted-foreground" aria-live="polite">
+								Verified {offlineCache.progress.completedEntries} of{" "}
+								{offlineCache.progress.totalEntries} files ({formatBytes(
+									offlineCache.progress.completedBytes,
+								)} of {formatBytes(offlineCache.progress.totalBytes)}).
+							</p>
+						) : null}
+						{offlineCache.ready ? (
+							<p className="text-xs text-muted-foreground">
+								Pinned release {offlineCache.ready.releaseId.slice(0, 12)}… ·{" "}
+								{offlineCache.ready.entryCount} files ·{" "}
+								{formatBytes(offlineCache.ready.totalBytes)}
+								{offlineCache.status === "stale"
+									? " (a newer online release is available)"
+									: ""}
+							</p>
+						) : null}
+						{offlineCache.error ? (
+							<div
+								role="alert"
+								className="rounded-[var(--opps-radius-md)] border border-destructive/45 bg-destructive/10 p-3 text-xs leading-5 text-destructive"
+							>
+								{offlineCache.error}{" "}
+								{offlineCache.ready
+									? "The previously verified release remains available."
+									: "No offline-ready release was recorded."}
+							</div>
+						) : null}
+						{offlineCache.optedIn &&
+						(offlineCache.status === "stale" || offlineCache.status === "error") ? (
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => void offlineCache.retry()}
+							>
+								Retry verified download
+							</Button>
+						) : null}
 					</section>
 
 					<section className="space-y-3 border-t border-border/70 pt-4">
@@ -338,6 +435,13 @@ export function JobsBoardLocalDataPanel({
 			/>
 		</div>
 	);
+}
+
+function formatBytes(bytes: number) {
+	if (bytes < 1024 * 1024) {
+		return `${Math.ceil(bytes / 1024)} KB`;
+	}
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function SummaryCard({ label, value }: { label: string; value: number }) {

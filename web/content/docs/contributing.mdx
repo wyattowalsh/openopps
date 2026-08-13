@@ -51,7 +51,7 @@ cd web && pnpm test
 just web-search-index-check
 ```
 
-`just ci` runs `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `web-check`, `web-build`, `web-test`, `web-e2e`, `web-a11y`, `web-lint`, `kaggle-meta`, and `cli-help`. `just web-rtk-lint` is the explicit optional maintainer lint for `rtk`; it is not part of the default CI recipe.
+`just ci` composes the `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts` lanes; `just ci-full` adds network-dependent security audits and lowest-direct dependency testing. `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe. GitHub Actions adds the supported Python matrix, dependency review, and a non-PR wheel/SBOM attestation job. The current supply-chain job attests the Python wheel only, not a v7 public-data recovery archive.
 
 ## Web App Workflow
 
@@ -76,7 +76,25 @@ just web-search-index
 just web-search-index-check
 ```
 
-CI never opens SQLite. It validates the **committed** search artifact graph with `just web-search-artifacts-check` and the schema check inside `just web-check` (`pytest -k committed`). Run `just web-search-index-check` before release only when intentionally regenerating `web/public/data/openopps-search/` from a clean local snapshot.
+CI never opens SQLite. It validates the **committed v6 transition** artifact graph with `just web-search-artifacts-check` and the schema check inside `just web-check` (`pytest -k committed`). Run `just web-search-index-check` only when intentionally regenerating `web/public/data/openopps-search/` from a clean local snapshot.
+
+Version 7 generation writes to a separate publication root and is fail-closed on freshness, source rights, required attribution, privacy, exact closure, provenance, and platform budgets:
+
+```bash
+uv run python scripts/generate_docs_search_index.py \
+  --data-db kaggle/openoppsdb.sqlite \
+  --release-root /absolute/path/to/openopps-search-v7 \
+  --channel production \
+  --max-snapshot-age-hours 48
+uv run python scripts/verify_docs_search_artifacts.py \
+  --root /absolute/path/to/openopps-search-v7 \
+  --channel production \
+  --max-snapshot-age-hours 48
+uv run python scripts/docs_search_delivery.py \
+  validate-config deployment/openopps-data
+```
+
+See [Public Data Releases](/docs/public-data-releases) before changing artifact schema, rights metadata, public-data environment variables, the shared snapshot client, search worker, assets-only configs, archive contents, or v6 compatibility. Live upload/deploy, GitHub Release publication, v6 removal, and Git history rewriting are separate authority boundaries; a local green run does not authorize or prove them.
 
 ## Public Workflow Changes
 
@@ -110,6 +128,8 @@ Export and static-index changes must keep the data contract clear:
 - Keep SQLite, CSV, Parquet, and JSONL export semantics aligned.
 - Keep telemetry first-party, env-gated, size-capped, and sanitized.
 - Treat the local event lake as the canonical telemetry sink; optional dashboards or hosted adapters are mirrors.
+- Keep packaged source rights canonical for packaged sources. Missing or `needs_review` rights states fail v7 publication; required attribution must be present in the generated policy report.
+- Never hand-edit an immutable v7 release, channel pointer, policy report, or recovery archive. Correct the source of truth and regenerate.
 
 ## Secret Hygiene
 

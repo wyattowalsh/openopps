@@ -2,7 +2,6 @@
 """OpenOpps Kaggle implementation core."""
 from __future__ import annotations
 
-import argparse
 import base64
 import csv
 from datetime import UTC, datetime
@@ -20,29 +19,92 @@ import sys
 import time
 import types
 import urllib.request
-from typing import Annotated, Any, Callable, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import polars as pl
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from openopps.models import (
-    BoardProviderRow,
-    BoardRow,
-    JobPayloadSnapshotRow,
-    JobRow,
-    JobSyncObservationRow,
-    JobSyncRunRow,
-    JobVersionBulletRow,
-    JobVersionLocationRow,
-    JobVersionRow,
-    JobVersionSkillKeywordRow,
-    JobVersionSkillRow,
-    SourceRow,
-    extract_job_skills,
-)
+from openopps.models import JobRecord, extract_job_skills
 from openopps.utils import stable_id, slugify
-from openopps_kaggle.constants import *  # noqa: F403
+from openopps_kaggle.constants import (
+    ADVANCED_NB_FILE,
+    ADVANCED_NB_ID,
+    APP_PRIMARY_KEY_COLUMNS,
+    COVERAGE_FILE,
+    CSV_DIR,
+    DATAPACKAGE_FILE as DATAPACKAGE_FILE,
+    DATA_TABLES,
+    DATA_RESOURCES as DATA_RESOURCES,
+    DATASET_ID,
+    DATASET_IMAGE_FILE,
+    DATASET_IMAGE_SOURCE,
+    DATASET_IMAGE_URL,
+    DATASET_LICENSE,
+    DB_FILE,
+    DEFAULT_DATASET_DIR as DEFAULT_DATASET_DIR,
+    DEFAULT_EXAMPLES_DIR as DEFAULT_EXAMPLES_DIR,
+    DEFAULT_MANAGER_DIR as DEFAULT_MANAGER_DIR,
+    DEFAULT_STARTER_DIR as DEFAULT_STARTER_DIR,
+    EVIDENCE_RESOURCES as EVIDENCE_RESOURCES,
+    ENUM_VALUES_BY_COLUMN,
+    EXPORT_ORDER_COLUMNS,
+    EXPOSED_DATAPACKAGE_FILE as EXPOSED_DATAPACKAGE_FILE,
+    GENERATOR_SCRIPT_URL,
+    HIRING_MARKET_NB_FILE,
+    HIRING_MARKET_NB_ID,
+    JOIN_HINTS_BY_COLUMN,
+    MAX_COLUMN_DESCRIPTION_LENGTH,
+    METADATA_TABLES,
+    NB_FILE,
+    NB_ID,
+    NOTEBOOK_JOB_ROUTE_LIMIT,
+    NOTEBOOK_SYNC_ENV_DEFAULTS,
+    NOTEBOOK_SYNC_TIMEOUT_SECONDS,
+    OpenOppsColumnRow as OpenOppsColumnRow,
+    OpenOppsTableRow as OpenOppsTableRow,
+    PARQUET_DIR,
+    PRIVATE_EVIDENCE_FILES,
+    PRIVATE_METADATA_FILES,
+    PRIVATE_UPLOAD_RUNTIME_DIRS,
+    PRIVATE_UPLOAD_RUNTIME_FILES,
+    PUBLIC_EXPORTS_MAX_BYTES,
+    PUBLIC_SQLITE_MAX_BYTES,
+    PUBLIC_SQLITE_TABLE_NAME_SET as PUBLIC_SQLITE_TABLE_NAME_SET,
+    PUBLIC_SQLITE_TABLE_NAMES,
+    PUBLIC_SQLITE_VALUE_STATUSES as PUBLIC_SQLITE_VALUE_STATUSES,
+    PUBLIC_UPLOAD_CONTROL_FILES,
+    PUBLIC_UPLOAD_DATA_FILES,
+    RELATIONSHIP_REFERENCES,
+    RESOURCES,
+    RUNTIME_GENERATOR_DATASET_ID,
+    RUNTIME_GENERATOR_DATASET_SLUG as RUNTIME_GENERATOR_DATASET_SLUG,
+    RUNTIME_GENERATOR_PACKAGE_DIR as RUNTIME_GENERATOR_PACKAGE_DIR,
+    RUNTIME_GENERATOR_SCRIPT_FILE as RUNTIME_GENERATOR_SCRIPT_FILE,
+    RUNTIME_MANIFEST_FILE,
+    SKILLS_RADAR_NB_FILE,
+    SKILLS_RADAR_NB_ID,
+    SNAPSHOT_QUALITY_FILE,
+    SQLITE_DERIVED_CHILD_TABLES,
+    SQLITE_PREVIEW_TEXT_COLUMNS,
+    SQLITE_PREVIEW_TEXT_COLUMN_SET,
+    SQLITE_PREVIEW_TEXT_MAX_CHARS,
+    SQLITE_SIDECAR_SUFFIXES,
+    SQLITE_UPLOAD_PROJECTED_COLUMNS,
+    SQLITE_UPLOAD_PROJECTED_COLUMN_SET,
+    STARTER_NB_FILE,
+    STARTER_NB_ID,
+    STATUS_FILE,
+    SYNC_METRICS_FILE,
+    SYNC_STDERR_FILE as SYNC_STDERR_FILE,
+    TABLES,
+    PublicNotebookSpec,
+    Resource,
+    Table,
+)
+
+
+KAGGLE_CLIENT_PACKAGE_SPEC = "kaggle==2.2.4"
 
 
 def _file_sha256(path: Path) -> str:
@@ -1603,14 +1665,14 @@ def _sqlite_table_export_order_by(headers: list[str], table: Table) -> tuple[str
     )
 
 
-def _polars_schema_overrides(table: Table) -> dict[str, pl.DataType]:
-    schema: dict[str, pl.DataType] = {}
+def _polars_schema_overrides(table: Table) -> dict[str, type[pl.DataType]]:
+    schema: dict[str, type[pl.DataType]] = {}
     for field in _model_schema_metadata(table.model)["fields"]:
         schema[field["name"]] = _polars_dtype_for_field(field)
     return schema
 
 
-def _polars_dtype_for_field(field: dict[str, Any]) -> pl.DataType:
+def _polars_dtype_for_field(field: dict[str, Any]) -> type[pl.DataType]:
     field_type = str(field.get("type") or "")
     logical_type = str(field.get("logicalType") or "")
     schema_types = {
@@ -1998,7 +2060,11 @@ def _extract_version_skills(row: sqlite3.Row) -> list[dict[str, Any]]:
     existing = _json_list(row["skills"])
     if existing:
         return [skill for skill in existing if isinstance(skill, dict)]
-    record = types.SimpleNamespace(
+    record = JobRecord.model_construct(
+        id="skill-backfill",
+        board_key="skill-backfill",
+        provider_id="skill-backfill",
+        remote_id="skill-backfill",
         title=row["title"],
         department=row["department"],
         team=row["team"],
@@ -2217,6 +2283,9 @@ def snapshot_quality_report(
     job_sync_runs = _int_count(
         sync_metrics.get("jobSyncRuns"), sqlite_counts.get("successfulJobSyncRuns")
     )
+    job_sync_attempts = _int_count(
+        sync_metrics.get("jobSyncAttempts"), job_sync_runs
+    )
     jobs_persisted = _int_count(sync_metrics.get("jobsPersisted"), persisted_jobs)
     provider_errors = _dict_value(sync_metrics.get("providerErrors"))
     provider_error_details = _dict_value(sync_metrics.get("providerErrorDetails"))
@@ -2261,6 +2330,9 @@ def snapshot_quality_report(
     ):
         hard_blockers.append("dominant_provider_failures")
 
+    if job_sync_attempts > job_sync_runs and "dominant_provider_failures" not in hard_blockers:
+        warnings.append("incomplete_job_sync_attempts")
+
     if provider_errors and not any(
         blocker.startswith("unclassified_provider_errors")
         or blocker == "dominant_provider_failures"
@@ -2281,6 +2353,7 @@ def snapshot_quality_report(
         "executableRoutes": executable_routes,
         "persistedJobs": persisted_jobs,
         "currentJobs": current_jobs,
+        "jobSyncAttempts": job_sync_attempts,
         "jobSyncRuns": job_sync_runs,
         "jobsPersisted": jobs_persisted,
         "job_versions": job_version_rows,
@@ -2303,6 +2376,7 @@ def snapshot_quality_report(
                 "boardProviders",
                 "jobs",
                 "jobsPersisted",
+                "jobSyncAttempts",
                 "jobSyncRuns",
                 "jobsDeduped",
                 "skipped",
@@ -2427,17 +2501,71 @@ def _stage_public_upload_dir(dataset_dir: Path, upload_dir: Path) -> None:
 
 
 def _prepare_existing_public_upload_dir(upload_dir: Path) -> None:
+    _prepare_existing_owned_staging_dir(
+        upload_dir,
+        allowed_files=set(PUBLIC_UPLOAD_CONTROL_FILES + PUBLIC_UPLOAD_DATA_FILES),
+        label="Public upload",
+        ownership_description="prior OpenOpps public-upload contents",
+    )
+
+
+def _prepare_owned_staging_dir(
+    upload_dir: Path,
+    *,
+    allowed_files: set[str],
+    protected_roots: set[Path],
+    forbidden_descendant_roots: set[Path],
+    label: str,
+    ownership_description: str,
+) -> Path:
+    raw_upload_dir = upload_dir.expanduser()
+    if raw_upload_dir.is_symlink():
+        raise ValueError(f"{label} staging directory must not be a symlink")
+    upload_dir = raw_upload_dir.resolve()
+    resolved_protected_roots = {path.expanduser().resolve() for path in protected_roots}
+    resolved_descendant_roots = {
+        path.expanduser().resolve() for path in forbidden_descendant_roots
+    }
+    if any(
+        upload_dir == root or _path_is_relative_to(root, upload_dir)
+        for root in resolved_protected_roots
+    ) or any(
+        upload_dir == root or _path_is_relative_to(upload_dir, root)
+        for root in resolved_descendant_roots
+    ):
+        raise ValueError(
+            f"Refusing to stage {label.lower()} into protected directory: {upload_dir}"
+        )
+    if upload_dir.exists():
+        _prepare_existing_owned_staging_dir(
+            upload_dir,
+            allowed_files=allowed_files,
+            label=label,
+            ownership_description=ownership_description,
+        )
+    else:
+        upload_dir.mkdir(parents=True)
+    return upload_dir
+
+
+def _prepare_existing_owned_staging_dir(
+    upload_dir: Path,
+    *,
+    allowed_files: set[str],
+    label: str,
+    ownership_description: str,
+) -> None:
     if not upload_dir.is_dir():
         raise ValueError(
-            f"Public upload staging path exists but is not a directory: {upload_dir}"
+            f"{label} staging path exists but is not a directory: {upload_dir}"
         )
     entries = list(upload_dir.iterdir())
     if not entries:
         return
-    if not _is_tool_owned_public_upload_dir(upload_dir):
+    if not _is_tool_owned_staging_dir(upload_dir, allowed_files=allowed_files):
         raise ValueError(
-            "Refusing to overwrite non-empty public upload staging directory "
-            f"without prior OpenOpps public-upload contents: {upload_dir}"
+            f"Refusing to overwrite non-empty {label.lower()} staging directory "
+            f"without {ownership_description}: {upload_dir}"
         )
     for entry in entries:
         if entry.is_dir() and not entry.is_symlink():
@@ -2447,7 +2575,17 @@ def _prepare_existing_public_upload_dir(upload_dir: Path) -> None:
 
 
 def _is_tool_owned_public_upload_dir(upload_dir: Path) -> bool:
-    allowed_files = set(PUBLIC_UPLOAD_CONTROL_FILES + PUBLIC_UPLOAD_DATA_FILES)
+    return _is_tool_owned_staging_dir(
+        upload_dir,
+        allowed_files=set(PUBLIC_UPLOAD_CONTROL_FILES + PUBLIC_UPLOAD_DATA_FILES),
+    )
+
+
+def _is_tool_owned_staging_dir(
+    upload_dir: Path,
+    *,
+    allowed_files: set[str],
+) -> bool:
     allowed_dirs = {
         parent.as_posix()
         for relative_path in allowed_files
@@ -3301,7 +3439,8 @@ import csv
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -3316,8 +3455,9 @@ DATASET_ID = os.environ.get(
 )
 PACKAGE_SPEC = os.environ.get(
     "OPENOPPS_PACKAGE_SPEC",
-    "git+https://github.com/wyattowalsh/openopps.git@main",
-)
+    "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__",
+).strip()
+KAGGLE_CLIENT_SPEC = "__KAGGLE_CLIENT_PACKAGE_SPEC__"
 OUTPUT_DIR = Path(
     os.environ.get(
         "OPENOPPS_KAGGLE_OUTPUT_DIR",
@@ -3676,7 +3816,34 @@ def kaggle_dataset_status() -> dict:
 
 
 def install_openopps() -> None:
-    run([sys.executable, "-m", "pip", "install", "--quiet", "--upgrade", PACKAGE_SPEC, "kaggle"])
+    package_spec = require_immutable_openopps_package_spec()
+    run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--upgrade",
+            package_spec,
+            KAGGLE_CLIENT_SPEC,
+        ]
+    )
+
+
+def require_immutable_openopps_package_spec() -> str:
+    prefix = "git+https://github.com/wyattowalsh/openopps.git@"
+    revision = PACKAGE_SPEC.removeprefix(prefix)
+    if (
+        not PACKAGE_SPEC.startswith(prefix)
+        or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision) is None
+    ):
+        raise RuntimeError(
+            "OPENOPPS_PACKAGE_SPEC must name the canonical OpenOpps repository "
+            "at an immutable exact Git commit SHA; mutable branches, tags, ranges, "
+            "and unpinned packages are refused."
+        )
+    return PACKAGE_SPEC
 
 
 def required_runtime_package_sha256() -> str:
@@ -3694,34 +3861,156 @@ def required_runtime_package_sha256() -> str:
     return GENERATOR_SCRIPT_SHA256
 
 
+def canonical_runtime_package_sha256(files: dict[str, str]) -> str:
+    payload = json.dumps(
+        files,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def load_runtime_package_manifest() -> dict:
+    if RUNTIME_MANIFEST_PATH.is_symlink():
+        raise RuntimeError("OpenOpps Kaggle runtime manifest must not be a symlink")
+
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise RuntimeError(
+                    f"runtime-manifest.json contains duplicate key: {key}"
+                )
+            result[key] = value
+        return result
+
+    try:
+        manifest = json.loads(
+            RUNTIME_MANIFEST_PATH.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid runtime-manifest.json: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise RuntimeError("runtime-manifest.json must contain a JSON object")
+    return manifest
+
+
+def validated_runtime_sha256(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise RuntimeError(f"{label} must be a lowercase SHA-256 hex digest")
+    return value
+
+
+def validated_runtime_file_map(value: object) -> dict[str, str]:
+    if not isinstance(value, dict) or not value:
+        raise RuntimeError("runtime-manifest.json missing files map")
+    files = {}
+    casefolded_paths = {}
+    for raw_relative_path, raw_digest in value.items():
+        if not isinstance(raw_relative_path, str):
+            raise RuntimeError("Runtime manifest file paths must be strings")
+        relative_path = PurePosixPath(raw_relative_path)
+        if (
+            not raw_relative_path
+            or chr(92) in raw_relative_path
+            or chr(0) in raw_relative_path
+            or relative_path.is_absolute()
+            or relative_path.as_posix() != raw_relative_path
+            or any(part in {"", ".", ".."} for part in relative_path.parts)
+            or len(relative_path.parts) < 2
+            or relative_path.parts[0] != RUNTIME_PACKAGE_DIR.name
+        ):
+            raise RuntimeError(
+                f"Runtime manifest contains unsafe relative path: {raw_relative_path!r}"
+            )
+        folded = raw_relative_path.casefold()
+        prior = casefolded_paths.get(folded)
+        if prior is not None and prior != raw_relative_path:
+            raise RuntimeError(
+                "Runtime manifest contains case-colliding paths: "
+                f"{prior!r} and {raw_relative_path!r}"
+            )
+        casefolded_paths[folded] = raw_relative_path
+        files[raw_relative_path] = validated_runtime_sha256(
+            raw_digest,
+            label=f"Runtime manifest checksum for {raw_relative_path}",
+        )
+    return files
+
+
+def runtime_package_file_inventory(expected_files: set[str]) -> dict[str, Path]:
+    if RUNTIME_PACKAGE_DIR.is_symlink():
+        raise RuntimeError("OpenOpps Kaggle runtime package must not be a symlink")
+    if not RUNTIME_PACKAGE_DIR.is_dir():
+        raise FileNotFoundError(
+            f"Missing runtime package directory: {RUNTIME_PACKAGE_DIR}"
+        )
+    expected_dirs = {
+        parent.as_posix()
+        for relative_path in expected_files
+        for parent in PurePosixPath(relative_path).parents
+        if parent.as_posix() != "."
+    }
+    inventory = {}
+    unexpected_dirs = []
+    for path in RUNTIME_PACKAGE_DIR.rglob("*"):
+        relative_path = path.relative_to(OUTPUT_DIR).as_posix()
+        if path.is_symlink():
+            raise RuntimeError(
+                f"OpenOpps Kaggle runtime package must not contain symlinks: {relative_path}"
+            )
+        if path.is_file():
+            inventory[relative_path] = path
+        elif path.is_dir():
+            if relative_path not in expected_dirs:
+                unexpected_dirs.append(relative_path)
+        else:
+            raise RuntimeError(
+                "OpenOpps Kaggle runtime package contains unsupported filesystem "
+                f"entry: {relative_path}"
+            )
+    actual_files = set(inventory)
+    missing = sorted(expected_files - actual_files)
+    extra = sorted(actual_files - expected_files)
+    if missing or extra or unexpected_dirs:
+        raise RuntimeError(
+            "OpenOpps Kaggle runtime package file set mismatch: "
+            f"missing={missing} extra={extra} unexpected_dirs={sorted(unexpected_dirs)}"
+        )
+    return inventory
+
+
 def verify_runtime_package_manifest() -> str:
     global GENERATOR_SCRIPT_VERIFIED_SHA256, RUNTIME_PACKAGE_VERIFIED_SHA256
     expected_digest = required_runtime_package_sha256()
-    manifest = json.loads(RUNTIME_MANIFEST_PATH.read_text(encoding="utf-8"))
-    actual_digest = str(manifest.get("sha256") or "")
-    if actual_digest != expected_digest:
+    manifest = load_runtime_package_manifest()
+    if manifest.get("package") != RUNTIME_PACKAGE_DIR.name:
+        raise RuntimeError(
+            f"runtime-manifest.json package must be {RUNTIME_PACKAGE_DIR.name!r}"
+        )
+    declared_digest = validated_runtime_sha256(
+        manifest.get("sha256"),
+        label="Runtime manifest root checksum",
+    )
+    files = validated_runtime_file_map(manifest.get("files"))
+    inventory = runtime_package_file_inventory(set(files))
+    verified_files = {}
+    for relative_path, expected_file_digest in sorted(files.items()):
+        file_digest = hashlib.sha256(inventory[relative_path].read_bytes()).hexdigest()
+        if file_digest != expected_file_digest:
+            raise RuntimeError(
+                f"Runtime package file checksum mismatch for {relative_path}: "
+                f"expected={expected_file_digest} actual={file_digest}"
+            )
+        verified_files[relative_path] = file_digest
+    actual_digest = canonical_runtime_package_sha256(verified_files)
+    if actual_digest != declared_digest or actual_digest != expected_digest:
         raise RuntimeError(
             "OpenOpps Kaggle runtime package checksum mismatch: "
-            f"expected={expected_digest} actual={actual_digest}"
+            f"expected={expected_digest} declared={declared_digest} actual={actual_digest}"
         )
-    files = manifest.get("files")
-    if not isinstance(files, dict):
-        raise RuntimeError("runtime-manifest.json missing files map")
-    for rel, digest in sorted(files.items()):
-        if rel.startswith("openopps_kaggle/"):
-            path = RUNTIME_PACKAGE_DIR / rel.removeprefix("openopps_kaggle/")
-        elif rel == "runtime-manifest.json":
-            path = RUNTIME_MANIFEST_PATH
-        else:
-            path = OUTPUT_DIR / rel
-        if not path.is_file():
-            raise FileNotFoundError(f"Missing runtime package file: {path}")
-        file_digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if file_digest != digest:
-            raise RuntimeError(
-                f"Runtime package file checksum mismatch for {rel}: "
-                f"expected={digest} actual={file_digest}"
-            )
     GENERATOR_SCRIPT_VERIFIED_SHA256 = actual_digest
     RUNTIME_PACKAGE_VERIFIED_SHA256 = actual_digest
     return actual_digest
@@ -3746,7 +4035,12 @@ def download_runtime_package() -> None:
     )
     manifest_source = runtime_input / "runtime-manifest.json"
     package_source = runtime_input / "openopps_kaggle"
-    if not manifest_source.is_file() or not package_source.is_dir():
+    if (
+        manifest_source.is_symlink()
+        or package_source.is_symlink()
+        or not manifest_source.is_file()
+        or not package_source.is_dir()
+    ):
         raise RuntimeError(
             "Runtime package must be attached via openoppsdb-manager-runtime input; "
             f"expected {manifest_source} and {package_source}"
@@ -3754,11 +4048,15 @@ def download_runtime_package() -> None:
     shutil.copy2(manifest_source, RUNTIME_MANIFEST_PATH)
     if RUNTIME_PACKAGE_DIR.exists():
         shutil.rmtree(RUNTIME_PACKAGE_DIR)
-    shutil.copytree(package_source, RUNTIME_PACKAGE_DIR)
+    shutil.copytree(package_source, RUNTIME_PACKAGE_DIR, symlinks=True)
     digest = verify_runtime_package_manifest()
     completed = subprocess.run(
         [sys.executable, "-m", "openopps_kaggle", "--help"],
-        env={**runtime_probe_env(), "PYTHONPATH": str(OUTPUT_DIR)},
+        env={
+            **runtime_probe_env(),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(OUTPUT_DIR),
+        },
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -3802,6 +4100,7 @@ def run_openopps_kaggle(
     else:
         verify_runtime_package_manifest()
     env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = str(RUNTIME_PACKAGE_DIR.parent)
     run(
         [sys.executable, "-m", "openopps_kaggle", *args],
@@ -4344,6 +4643,7 @@ install_openopps()
 download_runtime_package()
 copy_latest_input_db()
 """.replace("__RUNTIME_PACKAGE_URL__", GENERATOR_SCRIPT_URL)
+        .replace("__KAGGLE_CLIENT_PACKAGE_SPEC__", KAGGLE_CLIENT_PACKAGE_SPEC)
         .replace("__RUNTIME_PACKAGE_SHA256__", runtime_generator_sha256)
         .replace(
             "__OPENOPPS_SYNC_ENV_DEFAULTS__",
@@ -4492,46 +4792,47 @@ def _notebook_publish_source() -> str:
 require_kaggle_credentials()
 previous_status = kaggle_dataset_status()
 previous_version = int(previous_status.get("current_version_number") or 0)
+if previous_version < 1:
+    raise RuntimeError(
+        "Scheduled manager publication requires an existing immutable rollback version."
+    )
 print(
     "OpenOpps live dataset version before publish:",
     json.dumps(previous_status, sort_keys=True),
 )
 
 emit_disk_usage("before_dataset_publish")
-run([
-    "kaggle",
-    "datasets",
+publication_ledger = OUTPUT_DIR / "kaggle-publication-ledger.json"
+run_openopps_kaggle([
+    "publication",
+    "publish",
+    "--kind",
+    "public",
+    "--action",
     "version",
-    "-p",
-    str(PUBLIC_UPLOAD_DIR),
-    "-m",
+    "--message",
     message,
-    "-q",
-    "-t",
-    "-r",
-    "zip",
+    "--stage-dir",
+    str(PUBLIC_UPLOAD_DIR),
+    "--existing-stage",
+    "--ledger",
+    str(publication_ledger),
+    "--expected-current-version",
+    str(previous_version),
+    "--timeout-seconds",
+    "1800",
+    "--poll-seconds",
+    "30",
+    "--execute",
 ])
 expected_version = previous_version + 1
-metadata_repair_ok = try_run_openopps_kaggle([
-    "--output-dir",
-    str(OUTPUT_DIR),
-    "--skip-notebooks",
-    "--wait-live-dataset-ready",
-    "--wait-live-dataset-min-version",
-    str(expected_version),
-    "--wait-live-dataset-timeout-seconds",
-    str(KAGGLE_METADATA_WAIT_SECONDS),
-    "--wait-live-dataset-poll-seconds",
-    str(KAGGLE_METADATA_POLL_SECONDS),
-    "--update-live-file-metadata",
-])
 print(
-    "OpenOpps live metadata repair:",
+    "OpenOpps exact publication/readback ledger:",
     json.dumps(
         {
-            "databundle": "skipped_in_notebook",
-            "mode": "kaggle-api",
-            "ok": metadata_repair_ok,
+            "expectedVersion": expected_version,
+            "ledger": str(publication_ledger),
+            "metadataRepair": "separate-maintainer-action",
         },
         sort_keys=True,
     ),

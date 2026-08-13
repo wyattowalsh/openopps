@@ -18,7 +18,7 @@ from openopps.models import (
     validate_provider_host,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.normalize import (
     salary_components,
     salary_display,
@@ -58,10 +58,10 @@ class BambooHRProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         bamboohr = bamboohr_route(route)
         if not bamboohr:
-            return []
+            return JobFetchResult(jobs=[], authoritative=False)
         listings = await self._fetch_listings(client, bamboohr)
         semaphore = asyncio.Semaphore(self.settings.board_concurrency)
 
@@ -74,10 +74,13 @@ class BambooHRProvider:
                 return await self._fetch_detail(client, bamboohr, job_id)
 
         details = await asyncio.gather(*(detail_for(listing) for listing in listings))
-        return [
-            self._normalize(board, bamboohr, listing, detail)
-            for listing, detail in zip(listings, details, strict=False)
-        ]
+        return JobFetchResult(
+            jobs=[
+                self._normalize(board, bamboohr, listing, detail)
+                for listing, detail in zip(listings, details, strict=True)
+            ],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,
@@ -107,10 +110,28 @@ class BambooHRProvider:
         data = await self._request_json(
             client, "GET", f"https://{route.host}/careers/list"
         )
-        result = data.get("result") if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            raise ValueError("BambooHR careers list endpoint returned invalid JSON")
+        result = data.get("result")
         if not isinstance(result, list):
             raise ValueError("BambooHR careers list endpoint returned invalid JSON")
-        return [item for item in result if isinstance(item, dict)]
+        if any(not isinstance(item, dict) for item in result):
+            raise ValueError("BambooHR careers list endpoint returned invalid JSON")
+        listings = cast(list[dict[str, Any]], result)
+        meta = data.get("meta")
+        total = meta.get("totalCount") if isinstance(meta, dict) else None
+        if total is not None:
+            if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+                raise ValueError("BambooHR totalCount must be a non-negative integer")
+            if len(listings) != total:
+                raise ValueError("BambooHR advertised total does not match jobs")
+        listing_ids = [
+            str(first_present(item.get("id"), item.get("jobOpeningName")))
+            for item in listings
+        ]
+        if len(listing_ids) != len(set(listing_ids)):
+            raise ValueError("BambooHR careers list returned duplicate jobs")
+        return listings
 
     async def _fetch_detail(
         self, client: httpx.AsyncClient, route: BambooHRRoute, job_id: str

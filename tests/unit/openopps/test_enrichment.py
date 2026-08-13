@@ -2,10 +2,7 @@ from pathlib import Path
 
 from openopps.enrichment import enrich_metadata
 from openopps.models import (
-    BoardProviderRecord,
     BoardRecord,
-    JobRecord,
-    ProviderSupport,
     SourceRecord,
 )
 from openopps.settings import OpenOppsSettings

@@ -16,6 +16,28 @@ afterEach(() => {
 });
 
 describe("JobsBoardLocalDataPanel", () => {
+	it("renders persistence failures as actionable handled errors", () => {
+		renderPanel({ storageError: "IndexedDB transaction aborted." });
+
+		const message = screen.getByRole("alert").textContent ?? "";
+		expect(message).toContain(
+			"Local data was not changed.IndexedDB transaction aborted.",
+		);
+		expect(message).toContain("Check browser storage permissions or free space");
+	});
+
+	it("shows the offline cache as explicit opt-in with privacy scope", () => {
+		renderPanel();
+
+		const checkbox = screen.getByLabelText(
+			"Keep verified search data available offline",
+		) as HTMLInputElement;
+		expect(checkbox.checked).toBe(false);
+		expect(
+			screen.getByText(/Queries, workflow data, and full job details/),
+		).toBeTruthy();
+	});
+
 	it("moves focus into the dialog and closes from Escape", async () => {
 		const opener = document.createElement("button");
 		opener.textContent = "Open settings";
@@ -84,20 +106,21 @@ describe("JobsBoardLocalDataPanel", () => {
 function renderPanel(
 	overrides: Partial<ComponentProps<typeof JobsBoardLocalDataPanel>> = {},
 ) {
-	return render(
-		<JobsBoardLocalDataPanel
-			open
-			settings={settings}
-			storageStatus="available"
-			summary={summary}
-			onClose={vi.fn()}
-			onSettingsChange={vi.fn()}
-			onClearCategory={vi.fn()}
-			onExport={() => "{}"}
-			onImport={vi.fn().mockResolvedValue({ ok: true })}
-			{...overrides}
-		/>,
-	);
+	const props: ComponentProps<typeof JobsBoardLocalDataPanel> = {
+		open: true,
+		settings,
+		storageStatus: "available",
+		storageError: null,
+		summary,
+		offlineCache,
+		onClose: vi.fn(),
+		onSettingsChange: vi.fn(),
+		onClearCategory: vi.fn(),
+		onExport: () => "{}",
+		onImport: vi.fn().mockResolvedValue({ ok: true }),
+		...overrides,
+	};
+	return render(<JobsBoardLocalDataPanel {...props} />);
 }
 
 const settings: JobsLocalSettings = {
@@ -118,4 +141,15 @@ const summary: JobsLocalSummary = {
 	retainedDetails: 0,
 	staleDurableJobs: 0,
 	approximateBytes: 0,
+};
+
+const offlineCache = {
+	optedIn: false,
+	status: "off" as const,
+	error: null,
+	progress: null,
+	ready: null,
+	enable: vi.fn().mockResolvedValue(undefined),
+	disable: vi.fn().mockResolvedValue(undefined),
+	retry: vi.fn().mockResolvedValue(undefined),
 };

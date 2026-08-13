@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -17,7 +18,7 @@ from openopps.models import (
     validate_provider_host,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.normalize import (
     salary_components,
     salary_display,
@@ -58,10 +59,10 @@ class RipplingProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         slug = rippling_slug(route)
         if not slug:
-            return []
+            return JobFetchResult(jobs=[], authoritative=False)
         listings = await self._fetch_listings(client, slug)
         semaphore = asyncio.Semaphore(self.settings.board_concurrency)
 
@@ -73,10 +74,13 @@ class RipplingProvider:
                 return await self._fetch_detail(client, slug, job_id)
 
         details = await asyncio.gather(*(detail_for(listing) for listing in listings))
-        return [
-            self._normalize(board, slug, listing, detail)
-            for listing, detail in zip(listings, details, strict=False)
-        ]
+        return JobFetchResult(
+            jobs=[
+                self._normalize(board, slug, listing, detail)
+                for listing, detail in zip(listings, details, strict=True)
+            ],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,
@@ -110,7 +114,10 @@ class RipplingProvider:
         page = 0
         page_size = 100
         total_pages: int | None = None
-        while total_pages is None or page < total_pages:
+        total_items: int | None = None
+        seen_pages: set[str] = set()
+        seen_listing_ids: set[str] = set()
+        while True:
             data = await self._request_json(
                 client,
                 "GET",
@@ -119,11 +126,57 @@ class RipplingProvider:
             )
             if not isinstance(data, dict) or not isinstance(data.get("items"), list):
                 raise ValueError("Rippling board jobs endpoint returned invalid JSON")
-            listings.extend(item for item in data["items"] if isinstance(item, dict))
-            total_pages = int(data.get("totalPages") or page + 1)
-            if not data["items"]:
+            if any(not isinstance(item, dict) for item in data["items"]):
+                raise ValueError("Rippling board jobs endpoint returned invalid JSON")
+            page_listings = cast(list[dict[str, Any]], data["items"])
+            reported_pages = _optional_non_negative_int(
+                data, "totalPages", provider="Rippling"
+            )
+            reported_items = _optional_non_negative_int(
+                data, "totalItems", provider="Rippling"
+            )
+            total_pages = _consistent_total(
+                total_pages, reported_pages, label="Rippling totalPages"
+            )
+            total_items = _consistent_total(
+                total_items, reported_items, label="Rippling totalItems"
+            )
+            if total_pages == 0 and page_listings:
+                raise ValueError("Rippling advertised totalPages does not match jobs")
+            if total_pages is not None and total_pages > 0 and page >= total_pages:
+                raise ValueError("Rippling pagination exceeded advertised totalPages")
+            page_signature = json.dumps(
+                page_listings, sort_keys=True, separators=(",", ":"), default=str
+            )
+            if page_listings and page_signature in seen_pages:
+                raise ValueError("Rippling repeated pagination page")
+            seen_pages.add(page_signature)
+            for listing in page_listings:
+                listing_id = _listing_id(listing)
+                if listing_id and listing_id in seen_listing_ids:
+                    raise ValueError("Rippling repeated pagination listing")
+                if listing_id:
+                    seen_listing_ids.add(listing_id)
+            if not page_listings and page > 0:
+                raise ValueError(
+                    "Rippling incomplete pagination returned an empty page"
+                )
+            listings.extend(page_listings)
+            if total_items is not None and len(listings) > total_items:
+                raise ValueError("Rippling advertised total does not match jobs")
+            if total_pages is not None:
+                if page + 1 >= total_pages:
+                    break
+            elif total_items is not None:
+                if len(listings) == total_items:
+                    break
+                if not page_listings:
+                    raise ValueError("Rippling incomplete pagination before totalItems")
+            elif len(page_listings) < page_size:
                 break
             page += 1
+        if total_items is not None and len(listings) != total_items:
+            raise ValueError("Rippling advertised total does not match jobs")
         return listings
 
     async def _fetch_detail(
@@ -281,3 +334,29 @@ def _pay_range(value: object) -> JsonDict | None:
 
 def _raw(value: dict[str, Any]) -> JsonDict:
     return cast(JsonDict, dict(value))
+
+
+def _optional_non_negative_int(
+    data: dict[str, Any], key: str, *, provider: str
+) -> int | None:
+    if key not in data or data[key] is None:
+        return None
+    value = data[key]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{provider} {key} must be a non-negative integer")
+    return value
+
+
+def _consistent_total(
+    expected: int | None, reported: int | None, *, label: str
+) -> int | None:
+    if reported is None:
+        return expected
+    if expected is not None and reported != expected:
+        raise ValueError(f"{label} changed during pagination")
+    return reported
+
+
+def _listing_id(listing: dict[str, Any]) -> str | None:
+    value = first_present(listing.get("id"), listing.get("uuid"), listing.get("url"))
+    return str(value) if value is not None else None

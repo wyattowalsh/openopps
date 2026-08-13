@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import cast
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -10,6 +11,7 @@ from openopps.models import (
     BoardRecord,
     GreenhouseJobsResponse,
     GreenhouseJobPosting,
+    JsonDict,
     JobRecord,
     normalize_public_website_url,
     normalize_remote_level,
@@ -17,7 +19,7 @@ from openopps.models import (
     host_matches,
     validate_public_https_url,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.boards.tokens import greenhouse_token_from_url
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
@@ -43,16 +45,19 @@ class GreenhouseProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         token = _token_from_route(route)
         if not token:
-            return []
+            raise ValueError("Greenhouse route is missing a public board token")
         url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
         data = await self._request_json(client, "GET", url, params={"content": "true"})
         if not isinstance(data, dict):
             raise ValueError("Greenhouse jobs endpoint returned invalid JSON")
         response = GreenhouseJobsResponse.model_validate(data)
-        return [self._normalize(board, posting, token) for posting in response.jobs]
+        return JobFetchResult(
+            jobs=[self._normalize(board, posting, token) for posting in response.jobs],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,
@@ -95,19 +100,22 @@ class GreenhouseProvider:
             entry.model_dump(mode="python", by_alias=True, exclude_none=True)
             for entry in posting.offices
         ]
-        provider_extras: dict[str, object] = {
-            "greenhouse": {
-                key: value
-                for key, value in {
-                    "requisitionId": posting.requisition_id,
-                    "language": posting.language,
-                    "metadata": posting.metadata or None,
-                    "departments": departments or None,
-                    "offices": offices or None,
-                }.items()
-                if value not in (None, [], {})
-            }
-        }
+        provider_extras = cast(
+            JsonDict,
+            {
+                "greenhouse": {
+                    key: value
+                    for key, value in {
+                        "requisitionId": posting.requisition_id,
+                        "language": posting.language,
+                        "metadata": posting.metadata or None,
+                        "departments": departments or None,
+                        "offices": offices or None,
+                    }.items()
+                    if value not in (None, [], {})
+                }
+            },
+        )
         posting_kind = "prospect" if posting.internal_job_id is None else "standard"
         return JobRecord(
             id=stable_id(board.key, self.provider_id, remote_id),

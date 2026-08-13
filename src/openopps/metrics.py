@@ -31,6 +31,7 @@ class SyncMetrics:
     board_providers: int = 0
     jobs: int = 0
     jobs_persisted: int = 0
+    job_sync_attempts: int = 0
     job_sync_runs: int = 0
     jobs_deduped: int = 0
     skipped: int = 0
@@ -68,6 +69,7 @@ class SyncMetrics:
             "boardProviders": self.board_providers,
             "jobs": self.jobs,
             "jobsPersisted": self.jobs_persisted,
+            "jobSyncAttempts": self.job_sync_attempts,
             "jobSyncRuns": self.job_sync_runs,
             "jobsDeduped": self.jobs_deduped,
             "skipped": self.skipped,

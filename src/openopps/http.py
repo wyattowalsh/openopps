@@ -22,8 +22,12 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from openopps.cache import DEFAULT_CACHE_NAMESPACE, HttpCache, cache_key
-from openopps.metrics import SyncMetrics, record_http_retry
+from openopps.cache import (
+    DEFAULT_CACHE_NAMESPACE,
+    HttpCache,
+    cache_key,
+)
+from openopps.metrics import record_http_retry
 from openopps.models import validate_public_https_url
 from openopps.settings import OpenOppsSettings
 
@@ -47,6 +51,13 @@ _CROSS_ORIGIN_SENSITIVE_HEADERS = {
 }
 _CREDENTIAL_CACHE_IDENTITY_KEY = "__openopps_credentials__"
 _RESPONSE_CACHE_MARKER = "__openopps_http_response_v1__"
+_CACHEABLE_RESPONSE_HEADERS = {
+    "content-type",
+    "etag",
+    "last-modified",
+    "x-wp-total",
+    "x-wp-totalpages",
+}
 
 JsonResponseData = dict[str, Any] | list[Any]
 HttpResponseBody = JsonResponseData | str
@@ -62,6 +73,7 @@ __all__ = [
     "retrying_json_response",
     "retrying_text_request",
     "retrying_text_response",
+    "safe_exception_message",
 ]
 
 
@@ -70,6 +82,20 @@ class HttpResponseData:
     body: HttpResponseBody
     headers: dict[str, str]
     status_code: int
+
+
+def safe_exception_message(exc: Exception) -> str:
+    """Format an exception for durable diagnostics without persisting raw input."""
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"{type(exc).__name__}: HTTP {exc.response.status_code}"
+    if isinstance(exc, httpx.RequestError):
+        return f"{type(exc).__name__}: request failed"
+    # Arbitrary exception messages can contain provider payload fragments, SQL
+    # values, filesystem paths, or credentials. The concrete type remains an
+    # actionable durable diagnostic; detailed context belongs in ephemeral,
+    # operator-controlled debugging rather than the database.
+    return type(exc).__name__
 
 
 class PublicFetchTransport(httpx.AsyncBaseTransport):
@@ -198,6 +224,15 @@ def _retrying_response_request(
     )
     inflight: dict[str, asyncio.Task[HttpResponseData]] = {}
     inflight_lock = asyncio.Lock()
+
+    def _clear_inflight(
+        request_key: str,
+        completed: asyncio.Task[HttpResponseData],
+    ) -> None:
+        if inflight.get(request_key) is completed:
+            inflight.pop(request_key, None)
+        if not completed.cancelled():
+            completed.exception()
 
     @retry(
         retry=retry_if_exception(_is_retryable_http_error),
@@ -336,13 +371,12 @@ def _retrying_response_request(
                 if task is None:
                     task = asyncio.create_task(fetch_and_store())
                     inflight[request_key] = task
-            try:
-                return await task
-            finally:
-                if task.done():
-                    async with inflight_lock:
-                        if inflight.get(request_key) is task:
-                            inflight.pop(request_key, None)
+                    task.add_done_callback(
+                        lambda completed, key=request_key: _clear_inflight(
+                            key, completed
+                        )
+                    )
+            return await asyncio.shield(task)
         except Exception as exc:
             if (
                 request_cache
@@ -585,7 +619,7 @@ def _parse_text_body(response: httpx.Response, _url: str) -> str:
 def _validate_json_body(value: object, url: str) -> JsonResponseData:
     if not isinstance(value, (dict, list)):
         raise ValueError(f"Cached JSON payload for {url} is invalid")
-    return value
+    return cast(JsonResponseData, value)
 
 
 def _validate_text_body(value: object, url: str) -> str:
@@ -598,7 +632,11 @@ def _cache_response_payload(response: HttpResponseData) -> dict[str, Any]:
     return {
         _RESPONSE_CACHE_MARKER: {
             "body": response.body,
-            "headers": response.headers,
+            "headers": {
+                key: value
+                for key, value in response.headers.items()
+                if key.lower() in _CACHEABLE_RESPONSE_HEADERS
+            },
             "status_code": response.status_code,
         }
     }

@@ -3,7 +3,9 @@ import type { MetadataRoute } from "next";
 import { getJobSitemapCount, shouldNoIndexDeployment } from "@/lib/jobs-sitemap-data";
 import { siteUrl } from "@/lib/shared";
 
-export default function robots(): MetadataRoute.Robots {
+export const dynamic = "force-dynamic";
+
+export default async function robots(): Promise<MetadataRoute.Robots> {
 	if (shouldNoIndexDeployment()) {
 		return {
 			rules: {
@@ -12,7 +14,7 @@ export default function robots(): MetadataRoute.Robots {
 			},
 		};
 	}
-	const jobSitemapCount = getJobSitemapCount();
+	const jobSitemapCount = await getJobSitemapCount();
 	const sitemaps = [
 		`${siteUrl}/sitemap.xml`,
 		...Array.from({ length: jobSitemapCount }, (_, id) =>

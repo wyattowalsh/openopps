@@ -1,58 +1,38 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import type { MetadataRoute } from "next";
+import { cache } from "react";
 
-import type { SearchManifest } from "@/components/openopps-search/search-types";
 import {
 	canonicalJobUrl,
 	dateOrUndefined,
 	shouldNoIndexDeployment,
 } from "@/lib/job-detail-utils";
+import { createPublicDataSnapshotClient } from "@/lib/openopps-snapshot-client.server";
 
 export { shouldNoIndexDeployment } from "@/lib/job-detail-utils";
 
 export const JOB_SITEMAP_PAGE_SIZE = 45_000;
 
-const SEARCH_MANIFEST_FILE = path.join(
-	process.cwd(),
-	"public",
-	"data",
-	"openopps-search",
-	"manifest.json",
-);
-const JOB_INDEXABLE_IDS_FILE = path.join(
-	process.cwd(),
-	"public",
-	"data",
-	"openopps-search",
-	"jobs-indexable-ids.json",
-);
+const getSnapshotClient = cache(() => createPublicDataSnapshotClient());
 
-type JobIndexableIdIndex = {
-	version?: number;
-	count: number;
-	ids: string[];
-};
-
-let manifestCache: SearchManifest | null = null;
-let indexableJobIdsCache: string[] | null = null;
-
-export function getSitemapSearchManifest() {
-	if (!manifestCache) {
-		manifestCache = readJson<SearchManifest>(SEARCH_MANIFEST_FILE);
-	}
-	return manifestCache;
+export async function getSitemapSearchManifest() {
+	return getSnapshotClient().getSearchManifest();
 }
 
-export function getJobSitemapCount() {
-	return Math.ceil(getIndexableJobDetailIds().length / JOB_SITEMAP_PAGE_SIZE);
+export async function getJobSitemapCount() {
+	return Math.ceil(
+		(await getSnapshotClient().getIndexableJobIds()).length /
+			JOB_SITEMAP_PAGE_SIZE,
+	);
 }
 
-export function getJobSitemapUrls(id: number): MetadataRoute.Sitemap {
-	const manifest = getSitemapSearchManifest();
+export async function getJobSitemapUrls(id: number): Promise<MetadataRoute.Sitemap> {
+	const client = getSnapshotClient();
+	const [manifest, indexableIds] = await Promise.all([
+		client.getSearchManifest(),
+		client.getIndexableJobIds(),
+	]);
 	const start = id * JOB_SITEMAP_PAGE_SIZE;
-	const ids = getIndexableJobDetailIds().slice(start, start + JOB_SITEMAP_PAGE_SIZE);
+	const ids = indexableIds.slice(start, start + JOB_SITEMAP_PAGE_SIZE);
 	const lastModified = dateOrUndefined(manifest.snapshotAt);
 	return ids.map((jobId) => {
 		return {
@@ -65,28 +45,6 @@ export function getJobSitemapUrls(id: number): MetadataRoute.Sitemap {
 }
 
 export function clearSitemapDataCachesForTests() {
-	manifestCache = null;
-	indexableJobIdsCache = null;
-}
-
-function getIndexableJobDetailIds() {
-	if (!indexableJobIdsCache) {
-		indexableJobIdsCache = readPrecomputedIndexableJobIds();
-	}
-	return indexableJobIdsCache;
-}
-
-function readPrecomputedIndexableJobIds() {
-	if (!fs.existsSync(JOB_INDEXABLE_IDS_FILE)) {
-		return [];
-	}
-	const index = readJson<JobIndexableIdIndex>(JOB_INDEXABLE_IDS_FILE);
-	if (index.count !== index.ids.length) {
-		return [];
-	}
-	return index.ids;
-}
-
-function readJson<T>(file: string): T {
-	return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+	// React's request cache has no mutable global cache to clear. Retained as a
+	// compatibility hook for existing tests and callers.
 }

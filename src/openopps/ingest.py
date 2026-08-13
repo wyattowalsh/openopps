@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Sequence
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from loguru import logger
 from pydantic import ValidationError
 
 from openopps.enrichment import enrich_metadata
-from openopps.http import build_async_client
+from openopps.http import build_async_client, safe_exception_message
 from openopps.metrics import (
     ProgressReporter,
     ProgressUpdate,
@@ -22,20 +24,49 @@ from openopps.metrics import (
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
+    JobRecord,
     ProviderSupport,
     SourceRecord,
     utc_now,
 )
 from openopps.providers.boards import build_job_provider
+from openopps.providers.base import JobFetchResult
 from openopps.providers.sources import BOARD_SOURCE_CATALOG, build_source_adapter
 from openopps.route_probe import probe_routes
 from openopps.route_registry import BoardRouteRegistry
 from openopps.route_select import normalize_provider_filter, route_request_key
 from openopps.settings import OpenOppsSettings
+from openopps.source_resolution import resolve_effective_sources
 from openopps.storage import OpenOppsStore, append_jsonl
 
-_ROUTE_UNAVAILABLE_STATUSES = {400, 401, 403, 404, 410}
-_ROUTE_CLOSE_MISSING_STATUSES = {400, 404, 410}
+_BUILTIN_ROUTE_ABSENT_STATUSES = {
+    provider_id: frozenset({404, 410})
+    for provider_id in (
+        "ashbyhq",
+        "bamboohr",
+        "consider_jobs",
+        "greenhouse",
+        "lever",
+        "rippling",
+        "teamtailor",
+        "workable",
+        "workday",
+        "wpjobmanager",
+    )
+}
+_RETAINED_ROUTE_HTTP_REASONS = {
+    400: "invalid_request",
+    401: "authentication_required",
+    403: "access_forbidden",
+}
+
+
+@dataclass(frozen=True)
+class _RouteFailureDisposition:
+    status_code: int
+    deactivate: bool
+    close_missing: bool
+    error_reason: str
 
 
 def all_board_sources() -> list[SourceRecord]:
@@ -147,6 +178,7 @@ async def _sync_sources_bound(
                 )
                 source_route_ids: set[str] = set()
                 saw_provider_route_hints = False
+                latest_source = source
                 try:
                     async with asyncio.timeout(settings.source_timeout_seconds):
                         async for boards, providers, page_meta in adapter.iter_boards(
@@ -163,18 +195,18 @@ async def _sync_sources_bound(
                                 len(providers),
                                 compact_meta,
                             )
-                            updated_source = source.model_copy(
+                            latest_source = source.model_copy(
                                 update={
                                     "version": page_meta.get("version") or {},
                                     "raw_metadata": source.raw_metadata
                                     | {"lastPage": compact_meta},
-                                    "synced_at": utc_now(),
+                                    "synced_at": source.synced_at,
                                 }
                             )
                             if store or output:
                                 async with write_lock:
                                     if store:
-                                        store.upsert_source(updated_source)
+                                        store.upsert_source(latest_source)
                                         store.upsert_boards(boards)
                                         if providers:
                                             saw_provider_route_hints = True
@@ -208,6 +240,13 @@ async def _sync_sources_bound(
                         async with write_lock:
                             store.reconcile_source_board_provider_routes(
                                 source.key, source_route_ids
+                            )
+                    if store:
+                        async with write_lock:
+                            store.upsert_source(
+                                latest_source.model_copy(
+                                    update={"synced_at": utc_now()}
+                                )
                             )
                     async with progress_lock:
                         completed_sources += 1
@@ -378,22 +417,13 @@ async def _sync_boards_bound(
 def _select_sources(
     store: OpenOppsStore | None, source_key: str | None
 ) -> list[SourceRecord]:
-    source_catalog = {source.key: source for source in all_board_sources()}
-    stored_sources = (
-        {source.key: source for source in store.list_sources()} if store else {}
-    )
-    sources = [
-        _unscoped_source(catalog_source, stored_sources.get(key))
-        for key, catalog_source in source_catalog.items()
-    ]
-    sources.extend(
-        source for key, source in stored_sources.items() if key not in source_catalog
+    sources = resolve_effective_sources(
+        all_board_sources(), store.list_sources() if store else []
     )
     if source_key:
-        if source_key in stored_sources:
-            return [stored_sources[source_key]]
-        if source_key in BOARD_SOURCE_CATALOG:
-            return [BOARD_SOURCE_CATALOG[source_key]]
+        for source in sources:
+            if source.key == source_key:
+                return [source]
         raise ValueError(f"Unknown source: {source_key}")
     return sources
 
@@ -418,25 +448,6 @@ def _partition_fresh_sources(
         else:
             stale_sources.append(source)
     return fresh_sources, stale_sources
-
-
-def _unscoped_source(
-    catalog_source: SourceRecord, stored_source: SourceRecord | None
-) -> SourceRecord:
-    if stored_source is None:
-        return catalog_source
-    if (
-        stored_source.url != catalog_source.url
-        or stored_source.provider_id != catalog_source.provider_id
-    ):
-        return stored_source
-    return catalog_source.model_copy(
-        update={
-            "version": stored_source.version,
-            "raw_metadata": catalog_source.raw_metadata | stored_source.raw_metadata,
-            "synced_at": stored_source.synced_at,
-        }
-    )
 
 
 def _compact_page_meta(page_meta: dict) -> dict:
@@ -626,26 +637,47 @@ async def _sync_jobs_bound(
                     completed=completed_routes,
                     total=max(route_total, 1),
                 )
+                async with write_lock:
+                    pending_run = store.begin_job_sync_run(
+                        board.key,
+                        route.provider_id,
+                    )
+                metrics.job_sync_attempts += 1
                 try:
                     async with asyncio.timeout(settings.job_route_timeout_seconds):
-                        jobs = await provider.fetch_jobs(client, board, route)
+                        fetch_result = await provider.fetch_jobs(client, board, route)
+                except asyncio.CancelledError:
+                    async with write_lock:
+                        store.fail_job_sync_run(
+                            pending_run.id,
+                            error_kind="cancelled",
+                            error="Provider job fetch was cancelled.",
+                        )
+                    raise
                 except Exception as exc:
-                    unavailable_status = _route_unavailable_status(exc)
-                    if unavailable_status is not None:
-                        status = f"job_sync_unavailable_{unavailable_status}"
+                    disposition = _route_failure_disposition(route.provider_id, exc)
+                    failure_reason = (
+                        disposition.error_reason
+                        if disposition
+                        else _error_reason(exc, "job_fetch")
+                    )
+                    if disposition and disposition.deactivate:
+                        status = f"job_sync_unavailable_{disposition.status_code}"
                         unavailable_routes = [
                             route,
                             *duplicate_routes_by_request_key.get(request_key, []),
                         ]
                         async with write_lock:
-                            _remove_unavailable_routes(
+                            completed_run_count = _remove_unavailable_routes(
                                 store,
                                 unavailable_routes,
                                 status=status,
-                                close_missing=(
-                                    unavailable_status in _ROUTE_CLOSE_MISSING_STATUSES
-                                ),
+                                close_missing=disposition.close_missing,
+                                selected_route=route,
+                                selected_run_id=pending_run.id,
                             )
+                        metrics.job_sync_attempts += max(0, completed_run_count - 1)
+                        metrics.job_sync_runs += completed_run_count
                         async with progress_lock:
                             completed_routes += 1
                             _report_job_progress(
@@ -660,10 +692,16 @@ async def _sync_jobs_bound(
                                 "Removed unavailable job route board={} provider={} status={}",
                                 board.key,
                                 route.provider_id,
-                                unavailable_status,
+                                disposition.status_code,
                             )
                         return
-                    error_reason = _error_reason(exc, "job_fetch")
+                    error_reason = failure_reason
+                    async with write_lock:
+                        store.fail_job_sync_run(
+                            pending_run.id,
+                            error_kind=error_reason,
+                            error=_format_exception(exc),
+                        )
                     metrics.error(route.provider_id, error_reason)
                     async with progress_lock:
                         completed_routes += 1
@@ -687,28 +725,39 @@ async def _sync_jobs_bound(
                             _format_exception(exc),
                         )
                     return
-                if jobs:
+                if not isinstance(fetch_result, JobFetchResult):
+                    jobs: list[JobRecord] = []
                     async with write_lock:
-                        run = store.sync_jobs_for_route(
-                            board.key,
-                            route.provider_id,
-                            jobs,
-                            close_missing=True,
+                        run = store.fail_job_sync_run(
+                            pending_run.id,
+                            error_kind="invalid_provider_result",
+                            error=(
+                                "Provider returned an untyped job collection; "
+                                "JobFetchResult is required."
+                            ),
                         )
-                        if output:
-                            append_jsonl(output, jobs)
-                    metrics.jobs += len(jobs)
                 else:
+                    jobs = list(fetch_result.jobs)
                     async with write_lock:
-                        run = store.sync_jobs_for_route(
-                            board.key,
-                            route.provider_id,
+                        run = store.complete_job_sync_run(
+                            pending_run.id,
                             jobs,
-                            close_missing=True,
+                            authoritative=fetch_result.authoritative,
+                            close_missing=fetch_result.authoritative,
                         )
-                metrics.job_sync_runs += 1
+                        if jobs and run.success and output:
+                            append_jsonl(output, jobs)
+                if run.success:
+                    metrics.job_sync_runs += 1
+                    metrics.jobs += len(jobs)
+                if not run.success:
+                    metrics.error(
+                        route.provider_id,
+                        run.error_kind or "non_authoritative_snapshot",
+                    )
                 metrics.jobs_persisted += run.job_count
-                metrics.jobs_deduped += max(0, len(jobs) - run.job_count)
+                if run.success:
+                    metrics.jobs_deduped += max(0, len(jobs) - run.job_count)
                 async with progress_lock:
                     completed_routes += 1
                     _report_job_progress(
@@ -718,18 +767,28 @@ async def _sync_jobs_bound(
                         metrics.jobs,
                         _job_detail(
                             board.key,
-                            (
-                                f"{_format_count(len(jobs))} jobs synced "
-                                f"via {route.provider_id}"
+                            _job_sync_result_detail(
+                                route.provider_id,
+                                len(jobs),
+                                success=run.success,
+                                error_kind=run.error_kind,
                             ),
                         ),
                     )
-                logger.trace(
-                    "Jobs route synced board={} provider={} jobs={}",
-                    board.key,
-                    route.provider_id,
-                    len(jobs),
-                )
+                if run.success:
+                    logger.trace(
+                        "Jobs route synced board={} provider={} jobs={}",
+                        board.key,
+                        route.provider_id,
+                        len(jobs),
+                    )
+                else:
+                    logger.warning(
+                        "Jobs route rejected board={} provider={} error_kind={}",
+                        board.key,
+                        route.provider_id,
+                        run.error_kind,
+                    )
 
         await asyncio.gather(
             *(
@@ -808,29 +867,137 @@ def _remove_unavailable_routes(
     *,
     status: str,
     close_missing: bool,
-) -> None:
-    closed_route_keys: set[tuple[str, str]] = set()
+    selected_route: BoardProviderRecord,
+    selected_run_id: str,
+) -> int:
+    selected_route_key = (selected_route.board_key, selected_route.provider_id)
+    completed_route_keys: set[tuple[str, str]] = set()
     for route in routes:
-        if close_missing:
-            route_key = (route.board_key, route.provider_id)
-            if route_key not in closed_route_keys:
-                store.sync_jobs_for_route(
+        route_key = (route.board_key, route.provider_id)
+        if route_key not in completed_route_keys:
+            run_id = (
+                selected_run_id
+                if route_key == selected_route_key
+                else store.begin_job_sync_run(
                     route.board_key,
                     route.provider_id,
-                    [],
-                    close_missing=True,
-                )
-                closed_route_keys.add(route_key)
+                ).id
+            )
+            store.complete_job_sync_run(
+                run_id,
+                [],
+                authoritative=True,
+                close_missing=close_missing,
+            )
+            completed_route_keys.add(route_key)
         store.deactivate_board_provider_route(route, status=status)
+    return len(completed_route_keys)
 
 
-def _route_unavailable_status(exc: Exception) -> int | None:
+def _route_failure_disposition(
+    provider_id: str, exc: Exception
+) -> _RouteFailureDisposition | None:
     if not isinstance(exc, httpx.HTTPStatusError):
         return None
     status_code = exc.response.status_code
-    if status_code in _ROUTE_UNAVAILABLE_STATUSES:
-        return status_code
+    if status_code in _BUILTIN_ROUTE_ABSENT_STATUSES.get(
+        provider_id, frozenset()
+    ) and _is_provider_snapshot_request(provider_id, exc.request):
+        return _RouteFailureDisposition(
+            status_code=status_code,
+            deactivate=True,
+            close_missing=True,
+            error_reason="route_absent",
+        )
+    if reason := _RETAINED_ROUTE_HTTP_REASONS.get(status_code):
+        return _RouteFailureDisposition(
+            status_code=status_code,
+            deactivate=False,
+            close_missing=False,
+            error_reason=reason,
+        )
     return None
+
+
+def _is_provider_snapshot_request(provider_id: str, request: httpx.Request) -> bool:
+    path = request.url.path.rstrip("/")
+    segments = [segment for segment in path.split("/") if segment]
+    host = (request.url.host or "").lower()
+    if provider_id == "greenhouse":
+        return host == "boards-api.greenhouse.io" and (
+            len(segments) == 4
+            and segments[:2] == ["v1", "boards"]
+            and segments[-1] == "jobs"
+        )
+    if provider_id == "lever":
+        return (
+            host == "api.lever.co"
+            and len(segments) == 3
+            and segments[:2]
+            == [
+                "v0",
+                "postings",
+            ]
+        )
+    if provider_id == "ashbyhq":
+        return (
+            host == "api.ashbyhq.com"
+            and len(segments) == 3
+            and segments[:2] == ["posting-api", "job-board"]
+        )
+    if provider_id == "workable":
+        return (
+            host == "apply.workable.com"
+            and len(segments) == 5
+            and segments[:3] == ["api", "v3", "accounts"]
+            and segments[-1] == "jobs"
+            and "token" not in _request_json_body(request)
+        )
+    if provider_id == "teamtailor":
+        return path == "/jobs.rss"
+    if provider_id == "consider_jobs":
+        body = _request_json_body(request)
+        meta = body.get("meta")
+        return path == "/api-boards/search-jobs" and (
+            not isinstance(meta, dict) or not meta.get("sequence")
+        )
+    if provider_id == "bamboohr":
+        return path == "/careers/list"
+    if provider_id == "rippling":
+        return (
+            host == "ats.rippling.com"
+            and len(segments) == 5
+            and segments[:3] == ["api", "v2", "board"]
+            and segments[-1] == "jobs"
+            and request.url.params.get("page", "0") == "0"
+        )
+    if provider_id == "workday":
+        body = _request_json_body(request)
+        return (
+            host.endswith(".myworkdayjobs.com")
+            and len(segments) == 5
+            and segments[:2] == ["wday", "cxs"]
+            and segments[-1] == "jobs"
+            and body.get("offset", 0) == 0
+        )
+    if provider_id == "wpjobmanager":
+        is_listing = len(segments) == 4 and segments == [
+            "wp-json",
+            "wp",
+            "v2",
+            "job-listings",
+        ]
+        is_ajax = len(segments) == 2 and segments == ["jm-ajax", "get_listings"]
+        return (is_listing or is_ajax) and request.url.params.get("page", "1") == "1"
+    return False
+
+
+def _request_json_body(request: httpx.Request) -> dict[str, object]:
+    try:
+        payload = json.loads(request.content)
+    except (json.JSONDecodeError, UnicodeDecodeError, httpx.RequestNotRead):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _report(
@@ -884,6 +1051,22 @@ def _report_job_progress(
         completed=completed_routes,
         total=max(route_total, 1),
     )
+
+
+def _job_sync_result_detail(
+    provider_id: str,
+    job_count: int,
+    *,
+    success: bool,
+    error_kind: str | None,
+) -> str:
+    if success:
+        return f"{_format_count(job_count)} jobs synced via {provider_id}"
+    if error_kind == "invalid_provider_result":
+        return "rejected: invalid provider result"
+    if error_kind == "non_authoritative_snapshot":
+        return "rejected: non-authoritative snapshot"
+    return f"failed: {error_kind or 'unknown'}"
 
 
 def _source_progress_message(
@@ -986,7 +1169,7 @@ def _error_reason(exc: Exception, default: str) -> str:
     if isinstance(exc, httpx.HTTPStatusError):
         if exc.response.status_code == 429:
             return "rate_limited"
-        if exc.response.status_code in _ROUTE_UNAVAILABLE_STATUSES:
+        if exc.response.status_code in {404, 410}:
             return "unavailable"
         return default
     if isinstance(exc, TimeoutError):
@@ -997,10 +1180,7 @@ def _error_reason(exc: Exception, default: str) -> str:
 
 
 def _format_exception(exc: Exception) -> str:
-    message = str(exc).strip()
-    if message:
-        return f"{type(exc).__name__}: {message}"
-    return type(exc).__name__
+    return safe_exception_message(exc)
 
 
 def _track_unique_boards(

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import runpy
 import sqlite3
+import sys
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,6 +20,10 @@ build_search_index = cast(
     "Callable[[Path, Path], dict[str, Any]]",
     _SEARCH_INDEX_NAMESPACE["build_search_index"],
 )
+build_search_release = cast(
+    "Callable[..., dict[str, Any]]",
+    _SEARCH_INDEX_NAMESPACE["build_search_release"],
+)
 SEARCH_INDEX_VERSION = cast(int, _SEARCH_INDEX_NAMESPACE["SEARCH_INDEX_VERSION"])
 INITIAL_JOB_LIMIT = cast(int, _SEARCH_INDEX_NAMESPACE["INITIAL_JOB_LIMIT"])
 DETAIL_DESCRIPTION_TEXT_MAX_LEN = cast(
@@ -28,9 +35,7 @@ JOB_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["JOB_COLUMNS"])
 LEGACY_JOB_COLUMNS = JOB_COLUMNS[:23]
 DETAIL_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["DETAIL_IDS_FILE"])
 INDEXABLE_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["INDEXABLE_IDS_FILE"])
-LINEAGE_AGGREGATE_FILE = cast(
-    str, _SEARCH_INDEX_NAMESPACE["LINEAGE_AGGREGATE_FILE"]
-)
+LINEAGE_AGGREGATE_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["LINEAGE_AGGREGATE_FILE"])
 is_indexable_job_detail = cast(
     "Callable[[dict[str, Any]], bool]",
     _SEARCH_INDEX_NAMESPACE["_is_indexable_job_detail"],
@@ -43,6 +48,7 @@ detail_bucket = cast(
     "Callable[[str], str]",
     _SEARCH_INDEX_NAMESPACE["_detail_bucket"],
 )
+_FRESH_RELEASE_NOW = datetime(2026, 2, 4, tzinfo=timezone.utc)
 
 
 def test_detail_shards_use_tiered_full_public_posting_payloads(
@@ -144,7 +150,7 @@ def test_detail_shards_decode_plain_description_entities_without_stripping_compa
     tmp_path: Path,
 ) -> None:
     db_path = _write_tiered_shard_db(tmp_path)
-    description = "Latency &lt;60 ms &amp; memory &gt;1GB. <div class=\"title"
+    description = 'Latency &lt;60 ms &amp; memory &gt;1GB. <div class="title'
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
@@ -184,11 +190,15 @@ def test_detail_shards_do_not_emit_partial_html_fragments(tmp_path: Path) -> Non
     assert "descriptionHtml" not in rich
 
 
-def test_detail_shards_strip_provider_surplus_from_version_extra(tmp_path: Path) -> None:
+def test_detail_shards_strip_provider_surplus_from_version_extra(
+    tmp_path: Path,
+) -> None:
     db_path = _write_tiered_shard_db(tmp_path)
     provider_blob = {
         "greenhouse": {
-            "metadata": [{"name": f"field-{index}", "value": "x" * 200} for index in range(40)],
+            "metadata": [
+                {"name": f"field-{index}", "value": "x" * 200} for index in range(40)
+            ],
             "offices": [{"id": index, "name": "Office " * 30} for index in range(40)],
         }
     }
@@ -314,6 +324,7 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     assert manifest["defaultEntity"] == "jobs"
     assert manifest["defaultFilters"] == {"jobs": {"status": "open"}}
     assert manifest["source"]["tables"] == [
+        "sources",
         "board_providers",
         "boards",
         "jobs",
@@ -324,7 +335,7 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     ]
     assert manifest["counts"]["snapshot"] == {
         "database": db_path.name,
-        "sourceRows": 0,
+        "sourceRows": 3,
         "providerRoutes": 2,
         "boards": 2,
         "jobs": 2,
@@ -338,11 +349,11 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     lineage = _read_json(output_dir / LINEAGE_AGGREGATE_FILE)
     assert lineage["version"] == SEARCH_INDEX_VERSION
     assert lineage["counts"] == {
-            "sourceRows": 0,
-            "sources": 3,
-            "providerRoutes": 2,
-            "providers": 2,
-            "boards": 2,
+        "sourceRows": 3,
+        "sources": 3,
+        "providerRoutes": 2,
+        "providers": 2,
+        "boards": 2,
         "jobs": 2,
         "openJobs": 1,
     }
@@ -474,7 +485,7 @@ def test_search_index_manifest_facets_are_nonblank_and_sorted(tmp_path: Path) ->
 
     manifest = build_search_index(db_path, output_dir)
 
-    assert manifest["facets"]["sources"] == ["a16z", "portfolio", "yc"]
+    assert manifest["facets"]["sources"] == ["fixture-a16z", "portfolio", "yc"]
     assert manifest["facets"]["providerIds"] == ["ashbyhq", "greenhouse"]
     assert manifest["facets"]["jobStatuses"] == ["closed", "open"]
     assert manifest["facets"]["supportLevels"] == ["detect", "jobs"]
@@ -495,7 +506,9 @@ def test_search_index_manifest_facets_are_nonblank_and_sorted(tmp_path: Path) ->
     assert manifest["dashboard"]["dataQuality"]
 
 
-def test_search_index_derives_seniority_when_extra_payload_missing(tmp_path: Path) -> None:
+def test_search_index_derives_seniority_when_extra_payload_missing(
+    tmp_path: Path,
+) -> None:
     db_path = _write_search_index_db(tmp_path)
     output_dir = tmp_path / "index"
 
@@ -544,7 +557,9 @@ def test_snapshot_at_ignores_newer_historical_versions(tmp_path: Path) -> None:
 
 
 _INDEXABLE_VECTORS_PATH = (
-    Path(__file__).resolve().parents[2] / "fixtures" / "job_detail_indexable_vectors.json"
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "job_detail_indexable_vectors.json"
 )
 _INDEXABLE_VECTOR_CASES = json.loads(
     _INDEXABLE_VECTORS_PATH.read_text(encoding="utf-8")
@@ -747,8 +762,7 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     assert set(indexable_ids) <= detail_ids
     assert all("status" in detail for detail in detail_records.values())
     assert all(
-        is_indexable_job_detail(detail_records[job_id])
-        for job_id in indexable_ids
+        is_indexable_job_detail(detail_records[job_id]) for job_id in indexable_ids
     )
     assert {
         Path("manifest.json"),
@@ -777,6 +791,417 @@ def test_generated_search_index_artifact_matches_local_db_when_available(
         assert (artifact_dir / filename).read_bytes() == (
             output_dir / filename
         ).read_bytes()
+
+
+def test_v7_release_generation_is_deterministic_and_additive(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    legacy_root = tmp_path / "legacy-v6"
+    legacy_root.mkdir()
+    legacy_sentinel = legacy_root / "sentinel.json"
+    legacy_sentinel.write_text('{"version":6}\n', encoding="utf-8")
+    publication_root = tmp_path / "publication-v7"
+
+    first = build_search_release(
+        db_path, publication_root, channel="staging", now=_FRESH_RELEASE_NOW
+    )
+    first_manifest_path = (
+        publication_root / "releases" / first["releaseId"] / "manifest.json"
+    )
+    search_manifest_path = first_manifest_path.with_name("search-manifest.json")
+    publication_policy_path = first_manifest_path.with_name("publication-policy.json")
+    first_manifest_bytes = first_manifest_path.read_bytes()
+    second = build_search_release(
+        db_path, publication_root, channel="staging", now=_FRESH_RELEASE_NOW
+    )
+
+    assert second == first
+    assert first_manifest_path.read_bytes() == first_manifest_bytes
+    assert _read_json(search_manifest_path)["version"] == SEARCH_INDEX_VERSION
+    publication_policy = _read_json(publication_policy_path)
+    assert publication_policy["sourceCount"] == 3
+    assert all(source["publicationAllowed"] for source in publication_policy["sources"])
+    assert publication_policy["quality"]["jobs"] == 2
+    assert any(
+        entry["path"] == "search-manifest.json" and entry["role"] == "search-manifest"
+        for entry in first["files"]
+    )
+    assert any(
+        entry["path"] == "publication-policy.json"
+        and entry["role"] == "publication-policy"
+        and entry["count"] == 3
+        for entry in first["files"]
+    )
+    assert legacy_sentinel.read_text(encoding="utf-8") == '{"version":6}\n'
+    assert len(list((publication_root / "releases").iterdir())) == 1
+    assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_release_freezes_one_sidecar_free_sqlite_state_for_all_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    function_globals = build_search_release.__globals__
+    original_build = function_globals["_build_search_index_unlocked"]
+    state_after_concurrent_commit: dict[str, bytes] = {}
+
+    with sqlite3.connect(db_path) as writer:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute(
+            "UPDATE job_versions SET title = ? WHERE id = ?",
+            ("WAL-visible title", "version-current"),
+        )
+        writer.commit()
+        assert Path(f"{db_path}-wal").is_file()
+
+        def mutate_source_after_artifact_queries(
+            query_path: Path, output_dir: Path, **kwargs: Any
+        ) -> dict[str, Any]:
+            artifact = original_build(query_path, output_dir, **kwargs)
+            with sqlite3.connect(db_path) as concurrent_writer:
+                concurrent_writer.execute("PRAGMA wal_autocheckpoint=0")
+                concurrent_writer.execute(
+                    "UPDATE sources SET raw_metadata = ? WHERE key = ?",
+                    ('{"licenseStatus":"needs_review"}', "portfolio"),
+                )
+                concurrent_writer.commit()
+            state_after_concurrent_commit["database"] = db_path.read_bytes()
+            state_after_concurrent_commit["wal"] = Path(f"{db_path}-wal").read_bytes()
+            return artifact
+
+        monkeypatch.setitem(
+            function_globals,
+            "_build_search_index_unlocked",
+            mutate_source_after_artifact_queries,
+        )
+
+        manifest = build_search_release(
+            db_path,
+            publication_root,
+            channel="staging",
+            now=_FRESH_RELEASE_NOW,
+        )
+
+        assert db_path.read_bytes() == state_after_concurrent_commit["database"]
+        assert (
+            Path(f"{db_path}-wal").read_bytes() == state_after_concurrent_commit["wal"]
+        )
+
+    release_root = publication_root / "releases" / manifest["releaseId"]
+    search_manifest = _read_json(release_root / "search-manifest.json")
+    job_rows = _read_job_rows(release_root, search_manifest)
+    title_index = search_manifest["entities"]["jobs"]["columns"].index("title")
+
+    assert any(row[title_index] == "WAL-visible title" for row in job_rows)
+    assert manifest["source"]["path"] == db_path.name
+    assert (
+        manifest["source"]["sha256"] != hashlib.sha256(db_path.read_bytes()).hexdigest()
+    )
+    assert not list(tmp_path.glob("openopps-sqlite-snapshot-*"))
+
+
+def test_v7_release_fails_closed_for_unreviewed_source_rights(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE sources SET raw_metadata = ? WHERE key = ?",
+            ('{"licenseStatus":"needs_review"}', "portfolio"),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"(?s)rights policy:.*portfolio.*needs_review",
+    ):
+        build_search_release(
+            db_path, tmp_path / "publication-v7", now=_FRESH_RELEASE_NOW
+        )
+
+    assert not (tmp_path / "publication-v7" / "channels" / "production.json").exists()
+    assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_release_does_not_let_stored_metadata_grant_packaged_source_rights(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE sources SET key = ?, raw_metadata = ? WHERE key = ?",
+            (
+                "a16z",
+                '{"licenseStatus":"official_public",'
+                '"sourceAttribution":"unreviewed persisted claim"}',
+                "fixture-a16z",
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE boards
+            SET key = ?, source_key = ?, source_keys = ?
+            WHERE key = ?
+            """,
+            ("a16z:acme", "a16z", '["a16z","portfolio"]', "fixture-a16z:acme"),
+        )
+        conn.execute(
+            """
+            UPDATE board_providers
+            SET source_key = ?, board_key = ?
+            WHERE board_key = ?
+            """,
+            ("a16z", "a16z:acme", "fixture-a16z:acme"),
+        )
+        conn.execute(
+            "UPDATE jobs SET board_key = ? WHERE board_key = ?",
+            ("a16z:acme", "fixture-a16z:acme"),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=r"(?s)rights policy:.*source 'a16z' has no licenseStatus",
+    ):
+        build_search_release(
+            db_path, tmp_path / "publication-v7", now=_FRESH_RELEASE_NOW
+        )
+
+
+def test_v7_release_blocks_stale_by_default_and_records_degraded_override(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    stale_now = datetime(2026, 3, 1, tzinfo=timezone.utc)
+
+    with pytest.raises(ValueError, match="snapshot is stale by policy"):
+        build_search_release(db_path, publication_root, now=stale_now)
+
+    manifest = build_search_release(
+        db_path,
+        publication_root,
+        now=stale_now,
+        allow_stale_reason="Upstream maintenance window; operator approved degraded data.",
+    )
+    pointer = _read_json(publication_root / "channels" / "production.json")
+    assert pointer["schemaVersion"] == 2
+    assert pointer["releaseId"] == manifest["releaseId"]
+    assert pointer["degradedReason"] == (
+        "Upstream maintenance window; operator approved degraded data."
+    )
+    assert pointer["priorReleaseId"] is None
+    assert pointer["promotedAt"] == "2026-03-01T00:00:00.000000Z"
+    assert pointer["snapshotAgeSeconds"] > 48 * 60 * 60
+
+
+def test_v7_production_release_rejects_relaxed_freshness_threshold(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+
+    with pytest.raises(
+        ValueError,
+        match=r"production max snapshot age cannot exceed 48 hours",
+    ):
+        build_search_release(
+            db_path,
+            publication_root,
+            channel="production",
+            max_snapshot_age=timedelta(hours=49),
+            now=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        )
+
+    assert not publication_root.exists()
+
+
+def test_v7_cli_rejects_relaxed_production_freshness_threshold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(_SEARCH_INDEX_SCRIPT),
+            "--data-db",
+            str(db_path),
+            "--release-root",
+            str(publication_root),
+            "--channel",
+            "production",
+            "--max-snapshot-age-hours",
+            "49",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        _SEARCH_INDEX_NAMESPACE["main"]()
+
+    assert caught.value.code == 2
+    assert (
+        "production max snapshot age cannot exceed 48 hours" in capsys.readouterr().err
+    )
+    assert not publication_root.exists()
+
+
+def test_v7_channel_records_previous_release_for_rollback(tmp_path: Path) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    first = build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET last_seen_at = ? WHERE id = ?",
+            ("2026-02-04T01:00:00Z", "job-1"),
+        )
+    second = build_search_release(
+        db_path,
+        publication_root,
+        now=datetime(2026, 2, 4, 2, tzinfo=timezone.utc),
+    )
+
+    pointer = _read_json(publication_root / "channels" / "production.json")
+    assert second["releaseId"] != first["releaseId"]
+    assert pointer["releaseId"] == second["releaseId"]
+    assert pointer["priorReleaseId"] == first["releaseId"]
+
+    repeated = build_search_release(
+        db_path,
+        publication_root,
+        now=datetime(2026, 2, 4, 2, tzinfo=timezone.utc),
+    )
+    repeated_pointer = _read_json(publication_root / "channels" / "production.json")
+    assert repeated["releaseId"] == second["releaseId"]
+    assert repeated_pointer["priorReleaseId"] == first["releaseId"]
+
+
+def test_v7_fresh_release_can_replace_a_channel_that_aged_past_48h(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    first = build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET last_seen_at = ? WHERE id = ?",
+            ("2026-03-01T00:00:00Z", "job-1"),
+        )
+
+    second = build_search_release(
+        db_path,
+        publication_root,
+        now=datetime(2026, 3, 1, 1, tzinfo=timezone.utc),
+    )
+
+    pointer = _read_json(publication_root / "channels" / "production.json")
+    assert second["releaseId"] != first["releaseId"]
+    assert pointer["releaseId"] == second["releaseId"]
+    assert pointer["priorReleaseId"] == first["releaseId"]
+    assert pointer["degradedReason"] is None
+
+
+def test_v7_mid_write_failure_preserves_live_channel_and_cleans_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    initial = build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+    pointer = publication_root / "channels" / "production.json"
+    pointer_before = pointer.read_bytes()
+    releases_before = {path.name for path in (publication_root / "releases").iterdir()}
+    function_globals = build_search_release.__globals__
+    original_write_json = function_globals["_write_json"]
+
+    def fail_after_writing_provider(path: Path, data: Any, *, compact: bool) -> None:
+        original_write_json(path, data, compact=compact)
+        if path.name == "providers.json":
+            raise RuntimeError("injected staged-write failure")
+
+    monkeypatch.setitem(function_globals, "_write_json", fail_after_writing_provider)
+
+    with pytest.raises(RuntimeError, match="injected staged-write failure"):
+        build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+
+    assert pointer.read_bytes() == pointer_before
+    assert (
+        {path.name for path in (publication_root / "releases").iterdir()}
+        == {initial["releaseId"]}
+        == releases_before
+    )
+    assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_channel_write_failure_preserves_previous_release_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    initial = build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+    pointer = publication_root / "channels" / "production.json"
+    pointer_before = pointer.read_bytes()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET last_seen_at = ? WHERE id = ?",
+            ("2026-03-01T00:00:00Z", "job-1"),
+        )
+
+    function_globals = build_search_release.__globals__
+
+    def fail_channel_write(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected channel-write failure")
+
+    monkeypatch.setitem(
+        function_globals, "atomic_write_channel_pointer", fail_channel_write
+    )
+
+    with pytest.raises(RuntimeError, match="injected channel-write failure"):
+        build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+
+    assert pointer.read_bytes() == pointer_before
+    pointer_payload = _read_json(pointer)
+    assert pointer_payload["releaseId"] == initial["releaseId"]
+    assert len(list((publication_root / "releases").iterdir())) == 2
+    assert not list(tmp_path.glob(".publication-v7.openopps-stage-*"))
+
+
+def test_v7_post_swap_validation_failure_restores_previous_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    publication_root = tmp_path / "publication-v7"
+    initial = build_search_release(db_path, publication_root, now=_FRESH_RELEASE_NOW)
+    pointer = publication_root / "channels" / "production.json"
+    pointer_before = pointer.read_bytes()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET last_seen_at = ? WHERE id = ?",
+            ("2026-02-04T01:00:00Z", "job-1"),
+        )
+
+    function_globals = build_search_release.__globals__
+    original_validate = function_globals["validate_publication"]
+    call_count = 0
+
+    def fail_post_swap(*args: object, **kwargs: object) -> list[str]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return original_validate(*args, **kwargs)
+        return ["injected post-swap failure"]
+
+    monkeypatch.setitem(function_globals, "validate_publication", fail_post_swap)
+
+    with pytest.raises(ValueError, match="injected post-swap failure"):
+        build_search_release(
+            db_path,
+            publication_root,
+            now=datetime(2026, 2, 4, 2, tzinfo=timezone.utc),
+        )
+
+    assert pointer.read_bytes() == pointer_before
+    assert _read_json(pointer)["releaseId"] == initial["releaseId"]
+    assert len(list((publication_root / "releases").iterdir())) == 2
 
 
 def _read_json(path: Path) -> Any:
@@ -834,6 +1259,12 @@ def _write_search_index_db(tmp_path: Path) -> Path:
                 skill_id TEXT,
                 ordinal INTEGER,
                 keyword TEXT
+            );
+
+            CREATE TABLE sources (
+                key TEXT PRIMARY KEY,
+                url TEXT,
+                raw_metadata TEXT
             );
 
             CREATE TABLE boards (
@@ -905,6 +1336,26 @@ def _write_search_index_db(tmp_path: Path) -> Path:
             """
         )
         conn.executemany(
+            "INSERT INTO sources (key, url, raw_metadata) VALUES (?, ?, ?)",
+            [
+                (
+                    "fixture-a16z",
+                    "https://a16z.com/portfolio/",
+                    '{"licenseStatus":"official_public","sourceAttribution":"Andreessen Horowitz public portfolio."}',
+                ),
+                (
+                    "portfolio",
+                    "https://example.com/portfolio/",
+                    '{"licenseStatus":"public_attribution_required","sourceAttribution":"Fixture public portfolio."}',
+                ),
+                (
+                    "yc",
+                    "https://www.ycombinator.com/companies",
+                    '{"licenseStatus":"public_attribution_required","sourceAttribution":"Y Combinator public companies page."}',
+                ),
+            ],
+        )
+        conn.executemany(
             """
             INSERT INTO boards (
                 key, source_key, source_keys, name, domain, website_url, staff_count,
@@ -914,9 +1365,9 @@ def _write_search_index_db(tmp_path: Path) -> Path:
             """,
             [
                 (
-                    "a16z:acme",
-                    "a16z",
-                    '["a16z","portfolio"]',
+                    "fixture-a16z:acme",
+                    "fixture-a16z",
+                    '["fixture-a16z","portfolio"]',
                     "Acme",
                     "acme.example",
                     "https://acme.example/jobs",
@@ -948,8 +1399,8 @@ def _write_search_index_db(tmp_path: Path) -> Path:
             [
                 (
                     "route-1",
-                    "a16z",
-                    "a16z:acme",
+                    "fixture-a16z",
+                    "fixture-a16z:acme",
                     "greenhouse",
                     "Greenhouse",
                     "jobs",
@@ -983,7 +1434,7 @@ def _write_search_index_db(tmp_path: Path) -> Path:
             [
                 (
                     "job-1",
-                    "a16z:acme",
+                    "fixture-a16z:acme",
                     "greenhouse",
                     "remote-1",
                     "open",
@@ -1208,8 +1659,8 @@ def _write_tiered_shard_db(tmp_path: Path) -> Path:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "a16z:acme",
-                "a16z",
+                "fixture-a16z:acme",
+                "fixture-a16z",
                 "Acme",
                 "acme.example",
                 "https://acme.example/jobs",
@@ -1227,8 +1678,8 @@ def _write_tiered_shard_db(tmp_path: Path) -> Path:
             """,
             (
                 "route-1",
-                "a16z",
-                "a16z:acme",
+                "fixture-a16z",
+                "fixture-a16z:acme",
                 "greenhouse",
                 "Greenhouse",
                 "jobs",
@@ -1248,7 +1699,7 @@ def _write_tiered_shard_db(tmp_path: Path) -> Path:
             [
                 (
                     "job-rich",
-                    "a16z:acme",
+                    "fixture-a16z:acme",
                     "greenhouse",
                     "rich-1",
                     "open",
@@ -1259,7 +1710,7 @@ def _write_tiered_shard_db(tmp_path: Path) -> Path:
                 ),
                 (
                     "job-thin",
-                    "a16z:acme",
+                    "fixture-a16z:acme",
                     "greenhouse",
                     "thin-1",
                     "open",
@@ -1316,7 +1767,7 @@ def _write_tiered_shard_db(tmp_path: Path) -> Path:
                     "version-thin",
                     "job-thin",
                     "Untitled",
-                    '[]',
+                    "[]",
                     None,
                     None,
                     None,

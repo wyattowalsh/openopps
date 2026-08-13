@@ -97,7 +97,10 @@ def validate_public_host(host: str) -> str:
         raise ValueError("Host must be a hostname, not a URL or path")
     if any(char.isspace() for char in normalized):
         raise ValueError("Host must not contain whitespace")
-    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*", normalized):
+    if not re.fullmatch(
+        r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*",
+        normalized,
+    ):
         raise ValueError("Host must be a valid hostname")
     if normalized == "localhost" or normalized.endswith(".localhost"):
         raise ValueError("Host must not be localhost")
@@ -2564,11 +2567,43 @@ class JobSyncRunRow(SQLModel, table=True):
         index=True,
         description="UTC timestamp for this provider route sync attempt.",
     )
+    started_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC timestamp captured before provider network access.",
+    )
+    finished_at: datetime | None = SQLField(
+        default=None,
+        index=True,
+        description="UTC timestamp when this route sync reached a terminal state.",
+    )
+    status: str = SQLField(
+        default="pending",
+        index=True,
+        description="Durable lifecycle state: pending, succeeded, or failed.",
+    )
     success: bool = SQLField(
-        default=True, index=True, description="Whether the route sync completed."
+        default=False,
+        index=True,
+        description="Whether the route sync completed authoritatively.",
     )
     error: str | None = SQLField(
         default=None, description="Error message captured for failed route syncs."
+    )
+    error_kind: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Bounded machine-readable failure category.",
+    )
+    authoritative: bool = SQLField(
+        default=False,
+        index=True,
+        description="Whether the fetched snapshot was complete and authoritative.",
+    )
+    committed_batch_count: int = SQLField(
+        default=0,
+        ge=0,
+        description="Number of durable job batches committed by this run.",
     )
     job_count: int = SQLField(
         default=0, ge=0, description="Total jobs observed in the route sync."

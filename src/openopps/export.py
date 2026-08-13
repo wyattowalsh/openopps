@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import polars as pl
@@ -65,34 +68,64 @@ def export_records(
     metadata: dict[str, Any] | None = None,
 ) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
-    if format_ == ExportFormat.JSONL:
-        count = 0
-        with output.open("w", encoding="utf-8") as handle:
-            for row in _jsonable_records(records):
-                handle.write(canonical_json_dumps(row) + "\n")
-                count += 1
-        return count
-    rows = list(_jsonable_records(records))
-    if format_ == ExportFormat.CSV:
-        if not rows:
-            output.write_text("", encoding="utf-8")
-            return 0
-        pl.DataFrame(_tabular_records(rows, neutralize_formulas=True)).write_csv(output)
-        return len(rows)
-    if format_ == ExportFormat.PARQUET:
-        if not rows:
-            pl.DataFrame().write_parquet(output)
-            return 0
-        pl.DataFrame(_tabular_records(rows)).write_parquet(output)
-        return len(rows)
-    if format_ == ExportFormat.SQLITE:
-        return _write_sqlite_export(
-            rows,
-            output,
-            table_name=sqlite_table,
-            metadata=metadata or {},
-        )
-    raise ValueError(f"Unsupported export format: {format_}")
+    with _atomic_output_path(
+        output,
+        remove_sqlite_sidecars=format_ == ExportFormat.SQLITE,
+    ) as staged_output:
+        if format_ == ExportFormat.JSONL:
+            count = 0
+            with staged_output.open("w", encoding="utf-8") as handle:
+                for row in _jsonable_records(records):
+                    handle.write(canonical_json_dumps(row) + "\n")
+                    count += 1
+            return count
+        rows = list(_jsonable_records(records))
+        if format_ == ExportFormat.CSV:
+            if not rows:
+                staged_output.write_text("", encoding="utf-8")
+                return 0
+            pl.DataFrame(_tabular_records(rows, neutralize_formulas=True)).write_csv(
+                staged_output
+            )
+            return len(rows)
+        if format_ == ExportFormat.PARQUET:
+            if not rows:
+                pl.DataFrame().write_parquet(staged_output)
+                return 0
+            pl.DataFrame(_tabular_records(rows)).write_parquet(staged_output)
+            return len(rows)
+        if format_ == ExportFormat.SQLITE:
+            return _write_sqlite_export(
+                rows,
+                staged_output,
+                table_name=sqlite_table,
+                metadata=metadata or {},
+            )
+        raise ValueError(f"Unsupported export format: {format_}")
+
+
+@contextmanager
+def _atomic_output_path(
+    output: Path,
+    *,
+    remove_sqlite_sidecars: bool,
+) -> Iterator[Path]:
+    descriptor, raw_path = tempfile.mkstemp(
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+        dir=output.parent,
+    )
+    os.close(descriptor)
+    staged_output = Path(raw_path)
+    try:
+        yield staged_output
+        if remove_sqlite_sidecars:
+            _require_no_sqlite_sidecars(output)
+        os.replace(staged_output, output)
+    finally:
+        if staged_output.exists():
+            staged_output.unlink()
+        _remove_sqlite_sidecars(staged_output)
 
 
 def _write_sqlite_export(
@@ -207,3 +240,16 @@ def _remove_sqlite_sidecars(path: Path) -> None:
         sidecar = path.with_name(f"{path.name}{suffix}")
         if sidecar.exists():
             sidecar.unlink()
+
+
+def _require_no_sqlite_sidecars(path: Path) -> None:
+    sidecars = [
+        path.with_name(f"{path.name}{suffix}")
+        for suffix in ("-wal", "-shm", "-journal")
+    ]
+    present = [sidecar.name for sidecar in sidecars if sidecar.exists()]
+    if present:
+        raise RuntimeError(
+            "Refusing to replace a SQLite export with active or stale sidecars: "
+            + ", ".join(present)
+        )

@@ -95,7 +95,7 @@ just web-check
 just cli-help
 ```
 
-`just ci` runs, in order: `diff-check`, `lock-check`, `openspec-validate-all`, `test-cov`, `docs-check`, `docs-build`, `docs-test`, `docs-e2e`, `docs-a11y`, `docs-lint`, `kaggle-meta`, and `cli-help`. Use the raw `uv`, `pnpm`, and OpenSpec commands from the reference pages when a CI failure needs exact reproduction.
+`just ci` composes the `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts` lanes. Those cover the Python release gate, strict OpenSpec validation, web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata/bundle smoke, and repository drift. Use the raw `uv`, `pnpm`, and OpenSpec commands from the reference pages when a CI failure needs exact reproduction; use `just ci-full` when network-dependent security audits and lowest-direct dependency tests are required.
 
 ## Safe Local Smoke Path
 
@@ -151,6 +151,7 @@ Ashby postings marked `isListed: false` are direct-link-only and are excluded fr
 | [Data Model](/docs/data-model) | Sources, boards, providers, jobs, exports, static indices, counts, and telemetry event-lake guidance. |
 | [Providers](/docs/providers) | Source catalogs, provider support levels, route diagnostics, and limitations. |
 | [Operations](/docs/operations) | Storage, cache, exports, validation, telemetry operations, Kaggle, and troubleshooting workflows. |
+| [Public Data Releases](/docs/public-data-releases) | V7 manifests, source-rights gates, release-pinned web reads, static delivery, rollback, recovery, and the v6 cutover boundary. |
 | [Contributing](/docs/contributing) | Local setup, validation, docs generation, source-batch rules, and review expectations. |
 | [Jobs](/) | Filter and preview open roles from the static search index. |
 | [Explorer](/explorer) | Analyze source/provider coverage, route health, freshness, and data quality. |

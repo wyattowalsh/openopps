@@ -264,6 +264,45 @@ async def test_retrying_json_request_coalesces_duplicate_inflight_cache_misses(
 
 
 @pytest.mark.asyncio
+async def test_cancelling_one_coalesced_waiter_does_not_cancel_shared_request(
+    tmp_path,
+):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        retry_attempts=1,
+        cache_ttl_seconds=60,
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    requests = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        started.set()
+        await release.wait()
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        request_json = retrying_json_request(settings)
+        first = asyncio.create_task(
+            request_json(client, "GET", "https://api.example.test/cancel")
+        )
+        second = asyncio.create_task(
+            request_json(client, "GET", "https://api.example.test/cancel")
+        )
+        await started.wait()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        release.set()
+        assert await second == {"ok": True}
+
+    assert requests == 1
+    assert _cache_for(settings).status()["total"] == 1
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_retrying_json_request_refresh_bypasses_cache(tmp_path):
     settings = OpenOppsSettings(
@@ -420,7 +459,11 @@ async def test_retrying_json_response_preserves_headers_from_cache(tmp_path):
         cache_ttl_seconds=60,
     )
     route = respx.get("https://api.example.test/with-total").mock(
-        return_value=httpx.Response(200, json=[{"id": 1}], headers={"x-wp-total": "7"})
+        return_value=httpx.Response(
+            200,
+            json=[{"id": 1}],
+            headers={"x-wp-total": "7", "x-wp-totalpages": "2"},
+        )
     )
 
     async with build_async_client(settings) as client:
@@ -432,9 +475,46 @@ async def test_retrying_json_response_preserves_headers_from_cache(tmp_path):
 
     assert first.body == [{"id": 1}]
     assert first.headers["x-wp-total"] == "7"
+    assert first.headers["x-wp-totalpages"] == "2"
     assert second.body == [{"id": 1}]
     assert second.headers["x-wp-total"] == "7"
+    assert second.headers["x-wp-totalpages"] == "2"
     assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_retrying_json_response_does_not_persist_sensitive_response_headers(
+    tmp_path,
+):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        retry_attempts=1,
+    )
+    respx.get("https://api.example.test/sensitive-header").mock(
+        return_value=httpx.Response(
+            200,
+            json={"ok": True},
+            headers={"set-cookie": "session=response-secret; Secure"},
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        await retrying_json_request(settings)(
+            client, "GET", "https://api.example.test/sensitive-header"
+        )
+
+    assert settings.sqlite_path is not None
+    with sqlite3.connect(settings.sqlite_path) as conn:
+        persisted = "\n".join(
+            str(value)
+            for row in conn.execute(
+                "SELECT response_headers, payload FROM http_cache"
+            )
+            for value in row
+        )
+    assert "response-secret" not in persisted
+    assert "set-cookie" not in persisted
 
 
 @pytest.mark.asyncio
@@ -496,6 +576,17 @@ async def test_retrying_json_request_rejects_private_dns_resolution(
             )
 
     assert route.call_count == 0
+
+
+def test_safe_exception_message_does_not_persist_arbitrary_exception_text():
+    from openopps.http import safe_exception_message
+
+    rendered = safe_exception_message(
+        RuntimeError("provider payload contained password=plaintext-secret")
+    )
+
+    assert rendered == "RuntimeError"
+    assert "plaintext-secret" not in rendered
 
 
 @pytest.mark.asyncio

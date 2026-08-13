@@ -14,9 +14,18 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from openopps.migrations import sqlite_database_lock
 
 
-CACHE_SCHEMA_VERSION = "v1"
+CACHE_SCHEMA_VERSION = "v2"
+CACHE_SCRUB_PENDING_KEY = "physical_scrub_pending_generation"
+CACHE_SCRUB_COMPLETED_KEY = "physical_scrub_completed_generation"
 DEFAULT_CACHE_NAMESPACE = "http-json"
 RESPONSE_AFFECTING_HEADERS = {"accept", "content-type", "origin", "referer"}
+SENSITIVE_REQUEST_HEADERS = {
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "x-api-key",
+    "x-auth-token",
+}
 
 
 @dataclass(frozen=True)
@@ -161,11 +170,12 @@ class HttpCache:
             conn.execute(
                 """
                 insert into http_cache (
-                    key, namespace, method, url, request_identity, status_code,
-                    response_headers, etag, last_modified, content_hash, fetched_at,
-                    expires_at, stale_on_error, request_duration_ms, payload
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    key, schema_version, namespace, method, url, request_identity,
+                    status_code, response_headers, etag, last_modified, content_hash,
+                    fetched_at, expires_at, stale_on_error, request_duration_ms, payload
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(key) do update set
+                    schema_version=excluded.schema_version,
                     namespace=excluded.namespace,
                     method=excluded.method,
                     url=excluded.url,
@@ -183,11 +193,17 @@ class HttpCache:
                 """,
                 (
                     key,
+                    CACHE_SCHEMA_VERSION,
                     namespace,
                     method.upper(),
-                    _normalize_url(url, params),
-                    _canonical_json(
-                        _request_identity(json_body, request_headers, identity)
+                    redacted_request_location(url, params),
+                    _request_identity_hash(
+                        method,
+                        url,
+                        params=params,
+                        json_body=json_body,
+                        headers=request_headers,
+                        identity=identity,
                     ),
                     status_code,
                     _canonical_json(normalized_response_headers),
@@ -217,20 +233,36 @@ class HttpCache:
                 """
                 update http_cache
                 set fetched_at = ?, expires_at = ?
-                where key = ?
+                where key = ? and schema_version = ?
                 """,
-                (current_time.isoformat(), expires_at.isoformat(), key),
+                (
+                    current_time.isoformat(),
+                    expires_at.isoformat(),
+                    key,
+                    CACHE_SCHEMA_VERSION,
+                ),
             )
 
     def purge(self, *, namespace: str | None = None) -> int:
-        with self._connect() as conn:
-            if namespace is None:
-                cursor = conn.execute("delete from http_cache")
-            else:
-                cursor = conn.execute(
-                    "delete from http_cache where namespace = ?", (namespace,)
-                )
-            return int(cursor.rowcount or 0)
+        with sqlite_database_lock(self.path):
+            with self._connect() as conn:
+                if namespace is None:
+                    cursor = conn.execute("delete from http_cache")
+                else:
+                    cursor = conn.execute(
+                        "delete from http_cache where namespace = ?", (namespace,)
+                    )
+                deleted = int(cursor.rowcount or 0)
+                if deleted:
+                    scrub_generation = self._advance_scrub_generation(conn)
+                else:
+                    scrub_generation = self._pending_scrub_generation(conn)
+                completed_generation = self._completed_scrub_generation(conn)
+            if scrub_generation > completed_generation:
+                self._compact_deleted_content()
+                with self._connect() as conn:
+                    self._complete_scrub_generation(conn, scrub_generation)
+            return deleted
 
     def status(self) -> dict[str, Any]:
         current_time = _utc_now().isoformat()
@@ -261,9 +293,9 @@ class HttpCache:
                 select key, namespace, status_code, fetched_at, expires_at, payload,
                     etag, last_modified, stale_on_error
                 from http_cache
-                where key = ?
+                where key = ? and schema_version = ?
                 """,
-                (key,),
+                (key, CACHE_SCHEMA_VERSION),
             ).fetchone()
         if row is None:
             return None
@@ -288,6 +320,7 @@ class HttpCache:
                     """
                     create table if not exists http_cache (
                         key text primary key,
+                        schema_version text not null default 'v2',
                         namespace text not null,
                         method text not null,
                         url text not null,
@@ -308,15 +341,129 @@ class HttpCache:
                 conn.execute(
                     "create index if not exists ix_http_cache_namespace on http_cache(namespace)"
                 )
+                conn.execute(
+                    """
+                    create table if not exists http_cache_metadata (
+                        key text primary key,
+                        value text not null
+                    )
+                    """
+                )
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("pragma table_info(http_cache)").fetchall()
+                }
+                if "schema_version" not in columns:
+                    conn.execute(
+                        "alter table http_cache add column schema_version "
+                        "text not null default 'v1'"
+                    )
+                purged = conn.execute(
+                    "delete from http_cache where schema_version != ? or url != ?",
+                    (CACHE_SCHEMA_VERSION, redacted_request_location("")),
+                ).rowcount
+                pending_generation = self._pending_scrub_generation(conn)
+                completed_generation = self._completed_scrub_generation(conn)
+                if purged or pending_generation == 0:
+                    pending_generation = self._advance_scrub_generation(conn)
+            if pending_generation > completed_generation:
+                self._compact_deleted_content()
+                with self._connect() as conn:
+                    self._complete_scrub_generation(conn, pending_generation)
+
+    @staticmethod
+    def _metadata_generation(conn: sqlite3.Connection, key: str) -> int:
+        row = conn.execute(
+            "select value from http_cache_metadata where key = ?", (key,)
+        ).fetchone()
+        if row is None:
+            return 0
+        try:
+            generation = int(row[0])
+        except (TypeError, ValueError):
+            return 0
+        return max(0, generation)
+
+    @classmethod
+    def _pending_scrub_generation(cls, conn: sqlite3.Connection) -> int:
+        return cls._metadata_generation(conn, CACHE_SCRUB_PENDING_KEY)
+
+    @classmethod
+    def _completed_scrub_generation(cls, conn: sqlite3.Connection) -> int:
+        return cls._metadata_generation(conn, CACHE_SCRUB_COMPLETED_KEY)
+
+    @classmethod
+    def _advance_scrub_generation(cls, conn: sqlite3.Connection) -> int:
+        generation = (
+            max(
+                cls._pending_scrub_generation(conn),
+                cls._completed_scrub_generation(conn),
+            )
+            + 1
+        )
+        conn.execute(
+            """
+            insert into http_cache_metadata (key, value) values (?, ?)
+            on conflict(key) do update set value=excluded.value
+            """,
+            (CACHE_SCRUB_PENDING_KEY, str(generation)),
+        )
+        return generation
+
+    @classmethod
+    def _complete_scrub_generation(
+        cls, conn: sqlite3.Connection, generation: int
+    ) -> None:
+        pending_generation = cls._pending_scrub_generation(conn)
+        if pending_generation != generation:
+            return
+        conn.execute(
+            """
+            insert into http_cache_metadata (key, value) values (?, ?)
+            on conflict(key) do update set value=excluded.value
+            """,
+            (CACHE_SCRUB_COMPLETED_KEY, str(generation)),
+        )
+
+    def _compact_deleted_content(self) -> None:
+        """Remove deleted cache material from main and WAL database bytes."""
+
+        with sqlite3.connect(self.path, timeout=30) as conn:
+            conn.execute("pragma busy_timeout=30000")
+            conn.execute("pragma secure_delete=ON")
+            checkpoint = conn.execute("pragma wal_checkpoint(TRUNCATE)").fetchone()
+            if checkpoint is not None and int(checkpoint[0]) != 0:
+                raise RuntimeError("Unable to securely checkpoint deleted cache data")
+            conn.execute("vacuum")
+            checkpoint = conn.execute("pragma wal_checkpoint(TRUNCATE)").fetchone()
+            if checkpoint is not None and int(checkpoint[0]) != 0:
+                raise RuntimeError("Unable to securely truncate deleted cache WAL data")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30)
         try:
+            conn.execute("pragma secure_delete=ON")
             yield conn
             conn.commit()
         finally:
             conn.close()
+
+
+def redacted_request_location(
+    url: str,
+    params: dict[str, Any] | None = None,
+) -> str:
+    """Return an opaque locator safe for durable logs and records.
+
+    Paths, hosts, userinfo, and even innocently named query parameters can carry
+    credentials in third-party APIs. Request identity and cache partitioning use
+    the separate SHA-256 material, so durable diagnostics do not need any URL
+    components.
+    """
+
+    del url, params
+    return "redacted://request/"
 
 
 def cache_key(
@@ -332,38 +479,76 @@ def cache_key(
     parts = {
         "schema": CACHE_SCHEMA_VERSION,
         "namespace": namespace,
-        "method": method.upper(),
-        "url": _normalize_url(url, params),
-        "request": _request_identity(json_body, headers, identity),
+        "requestIdentity": _request_identity_hash(
+            method,
+            url,
+            params=params,
+            json_body=json_body,
+            headers=headers,
+            identity=identity,
+        ),
     }
     return _sha256(_canonical_json(parts))
 
 
-def _request_identity(
+def _request_identity_hash(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None,
     json_body: Any,
     headers: dict[str, str] | None,
     identity: dict[str, Any] | None,
-) -> dict[str, Any]:
-    return {
+) -> str:
+    material = {
+        "method": method.upper(),
+        "url": _normalize_url(url, params),
         "json": json_body,
-        "headers": _normalize_headers(headers or {}),
+        "headers": _request_headers_for_identity(headers or {}),
         "identity": identity or {},
     }
+    return "sha256:" + _sha256(_canonical_json(material))
 
 
-def _normalize_url(url: str, params: dict[str, Any] | None) -> str:
+def _normalize_url(
+    url: str,
+    params: dict[str, Any] | None,
+) -> str:
     split = urlsplit(url)
     query_pairs = parse_qsl(split.query, keep_blank_values=True)
     if params:
         for key, value in params.items():
             if isinstance(value, list | tuple):
-                query_pairs.extend((key, str(item)) for item in value)
+                query_pairs.extend((str(key), str(item)) for item in value)
             elif value is not None:
-                query_pairs.append((key, str(value)))
+                query_pairs.append((str(key), str(value)))
     query = urlencode(sorted(query_pairs), doseq=True)
     scheme = split.scheme.lower()
-    host = split.netloc.lower()
-    return urlunsplit((scheme, host, split.path or "/", query, ""))
+    netloc = _normalize_netloc(split)
+    return urlunsplit((scheme, netloc, split.path or "/", query, ""))
+
+
+def _normalize_netloc(split: Any) -> str:
+    host = str(split.hostname or "").lower()
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    port = split.port
+    if (split.scheme.lower(), port) in {("http", 80), ("https", 443)}:
+        port = None
+    host_port = f"{host}:{port}" if port is not None else host
+    if "@" not in split.netloc:
+        return host_port
+    userinfo = split.netloc.rsplit("@", 1)[0]
+    return f"{userinfo}@{host_port}"
+
+
+def _request_headers_for_identity(headers: dict[str, str]) -> dict[str, str]:
+    included = RESPONSE_AFFECTING_HEADERS | SENSITIVE_REQUEST_HEADERS
+    return {
+        key.lower(): str(value)
+        for key, value in sorted(headers.items())
+        if key.lower() in included
+    }
 
 
 def _normalize_headers(headers: dict[str, str]) -> dict[str, str]:

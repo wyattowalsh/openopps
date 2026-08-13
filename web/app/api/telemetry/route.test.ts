@@ -69,6 +69,7 @@ describe("telemetry route", () => {
 							viewport: { width: 390, height: 844 },
 						},
 						properties: {
+							query: "private employer and medical history",
 							rows: 50,
 							totalMatches: 1908,
 							truncated: true,
@@ -107,6 +108,8 @@ describe("telemetry route", () => {
 			viewport_height: 844,
 		});
 		expect(body.properties.rawPostingBody).toBeUndefined();
+		expect(body.properties.query).toBeUndefined();
+		expect(JSON.stringify(body)).not.toContain("private employer");
 	});
 
 	it("appends local event-lake events before reporting PostHog success", async () => {

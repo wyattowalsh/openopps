@@ -17,18 +17,15 @@ async function waitForFirstJob(page: Page) {
 async function searchForFirstJob(page: Page) {
 	const search = page.getByLabel("Search jobs");
 	await expect(search).toBeVisible({ timeout: 30_000 });
-	// Register the response waiter in the same turn as fill to avoid race with
-	// debounce/network under mobile projects and no-store fetches.
-	await Promise.all([
-		page.waitForResponse(
-			(response) =>
-				response.url().includes("/api/jobs/search") &&
-				response.ok() &&
-				new URL(response.url()).searchParams.get("q") === "platform",
-			{ timeout: 45_000 },
-		),
-		search.fill("platform"),
-	]);
+	await expect(
+		page.getByRole("heading", { name: "Search or filter open jobs" }),
+	).toBeVisible({ timeout: 30_000 });
+	await search.fill("platform");
+	await expect(search).toHaveValue("platform");
+	await expect(page).toHaveURL(
+		(url) => url.searchParams.get("q") === "platform",
+		{ timeout: 15_000 },
+	);
 	return waitForFirstJob(page);
 }
 

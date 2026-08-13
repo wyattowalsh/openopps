@@ -36,6 +36,7 @@ import { JobsBoardToolbar } from "@/components/jobs-board/jobs-board-toolbar";
 import { useJobDetail } from "@/components/jobs-board/use-job-detail";
 import { useJobsBoardManifest } from "@/components/jobs-board/use-jobs-board-manifest";
 import { useJobsBoardSearch } from "@/components/jobs-board/use-jobs-board-search";
+import { useJobsOfflineCache } from "@/components/jobs-board/use-jobs-offline-cache";
 import { useSavedSearchFullCounts } from "@/components/jobs-board/use-saved-search-counts";
 import {
 	loadJobsSearchSummary,
@@ -61,6 +62,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		null,
 	);
 	const localState = useJobsLocalState();
+	const offlineCache = useJobsOfflineCache(localDataOpen);
 	const markViewed = localState.markViewed;
 	const retainJobDetail = localState.retainJobDetail;
 
@@ -663,7 +665,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				open={localDataOpen}
 				settings={localState.settings}
 				storageStatus={localState.storageStatus}
+				storageError={localState.storageError}
 				summary={localState.summary}
+				offlineCache={offlineCache}
 				onClose={() => setLocalDataOpen(false)}
 				onSettingsChange={localState.setSettings}
 				onClearCategory={localState.clearCategory}

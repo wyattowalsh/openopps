@@ -7,6 +7,8 @@ OpenOpps v0.1 separates aggregate source adapters from job-capable provider adap
 
 Python plugins can contribute additional source adapters and job providers through the `openopps.plugins` entry point group. Plugin capabilities appear in `admin providers list` and registry surfaces when loaded successfully, and load failures, disabled entries, allow-list filters, and conflicts are visible in `plugins list`. Installed plugins are discovered by default but only executed when their entry-point names are listed in `OPENOPPS_PLUGIN_ALLOWED`, unless `OPENOPPS_PLUGIN_AUTOLOAD=true` is set.
 
+Plugin job providers implement `BoardJobProvider` and return `openopps.providers.JobFetchResult` from `fetch_jobs`. Mark a result `authoritative=True` only after a complete, verified traversal: authoritative snapshots may close jobs that were not returned, while partial and plain-list results are rejected fail closed. The minimal plugin template demonstrates a non-authoritative no-op provider.
+
 Use `examples/plugins/minimal-openopps-plugin/` as the starting template for a packaged plugin with a `pyproject.toml` entry point.
 
 ## Source Adapter Inventory

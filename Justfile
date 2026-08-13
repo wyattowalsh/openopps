@@ -1,8 +1,10 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set positional-arguments
 
-openspec := env_var_or_default("OPENOPPS_OPENSPEC", "npx -y @fission-ai/openspec@1.6.0")
-kaggle := "uv run --with kaggle kaggle"
+openspec := "npx -y @fission-ai/openspec@1.6.0"
+kaggle := "uv run --frozen --group ops kaggle"
 kaggle-gen := "PYTHONPATH=scripts uv run python -m openopps_kaggle"
+kaggle-ops-gen := "PYTHONPATH=scripts uv run --frozen --group ops python -m openopps_kaggle"
 
 default:
     @just --list
@@ -13,32 +15,66 @@ setup:
     cd web && pnpm install
 
 # Fast local confidence checks.
-quick: cli-help test-cli openspec-list openspec-validate-all
+quick: python-quality cli-help test-cli openspec-list openspec-validate-all
 
-# Full local validation graph matching primary CI lanes.
-ci: diff-check lock-check openspec-validate-all test-cov web-check web-build web-test web-e2e web-a11y web-lint kaggle-meta cli-help
+# Canonical local validation graph. GitHub Actions invokes the same lane recipes.
+ci: ci-python ci-openspec ci-web ci-artifacts
+
+# Python 3.12 release gate.
+ci-python: lock-check python-quality test-cov cli-help wheel-catalog-smoke
+
+# Compatibility gate used by the Python 3.13/3.14 CI matrix lanes.
+ci-python-compat: lock-check test
+
+# OpenSpec contract gate.
+ci-openspec: openspec-list openspec-validate-all
+
+# Web product gate.
+ci-web: web-check web-build web-test web-e2e web-a11y web-lint web-search-artifacts-check
+
+# Generated-artifact and repository-diff gate.
+ci-artifacts: kaggle-generated-diff-check kaggle-bundle-smoke diff-check
 
 # CI plus network-dependent security audits (GHA Security job parity).
-ci-full: ci security-audit wheel-catalog-smoke
+ci-full: ci security-audit test-lowest-direct
 
 # Local parity with GHA security job (requires network).
 security-audit: security-audit-python security-audit-docs
 
 security-audit-python:
-    uv export --frozen --all-extras --dev --no-hashes -o /tmp/requirements-audit.txt
-    uvx pip-audit -r /tmp/requirements-audit.txt --progress-spinner off
+    #!/usr/bin/env bash
+    set -euo pipefail
+    audit_requirements="$(mktemp)"
+    trap 'rm -f "$audit_requirements"' EXIT
+    uv export --quiet --frozen --all-extras --all-groups --no-hashes --output-file "$audit_requirements"
+    uv run --frozen pip-audit --requirement "$audit_requirements" --progress-spinner off
 
 security-audit-docs:
-    cd web && pnpm audit --prod --audit-level high
+    cd web && pnpm audit --audit-level high
+
+# Build the release wheel into the conventional artifact directory.
+build-wheel:
+    uv build --wheel --out-dir dist
 
 # Build a wheel and confirm packaged portfolio catalog is importable.
 wheel-catalog-smoke:
-    uv build --wheel -o /tmp/openopps-wheels
+    uv build --wheel --out-dir /tmp/openopps-wheels
     uv run python scripts/smoke_wheel_catalog.py
 
 # Check that uv.lock is current for pyproject.toml.
 lock-check:
     uv lock --check
+
+# Lint the supported Python package surface.
+ruff-check:
+    uv run --frozen ruff check src/openopps
+
+# Type-check the supported Python package surface.
+ty-check:
+    uv run --frozen ty check
+
+# Static Python quality gate.
+python-quality: ruff-check ty-check
 
 # Run the full pytest suite.
 test:
@@ -47,6 +83,24 @@ test:
 # Run coverage-enforced pytest.
 test-cov:
     uv run pytest --cov=openopps --cov-report=term-missing
+
+# Exercise the suite with the lowest direct versions without rewriting uv.lock.
+test-lowest-direct:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    repo="$PWD"
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    cp pyproject.toml README.md "$work/"
+    cp -R src "$work/src"
+    mkdir -p "$work/examples"
+    cp examples/examples.py "$work/examples/"
+    (
+      cd "$work"
+      UV_FROZEN=0 uv lock --python 3.12 --resolution lowest-direct
+      UV_FROZEN=1 uv sync --python 3.12 --all-extras --all-groups
+    )
+    PYTHONPATH="$repo/src:$repo/scripts${PYTHONPATH:+:$PYTHONPATH}" "$work/.venv/bin/python" -m pytest "$repo/tests"
 
 # Run focused CLI integration tests.
 test-cli:
@@ -95,7 +149,7 @@ web-test:
 
 # Run browser E2E checks for the production-built public surface and jobs board.
 web-e2e: web-build
-    cd web && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium
+    cd web && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium --project=firefox --project=webkit
 
 # Run focused browser accessibility checks against the production build.
 web-a11y: web-build
@@ -132,13 +186,18 @@ docs-rtk-lint: web-rtk-lint
 kaggle-meta:
     {{ kaggle-gen }}
 
+# Generate first, then fail on any byte drift in committed Kaggle artifacts.
+kaggle-generated-diff-check: kaggle-meta
+    git diff --exit-code -- kaggle
+    @untracked="$(git ls-files --others --exclude-standard -- kaggle)"; test -z "$untracked" || { echo "Untracked generated Kaggle artifacts:" >&2; printf '%s\n' "$untracked" >&2; exit 1; }
+
 # Generate Kaggle metadata and table exports from an existing SQLite DB.
 kaggle-bundle db="kaggle/openoppsdb.sqlite":
-    @db="{{ db }}"; {{ kaggle-gen }} --data-db "${db#db=}"
+    @db="$1"; {{ kaggle-gen }} --data-db "${db#db=}"
 
 # Validate generated Kaggle metadata and optional SQLite/CSV/Parquet bundle surfaces locally.
 kaggle-bundle-check db="kaggle/openoppsdb.sqlite":
-    @db="{{ db }}"; db="${db#db=}"; if [ -f "$db" ]; then {{ kaggle-gen }} --data-db "$db"; else echo "No SQLite DB at $db; validating metadata-only Kaggle bundle."; {{ kaggle-gen }}; fi
+    @db="$1"; db="${db#db=}"; if [ -f "$db" ]; then {{ kaggle-gen }} --data-db "$db"; else echo "No SQLite DB at $db; validating metadata-only Kaggle bundle."; {{ kaggle-gen }}; fi
     uv run pytest tests/unit/openopps/kaggle/ -q
 
 # Non-secret CI/local smoke: init a clean temp DB, generate bundle artifacts, stage public upload.
@@ -167,83 +226,84 @@ kaggle-bundle-smoke:
     ! test -f "$stage/sync_metrics.json"
     ! test -f "$stage/snapshot-quality.json"
 
-# Create the private OpenOppsDB manager runtime generator Kaggle dataset.
-kaggle-runtime-generator-create:
-    @upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; {{ kaggle-gen }} --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets create -p "$upload_dir" -q -t -r zip
-
-# Version the private OpenOppsDB manager runtime generator Kaggle dataset.
-kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator":
-    @message="{{ message }}"; message="${message#message=}"; upload_dir="$(mktemp -d)"; trap 'rm -rf "$upload_dir"' EXIT; {{ kaggle-gen }} --stage-runtime-generator-dir "$upload_dir"; {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip
-
-# Create the public OpenOppsDB Kaggle dataset from a rebuild+stage data-only bundle.
-# Requires db=<sqlite path> by default. Pass allow_stale=1 only to stage the current
-# kaggle/ tree without rebuild (loud warning; not for normal publishes).
-kaggle-dataset-create db="" allow_stale="0":
+# Prepare the first private runtime dataset publication. Dry-run is the default;
+# live create additionally requires execute=1 allow_no_rollback=1.
+kaggle-runtime-generator-create message="OpenOppsDB manager runtime generator" execute="0" allow_no_rollback="0" ledger="var/kaggle-runtime-publication-ledger.json":
     #!/usr/bin/env bash
-    db="{{ db }}"; db="${db#db=}"
-    allow_stale="{{ allow_stale }}"; allow_stale="${allow_stale#allow_stale=}"
-    if [[ "$allow_stale" == "1" || "$allow_stale" == "true" ]]; then
-      echo "WARNING: allow_stale=1 stages current kaggle/ without rebuild-from-db. Prefer db=<clean.sqlite>." >&2
-    else
-      if [[ -z "$db" ]]; then
-        echo "error: kaggle-dataset-create requires db=<path-to-clean-openoppsdb.sqlite> (or allow_stale=1)." >&2
-        exit 1
-      fi
-      if [[ ! -f "$db" ]]; then
-        echo "error: SQLite database not found: $db" >&2
-        exit 1
-      fi
-      {{ kaggle-gen }} --data-db "$db"
-    fi
-    upload_dir="$(mktemp -d)"
-    trap 'rm -rf "$upload_dir"' EXIT
-    {{ kaggle-gen }} --stage-public-upload-dir "$upload_dir"
-    {{ kaggle }} datasets create -p "$upload_dir" --public -q -t -r zip
+    set -euo pipefail
+    message="$1"; message="${message#message=}"
+    execute="$2"; execute="${execute#execute=}"
+    allow_no_rollback="$3"; allow_no_rollback="${allow_no_rollback#allow_no_rollback=}"
+    ledger="$4"; ledger="${ledger#ledger=}"
+    args=(publication publish --kind runtime --action create --message "$message" --ledger "$ledger")
+    case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac
+    case "$allow_no_rollback" in 1|true) args+=(--allow-no-rollback) ;; 0|false) ;; *) echo "allow_no_rollback must be 0/1/false/true" >&2; exit 2 ;; esac
+    {{ kaggle-ops-gen }} "${args[@]}"
 
-# Version the public OpenOppsDB Kaggle dataset from a rebuild+stage data-only bundle.
-# Requires db=<sqlite path> by default. Pass allow_stale=1 only to stage the current
-# kaggle/ tree without rebuild (loud warning; not for normal publishes).
-kaggle-dataset-version message="OpenOppsDB snapshot" db="" allow_stale="0":
+# Prepare a versioned private runtime publication with an exact prior rollback target.
+# Supply expected_current_version=<n>; add execute=1 only after reviewing the dry-run ledger.
+kaggle-runtime-generator-version message="OpenOppsDB manager runtime generator" expected_current_version="" execute="0" ledger="var/kaggle-runtime-publication-ledger.json":
     #!/usr/bin/env bash
-    message="{{ message }}"; message="${message#message=}"
-    db="{{ db }}"; db="${db#db=}"
-    allow_stale="{{ allow_stale }}"; allow_stale="${allow_stale#allow_stale=}"
-    if [[ "$allow_stale" == "1" || "$allow_stale" == "true" ]]; then
-      echo "WARNING: allow_stale=1 stages current kaggle/ without rebuild-from-db. Prefer db=<clean.sqlite>." >&2
-    else
-      if [[ -z "$db" ]]; then
-        echo "error: kaggle-dataset-version requires db=<path-to-clean-openoppsdb.sqlite> (or allow_stale=1)." >&2
-        exit 1
-      fi
-      if [[ ! -f "$db" ]]; then
-        echo "error: SQLite database not found: $db" >&2
-        exit 1
-      fi
-      {{ kaggle-gen }} --data-db "$db"
-    fi
-    current_version="$({{ kaggle }} datasets status wyattowalsh/openoppsdb --format json | python3 -c 'import json, sys; print(json.load(sys.stdin)["current_version_number"])')"
-    next_version="$((current_version + 1))"
-    upload_dir="$(mktemp -d)"
-    trap 'rm -rf "$upload_dir"' EXIT
-    {{ kaggle-gen }} --stage-public-upload-dir "$upload_dir"
-    {{ kaggle }} datasets version -p "$upload_dir" -m "$message" -q -t -r zip
-    PYTHONPATH=scripts uv run --with kaggle --with browser-cookie3 --with requests python -m openopps_kaggle --wait-live-dataset-ready --wait-live-dataset-min-version "$next_version" --update-live-file-metadata --live-file-metadata-browser-cookies
+    set -euo pipefail
+    message="$1"; message="${message#message=}"
+    expected_current_version="$2"; expected_current_version="${expected_current_version#expected_current_version=}"
+    execute="$3"; execute="${execute#execute=}"
+    ledger="$4"; ledger="${ledger#ledger=}"
+    args=(publication publish --kind runtime --action version --message "$message" --expected-current-version "$expected_current_version" --ledger "$ledger")
+    case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac
+    {{ kaggle-ops-gen }} "${args[@]}"
+
+# Prepare the first public OpenOppsDB publication from a clean SQLite database.
+# Dry-run is the default. allow_stale=1 is a loud maintenance-only override;
+# live create additionally requires execute=1 allow_no_rollback=1.
+kaggle-dataset-create db="" allow_stale="0" message="OpenOppsDB initial snapshot" execute="0" allow_no_rollback="0" ledger="var/kaggle-publication-ledger.json":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    db="$1"; db="${db#db=}"
+    allow_stale="$2"; allow_stale="${allow_stale#allow_stale=}"
+    message="$3"; message="${message#message=}"
+    execute="$4"; execute="${execute#execute=}"
+    allow_no_rollback="$5"; allow_no_rollback="${allow_no_rollback#allow_no_rollback=}"
+    ledger="$6"; ledger="${ledger#ledger=}"
+    args=(publication publish --kind public --action create --message "$message" --ledger "$ledger")
+    if [[ -n "$db" ]]; then args+=(--data-db "$db"); fi
+    case "$allow_stale" in 1|true) args+=(--allow-stale) ;; 0|false) ;; *) echo "allow_stale must be 0/1/false/true" >&2; exit 2 ;; esac
+    case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac
+    case "$allow_no_rollback" in 1|true) args+=(--allow-no-rollback) ;; 0|false) ;; *) echo "allow_no_rollback must be 0/1/false/true" >&2; exit 2 ;; esac
+    {{ kaggle-ops-gen }} "${args[@]}"
+
+# Prepare a public OpenOppsDB version with exact stage hashes and rollback/readback argv.
+# Supply expected_current_version=<n>; add execute=1 only after reviewing the dry-run ledger.
+kaggle-dataset-version message="OpenOppsDB snapshot" db="" allow_stale="0" expected_current_version="" execute="0" ledger="var/kaggle-publication-ledger.json":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    message="$1"; message="${message#message=}"
+    db="$2"; db="${db#db=}"
+    allow_stale="$3"; allow_stale="${allow_stale#allow_stale=}"
+    expected_current_version="$4"; expected_current_version="${expected_current_version#expected_current_version=}"
+    execute="$5"; execute="${execute#execute=}"
+    ledger="$6"; ledger="${ledger#ledger=}"
+    args=(publication publish --kind public --action version --message "$message" --expected-current-version "$expected_current_version" --ledger "$ledger")
+    if [[ -n "$db" ]]; then args+=(--data-db "$db"); fi
+    case "$allow_stale" in 1|true) args+=(--allow-stale) ;; 0|false) ;; *) echo "allow_stale must be 0/1/false/true" >&2; exit 2 ;; esac
+    case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac
+    {{ kaggle-ops-gen }} "${args[@]}"
 
 # Update live OpenOppsDB file descriptions and column metadata on Kaggle.
 kaggle-live-file-metadata:
-    PYTHONPATH=scripts uv run --with kaggle --with browser-cookie3 --with requests python -m openopps_kaggle --update-live-file-metadata --live-file-metadata-browser-cookies
+    {{ kaggle-ops-gen }} --update-live-file-metadata --live-file-metadata-browser-cookies
 
-# Push the connected OpenOppsDB manager notebook to Kaggle.
-kaggle-notebook-push timeout="3600":
-    @timeout="{{ timeout }}"; {{ kaggle }} kernels push -p kaggle --timeout "${timeout#timeout=}"
+# Prepare or execute the connected manager notebook push through validated argv.
+kaggle-notebook-push timeout="3600" execute="0":
+    @timeout="$1"; timeout="${timeout#timeout=}"; execute="$2"; execute="${execute#execute=}"; args=(publication kernel-push --bundle manager --timeout-seconds "$timeout"); case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac; {{ kaggle-ops-gen }} "${args[@]}"
 
-# Push the public OpenOppsDB starter notebook to Kaggle.
-kaggle-starter-notebook-push timeout="3600":
-    @timeout="{{ timeout }}"; {{ kaggle }} kernels push -p kaggle/starter --timeout "${timeout#timeout=}"
+# Prepare or execute the public starter notebook push through validated argv.
+kaggle-starter-notebook-push timeout="3600" execute="0":
+    @timeout="$1"; timeout="${timeout#timeout=}"; execute="$2"; execute="${execute#execute=}"; args=(publication kernel-push --bundle starter --timeout-seconds "$timeout"); case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac; {{ kaggle-ops-gen }} "${args[@]}"
 
-# Push all public OpenOppsDB example notebooks to Kaggle.
-kaggle-example-notebooks-push timeout="3600":
-    @timeout="{{ timeout }}"; timeout="${timeout#timeout=}"; for dir in kaggle/starter kaggle/examples/advanced-usage kaggle/examples/hiring-market-map kaggle/examples/skills-radar; do {{ kaggle }} kernels push -p "$dir" --timeout "$timeout"; done
+# Prepare or execute all public example notebook pushes through validated argv.
+kaggle-example-notebooks-push timeout="3600" execute="0":
+    @timeout="$1"; timeout="${timeout#timeout=}"; execute="$2"; execute="${execute#execute=}"; args=(publication kernel-push --bundle examples --timeout-seconds "$timeout"); case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac; {{ kaggle-ops-gen }} "${args[@]}"
 
 # Show live OpenOppsDB dataset status from Kaggle.
 kaggle-live-status:
@@ -251,15 +311,24 @@ kaggle-live-status:
 
 # List live OpenOppsDB dataset files from Kaggle.
 kaggle-live-files page_size="200":
-    @page_size="{{ page_size }}"; {{ kaggle }} datasets files wyattowalsh/openoppsdb --page-size "${page_size#page_size=}"
+    @page_size="$1"; {{ kaggle }} datasets files wyattowalsh/openoppsdb --page-size "${page_size#page_size=}"
 
 # Verify live OpenOppsDB readback through KaggleHub adapters.
 kagglehub-live-readback dataset="wyattowalsh/openoppsdb" version="":
-    @dataset="{{ dataset }}"; version="{{ version }}"; if [[ "$dataset" == dataset=* ]]; then dataset="${dataset#dataset=}"; fi; if [[ "$dataset" == version=* ]]; then version="${dataset#version=}"; dataset="wyattowalsh/openoppsdb"; fi; if [[ "$version" == version=* ]]; then version="${version#version=}"; fi; version_arg=""; if [ -n "$version" ]; then version_arg="--version $version"; fi; PYTHONPATH=scripts uv run --with 'kagglehub[polars-datasets]' python -m openopps_kaggle verify-readback --dataset "$dataset" $version_arg
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dataset="$1"
+    version="$2"
+    if [[ "$dataset" == dataset=* ]]; then dataset="${dataset#dataset=}"; fi
+    if [[ "$dataset" == version=* ]]; then version="${dataset#version=}"; dataset="wyattowalsh/openoppsdb"; fi
+    if [[ "$version" == version=* ]]; then version="${version#version=}"; fi
+    args=(verify-readback --dataset "$dataset")
+    if [[ -n "$version" ]]; then args+=(--version "$version"); fi
+    {{ kaggle-ops-gen }} "${args[@]}"
 
 # Download live OpenOppsDB dataset metadata from Kaggle.
 kaggle-live-metadata output="/tmp/openoppsdb-kaggle-metadata":
-    @output="{{ output }}"; output="${output#output=}"; mkdir -p "$output"; {{ kaggle }} datasets metadata wyattowalsh/openoppsdb -p "$output"
+    @output="$1"; output="${output#output=}"; mkdir -p "$output"; {{ kaggle }} datasets metadata wyattowalsh/openoppsdb -p "$output"
 
 # Show live OpenOppsDB manager notebook availability from Kaggle.
 kaggle-notebook-status:
@@ -267,7 +336,7 @@ kaggle-notebook-status:
 
 # List live OpenOppsDB manager notebook files from Kaggle.
 kaggle-notebook-files page_size="200":
-    @page_size="{{ page_size }}"; {{ kaggle }} kernels files wyattowalsh/openoppsdb-manager --page-size "${page_size#page_size=}"
+    @page_size="$1"; {{ kaggle }} kernels files wyattowalsh/openoppsdb-manager --page-size "${page_size#page_size=}"
 
 # Show live OpenOppsDB starter notebook status from Kaggle.
 kaggle-starter-notebook-status:
@@ -283,7 +352,7 @@ kaggle-example-notebooks-pull-check:
 
 # List output files emitted by live OpenOppsDB public example notebook runs.
 kaggle-example-notebooks-files page_size="200":
-    @page_size="{{ page_size }}"; page_size="${page_size#page_size=}"; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do echo "== $kernel =="; {{ kaggle }} kernels files "$kernel" --page-size "$page_size"; done
+    @page_size="$1"; page_size="${page_size#page_size=}"; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do echo "== $kernel =="; {{ kaggle }} kernels files "$kernel" --page-size "$page_size"; done
 
 # Run the live non-destructive Kaggle status/file verification commands.
 kaggle-live-verify: kaggle-live-status kaggle-live-files kagglehub-live-readback kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files kaggle-starter-notebook-status kaggle-example-notebooks-status kaggle-example-notebooks-pull-check
@@ -297,30 +366,33 @@ openspec-list:
 openspec-status change="":
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -z "{{ change }}" ]]; then
+    change="$1"; change="${change#change=}"
+    if [[ -z "$change" ]]; then
       {{ openspec }} list --json
     else
-      {{ openspec }} status --change "{{ change }}" --json
+      {{ openspec }} status --change "$change" --json
     fi
 
 # Show OpenSpec task instructions for one change as agent-readable JSON.
 openspec-tasks change="":
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -z "{{ change }}" ]]; then
+    change="$1"; change="${change#change=}"
+    if [[ -z "$change" ]]; then
       echo "usage: just openspec-tasks change=<active-change-name>" >&2
       exit 2
     fi
-    {{ openspec }} instructions --change "{{ change }}" tasks --json
+    {{ openspec }} instructions --change "$change" tasks --json
 
 # Validate one OpenSpec change strictly.
 openspec-validate change="":
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -z "{{ change }}" ]]; then
+    change="$1"; change="${change#change=}"
+    if [[ -z "$change" ]]; then
       {{ openspec }} validate --all --strict
     else
-      {{ openspec }} validate "{{ change }}" --strict
+      {{ openspec }} validate "$change" --strict
     fi
 
 # Validate all active OpenSpec changes strictly.

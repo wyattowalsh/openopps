@@ -15,7 +15,7 @@ from openopps.models import BoardRecord, JobRecord, SourceRecord
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
-ALEMBIC_HEAD = "0003_jobs_current_version_fk"
+ALEMBIC_HEAD = "0004_job_sync_run_lifecycle"
 
 
 def test_init_db_runs_initial_sqlite_schema(tmp_path: Path):
@@ -71,6 +71,8 @@ def test_initial_sqlite_schema_has_app_constraints_and_indexes(tmp_path: Path):
         assert _has_sqlite_index(conn, "boards", ("source_key",))
         assert _has_sqlite_index(conn, "jobs", ("provider_id",))
         assert _has_sqlite_index(conn, "job_versions", ("job_id",))
+        assert _has_sqlite_index(conn, "job_sync_runs", ("status",))
+        assert _has_sqlite_index(conn, "job_sync_runs", ("started_at",))
         assert _has_sqlite_index(
             conn, "job_version_skills", ("job_version_id", "ordinal"), unique=True
         )
@@ -334,14 +336,118 @@ def test_migration_0003_nulls_orphan_job_current_version_refs(tmp_path: Path):
         assert _has_sqlite_fk(conn, "jobs", "current_version_id", "job_versions", "id")
 
 
+def test_migration_0004_upgrades_and_downgrades_sync_run_lifecycle(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    command.upgrade(
+        migrations_module._alembic_config(settings), "0003_jobs_current_version_fk"
+    )
+    observed_at = "2026-01-01 00:00:00"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('source-1', 'https://example.com', 'manual')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (key, source_key, remote_id, name)
+            VALUES ('board-1', 'source-1', 'board-1', 'Board 1')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO job_sync_runs (
+                id, board_key, provider_id, synced_at, success, error, job_count,
+                new_count, unchanged_count, changed_count, reopened_count,
+                closed_count
+            )
+            VALUES (
+                'run-legacy', 'board-1', 'greenhouse', ?, 0, 'legacy failure',
+                0, 0, 0, 0, 0, 0
+            )
+            """,
+            (observed_at,),
+        )
+
+    OpenOppsStore(settings).init_db()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(job_sync_runs)")}
+        upgraded = conn.execute(
+            """
+            SELECT status, started_at, finished_at, error_kind,
+                   committed_batch_count, authoritative
+            FROM job_sync_runs
+            WHERE id = 'run-legacy'
+            """
+        ).fetchone()
+    assert {
+        "status",
+        "started_at",
+        "finished_at",
+        "error_kind",
+        "committed_batch_count",
+        "authoritative",
+    }.issubset(columns)
+    assert upgraded == (
+        "failed",
+        observed_at,
+        observed_at,
+        "legacy_failure",
+        0,
+        0,
+    )
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    command.downgrade(
+        migrations_module._alembic_config(settings), "0003_jobs_current_version_fk"
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        downgraded_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(job_sync_runs)")
+        }
+        version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        legacy = conn.execute(
+            "SELECT success, error FROM job_sync_runs WHERE id = 'run-legacy'"
+        ).fetchone()
+    assert "status" not in downgraded_columns
+    assert version == ("0003_jobs_current_version_fk",)
+    assert legacy == (0, "legacy failure")
+
+
+def test_migration_preflight_rejects_partial_lifecycle_schema(tmp_path: Path):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    command.upgrade(
+        migrations_module._alembic_config(settings), "0003_jobs_current_version_fk"
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "ALTER TABLE job_sync_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
+        )
+
+    with pytest.raises(DatabaseSchemaError, match=r"job_sync_runs\.(?:authoritative|started_at)"):
+        OpenOppsStore(settings).init_db()
+
+
 def test_deleting_current_job_version_nulls_job_pointer(tmp_path: Path):
-    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}"))
+    store = OpenOppsStore(
+        OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    )
     store.init_db()
     store.upsert_source(
         SourceRecord(key="source-1", url="https://example.com", provider_id="manual")
     )
     store.upsert_boards(
-        [BoardRecord(key="board-1", source_key="source-1", remote_id="board-1", name="Board")]
+        [
+            BoardRecord(
+                key="board-1", source_key="source-1", remote_id="board-1", name="Board"
+            )
+        ]
     )
     store.upsert_jobs(
         [

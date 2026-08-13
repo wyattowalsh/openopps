@@ -15,20 +15,27 @@ import type {
 	JobSortKey,
 } from "@/components/jobs-board/jobs-board-filter-engine";
 import {
-	EXPECTED_COLUMNS,
 	SEARCH_VERSION,
 	SearchLoadError,
-	expectedColumnsFor,
 } from "./search-utils";
+import {
+	validateSearchChunk,
+	validateSearchManifest,
+} from "./search-index-validation";
+import { OpenOppsSnapshotClient } from "@/lib/openopps-snapshot-client";
+import { getJobsOfflineSnapshotConfiguration } from "@/lib/jobs-offline-cache";
+
+export { validateSearchChunk, validateSearchManifest } from "./search-index-validation";
 
 export const SEARCH_MANIFEST_PATH = "/data/openopps-search/manifest.json";
-export const JOBS_SEARCH_PATH = "/api/jobs/search";
 export const SAVED_SEARCH_COUNT_BATCH_SIZE = 25;
 export const LINEAGE_AGGREGATE_PATH = "/data/openopps-search/lineage-aggregate.json";
 const SUPPORTED_SEARCH_INDEX_VERSIONS = new Set([3, SEARCH_VERSION]);
 const MAX_CHUNK_FETCHES = 6;
 
 const jsonCache = new Map<string, Promise<unknown>>();
+let snapshotClientForTests: OpenOppsSnapshotClient | null | undefined;
+let browserSnapshotClient: OpenOppsSnapshotClient | null | undefined;
 
 export async function fetchJson<T>(path: string): Promise<T> {
 	let cached = jsonCache.get(path);
@@ -55,7 +62,11 @@ export async function fetchJson<T>(path: string): Promise<T> {
 }
 
 export async function loadSearchManifest(path = SEARCH_MANIFEST_PATH) {
-	const manifest = await fetchJson<SearchManifest>(path);
+	const snapshotClient = getBrowserSnapshotClient();
+	const manifest =
+		snapshotClient && path === SEARCH_MANIFEST_PATH
+			? await snapshotClient.getSearchManifest()
+			: await fetchJson<SearchManifest>(path);
 	validateCachedJson(path, manifest, validateSearchManifest);
 	return manifest;
 }
@@ -66,7 +77,7 @@ export async function loadInitialJobsChunk(manifest: SearchManifest) {
 	if (!path) {
 		return loadEntityChunk(manifest, "jobs");
 	}
-	const chunk = await fetchJson<SearchChunk>(path);
+	const chunk = await fetchSearchJson<SearchChunk>(path);
 	validateCachedJson(path, chunk, (value) => validateSearchChunk("jobs", value));
 	return chunk;
 }
@@ -90,14 +101,14 @@ export async function loadEntityChunk(manifest: SearchManifest, entity: Entity) 
 			`Search manifest is missing ${entity} entity path.`,
 		);
 	}
-	const chunk = await fetchJson<SearchChunk>(details.path);
+	const chunk = await fetchSearchJson<SearchChunk>(details.path);
 	validateCachedJson(details.path, chunk, (value) => validateSearchChunk(entity, value));
 	return chunk;
 }
 
 export async function loadLineageAggregate(manifest: SearchManifest) {
 	const path = manifest.lineageAggregate?.path ?? LINEAGE_AGGREGATE_PATH;
-	const aggregate = await fetchJson<LineageAggregate>(path);
+	const aggregate = await fetchSearchJson<LineageAggregate>(path);
 	validateCachedJson(path, aggregate, validateLineageAggregate);
 	return aggregate;
 }
@@ -107,45 +118,10 @@ export async function loadJobsSearchResults(
 	sortKey: JobSortKey,
 	options: { limit?: number; page?: number; pageSize?: number; signal?: AbortSignal } = {},
 ) {
-	const params = new URLSearchParams();
-	appendParam(params, "q", filters.query);
-	appendBooleanParam(params, "wide", filters.wide);
-	appendBooleanParam(params, "all", filters.includeAllIndexed);
-	appendParam(params, "source", filters.source);
-	appendParam(params, "provider", filters.provider);
-	appendParam(params, "location", filters.location);
-	appendParam(params, "department", filters.department);
-	appendParam(params, "team", filters.team);
-	appendParam(params, "workplace", filters.workplace);
-	appendParam(params, "remote", filters.remote);
-	appendParam(params, "employment", filters.employment);
-	appendParam(params, "skill", filters.skill);
-	appendParam(params, "salaryMin", filters.salaryMin);
-	appendParam(params, "salaryMax", filters.salaryMax);
-	appendParam(params, "postedAfter", filters.postedAfter);
-	appendParam(params, "postedBefore", filters.postedBefore);
-	appendParam(params, "sort", sortKey);
-	if (options.limit) {
-		appendParam(params, "limit", String(options.limit));
-	}
-	if (options.page) {
-		appendParam(params, "page", String(options.page));
-	}
-	if (options.pageSize) {
-		appendParam(params, "pageSize", String(options.pageSize));
-	}
-	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
-	const response = await fetch(path, {
-		signal: options.signal,
-	});
-	if (!response.ok) {
-		throw new SearchLoadError(
-			"fetch_failed",
-			`Unable to load ${JOBS_SEARCH_PATH}: ${response.status}`,
-			JOBS_SEARCH_PATH,
-		);
-	}
-	const payload = (await response.json()) as JobsSearchResponse;
+	const { getJobsSearchWorkerClient } = await import(
+		"@/lib/jobs-search-worker-client"
+	);
+	const payload = await getJobsSearchWorkerClient().search(filters, sortKey, options);
 	validateJobsSearchResponse(payload);
 	return payload;
 }
@@ -155,20 +131,10 @@ export async function loadJobsSearchSummary(
 	sortKey: JobSortKey,
 	options: { signal?: AbortSignal } = {},
 ) {
-	const params = jobsSearchParams(filters, sortKey);
-	params.set("summary", "1");
-	const path = `${JOBS_SEARCH_PATH}?${params.toString()}`;
-	const response = await fetch(path, {
-		signal: options.signal,
-	});
-	if (!response.ok) {
-		throw new SearchLoadError(
-			"fetch_failed",
-			`Unable to load ${JOBS_SEARCH_PATH}: ${response.status}`,
-			JOBS_SEARCH_PATH,
-		);
-	}
-	const payload = (await response.json()) as JobsSearchSummaryResponse;
+	const { getJobsSearchWorkerClient } = await import(
+		"@/lib/jobs-search-worker-client"
+	);
+	const payload = await getJobsSearchWorkerClient().summary(filters, sortKey, options);
 	validateJobsSearchSummaryResponse(payload);
 	return payload;
 }
@@ -183,64 +149,12 @@ export async function loadSavedSearchCounts(
 			`Saved-search count batches are limited to ${SAVED_SEARCH_COUNT_BATCH_SIZE}.`,
 		);
 	}
-	const response = await fetch(JOBS_SEARCH_PATH, {
-		method: "POST",
-		cache: "no-store",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ searches }),
-		signal: options.signal,
-	});
-	if (!response.ok) {
-		throw new SearchLoadError(
-			"fetch_failed",
-			`Unable to count saved searches: ${response.status}`,
-			JOBS_SEARCH_PATH,
-		);
-	}
-	const payload = (await response.json()) as SavedSearchCountsResponse;
+	const { getJobsSearchWorkerClient } = await import(
+		"@/lib/jobs-search-worker-client"
+	);
+	const payload = await getJobsSearchWorkerClient().savedCounts(searches, options);
 	validateSavedSearchCountsResponse(payload, searches);
 	return payload;
-}
-
-export function validateSearchManifest(manifest: SearchManifest) {
-	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(manifest.version)) {
-		throw new SearchLoadError(
-			"unsupported_version",
-			`Unsupported search index version: ${manifest.version}`,
-		);
-	}
-	for (const entity of Object.keys(EXPECTED_COLUMNS) as Entity[]) {
-		const columns = manifest.entities?.[entity]?.columns;
-		const expectedColumns = expectedColumnsFor(entity, manifest.version);
-		if (!columns || columns.join("\0") !== expectedColumns.join("\0")) {
-			throw new SearchLoadError(
-				"invalid_manifest",
-				`Search index manifest columns do not match ${entity}`,
-			);
-		}
-	}
-}
-
-export function validateSearchChunk(entity: Entity, chunk: SearchChunk) {
-	if (!SUPPORTED_SEARCH_INDEX_VERSIONS.has(chunk.version) || chunk.entity !== entity) {
-		throw new SearchLoadError(
-			"invalid_chunk",
-			`Unsupported ${entity} search index chunk`,
-		);
-	}
-	const expectedColumns = expectedColumnsFor(entity, chunk.version);
-	if (chunk.columns.join("\0") !== expectedColumns.join("\0")) {
-		throw new SearchLoadError(
-			"invalid_chunk",
-			`Search index chunk columns do not match ${entity}`,
-		);
-	}
-	if (chunk.count !== chunk.rows.length) {
-		throw new SearchLoadError(
-			"invalid_chunk",
-			`Search index chunk count does not match ${entity} rows`,
-		);
-	}
 }
 
 export function validateJobsSearchResponse(response: JobsSearchResponse) {
@@ -338,7 +252,41 @@ export function validateLineageAggregate(aggregate: LineageAggregate) {
 }
 
 export function clearSearchIndexLoaderCacheForTests() {
+	invalidateBrowserSearchSnapshotRuntime();
+	snapshotClientForTests = undefined;
+}
+
+/** Rebind future browser reads after the offline cache lifecycle changes. */
+export function invalidateBrowserSearchSnapshotRuntime() {
 	jsonCache.clear();
+	browserSnapshotClient = undefined;
+}
+
+export function setSearchSnapshotClientForTests(
+	client: OpenOppsSnapshotClient | null,
+) {
+	snapshotClientForTests = client;
+}
+
+/** Resolve the browser's mutable channel once and hand the pinned identity to the worker. */
+export async function getBrowserSearchSnapshotDescriptor() {
+	const client = getBrowserSnapshotClient();
+	if (client) {
+		const offline = getJobsOfflineSnapshotConfiguration(client.baseUrl);
+		return {
+			baseUrl: client.baseUrl.href,
+			channel: client.channel,
+			releaseId: await client.releaseId(),
+			offlineCacheName: offline?.cacheName ?? null,
+		};
+	}
+	const baseUrl =
+		typeof window !== "undefined" ? window.location.origin : "http://localhost";
+	return { baseUrl, channel: null, releaseId: null, offlineCacheName: null };
+}
+
+export async function loadJobsOfflineReleasePlan(signal?: AbortSignal) {
+	return getBrowserSnapshotClient()?.getOfflineReleasePlan(signal) ?? null;
 }
 
 async function loadChunkRefs(entity: Entity, refs: SearchChunkRef[]) {
@@ -351,7 +299,7 @@ async function loadChunkRefs(entity: Entity, refs: SearchChunkRef[]) {
 			const index = cursor;
 			cursor += 1;
 			const ref = orderedRefs[index];
-			const chunk = await fetchJson<SearchChunk>(ref.path);
+			const chunk = await fetchSearchJson<SearchChunk>(ref.path);
 			validateCachedJson(ref.path, chunk, (value) =>
 				validateSearchChunk(entity, value),
 			);
@@ -367,6 +315,48 @@ async function loadChunkRefs(entity: Entity, refs: SearchChunkRef[]) {
 	return chunks;
 }
 
+function fetchSearchJson<T>(path: string) {
+	const client = getBrowserSnapshotClient();
+	return client ? client.getSearchAsset<T>(path) : fetchJson<T>(path);
+}
+
+function getBrowserSnapshotClient() {
+	if (snapshotClientForTests !== undefined) {
+		return snapshotClientForTests;
+	}
+	if (browserSnapshotClient !== undefined) {
+		return browserSnapshotClient;
+	}
+	const configuredOrigin =
+		process.env.NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_ORIGIN?.trim() ?? "";
+	const configuredChannel =
+		process.env.NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_CHANNEL?.trim() ?? "";
+	if (!configuredOrigin && !configuredChannel) {
+		browserSnapshotClient = null;
+		return browserSnapshotClient;
+	}
+	const runtimeOrigin =
+		configuredOrigin ||
+		(typeof window !== "undefined" ? window.location.origin : "");
+	if (!runtimeOrigin) {
+		throw new Error(
+			"NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_ORIGIN is required for v7 snapshot access",
+		);
+	}
+	const offline = getJobsOfflineSnapshotConfiguration(runtimeOrigin);
+	browserSnapshotClient = new OpenOppsSnapshotClient({
+		baseUrl: runtimeOrigin,
+		channel: configuredChannel || null,
+		...(offline
+			? {
+				offlineFallbackReleaseId: offline.releaseId,
+				offlineResponseReader: offline.responseReader,
+			}
+			: {}),
+	});
+	return browserSnapshotClient;
+}
+
 function validateCachedJson<T>(
 	path: string,
 	value: T,
@@ -378,39 +368,4 @@ function validateCachedJson<T>(
 		jsonCache.delete(path);
 		throw caught;
 	}
-}
-
-function appendParam(params: URLSearchParams, key: string, value: string) {
-	const trimmed = value.trim();
-	if (trimmed) {
-		params.set(key, trimmed);
-	}
-}
-
-function appendBooleanParam(params: URLSearchParams, key: string, value: boolean) {
-	if (value) {
-		params.set(key, "1");
-	}
-}
-
-function jobsSearchParams(filters: JobBoardFilters, sortKey: JobSortKey) {
-	const params = new URLSearchParams();
-	appendParam(params, "q", filters.query);
-	appendBooleanParam(params, "wide", filters.wide);
-	appendBooleanParam(params, "all", filters.includeAllIndexed);
-	appendParam(params, "source", filters.source);
-	appendParam(params, "provider", filters.provider);
-	appendParam(params, "location", filters.location);
-	appendParam(params, "department", filters.department);
-	appendParam(params, "team", filters.team);
-	appendParam(params, "workplace", filters.workplace);
-	appendParam(params, "remote", filters.remote);
-	appendParam(params, "employment", filters.employment);
-	appendParam(params, "skill", filters.skill);
-	appendParam(params, "salaryMin", filters.salaryMin);
-	appendParam(params, "salaryMax", filters.salaryMax);
-	appendParam(params, "postedAfter", filters.postedAfter);
-	appendParam(params, "postedBefore", filters.postedBefore);
-	appendParam(params, "sort", sortKey);
-	return params;
 }

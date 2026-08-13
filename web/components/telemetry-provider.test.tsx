@@ -156,6 +156,10 @@ describe("TelemetryProvider", () => {
 		renderProvider(TelemetryProvider);
 
 		await vi.waitFor(() => expect(posthogMock.init).toHaveBeenCalledOnce());
+		expect(posthogMock.init).toHaveBeenCalledWith(
+			"phc_test",
+			expect.objectContaining({ disable_session_recording: true }),
+		);
 		expect(posthogMock.startSessionRecording).not.toHaveBeenCalled();
 	});
 
@@ -168,6 +172,10 @@ describe("TelemetryProvider", () => {
 		renderProvider(TelemetryProvider);
 
 		await vi.waitFor(() => expect(posthogMock.init).toHaveBeenCalledOnce());
+		expect(posthogMock.init).toHaveBeenCalledWith(
+			"phc_test",
+			expect.objectContaining({ disable_session_recording: false }),
+		);
 		expect(posthogMock.startSessionRecording).toHaveBeenCalledWith();
 	});
 });

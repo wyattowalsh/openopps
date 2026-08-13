@@ -4,5 +4,8 @@ allowBuilds:
   msw: true
   sharp: true
   unrs-resolver: true
+  workerd: false
 minimumReleaseAgeExclude:
-  - posthog-js@1.398.0
+  - posthog-js@1.415.6
+  - miniflare@5.20260811.0-alpha
+  - wrangler@4.122.0

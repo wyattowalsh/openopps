@@ -365,3 +365,4 @@ openopps.db*
 openopps.cache.db*
 openoppsdb.sqlite*
 .tmp/*.sqlite*
+.tmp/openopps-data-release/

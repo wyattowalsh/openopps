@@ -269,6 +269,14 @@ def test_plugin_source_and_job_provider_factories_are_buildable(tmp_path):
     class FakeJobProvider:
         provider_id = "custom_jobs"
 
+        async def fetch_jobs(self, *_args: object):
+            from openopps.providers import JobFetchResult
+
+            return JobFetchResult(jobs=[], authoritative=False)
+
+        async def check_jobs(self, *_args: object) -> int:
+            return 200
+
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     plugin_registry = PluginRegistry(
         contributions=(
@@ -293,3 +301,12 @@ def test_plugin_source_and_job_provider_factories_are_buildable(tmp_path):
 
     assert isinstance(source_adapter, FakeSourceAdapter)
     assert isinstance(job_provider, FakeJobProvider)
+
+
+def test_job_fetch_result_is_exported_as_the_public_plugin_contract() -> None:
+    from openopps.providers import JobFetchResult
+
+    result = JobFetchResult(jobs=[], authoritative=False)
+
+    assert list(result) == []
+    assert result.authoritative is False

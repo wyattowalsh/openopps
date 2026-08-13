@@ -7,11 +7,7 @@ from pathlib import Path
 import tempfile
 import threading
 from collections.abc import Iterator
-
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - Windows fallback keeps process lock only.
-    fcntl = None
+from typing import Protocol, cast
 
 from alembic import command
 from alembic.config import Config
@@ -20,7 +16,30 @@ from sqlalchemy import Engine, create_engine, event, inspect, text
 from openopps.settings import OpenOppsSettings
 
 
+class _FcntlModule(Protocol):
+    LOCK_EX: int
+    LOCK_UN: int
+
+    def flock(self, fd: int, operation: int) -> None: ...
+
+
+try:
+    import fcntl as _fcntl_module
+except ImportError:  # pragma: no cover - Windows fallback keeps process lock only.
+    _fcntl: _FcntlModule | None = None
+else:
+    _fcntl = cast(_FcntlModule, _fcntl_module)
+
+
 ALEMBIC_HEAD = "head"
+_JOB_SYNC_RUN_LIFECYCLE_COLUMNS = {
+    "started_at",
+    "finished_at",
+    "status",
+    "error_kind",
+    "authoritative",
+    "committed_batch_count",
+}
 _SQLITE_UPGRADE_LOCKS_GUARD = threading.Lock()
 _SQLITE_UPGRADE_LOCKS: dict[str, threading.Lock] = {}
 REQUIRED_SQLITE_COLUMNS: dict[str, set[str]] = {
@@ -28,7 +47,12 @@ REQUIRED_SQLITE_COLUMNS: dict[str, set[str]] = {
     "jobs": {"current_version_id", "current_content_hash", "last_seen_at"},
     "job_versions": {"job_id", "content_hash", "version"},
     "job_payload_snapshots": {"job_id", "payload_kind", "payload_hash"},
-    "job_sync_runs": {"board_key", "provider_id", "synced_at"},
+    "job_sync_runs": {
+        "board_key",
+        "provider_id",
+        "synced_at",
+    }
+    | _JOB_SYNC_RUN_LIFECYCLE_COLUMNS,
     "job_sync_observations": {"sync_run_id", "job_id", "observation_kind"},
 }
 UNSUPPORTED_LEGACY_SQLITE_COLUMNS: dict[str, set[str]] = {
@@ -143,13 +167,13 @@ def sqlite_database_lock(path_or_url: Path | str) -> Iterator[None]:
         lock_path = _sqlite_lock_path(lock_key)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+", encoding="utf-8") as lock_file:
-            if fcntl is not None:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            if _fcntl is not None:
+                _fcntl.flock(lock_file.fileno(), _fcntl.LOCK_EX)
             try:
                 yield
             finally:
-                if fcntl is not None:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                if _fcntl is not None:
+                    _fcntl.flock(lock_file.fileno(), _fcntl.LOCK_UN)
 
 
 @contextmanager
@@ -289,6 +313,8 @@ def _validate_required_sqlite_columns(
             f"{table_name}.{column}"
             for column in sorted(column_names - existing_columns)
         )
+    if missing and _is_expected_pre_lifecycle_schema(inspector, missing):
+        return
     if missing:
         location = str(settings.sqlite_path or settings.db_url)
         raise DatabaseSchemaError(
@@ -299,6 +325,25 @@ def _validate_required_sqlite_columns(
             "This usually means a pre-release local SQLite database was stamped "
             "before the v0.1 schema was finalized."
         )
+
+
+def _is_expected_pre_lifecycle_schema(inspector, missing: list[str]) -> bool:
+    expected_missing = {
+        f"job_sync_runs.{column}" for column in _JOB_SYNC_RUN_LIFECYCLE_COLUMNS
+    }
+    # A genuine pre-0004 schema is missing the entire lifecycle column set.
+    # A partial subset indicates a malformed/manual schema and must fail closed
+    # before Alembic encounters duplicate or incompatible columns.
+    if set(missing) != expected_missing:
+        return False
+    with inspector.bind.connect() as connection:
+        revision = connection.execute(text("SELECT version_num FROM alembic_version"))
+        current = revision.scalar()
+    return current in {
+        "0001_initial_app_sqlite",
+        "0002_data_model_integrity",
+        "0003_jobs_current_version_fk",
+    }
 
 
 def _validate_unsupported_legacy_sqlite_columns(

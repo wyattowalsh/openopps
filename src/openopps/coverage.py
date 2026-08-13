@@ -165,8 +165,8 @@ def build_coverage_report(
             route for route in routes if route.support_level == ProviderSupport.JOBS
         ],
     )
-    jobs_by_board = _string_int_dict(job_summary["byBoard"])
-    jobs_by_board_provider = _tuple_int_dict(job_summary["byBoardProvider"])
+    jobs_by_board = dict(sorted(job_summary["byBoard"].items()))
+    jobs_by_board_provider = dict(sorted(job_summary["byBoardProvider"].items()))
     routes_by_board = _routes_by_board(boards, routes)
     board_keys_with_provider_hints = set(routes_by_board)
     board_keys_with_job_capable_hints = {
@@ -264,8 +264,8 @@ def build_coverage_report(
             "duplicateRoutesSkipped": len(selection.duplicate_routes),
         },
         jobs={
-            "total": int(job_summary["total"]),
-            "byProvider": _string_int_dict(job_summary["byProvider"]),
+            "total": job_summary["total"],
+            "byProvider": dict(sorted(job_summary["byProvider"].items())),
             "bySource": _count_jobs_by_source(jobs_by_board, boards_by_key),
             "byBoard": jobs_by_board,
         },
@@ -307,7 +307,7 @@ def build_source_yield_report(
     boards = store.list_boards(with_providers=False)
     routes = store.list_board_providers()
     job_summary = store.coverage_job_summary(status="open")
-    jobs_by_board_provider = _tuple_int_dict(job_summary["byBoardProvider"])
+    jobs_by_board_provider = dict(sorted(job_summary["byBoardProvider"].items()))
 
     boards_by_source: dict[str, list[BoardRecord]] = {
         key: [] for key in selected_source_keys
@@ -763,22 +763,6 @@ def _count_jobs_by_source(
             continue
         counts[board.source_key] = counts.get(board.source_key, 0) + count
     return dict(sorted(counts.items()))
-
-
-def _string_int_dict(value: object) -> dict[str, int]:
-    if not isinstance(value, dict):
-        return {}
-    return dict(sorted((str(key), int(count)) for key, count in value.items()))
-
-
-def _tuple_int_dict(value: object) -> dict[tuple[str, str], int]:
-    if not isinstance(value, dict):
-        return {}
-    output: dict[tuple[str, str], int] = {}
-    for key, count in value.items():
-        if isinstance(key, tuple) and len(key) == 2:
-            output[(str(key[0]), str(key[1]))] = int(count)
-    return output
 
 
 def _count_by(values: Iterable[str]) -> dict[str, int]:

@@ -11,6 +11,11 @@ import {
 } from "./search-index-loader";
 import type { SearchChunk, SearchManifest } from "./search-types";
 import {
+	JobsSearchWorkerClient,
+	clearJobsSearchWorkerClientForTests,
+	setJobsSearchWorkerClientForTests,
+} from "@/lib/jobs-search-worker-client";
+import {
 	EXPECTED_BOARD_COLUMNS,
 	EXPECTED_JOB_COLUMNS,
 	EXPECTED_PROVIDER_COLUMNS,
@@ -150,6 +155,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	clearJobsSearchWorkerClientForTests();
 	vi.unstubAllGlobals();
 });
 
@@ -357,7 +363,7 @@ describe("search index loader", () => {
 		);
 	});
 
-	it("loads bounded jobs search results from the API route", async () => {
+	it("loads bounded jobs search results from the browser worker", async () => {
 		const response = {
 			...chunk("jobs", EXPECTED_JOB_COLUMNS, [["job-a"]]),
 			totalMatches: 42,
@@ -369,10 +375,10 @@ describe("search index loader", () => {
 			hasPreviousPage: true,
 			truncated: true,
 		};
-		const fetchMock = stubFetch({
-			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&limit=1&page=2&pageSize=1":
-				response,
-		});
+		const workerClient = {
+			search: vi.fn().mockResolvedValue(response),
+		} as unknown as JobsSearchWorkerClient;
+		setJobsSearchWorkerClientForTests(workerClient);
 
 		await expect(
 			loadJobsSearchResults(
@@ -398,13 +404,19 @@ describe("search index loader", () => {
 				{ limit: 1, page: 2, pageSize: 1 },
 			),
 		).resolves.toEqual(response);
-		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&limit=1&page=2&pageSize=1",
-			{ signal: undefined },
+		expect(workerClient.search).toHaveBeenCalledWith(
+			expect.objectContaining({
+				query: "platform",
+				wide: true,
+				includeAllIndexed: true,
+				source: "a16z",
+			}),
+			"relevance",
+			{ limit: 1, page: 2, pageSize: 1 },
 		);
 	});
 
-	it("loads compact jobs search summaries from the API route", async () => {
+	it("loads compact jobs search summaries from the browser worker", async () => {
 		const response = {
 			version: SEARCH_VERSION,
 			entity: "jobs" as const,
@@ -413,10 +425,10 @@ describe("search index loader", () => {
 			sortKey: "relevance",
 			filtersHash: "{}",
 		};
-		const fetchMock = stubFetch({
-			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&summary=1":
-				response,
-		});
+		const workerClient = {
+			summary: vi.fn().mockResolvedValue(response),
+		} as unknown as JobsSearchWorkerClient;
+		setJobsSearchWorkerClientForTests(workerClient);
 
 		await expect(
 			loadJobsSearchSummary(
@@ -441,9 +453,15 @@ describe("search index loader", () => {
 				"relevance",
 			),
 		).resolves.toEqual(response);
-		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/jobs/search?q=platform&wide=1&all=1&source=a16z&sort=relevance&summary=1",
-			{ signal: undefined },
+		expect(workerClient.summary).toHaveBeenCalledWith(
+			expect.objectContaining({
+				query: "platform",
+				wide: true,
+				includeAllIndexed: true,
+				source: "a16z",
+			}),
+			"relevance",
+			{},
 		);
 	});
 

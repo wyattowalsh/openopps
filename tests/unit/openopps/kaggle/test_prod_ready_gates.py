@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 
@@ -188,17 +187,23 @@ def test_fail_closed_publish_recipes_require_db_or_allow_stale() -> None:
     assert "kaggle-dataset-create db=" in justfile
     assert "kaggle-dataset-version message=" in justfile
     assert "allow_stale" in justfile
-    assert "requires db=<path-to-clean-openoppsdb.sqlite>" in justfile
-    assert "WARNING: allow_stale=1" in justfile
-    # Rebuild path is present for non-stale publishes.
+    assert "publication publish --kind public --action create" in justfile
+    assert "publication publish --kind public --action version" in justfile
+    assert "--expected-current-version" in justfile
+    assert "--allow-no-rollback" in justfile
+    # Fresh rebuild and explicit stale override are transported as discrete argv.
     create_idx = justfile.index("kaggle-dataset-create db=")
     version_idx = justfile.index("kaggle-dataset-version message=")
-    create_block = justfile[create_idx : create_idx + 1200]
-    version_block = justfile[version_idx : version_idx + 1600]
+    create_block = justfile[create_idx : create_idx + 2200]
+    version_block = justfile[version_idx : version_idx + 2000]
     assert "--data-db" in create_block
     assert "--data-db" in version_block
-    assert "--stage-public-upload-dir" in create_block
-    assert "--stage-public-upload-dir" in version_block
+    assert "--allow-stale" in create_block
+    assert "--allow-stale" in version_block
+    assert "args=(publication publish" in create_block
+    assert "args=(publication publish" in version_block
+    assert '{{ kaggle }} datasets create' not in create_block
+    assert '{{ kaggle }} datasets version' not in version_block
 
 
 def test_web_search_index_requires_kaggle_sqlite_message() -> None:
@@ -210,15 +215,12 @@ def test_web_search_index_requires_kaggle_sqlite_message() -> None:
     assert "web-search-artifacts-check:" in justfile
 
 
-def test_ci_kaggle_bundle_smoke_does_not_require_just_binary() -> None:
-    """Artifacts job must not invoke just (ubuntu runner has no just by default)."""
+def test_ci_kaggle_bundle_smoke_uses_pinned_canonical_just_recipe() -> None:
+    """Artifacts CI installs pinned Just and invokes the shared local gate graph."""
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "Kaggle clean-DB bundle smoke" in workflow
-    assert "run: just kaggle-bundle-smoke" not in workflow
-    # Inline smoke path uses the same generator entrypoints as Justfile.
-    assert "admin db init" in workflow
-    assert "--stage-public-upload-dir" in workflow
-    assert "--data-db" in workflow
+    assert "uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d" in workflow
+    assert "tool: just@1.56.0" in workflow
+    assert "run: just ci-artifacts" in workflow
 
 
 def test_dataset_description_documents_size_and_bounded_sync() -> None:

@@ -12,6 +12,59 @@ export type SearchChunkRef = {
 	count: number;
 };
 
+/** Mutable v7 channel pointer resolved once before immutable asset reads. */
+export type SnapshotChannelPointer = {
+	schemaVersion: 2;
+	channel: string;
+	releaseId: string;
+	rootDigest: {
+		algorithm: "sha256";
+		value: string;
+	};
+	snapshotAt: string;
+	manifestPath: string;
+	priorReleaseId: string | null;
+	degradedReason: string | null;
+	promotedAt: string;
+	snapshotAgeSeconds: number;
+};
+
+/** Integrity metadata for one file in an immutable v7 release. */
+export type SnapshotFileEntry = {
+	path: string;
+	bytes: number;
+	mediaType: string;
+	sha256: string;
+	role: string;
+	count: number;
+};
+
+/** Canonical integrity envelope for an immutable v7 public-data release. */
+export type SnapshotReleaseManifest = {
+	schemaVersion: 7;
+	snapshotAt: string;
+	source: {
+		kind: "sqlite";
+		path: string;
+		bytes: number;
+		sha256: string;
+	};
+	generator: {
+		name: string;
+		entrypoint: string;
+		components: Array<{ path: string; sha256: string }>;
+		payloadSchemaVersion: number;
+	};
+	fileCount: number;
+	totalBytes: number;
+	files: SnapshotFileEntry[];
+	releaseId: string;
+	rootDigest: {
+		algorithm: "sha256";
+		value: string;
+	};
+};
+
 /** Per-entity manifest slice: paths, column order, counts, and optional chunk list. */
 export type SearchEntityManifest = {
 	path?: string;

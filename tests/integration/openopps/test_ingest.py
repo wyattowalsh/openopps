@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import sqlite3
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,7 @@ from openopps.ingest import sync_boards, sync_jobs, sync_sources
 from openopps.models import (
     BoardProviderRecord,
     BoardRecord,
+    JobRecord,
     ProviderSupport,
     SourceRecord,
     utc_now,
@@ -134,6 +136,8 @@ async def test_sync_jobs_dedupes_same_provider_route_across_sources(tmp_path: Pa
 
     assert route.call_count == 1
     assert metrics.duplicate_routes_skipped == 1
+    assert metrics.job_sync_attempts == 1
+    assert metrics.job_sync_runs == 1
     assert metrics.jobs == 1
 
 
@@ -180,6 +184,7 @@ async def test_sync_jobs_reports_persisted_runs_and_deduped_jobs(tmp_path: Path)
 
     assert metrics.jobs == 2
     assert metrics.jobs_persisted == 1
+    assert metrics.job_sync_attempts == 1
     assert metrics.job_sync_runs == 1
     assert metrics.jobs_deduped == 1
 
@@ -259,6 +264,7 @@ async def test_sync_jobs_refreshes_stale_routes_before_fresh_with_limit(
     assert never_route.call_count == 1
     assert stale_route.call_count == 1
     assert metrics.skipped == 1
+    assert metrics.job_sync_attempts == 2
     assert metrics.job_sync_runs == 2
     assert metrics.jobs_persisted == 2
 
@@ -453,8 +459,114 @@ async def test_sync_jobs_classifies_stuck_provider_route_timeout(
 
     assert metrics.provider_errors == {"greenhouse": 1}
     assert metrics.provider_error_details == {"greenhouse": {"timeout": 1}}
+    assert metrics.job_sync_attempts == 1
     assert metrics.job_sync_runs == 0
     assert metrics.jobs == 0
+
+    with sqlite3.connect(tmp_path / "openopps.db") as conn:
+        run = conn.execute(
+            """
+            SELECT status, success, error_kind, error, started_at, finished_at,
+                   committed_batch_count
+            FROM job_sync_runs
+            ORDER BY rowid DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert run is not None
+    assert run[0:3] == ("failed", 0, "timeout")
+    assert run[3] == "TimeoutError"
+    assert run[4] is not None
+    assert run[5] is not None
+    assert run[6] == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_persists_pending_run_before_provider_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="fake")
+    observed_pending: tuple[str, int, str | None] | None = None
+
+    class InspectingProvider:
+        async def fetch_jobs(self, *_args: object):
+            nonlocal observed_pending
+            with sqlite3.connect(db_path) as conn:
+                observed_pending = conn.execute(
+                    """
+                    SELECT status, success, finished_at
+                    FROM job_sync_runs
+                    ORDER BY rowid DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+            return []
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: InspectingProvider(),
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="fake")
+
+    assert observed_pending == ("pending", 0, None)
+    assert metrics.job_sync_attempts == 1
+    assert metrics.job_sync_runs == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_finishes_cancelled_provider_fetch_as_failed_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="fake")
+    fetch_started = asyncio.Event()
+
+    class CancelledProvider:
+        async def fetch_jobs(self, *_args: object):
+            fetch_started.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: CancelledProvider(),
+    )
+
+    sync_task = asyncio.create_task(
+        sync_jobs(settings=settings, store=store, provider_id="fake")
+    )
+    await fetch_started.wait()
+    sync_task.cancel("credential=plaintext-secret")
+
+    with pytest.raises(asyncio.CancelledError):
+        await sync_task
+
+    with sqlite3.connect(db_path) as conn:
+        run = conn.execute(
+            """
+            SELECT status, success, error_kind, error, started_at, finished_at,
+                   committed_batch_count
+            FROM job_sync_runs
+            ORDER BY rowid DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert run is not None
+    assert run[0:3] == ("failed", 0, "cancelled")
+    assert run[3] == "Provider job fetch was cancelled."
+    assert "plaintext-secret" not in run[3]
+    assert run[4] is not None
+    assert run[5] is not None
+    assert run[6] == 0
 
 
 @pytest.mark.asyncio
@@ -1265,4 +1377,475 @@ def _seed_two_source_routes(store: OpenOppsStore) -> None:
                 token="beta",
             ),
         ]
+    )
+
+
+def test_source_selection_uses_canonical_resolver_for_scoped_and_unscoped_sync(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    synced_at = utc_now()
+    catalog = SourceRecord(
+        key="portfolio",
+        url="https://consider.com/boards/co/portfolio",
+        provider_id="consider",
+        raw_metadata={"board": "new-token"},
+    )
+    store.upsert_source(
+        catalog.model_copy(
+            update={
+                "raw_metadata": {"board": "old-token", "lastPage": {"page": 2}},
+                "version": {"cursor": "next"},
+                "synced_at": synced_at,
+            }
+        )
+    )
+    monkeypatch.setattr(ingest_module, "BOARD_SOURCE_CATALOG", {catalog.key: catalog})
+
+    unscoped = ingest_module._select_sources(store, None)
+    scoped = ingest_module._select_sources(store, catalog.key)
+
+    for selected in (unscoped, scoped):
+        assert len(selected) == 1
+        assert selected[0].raw_metadata == {
+            "board": "new-token",
+            "lastPage": {"page": 2},
+        }
+        assert selected[0].version == {"cursor": "next"}
+        assert selected[0].synced_at is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 401, 403])
+@respx.mock
+async def test_sync_jobs_retains_route_and_open_jobs_for_non_absence_http_errors(
+    tmp_path: Path, status_code: int
+):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="greenhouse")
+    respx.get("https://boards-api.greenhouse.io/v1/boards/acme/jobs").mock(
+        return_value=httpx.Response(status_code, json={"message": "not route proof"})
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
+
+    stored_route = store.list_board_providers(provider_id="greenhouse")[0]
+    assert stored_route.support_level == ProviderSupport.JOBS
+    assert stored_route.last_status == "route_ready"
+    assert [job.id for job in store.list_jobs()] == ["acme:greenhouse:1"]
+    assert metrics.provider_errors == {"greenhouse": 1}
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_does_not_close_missing_for_nonauthoritative_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from openopps.providers.base import JobFetchResult
+
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="fake")
+
+    class PartialProvider:
+        async def fetch_jobs(self, *_args: object):
+            return JobFetchResult(jobs=[], authoritative=False)
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: PartialProvider(),
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="fake")
+
+    assert [job.id for job in store.list_jobs()] == ["acme:fake:1"]
+    assert metrics.job_sync_attempts == 1
+    assert metrics.job_sync_runs == 0
+    assert metrics.provider_error_details == {"fake": {"non_authoritative_snapshot": 1}}
+    with sqlite3.connect(tmp_path / "openopps.db") as conn:
+        run = conn.execute(
+            """
+            SELECT status, success, authoritative, error_kind, committed_batch_count
+            FROM job_sync_runs
+            ORDER BY rowid DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    assert run == ("failed", 0, 0, "non_authoritative_snapshot", 0)
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_does_not_persist_partial_nonauthoritative_jobs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from openopps.providers.base import JobFetchResult
+
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="fake")
+    partial = JobRecord(
+        id="acme:fake:partial",
+        board_key="acme",
+        provider_id="fake",
+        remote_id="partial",
+        title="Partial",
+    )
+
+    class PartialProvider:
+        async def fetch_jobs(self, *_args: object):
+            return JobFetchResult(jobs=[partial], authoritative=False)
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: PartialProvider(),
+    )
+
+    reports: list[str] = []
+    metrics = await sync_jobs(
+        settings=settings,
+        store=store,
+        provider_id="fake",
+        report=lambda update: reports.append(update.message),
+    )
+
+    assert [job.id for job in store.list_jobs()] == ["acme:fake:1"]
+    assert metrics.jobs == 0
+    assert metrics.jobs_persisted == 0
+    assert metrics.jobs_deduped == 0
+    assert metrics.job_sync_attempts == 1
+    assert metrics.job_sync_runs == 0
+    assert metrics.provider_error_details == {"fake": {"non_authoritative_snapshot": 1}}
+    assert any("rejected: non-authoritative snapshot" in message for message in reports)
+    assert not any("jobs synced via fake" in message for message in reports)
+    with sqlite3.connect(tmp_path / "openopps.db") as conn:
+        run = conn.execute(
+            """
+            SELECT status, job_count, committed_batch_count, authoritative
+            FROM job_sync_runs
+            ORDER BY rowid DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    assert run == ("failed", 0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_rejects_legacy_untyped_provider_results(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="fake")
+    untyped = JobRecord(
+        id="acme:fake:untyped",
+        board_key="acme",
+        provider_id="fake",
+        remote_id="untyped",
+        title="Untyped",
+    )
+
+    class LegacyProvider:
+        async def fetch_jobs(self, *_args: object):
+            return [untyped]
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: LegacyProvider(),
+    )
+    reports: list[str] = []
+
+    metrics = await sync_jobs(
+        settings=settings,
+        store=store,
+        provider_id="fake",
+        report=lambda update: reports.append(update.message),
+    )
+
+    assert [job.id for job in store.list_jobs()] == ["acme:fake:1"]
+    assert metrics.jobs == 0
+    assert metrics.jobs_persisted == 0
+    assert metrics.job_sync_attempts == 1
+    assert metrics.job_sync_runs == 0
+    assert metrics.provider_error_details == {"fake": {"invalid_provider_result": 1}}
+    assert any("rejected: invalid provider result" in message for message in reports)
+    assert not any("jobs synced via fake" in message for message in reports)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_terminal_listing_absence_closes_each_distinct_duplicate_board_once(
+    tmp_path: Path,
+):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="source-a", url="source-a://source", provider_id="manual")
+    )
+    store.upsert_source(
+        SourceRecord(key="source-b", url="source-b://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="source-a:acme",
+                source_key="source-a",
+                remote_id="acme-a",
+                name="Acme A",
+            ),
+            BoardRecord(
+                key="source-b:acme",
+                source_key="source-b",
+                remote_id="acme-b",
+                name="Acme B",
+            ),
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id=f"{source}:{board_key}:greenhouse",
+                source_key=source,
+                board_key=board_key,
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="shared-token",
+                last_status="route_ready",
+            )
+            for source, board_key in (
+                ("source-a", "source-a:acme"),
+                ("source-b", "source-b:acme"),
+            )
+        ]
+    )
+    for board_key in ("source-a:acme", "source-b:acme"):
+        store.sync_jobs_for_route(
+            board_key,
+            "greenhouse",
+            [
+                JobRecord(
+                    id=f"{board_key}:greenhouse:existing",
+                    board_key=board_key,
+                    provider_id="greenhouse",
+                    remote_id="existing",
+                    title="Existing",
+                )
+            ],
+        )
+    respx.get("https://boards-api.greenhouse.io/v1/boards/shared-token/jobs").mock(
+        return_value=httpx.Response(404, json={"message": "board not found"})
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
+
+    assert metrics.job_sync_runs == 2
+    assert metrics.job_sync_attempts == 2
+    assert metrics.duplicate_routes_skipped == 1
+    assert {route.support_level for route in store.list_board_providers()} == {
+        ProviderSupport.DETECT
+    }
+    assert {job.status for job in store.list_jobs(status="closed")} == {"closed"}
+    with sqlite3.connect(tmp_path / "openopps.db") as conn:
+        terminal_runs = conn.execute(
+            """
+            SELECT board_key, COUNT(*), MIN(status), MIN(success),
+                   MIN(authoritative), MIN(closed_count)
+            FROM job_sync_runs
+            WHERE provider_id = 'greenhouse'
+              AND started_at = (
+                  SELECT MAX(started_at)
+                  FROM job_sync_runs AS latest
+                  WHERE latest.board_key = job_sync_runs.board_key
+                    AND latest.provider_id = job_sync_runs.provider_id
+              )
+            GROUP BY board_key
+            ORDER BY board_key
+            """
+        ).fetchall()
+    assert terminal_runs == [
+        ("source-a:acme", 1, "succeeded", 1, 1, 1),
+        ("source-b:acme", 1, "succeeded", 1, 1, 1),
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_jobs_does_not_deactivate_route_for_detail_404(tmp_path: Path):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="rippling")
+    respx.get(
+        "https://ats.rippling.com/api/v2/board/acme/jobs",
+        params={"page": 0, "pageSize": 100},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={"totalPages": 1, "totalItems": 1, "items": [{"id": "new"}]},
+        )
+    )
+    respx.get("https://ats.rippling.com/api/v2/board/acme/jobs/new").mock(
+        return_value=httpx.Response(404, json={"message": "detail disappeared"})
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="rippling")
+
+    stored_route = store.list_board_providers(provider_id="rippling")[0]
+    assert stored_route.support_level == ProviderSupport.JOBS
+    assert stored_route.last_status == "route_ready"
+    assert [job.id for job in store.list_jobs()] == ["acme:rippling:1"]
+    assert metrics.provider_errors == {"rippling": 1}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sync_jobs_does_not_deactivate_route_for_continuation_404(
+    tmp_path: Path,
+):
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
+    store = OpenOppsStore(settings)
+    _seed_existing_job_route(store, provider_id="rippling")
+    respx.get(
+        "https://ats.rippling.com/api/v2/board/acme/jobs",
+        params={"page": 0, "pageSize": 100},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={"totalPages": 2, "totalItems": 2, "items": [{"id": "new"}]},
+        )
+    )
+    respx.get(
+        "https://ats.rippling.com/api/v2/board/acme/jobs",
+        params={"page": 1, "pageSize": 100},
+    ).mock(return_value=httpx.Response(404, json={"message": "page disappeared"}))
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="rippling")
+
+    stored_route = store.list_board_providers(provider_id="rippling")[0]
+    assert stored_route.support_level == ProviderSupport.JOBS
+    assert stored_route.last_status == "route_ready"
+    assert [job.id for job in store.list_jobs()] == ["acme:rippling:1"]
+    assert metrics.provider_errors == {"rippling": 1}
+
+
+def test_wp_job_manager_detail_404_is_not_listing_absence() -> None:
+    request = httpx.Request(
+        "GET", "https://jobs.example.com/wp-json/wp/v2/job-listings/123"
+    )
+    response = httpx.Response(404, request=request)
+    error = httpx.HTTPStatusError("detail missing", request=request, response=response)
+
+    assert ingest_module._route_failure_disposition("wpjobmanager", error) is None
+
+
+def test_http_failure_text_redacts_query_credentials_and_userinfo() -> None:
+    request = httpx.Request(
+        "POST",
+        "https://user:password@example.test/query?x-algolia-api-key=plaintext&tag=jobs",
+    )
+    response = httpx.Response(403, request=request)
+    error = httpx.HTTPStatusError(
+        "request rejected",
+        request=request,
+        response=response,
+    )
+
+    rendered = ingest_module._format_exception(error)
+
+    assert rendered == "HTTPStatusError: HTTP 403"
+    assert "plaintext" not in rendered
+    assert "password" not in rendered
+    assert "/query" not in rendered
+    assert "jobs" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_sync_sources_only_refreshes_freshness_after_normal_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    catalog = SourceRecord(key="source-a", url="source-a://source", provider_id="fake")
+    stale_at = utc_now() - timedelta(hours=2)
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        source_freshness_seconds=3600,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(catalog.model_copy(update={"synced_at": stale_at}))
+    calls = 0
+
+    class YieldThenFailAdapter:
+        async def iter_boards(self, _client, _source, *, page_size: int):
+            nonlocal calls
+            calls += 1
+            yield [], [], {"version": {"pageSize": page_size, "page": 1}}
+            raise RuntimeError("failed after yielding a partial snapshot")
+
+    monkeypatch.setattr(ingest_module, "BOARD_SOURCE_CATALOG", {catalog.key: catalog})
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: YieldThenFailAdapter(),
+    )
+
+    await sync_sources(settings=settings, store=store, page_size=10)
+    after_first = store.get_source(catalog.key)
+    await sync_sources(settings=settings, store=store, page_size=10)
+
+    assert after_first is not None
+    assert after_first.synced_at == stale_at
+    assert calls == 2
+
+
+def _seed_existing_job_route(store: OpenOppsStore, *, provider_id: str) -> None:
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id=f"manual:acme:{provider_id}",
+                source_key="manual",
+                board_key="acme",
+                provider_id=provider_id,
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+                last_status="route_ready",
+            )
+        ]
+    )
+    store.sync_jobs_for_route(
+        "acme",
+        provider_id,
+        [
+            JobRecord(
+                id=f"acme:{provider_id}:1",
+                board_key="acme",
+                provider_id=provider_id,
+                remote_id="1",
+                title="Existing",
+            )
+        ],
     )

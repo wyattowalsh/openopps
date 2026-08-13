@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 import json
 from pathlib import Path
 import subprocess
 import sys
 from typing import Any
+
+try:
+    from scripts.docs_search_release import (
+        PromotionPolicy,
+        RELEASE_SCHEMA_VERSION,
+        validate_publication,
+        validate_release,
+    )
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from docs_search_release import (  # type: ignore[no-redef]
+        PromotionPolicy,
+        RELEASE_SCHEMA_VERSION,
+        validate_publication,
+        validate_release,
+    )
 
 FORBIDDEN_DETAIL_KEYS = frozenset({"payloadSnapshots", "descriptionHtml"})
 
@@ -25,8 +41,29 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Require generated artifact files to be tracked by git.",
     )
+    parser.add_argument(
+        "--channel",
+        help="Treat --root as a v7 publication root and verify this channel.",
+    )
+    parser.add_argument(
+        "--max-snapshot-age-hours",
+        type=float,
+        help="Reject a v7 release when snapshot age exceeds this promotion limit.",
+    )
     args = parser.parse_args(argv)
-    errors = validate_artifacts(args.root, require_git_tracked=args.require_git_tracked)
+    if args.max_snapshot_age_hours is not None and args.max_snapshot_age_hours <= 0:
+        parser.error("--max-snapshot-age-hours must be greater than zero")
+    policy = (
+        PromotionPolicy(max_snapshot_age=timedelta(hours=args.max_snapshot_age_hours))
+        if args.max_snapshot_age_hours is not None
+        else None
+    )
+    errors = validate_artifacts(
+        args.root,
+        require_git_tracked=args.require_git_tracked,
+        policy=policy,
+        channel=args.channel,
+    )
     if errors:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
@@ -35,13 +72,45 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def validate_artifacts(root: Path, *, require_git_tracked: bool = False) -> list[str]:
+def validate_artifacts(
+    root: Path,
+    *,
+    require_git_tracked: bool = False,
+    policy: PromotionPolicy | None = None,
+    channel: str | None = None,
+) -> list[str]:
+    if channel is not None:
+        production = channel == "production"
+        if production:
+            maximum_age = timedelta(hours=48)
+            requested_age = policy.max_snapshot_age if policy is not None else None
+            if requested_age is None or requested_age > maximum_age:
+                policy = PromotionPolicy(
+                    max_snapshot_age=maximum_age,
+                    max_files=(policy or PromotionPolicy()).max_files,
+                    max_file_bytes=(policy or PromotionPolicy()).max_file_bytes,
+                )
+        errors = validate_publication(
+            root,
+            channel=channel,
+            policy=policy,
+            require_publication_graph=production,
+        )
+        if require_git_tracked and not errors:
+            root = root.resolve()
+            errors.extend(_git_tracking_errors(root, _artifact_files(root)))
+        return errors
     root = root.resolve()
     errors: list[str] = []
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
         return [f"missing manifest: {manifest_path}"]
     manifest = _read_json(manifest_path)
+    if manifest.get("schemaVersion") == RELEASE_SCHEMA_VERSION:
+        errors = validate_release(root, policy=policy)
+        if require_git_tracked and not errors:
+            errors.extend(_git_tracking_errors(root, _artifact_files(root)))
+        return errors
     detail_shards = manifest.get("detailShards")
     if not isinstance(detail_shards, dict):
         return ["manifest is missing detailShards"]

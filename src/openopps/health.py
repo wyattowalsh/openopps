@@ -6,7 +6,7 @@ from typing import Any
 
 from loguru import logger
 
-from openopps.http import build_async_client
+from openopps.http import build_async_client, safe_exception_message
 from openopps.ingest import all_board_sources
 from openopps.models import (
     BoardProviderRecord,
@@ -213,13 +213,15 @@ async def _check_source(
                 source.key, source.provider_id, status, len(boards), len(providers)
             ), providers
     except Exception as exc:
-        logger.exception(
-            "Provider health source check failed source={} provider={}",
+        error = safe_exception_message(exc)
+        logger.warning(
+            "Provider health source check failed source={} provider={} error={}",
             source.key,
             source.provider_id,
+            error,
         )
         return SourceHealth(
-            source.key, source.provider_id, HEALTH_ERROR, error=str(exc)
+            source.key, source.provider_id, HEALTH_ERROR, error=error
         ), []
     return SourceHealth(source.key, source.provider_id, HEALTH_EMPTY), []
 
@@ -243,17 +245,19 @@ async def _check_route(
     try:
         job_count = await provider.check_jobs(client, board, route)
     except Exception as exc:
-        logger.exception(
-            "Provider health job check failed board={} provider={}",
+        error = safe_exception_message(exc)
+        logger.warning(
+            "Provider health job check failed board={} provider={} error={}",
             route.board_key,
             route.provider_id,
+            error,
         )
         return RouteHealth(
             route.board_key,
             route.source_key,
             route.provider_id,
             HEALTH_ERROR,
-            error=str(exc),
+            error=error,
         )
     status = HEALTH_ACTIVE if job_count else HEALTH_EMPTY
     return RouteHealth(

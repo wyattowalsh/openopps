@@ -15,6 +15,7 @@ EXPECTED_AS_DICT_CAMEL_KEYS = frozenset(
         "boardProviders",
         "jobs",
         "jobsPersisted",
+        "jobSyncAttempts",
         "jobSyncRuns",
         "jobsDeduped",
         "skipped",
@@ -40,6 +41,7 @@ def test_sync_metrics_as_dict_exposes_stable_camel_case_keys() -> None:
     assert payload["name"] == "jobs.sync"
     assert payload["boardProviders"] == 0
     assert payload["jobsPersisted"] == 0
+    assert payload["jobSyncAttempts"] == 0
     assert payload["jobSyncRuns"] == 0
     assert payload["jobsDeduped"] == 0
     assert payload["duplicateRoutesSkipped"] == 0

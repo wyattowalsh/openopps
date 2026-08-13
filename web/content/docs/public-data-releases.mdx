@@ -1,0 +1,188 @@
+---
+title: Public Data Releases
+description: Version 7 manifests, source-rights gates, static delivery, rollback, recovery, and the v6 cutover boundary.
+---
+
+OpenOpps can build a version 7 public-data publication without changing the legacy version 6 tree. Version 7 is content-addressed: a small mutable channel pointer selects one immutable release, and every consumer verifies that release before reading its assets.
+
+This is an operator and governance contract, not a deployment announcement. The repository contains local generation, verification, staging, rollout-plan, remote-readback, and recovery-archive tooling. A successful live Workers rollout, production-snapshot rights approval, and a GitHub Release attestation for the public-data archive have **not** been established by those local tools or by the current CI workflow.
+
+## Publication layout
+
+```text
+publication-root/
+├── channels/
+│   └── production.json
+└── releases/
+    ├── <current-release-id>/
+    │   ├── manifest.json
+    │   ├── search-manifest.json
+    │   ├── publication-policy.json
+    │   └── ...verified search assets...
+    └── <prior-release-id>/
+        └── ...independently verified prior release...
+```
+
+`releaseId` is the lowercase SHA-256 digest of the canonical manifest body. The release directory name, `releaseId`, and `rootDigest.value` must agree. `manifest.json` is self-excluding; its `files` array closes over every other payload file and records each safe relative path, byte length, media type, SHA-256, semantic role, and semantic count. The manifest also records:
+
+- canonical UTC `snapshotAt`;
+- SQLite input path, byte length, and SHA-256;
+- generator name, entry point, payload schema version, and component digests; and
+- exact `fileCount` and `totalBytes` values.
+
+Validation rejects missing, extra, duplicate, case-colliding, symlinked, non-regular, unsafe, oversized, or hash-mismatched files. JSON is decoded strictly, private payload keys such as `payloadSnapshots` and `descriptionHtml` are forbidden, and secret-like keys and credential-bearing values fail the release.
+
+## Channel schema version 2
+
+`channels/production.json` has exactly these fields:
+
+| Field | Contract |
+| --- | --- |
+| `schemaVersion` | Integer `2`. |
+| `channel` | Safe lowercase channel name, normally `production`. |
+| `releaseId` | Current immutable release SHA-256. |
+| `rootDigest` | `{ "algorithm": "sha256", "value": releaseId }`. |
+| `snapshotAt` | Canonical UTC snapshot time copied from the release manifest. |
+| `manifestPath` | Exactly `releases/<releaseId>/manifest.json`. |
+| `priorReleaseId` | Distinct previous release SHA-256, or `null` before the first transition release exists. |
+| `degradedReason` | Auditable stale-snapshot reason, otherwise `null`. |
+| `promotedAt` | Canonical UTC pointer promotion time. |
+| `snapshotAgeSeconds` | Non-negative difference between `promotedAt` and `snapshotAt`. |
+
+The pointer is written with a sibling temporary file and atomic replacement. A repeated build that selects the same release preserves its prior release identity instead of rotating it away.
+
+The static delivery stage is stricter than a first publication: it requires two distinct, valid releases and contains **exactly** the current and prior release trees plus `channels/production.json` and `_headers`. A first v7 build with `priorReleaseId: null` can be verified, but it cannot satisfy the dual-release delivery gate.
+
+## Freshness and degraded operation
+
+Ordinary v7 generation rejects a snapshot older than 48 hours:
+
+```bash
+uv run python scripts/generate_docs_search_index.py \
+  --data-db kaggle/openoppsdb.sqlite \
+  --release-root /absolute/path/to/openopps-search-v7 \
+  --channel production \
+  --max-snapshot-age-hours 48
+
+uv run python scripts/verify_docs_search_artifacts.py \
+  --root /absolute/path/to/openopps-search-v7 \
+  --channel production \
+  --max-snapshot-age-hours 48
+```
+
+An incident owner may explicitly allow stale data with `--allow-stale-reason`. The non-empty reason and computed age become public channel metadata. The override bypasses only the age limit: source rights, attribution, privacy, secret scanning, exact-set integrity, provenance, and file/platform budgets remain non-bypassable.
+
+```bash
+uv run python scripts/generate_docs_search_index.py \
+  --data-db kaggle/openoppsdb.sqlite \
+  --release-root /absolute/path/to/openopps-search-v7 \
+  --channel production \
+  --allow-stale-reason "Upstream incident INC-123; approved by release owner"
+```
+
+Do not use a vague reason such as “temporary.” Record an incident or change identifier, approving role, observed snapshot age, and the planned refresh time in the external release ledger. A degraded release is not evidence that the data is current.
+
+## Source rights and attribution
+
+`publication-policy.json` is generated from the sources that actually occur in the snapshot. Publication is fail-closed:
+
+| `licenseStatus` | Publication behavior |
+| --- | --- |
+| `official_public` | Allowed. |
+| `oss_attribution_required` | Allowed only when `sourceAttribution` is present. |
+| `public_attribution_required` | Allowed only when `sourceAttribution` is present. |
+| Missing, `needs_review`, or any other value | Rejected. |
+
+For a packaged source, repository-reviewed metadata in the packaged source catalog is canonical. A persisted database row cannot grant a packaged source rights that the catalog does not grant. Persisted metadata is considered only for an explicit user or plugin source that is absent from the packaged catalog. Only the sanitized source key, allowed rights state, required attribution, and safe source URL enter the policy report; arbitrary stored metadata does not.
+
+The report also records snapshot-quality counts and detail-tier counts. Review the report itself before any upload. Fix source metadata at its canonical source and regenerate; never hand-edit the generated policy report or a release directory. Passing policy-unit tests proves the gate's behavior, not the rights status of the current production data. Rights readiness remains open until the exact real snapshot intended for upload generates and verifies without blocked sources.
+
+## Privacy, correction, and takedown procedure
+
+Public search releases intentionally exclude raw provider payload snapshots and HTML descriptions. T2 details contain bounded normalized plain text. Telemetry is a separate, opt-in surface and must not be joined into a public-data release.
+
+Report a correction, attribution concern, or takedown request through the repository issue tracker. If the request contains personal or sensitive information, email `openopps@wyattowalsh.com` instead and include only the source URL and identifiers needed to locate the record.
+
+The release owner must:
+
+1. Record the request time, affected source/job identifiers, requested action, and decision without copying unnecessary personal data into the ledger.
+2. Pause publication for the affected source while rights or accuracy are unresolved. A takedown request is a fail-closed rights state, not a reason for a degraded freshness override.
+3. Correct the canonical source catalog, ingestion normalization, or source data; then rebuild from a clean SQLite snapshot. Never mutate an immutable release in place.
+4. Produce two distinct verified releases that both exclude the withdrawn content before staging the replacement dual-release Worker version. This prevents the served prior release from retaining the affected record.
+5. Promote the replacement, verify every remote file and critical web route, and confirm the withdrawn identifiers are absent from both served releases.
+6. Remove or quarantine superseded recovery archives containing withdrawn data according to the request and record the archive digests affected. Preserve only non-content audit metadata needed to prove the action.
+
+The tooling verifies artifacts but does not automate request intake, legal review, Worker-version deletion, CDN purge, or GitHub Release deletion. Treat those actions as explicit operator steps and preserve their external request/deployment IDs.
+
+## Retention boundary
+
+- Each staged Worker asset tree retains exactly two releases: current and previous. Extra releases fail verification.
+- Each recovery archive closes over the same dual-release tree. Retain the previous-good stage or its verified archive until promote, rollback, re-promotion, and restore checks for the successor complete.
+- Candidate directories and Wrangler machine-output/ledger files are local operational evidence. Store them outside Git, protect them from secrets, and remove them under the maintainer retention policy after evidence is recorded.
+- The legacy v6 tree remains in Git during the bounded transition. Its removal is a normal follow-up commit only after every cutover exit gate passes.
+- A Git history rewrite is not normal retention. It requires separate explicit approval and its own protected backup, full ref inventory, old-to-new SHA mapping, freeze window, fresh-clone validation, recovery instructions, and force-push authorization.
+
+## Release-pinned web consumers
+
+Set the server and browser origins/channels to the same publication:
+
+```dotenv
+OPENOPPS_PUBLIC_DATA_ORIGIN=https://openopps-data-production.<account-subdomain>.workers.dev
+OPENOPPS_PUBLIC_DATA_CHANNEL=production
+NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_ORIGIN=https://openopps-data-production.<account-subdomain>.workers.dev
+NEXT_PUBLIC_OPENOPPS_PUBLIC_DATA_CHANNEL=production
+```
+
+The server values configure details, metadata, and sitemaps. The `NEXT_PUBLIC_` values are embedded into the browser build and configure Jobs/Explorer search. Production server origins must be HTTPS and host-allowlisted. The browser and server resolve the mutable channel once and then read the immutable release. Every fetched v7 JSON asset must appear in the manifest and match its declared byte length and SHA-256.
+
+When no channel is configured, the app uses the legacy v6 tree as a bounded transition fallback. The production `/api/jobs/search` compatibility route returns `410 browser_worker_required`; it does not scan the full corpus. Browser search runs in a dedicated release-pinned Web Worker using the accepted columnar postings/bitset design documented in `web/docs/adr/0001-browser-jobs-search-engine.md`.
+
+Saved jobs, saved searches, and retained details are browser-local. IndexedDB mutations commit before visible state advances, replacement imports are validated and transactional, and at most three bounded pre-import backups are retained.
+
+The browser now implements an explicit, default-off offline-search installer for v7. It selects only the bounded search/metadata roles, enforces deterministic file/byte caps and two-times-size quota headroom, verifies manifest bytes plus every selected file before recording readiness, pins one immutable release, preserves the prior verified cache until replacement succeeds, and deletes only OpenOpps-owned caches on opt-out. Unit tests assure opt-out, quota, integrity failure, partial-write rollback, replacement, tamper detection, and ownership behavior.
+
+That implementation is not deployed offline-readiness evidence. A real deployed v7 release still must pass install, offline disconnect/readback, update/rollback, and complete Chromium/Firefox/WebKit journeys. Until those results are recorded for the exact release and web revision, report the feature as locally implemented and unit-assured, with the production offline gate still open.
+
+## Delivery runbook
+
+The detailed operator sequence is maintained in `deployment/openopps-data/README.md`. Its safe local phases are:
+
+```bash
+uv run python scripts/docs_search_delivery.py validate-config deployment/openopps-data
+uv run python scripts/docs_search_delivery.py stage \
+  /absolute/path/to/openopps-search-v7 \
+  deployment/openopps-data/staging/assets
+uv run python scripts/docs_search_delivery.py verify-stage \
+  deployment/openopps-data/staging/assets
+```
+
+The script will stage only to the owned `deployment/openopps-data/{staging,production}/assets` paths. It renders upload and rollout commands but never executes Wrangler. Live commands require a separately authorized maintainer session with the exact account, Worker, previous-good version, and rollback evidence established first.
+
+Cloudflare credentials must remain outside Git and logs. For non-interactive Wrangler authentication, the relevant names are `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; do not put values in `.env.example`, generated output, command history, or issue comments. Prefer a narrowly scoped API token over a global API key.
+
+The checked-in staging and production configs are distinct assets-only Workers on `workers.dev`. Their contract forbids a script entry point, bindings, `run_worker_first`, preview URLs, and metrics. Release assets receive one-year immutable caching; channel pointers revalidate; every asset receives CORS, `nosniff`, and `noindex` headers. Remote verification reads every file and checks status, exact bytes, SHA-256, headers, a non-empty ETag, redirect absence, and a deterministic missing-path 404.
+
+Cloudflare documents that Workers versions separate upload from traffic deployment and that a deployment can atomically route 100% to one version. The Free-plan static-assets limit remains 20,000 files per Worker version with an individual asset limit of 25 MiB. OpenOpps enforces a conservative 20,000-file and strict-less-than-24-MiB stage budget before upload. See the official [versions and deployments](https://developers.cloudflare.com/workers/versions-and-deployments/), [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/), and [static-asset limits](https://developers.cloudflare.com/changelog/post/2025-09-02-increased-static-asset-limits/) references.
+
+## Archive and attestation status
+
+`scripts/docs_search_delivery.py bundle` creates one deterministic, content-addressed `.tar.gz` containing the staged dual-release assets, `SHA256SUMS`, `bundle-manifest.json`, `sbom.spdx.json`, and `provenance.json`. Archive inspection streams every member, rejects unsafe/duplicate entries, verifies closure, and retains only bounded metadata in memory.
+
+The current GitHub Actions `supply-chain` job is narrower: on non-pull-request runs it builds the Python wheel, generates an SPDX SBOM for `dist`, attests the wheel subject, and uploads the wheel/SBOM/attestation bundle as a 30-day workflow artifact. It does **not** build, attest, restore-test, or publish the public-data recovery archive, and no current job uploads that archive to a GitHub Release. Local bundle success therefore does not satisfy the independent archive/attestation release gate.
+
+Before public-data production readiness can be claimed, a separately reviewed workflow must attach exactly one content-addressed archive for the promoted stage to an immutable release record, attest that archive digest, verify the attestation from an independent download, and prove restoration of both release roots and the channel pointer. Keep GitHub token permissions least-privilege and do not add a publishing job to pull-request workflows.
+
+## Version 6 transition exit criteria
+
+Do not remove `web/public/data/openopps-search/` or disable the v6 reader until all of these are true for one exact source revision and release identity:
+
+1. A fresh, rights-approved v7 current release and a distinct valid prior release pass exact local verification.
+2. The full dual-release corpus uploads to the intended Workers **Free** staging target with the checked-in assets-only config; undocumented aggregate limits do not reject it.
+3. Staging readback verifies every byte, digest, required header, ETag, redirect behavior, and missing-path 404.
+4. The web app uses one v7 release across search, details, metadata, sitemaps, and build checks; production build, routes, unit tests, and browser E2E pass with the full v6 tree absent.
+5. Production promotion, remote verification, rollback to the retained previous-good Worker version, verification of that version, re-promotion, and final verification all succeed with exact version/deployment IDs recorded.
+6. A content-addressed recovery archive is independently downloaded, checksum/attestation verified, and restore-tested for current and previous releases.
+7. Canonical local `just` gates and origin GitHub Actions are green for the exact SHA. Current CI wheel attestation alone is insufficient.
+8. Only then may an ordinary commit remove the v6 data tree. Any history rewrite remains a separate destructive project requiring new explicit approval.
+
+If any gate fails, keep v6 available, leave production unchanged or roll back to the recorded previous-good version, and report the missing evidence without claiming a live rollout.

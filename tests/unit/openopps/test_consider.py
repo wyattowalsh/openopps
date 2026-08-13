@@ -16,6 +16,7 @@ from openopps.models import (
 )
 from openopps.providers.boards import build_job_provider
 from openopps.providers.boards.consider import ConsiderJobsProvider
+from openopps.providers.base import JobFetchResult
 from openopps.providers.consider import (
     ConsiderRouteMode,
     consider_search_payload,
@@ -255,6 +256,7 @@ async def test_consider_jobs_fetches_complete_advisory_total_and_normalizes():
             client, board_record(), route_record()
         )
 
+    assert isinstance(jobs, JobFetchResult)
     assert endpoint.call_count == 2
     assert [job.remote_id for job in jobs] == ["job-1", "job-2"]
     assert jobs[0].remote == "Hybrid"
@@ -333,12 +335,11 @@ async def test_empty_consider_jobs_requires_specific_company_page():
         )
     )
     async with build_async_client(settings) as client:
-        assert (
-            await ConsiderJobsProvider(settings).fetch_jobs(
-                client, board_record(), route_record()
-            )
-            == []
+        result = await ConsiderJobsProvider(settings).fetch_jobs(
+            client, board_record(), route_record()
         )
+        assert isinstance(result, JobFetchResult)
+        assert list(result) == []
 
 
 def test_empty_consider_page_parser_uses_structured_titles():

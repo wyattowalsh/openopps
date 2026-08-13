@@ -9,7 +9,7 @@ from openopps.models import (
     JobRecord,
     RemoteLevel,
 )
-from openopps.providers.base import ProviderRouteMatch
+from openopps.providers.base import JobFetchResult, ProviderRouteMatch
 from openopps.providers.consider import (
     ConsiderJob,
     ConsiderJobsResponse,
@@ -53,10 +53,13 @@ class ConsiderJobsProvider:
         client: httpx.AsyncClient,
         board: BoardRecord,
         route: BoardProviderRecord,
-    ) -> list[JobRecord]:
+    ) -> JobFetchResult:
         consider_route = consider_jobs_route(board, route)
         postings = await self._fetch_all(client, consider_route)
-        return [self._normalize(board, posting) for posting in postings]
+        return JobFetchResult(
+            jobs=[self._normalize(board, posting) for posting in postings],
+            authoritative=True,
+        )
 
     async def check_jobs(
         self,

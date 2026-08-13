@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { SavedSearchRecord } from "@/components/jobs-board/jobs-board-local-state";
 import {
@@ -8,17 +8,22 @@ import {
 	SAVED_SEARCH_COUNT_BATCH_SIZE,
 } from "@/components/openopps-search/search-index-loader";
 
+const EMPTY_SAVED_SEARCH_COUNTS: Record<string, number> = {};
+
 export function useSavedSearchFullCounts(savedSearches: SavedSearchRecord[]) {
 	const [savedSearchFullCounts, setSavedSearchFullCounts] = useState<
 		Record<string, number>
 	>({});
+	const records = useMemo(
+		() =>
+			savedSearches.filter(
+				(record) => record.reviewStatus === "current" && record.reviewCursor,
+			),
+		[savedSearches],
+	);
 
 	useEffect(() => {
-		const records = savedSearches.filter(
-			(record) => record.reviewStatus === "current" && record.reviewCursor,
-		);
 		if (records.length === 0) {
-			setSavedSearchFullCounts({});
 			return;
 		}
 		const controller = new AbortController();
@@ -53,7 +58,7 @@ export function useSavedSearchFullCounts(savedSearches: SavedSearchRecord[]) {
 		return () => {
 			controller.abort();
 		};
-	}, [savedSearches]);
+	}, [records]);
 
-	return savedSearchFullCounts;
+	return records.length === 0 ? EMPTY_SAVED_SEARCH_COUNTS : savedSearchFullCounts;
 }

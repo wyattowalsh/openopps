@@ -75,3 +75,20 @@ export function getAllowlistedPublicSearchOrigin(): URL {
 	}
 	return url;
 }
+
+export function getConfiguredPublicDataChannel(): string | null {
+	const channel = process.env.OPENOPPS_PUBLIC_DATA_CHANNEL?.trim() ?? "";
+	if (!channel) {
+		return null;
+	}
+	if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(channel)) {
+		throw new Error(
+			"OPENOPPS_PUBLIC_DATA_CHANNEL must be a safe lowercase channel name",
+		);
+	}
+	return channel;
+}
+
+export function hasConfiguredPublicDataOrigin() {
+	return Boolean(process.env.OPENOPPS_PUBLIC_DATA_ORIGIN?.trim());
+}
