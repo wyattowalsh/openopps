@@ -20,6 +20,7 @@ describe("server snapshot-client precedence", () => {
 	it("uses the local v6 filesystem only when no remote origin or channel is configured", async () => {
 		delete process.env.OPENOPPS_PUBLIC_DATA_ORIGIN;
 		delete process.env.OPENOPPS_PUBLIC_DATA_CHANNEL;
+		delete process.env.VERCEL;
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -45,6 +46,26 @@ describe("server snapshot-client precedence", () => {
 		).resolves.toEqual(searchManifest);
 		expect(fetchMock).toHaveBeenCalledWith(
 			new URL("https://data.openopps.test/data/openopps-search/manifest.json"),
+			expect.objectContaining({ cache: "no-store" }),
+		);
+	});
+
+	it("uses deployed v6 HTTP when Vercel omits static assets from serverless traces", async () => {
+		delete process.env.OPENOPPS_PUBLIC_DATA_ORIGIN;
+		delete process.env.OPENOPPS_PUBLIC_DATA_CHANNEL;
+		process.env.VERCEL = "1";
+		const fetchMock = vi.fn(async () =>
+			new Response(JSON.stringify(searchManifest), {
+				headers: { "Content-Type": "application/json" },
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			createPublicDataSnapshotClient().getSearchManifest(),
+		).resolves.toEqual(searchManifest);
+		expect(fetchMock).toHaveBeenCalledWith(
+			new URL("https://openopps.dev/data/openopps-search/manifest.json"),
 			expect.objectContaining({ cache: "no-store" }),
 		);
 	});

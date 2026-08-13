@@ -28,15 +28,17 @@ export function createServerSnapshotClient(
 
 /**
  * Use one explicit precedence rule everywhere:
- * configured remote origin/channel > local legacy v6 filesystem.
+ * configured remote origin/channel > deployed legacy v6 HTTP > local legacy
+ * v6 filesystem. Vercel functions deliberately exclude the large static tree.
  */
 export function createPublicDataSnapshotClient() {
 	const channel = getConfiguredPublicDataChannel();
 	const remoteConfigured = hasConfiguredPublicDataOrigin() || channel !== null;
+	const deployedWithoutFilesystemAssets = process.env.VERCEL === "1";
 	return createServerSnapshotClient({
 		baseUrl: getAllowlistedPublicSearchOrigin(),
 		channel,
-		allowLegacyFilesystem: !remoteConfigured,
+		allowLegacyFilesystem: !remoteConfigured && !deployedWithoutFilesystemAssets,
 	});
 }
 
