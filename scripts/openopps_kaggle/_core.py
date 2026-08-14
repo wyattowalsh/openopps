@@ -3061,6 +3061,7 @@ def _coverage_excerpt(coverage: dict[str, Any] | None) -> dict[str, Any] | None:
 def _drop_private_sqlite_tables(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute("DROP TABLE IF EXISTS http_cache")
+        conn.execute("DROP TABLE IF EXISTS http_cache_metadata")
         conn.execute("DROP TABLE IF EXISTS alembic_version")
 
 

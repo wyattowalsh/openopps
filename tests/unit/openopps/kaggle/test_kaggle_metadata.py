@@ -1778,6 +1778,8 @@ def test_kaggle_artifact_cleanup_drops_private_sqlite_tables(tmp_path: Path) -> 
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE http_cache (key TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO http_cache VALUES ('cached')")
+        conn.execute("CREATE TABLE http_cache_metadata (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT INTO http_cache_metadata VALUES ('schema', 'v1')")
         conn.execute("CREATE TABLE alembic_version (version_num TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO alembic_version VALUES ('0001')")
 
@@ -1791,6 +1793,7 @@ def test_kaggle_artifact_cleanup_drops_private_sqlite_tables(tmp_path: Path) -> 
             ).fetchall()
         }
     assert "http_cache" not in tables
+    assert "http_cache_metadata" not in tables
     assert "alembic_version" not in tables
 
 
