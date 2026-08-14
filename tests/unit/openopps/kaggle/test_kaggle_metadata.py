@@ -467,6 +467,8 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert '"sync",' in source
     assert '"--freshness-seconds",' in source
     assert '"--limit",' in source
+    assert "def snapshot_is_synthetic_example_only(" in source
+    assert "Skipping jobs sync: public snapshot contains only the synthetic" in source
     assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" in source
     assert "def require_kaggle_credentials()" in source
     assert gen.DB_FILE in source
@@ -917,6 +919,69 @@ def test_manager_loads_package_spec_from_notebook_secret(
 
     namespace["load_openopps_package_spec_secret"]()
     assert namespace["PACKAGE_SPEC"] == package_spec
+
+
+def test_manager_skips_jobs_sync_for_synthetic_example_snapshot(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('example', 'example://openopps/synthetic', 'example')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (key, source_key, remote_id, name)
+            VALUES ('example-board', 'example', 'board', 'Example')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                id, board_key, provider_id, remote_id, status,
+                first_seen_at, last_seen_at, synced_at
+            ) VALUES (
+                'job-1', 'example-board', 'greenhouse', '1', 'open',
+                '2026-06-16 12:00:00', '2026-06-16 12:00:00', '2026-06-16 12:00:00'
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO job_sync_runs (
+                id, board_key, provider_id, synced_at, success, job_count,
+                new_count, unchanged_count, changed_count, reopened_count,
+                closed_count, started_at, status, authoritative,
+                committed_batch_count
+            ) VALUES (
+                'run-1', 'example-board', 'greenhouse', '2026-06-16 12:00:00',
+                1, 1, 1, 0, 0, 0, 0, '2026-06-16 12:00:00', 'succeeded', 1, 1
+            )
+            """
+        )
+        conn.commit()
+
+    def fail_run(*args, **kwargs) -> None:
+        raise AssertionError("jobs sync must not run for synthetic example snapshots")
+
+    namespace["run"] = fail_run
+    namespace["run_json"] = fail_run
+    metrics_path = tmp_path / "sync_metrics.json"
+    metrics = namespace["run_sync_metrics"](
+        metrics_path,
+        env={"OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS": "86400"},
+        timeout_seconds=1,
+    )
+    assert metrics["skippedSyntheticExample"] is True
+    assert metrics["jobSyncRuns"] == 1
+    assert metrics["jobsPersisted"] == 1
 
 
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:

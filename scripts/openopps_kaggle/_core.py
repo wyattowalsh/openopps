@@ -4225,12 +4225,62 @@ def emit_disk_usage(label: str, path: Path = OUTPUT_DIR) -> None:
     )
 
 
+def snapshot_is_synthetic_example_only(db_path: Path) -> bool:
+    if not db_path.exists():
+        return False
+    with sqlite3.connect(db_path) as conn:
+        tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        if "sources" not in tables:
+            return False
+        rows = conn.execute("SELECT key, url FROM sources").fetchall()
+    if not rows:
+        return False
+    return all(
+        str(key) == "example" or str(url or "").startswith("example://")
+        for key, url in rows
+    )
+
+
 def run_sync_metrics(
     output_path: Path,
     *,
     env: dict[str, str],
     timeout_seconds: float | None,
 ) -> dict:
+    if snapshot_is_synthetic_example_only(DB_PATH):
+        print(
+            "Skipping jobs sync: public snapshot contains only the synthetic "
+            "example source."
+        )
+        with sqlite3.connect(DB_PATH) as conn:
+            successful_runs = int(
+                conn.execute(
+                    "SELECT count(*) FROM job_sync_runs WHERE success = 1"
+                ).fetchone()[0]
+            )
+            open_jobs = int(
+                conn.execute(
+                    "SELECT count(*) FROM jobs WHERE status = 'open'"
+                ).fetchone()[0]
+            )
+        data = {
+            "name": "jobs.sync",
+            "jobSyncRuns": successful_runs,
+            "jobSyncAttempts": successful_runs,
+            "jobsPersisted": open_jobs,
+            "jobsDeduped": 0,
+            "providerErrors": {},
+            "providerErrorDetails": {},
+            "skippedSyntheticExample": True,
+        }
+        output_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
+        print(f"Wrote {output_path}")
+        return data
     return run_json(
         [
             "openopps",
