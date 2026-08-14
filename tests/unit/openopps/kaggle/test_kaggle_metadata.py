@@ -362,6 +362,10 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "user_secrets = UserSecretsClient()" in source
     assert 'secret_value_0 = user_secrets.get_secret("KAGGLE_KEY")' in source
     assert 'secret_value_1 = user_secrets.get_secret("KAGGLE_USERNAME")' in source
+    assert 'UserSecretsClient().get_secret("OPENOPPS_PACKAGE_SPEC")' in source
+    assert "def load_openopps_package_spec_secret()" in source
+    assert "PUBLIC_SNAPSHOT_COLUMN_BACKFILLS" in source
+    assert "def public_snapshot_select_expressions(" in source
     assert 'client.get_secret("KAGGLE_API_TOKEN")' not in source
     assert "def load_kaggle_notebook_secrets()" in source
     assert "def read_kaggle_notebook_secrets" in source
@@ -726,6 +730,193 @@ def test_manager_notebook_rehydrates_public_sqlite_snapshot(
         "boardProviders": 1,
         "jobs": 1,
     }
+
+
+_PRE_0004_JOB_SYNC_RUN_COLUMNS = (
+    "id",
+    "board_key",
+    "provider_id",
+    "synced_at",
+    "success",
+    "error",
+    "job_count",
+    "new_count",
+    "unchanged_count",
+    "changed_count",
+    "reopened_count",
+    "closed_count",
+)
+
+
+def _strip_job_sync_run_columns(db_path: Path, keep: tuple[str, ...]) -> None:
+    column_sql = ", ".join(_quote_identifier(column) for column in keep)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            f"CREATE TABLE job_sync_runs_legacy AS SELECT {column_sql} FROM job_sync_runs"
+        )
+        conn.execute("DROP TABLE job_sync_runs")
+        conn.execute("ALTER TABLE job_sync_runs_legacy RENAME TO job_sync_runs")
+        conn.commit()
+
+
+def test_manager_notebook_rehydrates_pre_0004_job_sync_runs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    schema_db = tmp_path / "operational-schema.sqlite"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{schema_db}"))
+    store.init_db()
+    _insert_representative_app_rows(schema_db)
+    _copy_plain_public_snapshot(
+        schema_db,
+        db_path,
+        app_table_names=namespace["APP_TABLE_NAMES"],
+    )
+    _strip_job_sync_run_columns(db_path, _PRE_0004_JOB_SYNC_RUN_COLUMNS)
+    observed_at = "2026-06-16 12:00:00"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO job_sync_runs (
+                id, board_key, provider_id, synced_at, success, error, job_count,
+                new_count, unchanged_count, changed_count, reopened_count,
+                closed_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "sync-run-legacy-failed",
+                "board-1",
+                "greenhouse",
+                observed_at,
+                0,
+                "legacy failure",
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ),
+        )
+        conn.commit()
+
+    def run_locally(command, *, env=None, timeout_seconds=None) -> None:
+        del timeout_seconds
+        if command == ["openopps", "admin", "db", "init"]:
+            assert env is not None
+            OpenOppsStore(OpenOppsSettings(db_url=env["OPENOPPS_DB_URL"])).init_db()
+            return
+        raise AssertionError(f"Unexpected command during rehydrate test: {command}")
+
+    namespace["run"] = run_locally
+    env = {
+        "OPENOPPS_DB_URL": f"sqlite:///{db_path}",
+        "OPENOPPS_CACHE_ENABLED": "false",
+    }
+
+    assert namespace["rehydrate_public_snapshot_for_openopps"](env) is True
+
+    with sqlite3.connect(db_path) as conn:
+        rows = {
+            row[0]: row[1:]
+            for row in conn.execute(
+                """
+                SELECT id, status, started_at, finished_at, error_kind,
+                       committed_batch_count, authoritative, success
+                FROM job_sync_runs
+                ORDER BY id
+                """
+            )
+        }
+    assert rows["sync-run-1"] == (
+        "succeeded",
+        observed_at,
+        observed_at,
+        None,
+        0,
+        1,
+        1,
+    )
+    assert rows["sync-run-legacy-failed"] == (
+        "failed",
+        observed_at,
+        observed_at,
+        "legacy_failure",
+        0,
+        0,
+        0,
+    )
+
+
+def test_manager_notebook_rehydrate_rejects_unmapped_missing_column(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    schema_db = tmp_path / "operational-schema.sqlite"
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{schema_db}")).init_db()
+    _insert_representative_app_rows(schema_db)
+    _copy_plain_public_snapshot(
+        schema_db,
+        db_path,
+        app_table_names=namespace["APP_TABLE_NAMES"],
+    )
+    keep = tuple(
+        column
+        for column in _PRE_0004_JOB_SYNC_RUN_COLUMNS
+        if column != "job_count"
+    )
+    _strip_job_sync_run_columns(db_path, keep)
+
+    def run_locally(command, *, env=None, timeout_seconds=None) -> None:
+        del timeout_seconds
+        if command == ["openopps", "admin", "db", "init"]:
+            assert env is not None
+            OpenOppsStore(OpenOppsSettings(db_url=env["OPENOPPS_DB_URL"])).init_db()
+            return
+        raise AssertionError(f"Unexpected command during rehydrate test: {command}")
+
+    namespace["run"] = run_locally
+    env = {
+        "OPENOPPS_DB_URL": f"sqlite:///{db_path}",
+        "OPENOPPS_CACHE_ENABLED": "false",
+    }
+
+    with pytest.raises(RuntimeError, match="missing required columns: job_count"):
+        namespace["rehydrate_public_snapshot_for_openopps"](env)
+
+
+def test_manager_loads_package_spec_from_notebook_secret(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    monkeypatch.delenv("OPENOPPS_PACKAGE_SPEC", raising=False)
+    namespace = _notebook_setup_namespace()
+    assert namespace["PACKAGE_SPEC"] == "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__"
+
+    package_spec = (
+        "git+https://github.com/wyattowalsh/openopps.git@"
+        "0123456789abcdef0123456789abcdef01234567"
+    )
+
+    class FakeSecrets:
+        def get_secret(self, name: str) -> str:
+            if name == "OPENOPPS_PACKAGE_SPEC":
+                return package_spec
+            raise RuntimeError(f"missing secret {name}")
+
+    fake_module = types.ModuleType("kaggle_secrets")
+    fake_module.UserSecretsClient = lambda: FakeSecrets()
+    monkeypatch.setitem(sys.modules, "kaggle_secrets", fake_module)
+
+    namespace["load_openopps_package_spec_secret"]()
+    assert namespace["PACKAGE_SPEC"] == package_spec
 
 
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
@@ -2245,6 +2436,7 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     assert "args=(verify-readback --dataset" in justfile
     assert '{{ kaggle-ops-gen }} "${args[@]}"' in justfile
     assert '"kagglehub[polars-datasets]==1.0.2"' in pyproject
+    assert 'kaggle-notebook-push timeout="7200" execute="0":' in justfile
     assert 'kaggle-example-notebooks-push timeout="3600" execute="0":' in justfile
     assert "publication kernel-push --bundle examples" in justfile
     assert "kaggle-example-notebooks-status:" in justfile
@@ -3017,8 +3209,34 @@ def test_snapshot_quality_report_blocks_empty_jobs_without_explanation(
     assert "missing_current_job_evidence" in report["hardBlockers"]
 
 
+def test_snapshot_quality_report_allows_versions_with_empty_skills_json(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(
+        tmp_path,
+        job_versions=1,
+        job_version_skills_json="[]",
+    )
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=_sync_metrics(),
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "pass"
+    assert "missing_job_version_skill_rows" not in report["hardBlockers"]
+    assert "missing_job_version_skill_keyword_rows" not in report["hardBlockers"]
+
+
 def test_snapshot_quality_report_blocks_empty_skill_tables(tmp_path: Path) -> None:
-    db_path = _write_quality_bundle(tmp_path, job_versions=1)
+    db_path = _write_quality_bundle(
+        tmp_path,
+        job_versions=1,
+        job_version_skills_json='[{"name":"Python"}]',
+    )
 
     report = gen.snapshot_quality_report(
         output_dir=tmp_path,
@@ -3178,6 +3396,7 @@ def _write_quality_bundle(
     job_versions: int = 0,
     job_version_skills: int = 0,
     job_version_skill_keywords: int = 0,
+    job_version_skills_json: str | None = None,
     job_sync_runs: int = 1,
 ) -> Path:
     db_path = output_dir / gen.DB_FILE
@@ -3231,14 +3450,28 @@ def _write_quality_bundle(
                 for index in range(1, jobs + 1)
             ],
         )
-        insert_rows(
-            "job_versions",
-            ("id", "job_id"),
-            [
-                (f"version-{index}", "job-1" if jobs else None)
-                for index in range(1, job_versions + 1)
-            ],
-        )
+        if job_version_skills_json is None:
+            insert_rows(
+                "job_versions",
+                ("id", "job_id"),
+                [
+                    (f"version-{index}", "job-1" if jobs else None)
+                    for index in range(1, job_versions + 1)
+                ],
+            )
+        else:
+            insert_rows(
+                "job_versions",
+                ("id", "job_id", "skills"),
+                [
+                    (
+                        f"version-{index}",
+                        "job-1" if jobs else None,
+                        job_version_skills_json,
+                    )
+                    for index in range(1, job_versions + 1)
+                ],
+            )
         insert_rows(
             "job_version_skills",
             ("id", "job_version_id", "ordinal"),

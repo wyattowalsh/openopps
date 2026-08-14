@@ -543,6 +543,61 @@ def test_kernel_push_dry_run_uses_allowlisted_argv_and_rejects_injection(
         )
 
 
+def test_manager_kernel_push_dry_run_stages_temp_path_with_head_sha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(publication, "require_kaggle_cli_version", lambda: "2.2.4")
+    package_spec = (
+        "git+https://github.com/wyattowalsh/openopps.git@"
+        "0123456789abcdef0123456789abcdef01234567"
+    )
+    monkeypatch.setattr(
+        publication, "resolve_immutable_package_spec", lambda **kwargs: package_spec
+    )
+
+    result = publication.run_kernel_push(
+        "manager", timeout_seconds=7200, execute=False
+    )
+
+    assert result["dryRun"] is True
+    assert result["packageSpec"] == package_spec
+    assert len(result["commands"]) == 1
+    command = result["commands"][0]
+    assert command[:3] == ["kaggle", "kernels", "push"]
+    assert command[3] == "--path"
+    assert Path(command[4]).as_posix() != Path("kaggle").as_posix()
+    assert command[5:] == ["--timeout", "7200"]
+    committed = (Path("kaggle") / "openoppsdb-manager.ipynb").read_text(encoding="utf-8")
+    assert publication.IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER in committed
+    assert package_spec not in committed
+
+
+def test_manager_kernel_push_execute_refuses_dirty_generated_notebook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(publication, "require_kaggle_cli_version", lambda: "2.2.4")
+    monkeypatch.setattr(
+        publication,
+        "resolve_immutable_package_spec",
+        lambda **kwargs: (
+            "git+https://github.com/wyattowalsh/openopps.git@"
+            "0123456789abcdef0123456789abcdef01234567"
+        ),
+    )
+    monkeypatch.setattr(
+        publication,
+        "_require_manager_push_git_state",
+        lambda **kwargs: (_ for _ in ()).throw(
+            publication.PublicationError(
+                "manager kernel execute requires a clean generated notebook"
+            )
+        ),
+    )
+
+    with pytest.raises(publication.PublicationError, match="clean generated notebook"):
+        publication.run_kernel_push("manager", timeout_seconds=7200, execute=True)
+
+
 def test_public_plan_targets_public_dataset(tmp_path: Path) -> None:
     stage = _runtime_stage(tmp_path)
     with pytest.raises(publication.PublicationError, match="file set mismatch"):

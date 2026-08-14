@@ -2214,6 +2214,37 @@ def _public_snapshot_size_blockers(
     return blockers
 
 
+def _job_versions_with_structured_skills(db_path: Path) -> int:
+    """Count job versions whose skills JSON is a nonempty array."""
+    if not db_path.is_file():
+        return 0
+    try:
+        with sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True) as conn:
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'job_versions'"
+            ).fetchone()
+            if table_exists is None:
+                return 0
+            columns = {
+                str(row[1])
+                for row in conn.execute("PRAGMA table_info('job_versions')")
+            }
+            if "skills" not in columns:
+                return 0
+            return int(
+                conn.execute(
+                    """
+                    SELECT count(*) FROM job_versions
+                    WHERE skills IS NOT NULL
+                      AND json_valid(skills) = 1
+                      AND json_array_length(skills) > 0
+                    """
+                ).fetchone()[0]
+            )
+    except sqlite3.Error:
+        return 0
+
+
 def snapshot_quality_report(
     *,
     output_dir: Path,
@@ -2310,7 +2341,8 @@ def snapshot_quality_report(
         hard_blockers.append("missing_job_sync_run_evidence")
     if current_jobs == 0 and jobs_persisted == 0 and not empty_snapshot_explanation:
         hard_blockers.append("missing_current_job_evidence")
-    if job_version_rows > 0:
+    structured_skill_versions = _job_versions_with_structured_skills(db_path)
+    if structured_skill_versions > 0:
         if job_version_skill_rows == 0:
             hard_blockers.append("missing_job_version_skill_rows")
         if job_version_skill_keyword_rows == 0:
@@ -3502,6 +3534,20 @@ PUBLIC_METADATA_TABLES = {"openopps_tables", "openopps_columns"}
 APP_TABLE_NAMES = __APP_TABLE_NAMES__
 APP_PRIMARY_KEY_COLUMNS = __APP_PRIMARY_KEY_COLUMNS__
 PARQUET_RESTORE_TABLES = __PARQUET_RESTORE_TABLES__
+PUBLIC_SNAPSHOT_COLUMN_BACKFILLS = {
+    "job_sync_runs": {
+        "started_at": "synced_at",
+        "finished_at": "synced_at",
+        "status": "CASE WHEN success THEN 'succeeded' ELSE 'failed' END",
+        "error_kind": (
+            "CASE WHEN success THEN NULL "
+            "WHEN error IS NOT NULL THEN 'legacy_failure' "
+            "ELSE 'unknown' END"
+        ),
+        "authoritative": "success",
+        "committed_batch_count": "0",
+    }
+}
 PUBLIC_SNAPSHOT_JSON_DEFAULTS = {
     ("sources", "version"): "{}",
     ("sources", "raw_metadata"): "{}",
@@ -3816,6 +3862,7 @@ def kaggle_dataset_status() -> dict:
 
 
 def install_openopps() -> None:
+    load_openopps_package_spec_secret()
     package_spec = require_immutable_openopps_package_spec()
     run(
         [
@@ -3829,6 +3876,42 @@ def install_openopps() -> None:
             KAGGLE_CLIENT_SPEC,
         ]
     )
+
+
+def load_openopps_package_spec_secret() -> None:
+    global PACKAGE_SPEC
+    if (
+        PACKAGE_SPEC
+        and PACKAGE_SPEC != "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__"
+    ):
+        return
+    env_value = os.environ.get("OPENOPPS_PACKAGE_SPEC", "").strip()
+    if env_value and env_value != "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__":
+        PACKAGE_SPEC = env_value
+        print("OPENOPPS_PACKAGE_SPEC loaded from environment.")
+        return
+    try:
+        from kaggle_secrets import UserSecretsClient
+    except Exception as exc:
+        print(
+            "OPENOPPS_PACKAGE_SPEC notebook secret client unavailable: "
+            f"{type(exc).__name__}"
+        )
+        return
+    try:
+        secret_value = UserSecretsClient().get_secret("OPENOPPS_PACKAGE_SPEC")
+    except Exception as exc:
+        print(
+            "OPENOPPS_PACKAGE_SPEC notebook secret lookup failed: "
+            f"{describe_secret_exception(exc)}"
+        )
+        return
+    normalized = normalize_kaggle_notebook_secret(secret_value)
+    if not normalized:
+        print("OPENOPPS_PACKAGE_SPEC not found in Kaggle notebook secrets.")
+        return
+    PACKAGE_SPEC = normalized
+    print("OPENOPPS_PACKAGE_SPEC loaded from Kaggle notebook secrets.")
 
 
 def require_immutable_openopps_package_spec() -> str:
@@ -4293,12 +4376,7 @@ def validate_public_snapshot_table(
     target_columns = table_columns(conn, "main", table_name)
     if not source_columns:
         raise RuntimeError(f"Public OpenOpps snapshot is missing table: {table_name}")
-    missing_columns = [column for column in target_columns if column not in source_columns]
-    if missing_columns:
-        raise RuntimeError(
-            "Public OpenOpps snapshot table "
-            f"{table_name} is missing required columns: {', '.join(missing_columns)}"
-        )
+    public_snapshot_select_expressions(table_name, source_columns, target_columns)
 
     primary_key_columns = APP_PRIMARY_KEY_COLUMNS[table_name]
     missing_key_columns = [
@@ -4342,6 +4420,30 @@ def validate_public_snapshot_table(
     return target_columns
 
 
+def public_snapshot_select_expressions(
+    table_name: str,
+    source_columns: list[str],
+    target_columns: list[str],
+) -> list[tuple[str, str]]:
+    backfills = PUBLIC_SNAPSHOT_COLUMN_BACKFILLS.get(table_name, {})
+    selected: list[tuple[str, str]] = []
+    missing: list[str] = []
+    source_set = set(source_columns)
+    for column in target_columns:
+        if column in source_set:
+            selected.append((column, quote_identifier(column)))
+        elif column in backfills:
+            selected.append((column, f"({backfills[column]})"))
+        else:
+            missing.append(column)
+    if missing:
+        raise RuntimeError(
+            "Public OpenOpps snapshot table "
+            f"{table_name} is missing required columns: {', '.join(missing)}"
+        )
+    return selected
+
+
 def import_public_snapshot_tables(snapshot_path: Path) -> dict[str, int]:
     summary: dict[str, int] = {}
     with sqlite3.connect(DB_PATH) as conn:
@@ -4351,7 +4453,12 @@ def import_public_snapshot_tables(snapshot_path: Path) -> dict[str, int]:
         )
         try:
             for table_name in APP_TABLE_NAMES:
-                target_columns = validate_public_snapshot_table(conn, table_name)
+                validate_public_snapshot_table(conn, table_name)
+                source_columns = table_columns(conn, "public_snapshot", table_name)
+                target_columns = table_columns(conn, "main", table_name)
+                selected = public_snapshot_select_expressions(
+                    table_name, source_columns, target_columns
+                )
                 source_count = public_snapshot_table_count(
                     conn, "public_snapshot", table_name
                 )
@@ -4364,11 +4471,12 @@ def import_public_snapshot_tables(snapshot_path: Path) -> dict[str, int]:
                         f"table {table_name}; found {existing_count} existing rows."
                     )
                 column_sql = ", ".join(
-                    quote_identifier(column) for column in target_columns
+                    quote_identifier(column) for column, _expression in selected
                 )
+                select_sql = ", ".join(expression for _column, expression in selected)
                 conn.execute(
                     f"INSERT INTO {qualified_table('main', table_name)} ({column_sql}) "
-                    f"SELECT {column_sql} "
+                    f"SELECT {select_sql} "
                     f"FROM {qualified_table('public_snapshot', table_name)}"
                 )
                 imported_count = public_snapshot_table_count(

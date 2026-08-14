@@ -327,7 +327,7 @@ kaggle-live-file-metadata:
     {{ kaggle-ops-gen }} --update-live-file-metadata --live-file-metadata-browser-cookies
 
 # Prepare or execute the connected manager notebook push through validated argv.
-kaggle-notebook-push timeout="3600" execute="0":
+kaggle-notebook-push timeout="7200" execute="0":
     @timeout="$1"; timeout="${timeout#timeout=}"; execute="$2"; execute="${execute#execute=}"; args=(publication kernel-push --bundle manager --timeout-seconds "$timeout"); case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac; {{ kaggle-ops-gen }} "${args[@]}"
 
 # Prepare or execute the public starter notebook push through validated argv.

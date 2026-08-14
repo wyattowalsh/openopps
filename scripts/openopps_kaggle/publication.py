@@ -29,6 +29,7 @@ from typing import Any, Mapping, Sequence, cast
 from openopps_kaggle.constants import (
     DATASET_ID,
     DEFAULT_DATASET_DIR,
+    NB_FILE,
     PUBLIC_UPLOAD_CONTROL_FILES,
     PUBLIC_UPLOAD_DATA_FILES,
     RUNTIME_GENERATOR_DATASET_ID,
@@ -37,6 +38,9 @@ from openopps_kaggle.constants import (
 )
 
 KAGGLE_CLI_VERSION = "2.2.4"
+IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER = "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__"
+IMMUTABLE_PACKAGE_SPEC_PREFIX = "git+https://github.com/wyattowalsh/openopps.git@"
+MANAGER_KERNEL_FILES = ("kernel-metadata.json", NB_FILE)
 LEDGER_SCHEMA_VERSION = 1
 MAX_LEDGER_ENTRIES = 100
 MAX_LEDGER_BYTES = 8 * 1024 * 1024
@@ -570,6 +574,87 @@ def verify_remote_readback(
     return identity
 
 
+def resolve_immutable_package_spec(*, repo: Path | None = None) -> str:
+    """Return the exact git+SHA package spec for a manager kernel push."""
+
+    revision = _git_head_sha(repo)
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise PublicationError(
+            "manager kernel push requires a 40-character HEAD commit SHA"
+        )
+    return f"{IMMUTABLE_PACKAGE_SPEC_PREFIX}{revision}"
+
+
+def _git_head_sha(repo: Path | None = None) -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=None if repo is None else str(repo),
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        raise PublicationError("unable to resolve git HEAD for manager kernel push")
+    return completed.stdout.strip().lower()
+
+
+def _require_manager_push_git_state(*, repo: Path | None = None) -> None:
+    porcelain = subprocess.run(
+        [
+            "git",
+            "status",
+            "--porcelain",
+            "--",
+            "kaggle/openoppsdb-manager.ipynb",
+            "kaggle/kernel-metadata.json",
+        ],
+        cwd=None if repo is None else str(repo),
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if porcelain.returncode != 0:
+        raise PublicationError("unable to inspect manager notebook git state")
+    if porcelain.stdout.strip():
+        raise PublicationError(
+            "manager kernel execute requires a clean generated notebook"
+        )
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", "origin/main"],
+        cwd=None if repo is None else str(repo),
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if ancestor.returncode != 0:
+        raise PublicationError(
+            "manager kernel execute requires HEAD to be an ancestor of origin/main"
+        )
+
+
+def _stage_manager_kernel_bundle(stage_dir: Path, package_spec: str) -> None:
+    source_dir = Path("kaggle")
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    for name in MANAGER_KERNEL_FILES:
+        source = source_dir / name
+        if not source.is_file():
+            raise PublicationError(f"manager kernel file is missing: {name}")
+        shutil.copy2(source, stage_dir / name)
+    notebook_path = stage_dir / NB_FILE
+    rendered = notebook_path.read_text(encoding="utf-8")
+    if IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER not in rendered:
+        raise PublicationError(
+            "manager notebook is missing the immutable package-spec placeholder"
+        )
+    notebook_path.write_text(
+        rendered.replace(IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER, package_spec),
+        encoding="utf-8",
+    )
+
+
 def run_kernel_push(
     bundle: str,
     *,
@@ -584,37 +669,77 @@ def run_kernel_push(
     if timeout_seconds < 30 or timeout_seconds > 7200:
         raise PublicationError("kernel timeout must be between 30 and 7200 seconds")
     require_kaggle_cli_version()
-    commands = [
-        [
-            "kaggle",
-            "kernels",
-            "push",
-            "--path",
-            path.as_posix(),
-            "--timeout",
-            str(timeout_seconds),
+    if bundle != "manager":
+        commands = [
+            [
+                "kaggle",
+                "kernels",
+                "push",
+                "--path",
+                path.as_posix(),
+                "--timeout",
+                str(timeout_seconds),
+            ]
+            for path in _KERNEL_PATHS[bundle]
         ]
-        for path in _KERNEL_PATHS[bundle]
-    ]
-    payload: dict[str, Any] = {
-        "ok": True,
-        "dryRun": not execute,
-        "bundle": bundle,
-        "kaggleCliVersion": KAGGLE_CLI_VERSION,
-        "commands": commands,
-    }
-    if not execute:
+        payload: dict[str, Any] = {
+            "ok": True,
+            "dryRun": not execute,
+            "bundle": bundle,
+            "kaggleCliVersion": KAGGLE_CLI_VERSION,
+            "commands": commands,
+        }
+        if not execute:
+            return payload
+        env = kaggle_subprocess_environment(environ)
+        require_kaggle_credentials(env)
+        for command in commands:
+            completed = _run_kaggle(
+                command[1:], env=env, timeout_seconds=timeout_seconds
+            )
+            if completed.returncode != 0:
+                raise PublicationError(
+                    f"Kaggle kernel push failed with exit code {completed.returncode}"
+                )
+        payload["dryRun"] = False
         return payload
-    env = kaggle_subprocess_environment(environ)
-    require_kaggle_credentials(env)
-    for command in commands:
-        completed = _run_kaggle(command[1:], env=env, timeout_seconds=timeout_seconds)
+
+    package_spec = resolve_immutable_package_spec()
+    if execute:
+        _require_manager_push_git_state()
+    with tempfile.TemporaryDirectory(prefix="openopps-kaggle-manager-kernel-") as raw:
+        staged = Path(raw) / "manager"
+        _stage_manager_kernel_bundle(staged, package_spec)
+        commands = [
+            [
+                "kaggle",
+                "kernels",
+                "push",
+                "--path",
+                staged.as_posix(),
+                "--timeout",
+                str(timeout_seconds),
+            ]
+        ]
+        payload = {
+            "ok": True,
+            "dryRun": not execute,
+            "bundle": bundle,
+            "kaggleCliVersion": KAGGLE_CLI_VERSION,
+            "commands": commands,
+            "packageSpec": package_spec,
+        }
+        if not execute:
+            return payload
+        env = kaggle_subprocess_environment(environ)
+        require_kaggle_credentials(env)
+        completed = _run_kaggle(commands[0][1:], env=env, timeout_seconds=timeout_seconds)
         if completed.returncode != 0:
             raise PublicationError(
                 f"Kaggle kernel push failed with exit code {completed.returncode}"
             )
-    payload["dryRun"] = False
-    return payload
+        payload["dryRun"] = False
+        return payload
 
 
 def kaggle_subprocess_environment(
