@@ -570,6 +570,7 @@ def test_ledger_accepts_legacy_url_version_handles(tmp_path: Path) -> None:
 def test_listed_publication_files_omit_kaggle_control_metadata() -> None:
     expected = {
         "dataset-metadata.json": {"path": "dataset-metadata.json", "bytes": 1},
+        "dataset-cover-image.png": {"path": "dataset-cover-image.png", "bytes": 4},
         "runtime-manifest.json": {"path": "runtime-manifest.json", "bytes": 2},
         "openopps_kaggle/cli.py": {"path": "openopps_kaggle/cli.py", "bytes": 3},
     }

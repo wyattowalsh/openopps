@@ -50,8 +50,8 @@ MAX_LEDGER_ENTRIES = 100
 MAX_LEDGER_BYTES = 8 * 1024 * 1024
 MAX_CONTROL_JSON_BYTES = 16 * 1024 * 1024
 MAX_KAGGLE_FILES = 200
-# Kaggle consumes this at upload time and does not list or download it as a file.
-KAGGLE_DATASETS_UNLISTED_FILES = frozenset({"dataset-metadata.json"})
+# Kaggle consumes these at upload time and does not list or download them as files.
+KAGGLE_DATASETS_UNLISTED_FILES = frozenset(PUBLIC_UPLOAD_CONTROL_FILES)
 DEFAULT_LEDGER_PATH = Path("var/kaggle-publication-ledger.json")
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
