@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-import openopps_kaggle.generator as gen
+import openopps_kaggle.generator as gen  # ty: ignore[unresolved-import]
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -66,7 +66,7 @@ def v54_sqlite() -> Path:
     return path
 
 
-def test_v54_public_sqlite_hits_skill_and_lifecycle_quality_walls(
+def test_v54_public_sqlite_hits_lifecycle_column_quality_wall(
     v54_sqlite: Path,
     tmp_path: Path,
 ) -> None:

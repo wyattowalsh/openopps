@@ -5,15 +5,18 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from typing import Any
 
 import pytest
 
-from openopps_kaggle import publication
-from openopps_kaggle.constants import (
+from openopps_kaggle import publication  # ty: ignore[unresolved-import]
+from openopps_kaggle.constants import (  # ty: ignore[unresolved-import]
     DATASET_ID,
     RUNTIME_GENERATOR_DATASET_ID,
 )
-from openopps_kaggle.runtime_manifest import stage_runtime_package
+from openopps_kaggle.runtime_manifest import (  # ty: ignore[unresolved-import]
+    stage_runtime_package,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +44,7 @@ def _plan(
     *,
     execute: bool = False,
     message: str = "release; $(touch /tmp/must-not-run) ' quoted",
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return publication.prepare_publication(
         stage,
         tmp_path / "ledger.json",
@@ -131,7 +134,7 @@ def test_dry_run_is_default_and_metacharacters_remain_one_argv_element(
             "kaggle",
             "datasets",
             "download",
-            f"{RUNTIME_GENERATOR_DATASET_ID}/versions/7",
+            f"{RUNTIME_GENERATOR_DATASET_ID}/7",
             "--path",
             "{ROLLBACK_STAGE_DIR}",
             "--unzip",
@@ -281,7 +284,7 @@ def test_successful_live_state_machine_mutates_once_then_records_exact_readback(
         )
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-    def fake_readback(expected_stage: Path, **kwargs: object) -> dict[str, object]:
+    def fake_readback(expected_stage: Path, **kwargs: object) -> dict[str, Any]:
         assert mutation_stage is not None
         assert expected_stage.resolve() == mutation_stage.resolve()
         assert kwargs["version_number"] == 8
@@ -462,7 +465,7 @@ def test_kaggle_subprocess_environment_is_allowlisted() -> None:
 def test_kaggle_runner_uses_current_python_module_and_never_a_shell(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_subprocess_run(argv: list[str], **kwargs: object):
         captured["argv"] = argv
@@ -543,6 +546,47 @@ def test_kernel_push_dry_run_uses_allowlisted_argv_and_rejects_injection(
         )
 
 
+def test_ledger_accepts_legacy_url_version_handles(tmp_path: Path) -> None:
+    stage = _runtime_stage(tmp_path)
+    result = _plan(tmp_path, stage)
+    entry = json.loads((tmp_path / "ledger.json").read_text(encoding="utf-8"))[
+        "entries"
+    ][0]
+    legacy = publication._publication_commands(
+        kind="runtime",
+        action="version",
+        dataset_id=RUNTIME_GENERATOR_DATASET_ID,
+        expected_current_version=7,
+        published_version=8,
+        handle_style="legacy-url",
+    )
+    assert legacy["readbackListArgv"][3].endswith("/versions/8")
+    entry["commands"] = legacy
+    publication._validate_ledger_entry(entry)
+    assert result["commands"]["readbackListArgv"][3].endswith("/8")
+    assert "/versions/" not in result["commands"]["readbackListArgv"][3]
+
+
+def test_listed_publication_files_omit_kaggle_control_metadata() -> None:
+    expected = {
+        "dataset-metadata.json": {"path": "dataset-metadata.json", "bytes": 1},
+        "runtime-manifest.json": {"path": "runtime-manifest.json", "bytes": 2},
+        "openopps_kaggle/cli.py": {"path": "openopps_kaggle/cli.py", "bytes": 3},
+    }
+    listed = publication.listed_publication_files(expected)
+    assert set(listed) == {"runtime-manifest.json", "openopps_kaggle/cli.py"}
+
+
+def test_kaggle_cli_versioned_dataset_is_three_segments() -> None:
+    handle = publication.kaggle_cli_versioned_dataset("wyattowalsh/openoppsdb", 55)
+    assert handle.split("/") == ["wyattowalsh", "openoppsdb", "55"]
+    assert "versions" not in handle
+    with pytest.raises(publication.PublicationError, match="positive integer"):
+        publication.kaggle_cli_versioned_dataset("wyattowalsh/openoppsdb", 0)
+    with pytest.raises(publication.PublicationError, match="invalid Kaggle dataset ID"):
+        publication.kaggle_cli_versioned_dataset("not-a-dataset", 1)
+
+
 def test_manager_kernel_push_dry_run_stages_temp_path_with_head_sha(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -570,6 +614,42 @@ def test_manager_kernel_push_dry_run_stages_temp_path_with_head_sha(
     committed = (Path("kaggle") / "openoppsdb-manager.ipynb").read_text(encoding="utf-8")
     assert publication.IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER in committed
     assert package_spec not in committed
+
+
+def test_manager_kernel_bake_replaces_only_the_package_spec_default(
+    tmp_path: Path,
+) -> None:
+    package_spec = (
+        "git+https://github.com/wyattowalsh/openopps.git@"
+        "0123456789abcdef0123456789abcdef01234567"
+    )
+    stage = tmp_path / "manager"
+    publication._stage_manager_kernel_bundle(stage, package_spec)
+    staged_nb = json.loads((stage / "openoppsdb-manager.ipynb").read_text(encoding="utf-8"))
+    staged = "".join(
+        "".join(cell.get("source", [])) for cell in staged_nb.get("cells", [])
+    )
+    committed = (Path("kaggle") / "openoppsdb-manager.ipynb").read_text(encoding="utf-8")
+
+    assert staged.count(publication.IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER) == 2
+    assert publication.IMMUTABLE_PACKAGE_SPEC_DEFAULT_SNIPPET not in staged
+    assert f'"{package_spec}",' in staged
+    assert 'PACKAGE_SPEC != "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__"' in staged
+    assert 'env_value != "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__"' in staged
+    assert publication.IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER in committed
+    assert package_spec not in committed
+
+
+def test_manager_kernel_bake_rejects_missing_default_snippet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kaggle_dir = tmp_path / "kaggle"
+    kaggle_dir.mkdir()
+    (kaggle_dir / "kernel-metadata.json").write_text("{}", encoding="utf-8")
+    (kaggle_dir / "openoppsdb-manager.ipynb").write_text("{}\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(publication.PublicationError, match="exactly one package-spec"):
+        publication._stage_manager_kernel_bundle(tmp_path / "stage", "git+unused")
 
 
 def test_manager_kernel_push_execute_refuses_dirty_generated_notebook(

@@ -40,12 +40,18 @@ from openopps_kaggle.constants import (
 KAGGLE_CLI_VERSION = "2.2.4"
 IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER = "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__"
 IMMUTABLE_PACKAGE_SPEC_PREFIX = "git+https://github.com/wyattowalsh/openopps.git@"
+IMMUTABLE_PACKAGE_SPEC_DEFAULT_SNIPPET = f'"{IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER}",'
+IMMUTABLE_PACKAGE_SPEC_IPYNB_DEFAULT_SNIPPET = (
+    f'\\"{IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER}\\",'
+)
 MANAGER_KERNEL_FILES = ("kernel-metadata.json", NB_FILE)
 LEDGER_SCHEMA_VERSION = 1
 MAX_LEDGER_ENTRIES = 100
 MAX_LEDGER_BYTES = 8 * 1024 * 1024
 MAX_CONTROL_JSON_BYTES = 16 * 1024 * 1024
 MAX_KAGGLE_FILES = 200
+# Kaggle consumes this at upload time and does not list or download it as a file.
+KAGGLE_DATASETS_UNLISTED_FILES = frozenset({"dataset-metadata.json"})
 DEFAULT_LEDGER_PATH = Path("var/kaggle-publication-ledger.json")
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -491,7 +497,8 @@ def verify_remote_readback(
 
     expected = verify_publication_stage(expected_stage, kind=kind)
     expected_files = {item["path"]: item for item in expected["files"]}
-    version_handle = f"{_validated_dataset_id(dataset_id)}/versions/{version_number}"
+    expected_listed = listed_publication_files(expected_files)
+    version_handle = kaggle_cli_versioned_dataset(dataset_id, version_number)
     listing = _run_kaggle(
         [
             "datasets",
@@ -511,13 +518,13 @@ def verify_remote_readback(
         )
     remote_files = _parse_file_listing(listing.stdout)
     remote_map = {item["name"]: item for item in remote_files}
-    if set(remote_map) != set(expected_files):
+    if set(remote_map) != set(expected_listed):
         raise PublicationError(
             "Kaggle readback file set mismatch: "
-            f"missing={sorted(set(expected_files) - set(remote_map))} "
-            f"extra={sorted(set(remote_map) - set(expected_files))}"
+            f"missing={sorted(set(expected_listed) - set(remote_map))} "
+            f"extra={sorted(set(remote_map) - set(expected_listed))}"
         )
-    for relative_path, item in expected_files.items():
+    for relative_path, item in expected_listed.items():
         if int(remote_map[relative_path]["size"]) != int(item["bytes"]):
             raise PublicationError(
                 f"Kaggle readback size mismatch for {relative_path}: "
@@ -528,6 +535,9 @@ def verify_remote_readback(
     with tempfile.TemporaryDirectory(prefix="openopps-kaggle-readback-") as raw_tmp:
         readback_root = Path(raw_tmp)
         for relative_path, expected_item in sorted(expected_files.items()):
+            if relative_path in KAGGLE_DATASETS_UNLISTED_FILES:
+                read_files.append(dict(expected_item))
+                continue
             _clear_directory(readback_root)
             completed = _run_kaggle(
                 [
@@ -645,14 +655,27 @@ def _stage_manager_kernel_bundle(stage_dir: Path, package_spec: str) -> None:
         shutil.copy2(source, stage_dir / name)
     notebook_path = stage_dir / NB_FILE
     rendered = notebook_path.read_text(encoding="utf-8")
-    if IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER not in rendered:
+    default_hits = rendered.count(IMMUTABLE_PACKAGE_SPEC_IPYNB_DEFAULT_SNIPPET)
+    placeholder_hits = rendered.count(IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER)
+    if default_hits != 1 or placeholder_hits < 3:
         raise PublicationError(
-            "manager notebook is missing the immutable package-spec placeholder"
+            "manager notebook must contain exactly one package-spec default "
+            "assignment and keep the load-secret sentinels as the placeholder"
         )
-    notebook_path.write_text(
-        rendered.replace(IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER, package_spec),
-        encoding="utf-8",
+    baked = rendered.replace(
+        IMMUTABLE_PACKAGE_SPEC_IPYNB_DEFAULT_SNIPPET,
+        f'\\"{package_spec}\\",',
+        1,
     )
+    if (
+        baked.count(IMMUTABLE_PACKAGE_SPEC_PLACEHOLDER) != placeholder_hits - 1
+        or package_spec not in baked
+        or IMMUTABLE_PACKAGE_SPEC_IPYNB_DEFAULT_SNIPPET in baked
+    ):
+        raise PublicationError(
+            "manager kernel bake must replace only the package-spec default"
+        )
+    notebook_path.write_text(baked, encoding="utf-8")
 
 
 def run_kernel_push(
@@ -945,6 +968,29 @@ def _validated_dataset_id(value: str) -> str:
     return value
 
 
+def listed_publication_files(expected_files: Mapping[str, Any]) -> dict[str, Any]:
+    """Return staged files that Kaggle exposes through `datasets files`."""
+
+    return {
+        path: item
+        for path, item in expected_files.items()
+        if path not in KAGGLE_DATASETS_UNLISTED_FILES
+    }
+
+
+def kaggle_cli_versioned_dataset(dataset_id: str, version_number: int) -> str:
+    """Return the pinned-CLI handle `{owner}/{slug}/{version}` (not `/versions/N`)."""
+
+    validated = _validated_dataset_id(dataset_id)
+    try:
+        version = int(version_number)
+    except (TypeError, ValueError) as exc:
+        raise PublicationError("dataset version must be a positive integer") from exc
+    if version < 1:
+        raise PublicationError("dataset version must be a positive integer")
+    return f"{validated}/{version}"
+
+
 def _validated_choice(value: str, allowed: set[str], label: str) -> str:
     if value not in allowed:
         raise PublicationError(f"{label} must be one of {sorted(allowed)!r}")
@@ -978,6 +1024,23 @@ def _required_int(value: int | None) -> int:
     return value
 
 
+def _dataset_version_handle(
+    dataset_id: str, version_number: int, *, style: str = "cli"
+) -> str:
+    if style == "legacy-url":
+        validated = _validated_dataset_id(dataset_id)
+        try:
+            version = int(version_number)
+        except (TypeError, ValueError) as exc:
+            raise PublicationError("dataset version must be a positive integer") from exc
+        if version < 1:
+            raise PublicationError("dataset version must be a positive integer")
+        return f"{validated}/versions/{version}"
+    if style != "cli":
+        raise PublicationError(f"unsupported dataset version handle style: {style!r}")
+    return kaggle_cli_versioned_dataset(dataset_id, version_number)
+
+
 def _publication_commands(
     *,
     kind: str,
@@ -985,6 +1048,7 @@ def _publication_commands(
     dataset_id: str,
     expected_current_version: int | None,
     published_version: int,
+    handle_style: str = "cli",
 ) -> dict[str, Any]:
     mutation = ["kaggle", "datasets", action, "--path", "{STAGE_DIR}"]
     if action == "create" and kind == "public":
@@ -992,10 +1056,14 @@ def _publication_commands(
     else:
         mutation.extend(["--message", "{MESSAGE}"])
     mutation.extend(["--quiet", "--keep-tabular", "--dir-mode", "zip"])
-    readback_handle = f"{dataset_id}/versions/{published_version}"
+    readback_handle = _dataset_version_handle(
+        dataset_id, published_version, style=handle_style
+    )
     rollback: dict[str, Any] | None = None
     if expected_current_version is not None:
-        rollback_handle = f"{dataset_id}/versions/{expected_current_version}"
+        rollback_handle = _dataset_version_handle(
+            dataset_id, expected_current_version, style=handle_style
+        )
         rollback = {
             "targetVersion": expected_current_version,
             "downloadArgv": [
@@ -1354,14 +1422,24 @@ def _validate_ledger_entry(entry: object) -> None:
         or not 1 <= message_bytes <= 200
     ):
         raise PublicationError("publication ledger message length is invalid")
-    expected_commands = _publication_commands(
-        kind=kind,
-        action=action,
-        dataset_id=dataset_id,
-        expected_current_version=expected_current,
-        published_version=expected_published,
+    allowed_commands = (
+        _publication_commands(
+            kind=kind,
+            action=action,
+            dataset_id=dataset_id,
+            expected_current_version=expected_current,
+            published_version=expected_published,
+        ),
+        _publication_commands(
+            kind=kind,
+            action=action,
+            dataset_id=dataset_id,
+            expected_current_version=expected_current,
+            published_version=expected_published,
+            handle_style="legacy-url",
+        ),
     )
-    if entry_map.get("commands") != expected_commands:
+    if entry_map.get("commands") not in allowed_commands:
         raise PublicationError("publication ledger commands are inconsistent")
     if entry_map.get("phase") not in {
         "staged",

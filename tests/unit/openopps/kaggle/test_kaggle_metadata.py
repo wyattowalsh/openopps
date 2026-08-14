@@ -10,15 +10,16 @@ import sqlite3
 import struct
 import sys
 import types
+from typing import Any
 
 import pytest
 
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
-import openopps_kaggle._core as core
-import openopps_kaggle.generator as gen
-import openopps_kaggle.verify_notebooks as pullback
+import openopps_kaggle._core as core  # ty: ignore[unresolved-import]
+import openopps_kaggle.generator as gen  # ty: ignore[unresolved-import]
+import openopps_kaggle.verify_notebooks as pullback  # ty: ignore[unresolved-import]
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "openopps_kaggle" / "_core.py"
@@ -46,6 +47,7 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert "public file surface is intentionally limited" in metadata["description"]
     assert "openoppsdb-manager" in metadata["description"]
     assert "bounded `openopps jobs sync" in metadata["description"]
+    assert "skips `openopps jobs sync`" in metadata["description"]
     assert "openopps sync --metrics-json" not in metadata["description"]
     assert "Quick start" in metadata["description"]
     assert gen.DB_FILE in metadata["description"]
@@ -174,6 +176,8 @@ def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
     assert "just kaggle-runtime-generator-version" in operations
     assert "kaggle-runtime-generator-create" in readme
     assert "kaggle-runtime-generator-create" in operations
+    assert "skips `openopps jobs sync`" in readme
+    assert "skips `openopps jobs sync`" in operations
     assert "kaggle auth print-access-token" not in spec
     assert "kaggle auth login" in spec
     assert "runtime generator create/version recipe" in spec
@@ -306,6 +310,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
 
     assert "0 6 * * *" in source
     assert "0 */6 * * *" not in source
+    assert "skips `openopps jobs sync`" in source
     assert gen.DATASET_ID in source
     assert "git+https://github.com/wyattowalsh/openopps.git@main" not in source
     assert "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__" in source
@@ -804,6 +809,29 @@ def test_manager_notebook_rehydrates_pre_0004_job_sync_runs(
                 0,
             ),
         )
+        conn.execute(
+            """
+            INSERT INTO job_sync_runs (
+                id, board_key, provider_id, synced_at, success, error, job_count,
+                new_count, unchanged_count, changed_count, reopened_count,
+                closed_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "sync-run-legacy-unknown",
+                "board-1",
+                "greenhouse",
+                observed_at,
+                0,
+                None,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ),
+        )
         conn.commit()
 
     def run_locally(command, *, env=None, timeout_seconds=None) -> None:
@@ -848,6 +876,15 @@ def test_manager_notebook_rehydrates_pre_0004_job_sync_runs(
         observed_at,
         observed_at,
         "legacy_failure",
+        0,
+        0,
+        0,
+    )
+    assert rows["sync-run-legacy-unknown"] == (
+        "failed",
+        observed_at,
+        observed_at,
+        "unknown",
         0,
         0,
         0,
@@ -914,7 +951,7 @@ def test_manager_loads_package_spec_from_notebook_secret(
                 return package_spec
             raise RuntimeError(f"missing secret {name}")
 
-    fake_module = types.ModuleType("kaggle_secrets")
+    fake_module: Any = types.ModuleType("kaggle_secrets")
     fake_module.UserSecretsClient = lambda: FakeSecrets()
     monkeypatch.setitem(sys.modules, "kaggle_secrets", fake_module)
 
@@ -983,6 +1020,93 @@ def test_manager_skips_jobs_sync_for_synthetic_example_snapshot(
     assert metrics["skippedSyntheticExample"] is True
     assert metrics["jobSyncRuns"] == 1
     assert metrics["jobsPersisted"] == 1
+
+
+def _record_sync_calls(namespace: dict[str, Any]) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def capture_run_json(command, *args, **kwargs):
+        del args, kwargs
+        calls.append(list(command))
+        return {"name": "jobs.sync", "jobSyncRuns": 0, "jobsPersisted": 0}
+
+    namespace["run"] = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("run() must not be used when jobs sync is delegated to run_json")
+    )
+    namespace["run_json"] = capture_run_json
+    return calls
+
+
+def test_manager_runs_jobs_sync_for_real_https_source(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('acme', 'https://jobs.example.com', 'greenhouse')
+            """
+        )
+        conn.commit()
+    calls = _record_sync_calls(namespace)
+    namespace["run_sync_metrics"](
+        tmp_path / "sync_metrics.json",
+        env={"OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS": "86400"},
+        timeout_seconds=1,
+    )
+    assert calls
+    assert calls[0][:3] == ["openopps", "jobs", "sync"]
+
+
+def test_manager_runs_jobs_sync_for_mixed_example_and_real_sources(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES
+                ('example', 'example://openopps/synthetic', 'example'),
+                ('acme', 'https://jobs.example.com', 'greenhouse')
+            """
+        )
+        conn.commit()
+    calls = _record_sync_calls(namespace)
+    namespace["run_sync_metrics"](
+        tmp_path / "sync_metrics.json",
+        env={"OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS": "86400"},
+        timeout_seconds=1,
+    )
+    assert calls
+    assert calls[0][:3] == ["openopps", "jobs", "sync"]
+
+
+def test_manager_does_not_skip_jobs_sync_when_sources_are_empty(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    calls = _record_sync_calls(namespace)
+    namespace["run_sync_metrics"](
+        tmp_path / "sync_metrics.json",
+        env={"OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS": "86400"},
+        timeout_seconds=1,
+    )
+    assert calls
+    assert calls[0][:3] == ["openopps", "jobs", "sync"]
 
 
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
@@ -1848,6 +1972,10 @@ def test_kaggle_artifact_cleanup_drops_private_sqlite_tables(tmp_path: Path) -> 
         conn.execute("INSERT INTO http_cache_metadata VALUES ('schema', 'v1')")
         conn.execute("CREATE TABLE alembic_version (version_num TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO alembic_version VALUES ('0001')")
+        conn.execute("CREATE TABLE foo (id TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO foo VALUES ('extra')")
+        conn.execute("CREATE TABLE sources (key TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO sources VALUES ('keep')")
 
     gen._drop_private_sqlite_tables(db_path)
 
@@ -1861,6 +1989,8 @@ def test_kaggle_artifact_cleanup_drops_private_sqlite_tables(tmp_path: Path) -> 
     assert "http_cache" not in tables
     assert "http_cache_metadata" not in tables
     assert "alembic_version" not in tables
+    assert "foo" not in tables
+    assert "sources" in tables
 
 
 def test_skill_backfill_populates_legacy_sqlite_skill_tables(tmp_path: Path) -> None:
@@ -2338,7 +2468,7 @@ def test_generator_cli_stages_runtime_generator_and_exits(
         ],
     )
 
-    from openopps_kaggle.cli import main as cli_main
+    from openopps_kaggle.cli import main as cli_main  # ty: ignore[unresolved-import]
     cli_main()
 
     assert not output_dir.exists()
@@ -2576,7 +2706,7 @@ def test_generator_cli_orchestrates_manager_runtime_bundle(
     monkeypatch.setattr(core, "_write_manager_notebook", record("manager"))
     monkeypatch.setattr(core, "_write_starter_notebook", record("starter"))
 
-    import openopps_kaggle.cli as cli
+    import openopps_kaggle.cli as cli  # ty: ignore[unresolved-import]
 
     monkeypatch.setattr(cli, "_write_data_artifacts", record("data"))
     monkeypatch.setattr(cli, "_write_dataset_image", record("image"))
@@ -2627,7 +2757,7 @@ def test_generator_cli_orchestrates_manager_runtime_bundle(
         ],
     )
 
-    from openopps_kaggle.cli import main as cli_main
+    from openopps_kaggle.cli import main as cli_main  # ty: ignore[unresolved-import]
     cli_main()
 
     names = [name for name, _, _ in calls]
@@ -2700,9 +2830,9 @@ def test_live_file_metadata_can_use_kaggle_auth_repair(
         def build_kaggle_client(self) -> FakeKaggleClient:
             return FakeKaggleClient()
 
-    kaggle_api_module = types.ModuleType("kaggle.api.kaggle_api_extended")
+    kaggle_api_module: Any = types.ModuleType("kaggle.api.kaggle_api_extended")
     kaggle_api_module.KaggleApi = FakeKaggleApi
-    dataset_api_service_module = types.ModuleType(
+    dataset_api_service_module: Any = types.ModuleType(
         "kagglesdk.datasets.types.dataset_api_service"
     )
     dataset_api_service_module.ApiUpdateDatasetMetadataRequest = type(
@@ -2710,7 +2840,7 @@ def test_live_file_metadata_can_use_kaggle_auth_repair(
         (),
         {},
     )
-    dataset_types_module = types.ModuleType("kagglesdk.datasets.types.dataset_types")
+    dataset_types_module: Any = types.ModuleType("kagglesdk.datasets.types.dataset_types")
     dataset_types_module.DatasetSettings = type("DatasetSettings", (), {})
     dataset_types_module.DatasetSettingsFile = type("DatasetSettingsFile", (), {})
     dataset_types_module.DatasetSettingsFileColumn = type(
@@ -2825,9 +2955,9 @@ def test_live_file_metadata_skips_unauthenticated_kaggle_auth_after_official_upd
         def build_kaggle_client(self) -> FakeKaggleClient:
             return FakeKaggleClient()
 
-    kaggle_api_module = types.ModuleType("kaggle.api.kaggle_api_extended")
+    kaggle_api_module: Any = types.ModuleType("kaggle.api.kaggle_api_extended")
     kaggle_api_module.KaggleApi = FakeKaggleApi
-    dataset_api_service_module = types.ModuleType(
+    dataset_api_service_module: Any = types.ModuleType(
         "kagglesdk.datasets.types.dataset_api_service"
     )
     dataset_api_service_module.ApiUpdateDatasetMetadataRequest = type(
@@ -2835,7 +2965,7 @@ def test_live_file_metadata_skips_unauthenticated_kaggle_auth_after_official_upd
         (),
         {},
     )
-    dataset_types_module = types.ModuleType("kagglesdk.datasets.types.dataset_types")
+    dataset_types_module: Any = types.ModuleType("kagglesdk.datasets.types.dataset_types")
     dataset_types_module.DatasetSettings = type("DatasetSettings", (), {})
     dataset_types_module.DatasetSettingsFile = type("DatasetSettingsFile", (), {})
     dataset_types_module.DatasetSettingsFileColumn = type(
@@ -3590,10 +3720,10 @@ def _write_required_quality_files(output_dir: Path) -> None:
 def _notebook_setup_namespace(
     *,
     runtime_input: Path | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     setup_source = gen._notebook_setup_source()
     setup_defs = setup_source.split("\nrequire_kaggle_credentials()\n", 1)[0]
-    namespace: dict[str, object] = {}
+    namespace: dict[str, Any] = {}
     exec(setup_defs, namespace)
     if runtime_input is not None:
         namespace["KAGGLE_INPUT_DIR"] = runtime_input
