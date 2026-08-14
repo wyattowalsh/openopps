@@ -46,9 +46,7 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert "snapshot-quality.json" not in metadata["description"]
     assert "public file surface is intentionally limited" in metadata["description"]
     assert "openoppsdb-manager" in metadata["description"]
-    assert "bounded `openopps jobs sync" in metadata["description"]
-    assert "skips `openopps jobs sync`" in metadata["description"]
-    assert "openopps sync --metrics-json" not in metadata["description"]
+    assert "`openopps sync --metrics-json`" in metadata["description"]
     assert "Quick start" in metadata["description"]
     assert gen.DB_FILE in metadata["description"]
     assert "Parquet" in metadata["description"]
@@ -176,8 +174,8 @@ def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
     assert "just kaggle-runtime-generator-version" in operations
     assert "kaggle-runtime-generator-create" in readme
     assert "kaggle-runtime-generator-create" in operations
-    assert "skips `openopps jobs sync`" in readme
-    assert "skips `openopps jobs sync`" in operations
+    assert "openopps sync --metrics-json" in readme
+    assert "openopps sync --metrics-json" in operations
     assert "kaggle auth print-access-token" not in spec
     assert "kaggle auth login" in spec
     assert "runtime generator create/version recipe" in spec
@@ -310,7 +308,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
 
     assert "0 6 * * *" in source
     assert "0 */6 * * *" not in source
-    assert "skips `openopps jobs sync`" in source
+    assert "openopps sync --metrics-json" in source
     assert gen.DATASET_ID in source
     assert "git+https://github.com/wyattowalsh/openopps.git@main" not in source
     assert "__OPENOPPS_IMMUTABLE_PACKAGE_SPEC_REQUIRED__" in source
@@ -339,8 +337,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "Downloaded OpenOpps Kaggle runtime package is incompatible" in source
     assert "openopps.kaggle_metadata" not in source
     assert "rehydrates the public SQLite snapshot" in source
-    assert "bounded `openopps jobs sync" in source
-    assert "runs `openopps sync --metrics-json`" not in source
+    assert "`openopps sync --metrics-json`" in source
 
     assert "OPENOPPS_SYNC_ENV_DEFAULTS" in source
     assert "openopps_env.setdefault(key, value)" in source
@@ -469,12 +466,10 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "previous_status = kaggle_dataset_status()" in source
     assert "current_version_number" in source
     assert "expected_version = previous_version + 1" in source
-    assert '"jobs",' in source
+    assert '"openopps",' in source
     assert '"sync",' in source
-    assert '"--freshness-seconds",' in source
-    assert '"--limit",' in source
-    assert "def snapshot_is_synthetic_example_only(" in source
-    assert "Skipping jobs sync: public snapshot contains only the synthetic" in source
+    assert '"--metrics-json",' in source
+    assert "Running full OpenOpps snapshot" in source
     assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" in source
     assert "def require_kaggle_credentials()" in source
     assert gen.DB_FILE in source
@@ -959,7 +954,7 @@ def test_manager_loads_package_spec_from_notebook_secret(
     assert namespace["PACKAGE_SPEC"] == package_spec
 
 
-def test_manager_skips_jobs_sync_for_synthetic_example_snapshot(
+def test_manager_runs_full_openopps_sync_for_synthetic_example_snapshot(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -974,52 +969,15 @@ def test_manager_skips_jobs_sync_for_synthetic_example_snapshot(
             VALUES ('example', 'example://openopps/synthetic', 'example')
             """
         )
-        conn.execute(
-            """
-            INSERT INTO boards (key, source_key, remote_id, name)
-            VALUES ('example-board', 'example', 'board', 'Example')
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO jobs (
-                id, board_key, provider_id, remote_id, status,
-                first_seen_at, last_seen_at, synced_at
-            ) VALUES (
-                'job-1', 'example-board', 'greenhouse', '1', 'open',
-                '2026-06-16 12:00:00', '2026-06-16 12:00:00', '2026-06-16 12:00:00'
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO job_sync_runs (
-                id, board_key, provider_id, synced_at, success, job_count,
-                new_count, unchanged_count, changed_count, reopened_count,
-                closed_count, started_at, status, authoritative,
-                committed_batch_count
-            ) VALUES (
-                'run-1', 'example-board', 'greenhouse', '2026-06-16 12:00:00',
-                1, 1, 1, 0, 0, 0, 0, '2026-06-16 12:00:00', 'succeeded', 1, 1
-            )
-            """
-        )
         conn.commit()
-
-    def fail_run(*args, **kwargs) -> None:
-        raise AssertionError("jobs sync must not run for synthetic example snapshots")
-
-    namespace["run"] = fail_run
-    namespace["run_json"] = fail_run
-    metrics_path = tmp_path / "sync_metrics.json"
-    metrics = namespace["run_sync_metrics"](
-        metrics_path,
+    calls = _record_sync_calls(namespace)
+    namespace["run_sync_metrics"](
+        tmp_path / "sync_metrics.json",
         env={"OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS": "86400"},
         timeout_seconds=1,
     )
-    assert metrics["skippedSyntheticExample"] is True
-    assert metrics["jobSyncRuns"] == 1
-    assert metrics["jobsPersisted"] == 1
+    assert calls
+    assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
 def _record_sync_calls(namespace: dict[str, Any]) -> list[list[str]]:
@@ -1060,7 +1018,7 @@ def test_manager_runs_jobs_sync_for_real_https_source(
         timeout_seconds=1,
     )
     assert calls
-    assert calls[0][:3] == ["openopps", "jobs", "sync"]
+    assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
 def test_manager_runs_jobs_sync_for_mixed_example_and_real_sources(
@@ -1088,7 +1046,7 @@ def test_manager_runs_jobs_sync_for_mixed_example_and_real_sources(
         timeout_seconds=1,
     )
     assert calls
-    assert calls[0][:3] == ["openopps", "jobs", "sync"]
+    assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
 def test_manager_does_not_skip_jobs_sync_when_sources_are_empty(
@@ -1106,7 +1064,7 @@ def test_manager_does_not_skip_jobs_sync_when_sources_are_empty(
         timeout_seconds=1,
     )
     assert calls
-    assert calls[0][:3] == ["openopps", "jobs", "sync"]
+    assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:

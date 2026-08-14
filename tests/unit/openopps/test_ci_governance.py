@@ -321,7 +321,7 @@ def test_operator_docs_match_kaggle_and_offline_release_contract() -> None:
         assert "allow_no_rollback=1" in document
         assert "metadata repair" in document
         assert "separate" in document
-        assert "skips `openopps jobs sync`" in document
+        assert "openopps sync --metrics-json" in document
 
     public_release_docs = "\n".join(
         [
