@@ -3498,7 +3498,7 @@ OUTPUT_DIR = Path(
     )
 )
 DB_PATH = OUTPUT_DIR / "openoppsdb.sqlite"
-PUBLIC_UPLOAD_DIR = OUTPUT_DIR / "public-upload"
+PUBLIC_UPLOAD_DIR = OUTPUT_DIR.parent / "openoppsdb-public-upload"
 RUNTIME_PACKAGE_DIR = OUTPUT_DIR / "openopps_kaggle"
 RUNTIME_MANIFEST_PATH = OUTPUT_DIR / "runtime-manifest.json"
 GENERATOR_SCRIPT = RUNTIME_PACKAGE_DIR

@@ -408,6 +408,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "def try_run_openopps_kaggle(" in source
     assert "def emit_disk_usage(" in source
     assert "PUBLIC_UPLOAD_DIR" in source
+    assert "openoppsdb-public-upload" in source
     for flag in (
         "--data-db",
         "--sync-metrics",
