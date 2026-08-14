@@ -341,6 +341,10 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
 
     assert "OPENOPPS_SYNC_ENV_DEFAULTS" in source
     assert "openopps_env.setdefault(key, value)" in source
+    assert 'openopps_env.setdefault("OPENOPPS_CACHE_ENABLED", "true")' in source
+    assert 'openopps_env["OPENOPPS_CACHE_ENABLED"] = "false"' not in source
+    assert "def snapshot_non_example_job_count(" in source
+    assert "partialSyncTimeout" in source
     assert "OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS" in source
     assert f'"{gen.NOTEBOOK_SYNC_TIMEOUT_SECONDS}"' in source
     assert "timeout_seconds=KAGGLE_SYNC_TIMEOUT_SECONDS" in source
@@ -1065,6 +1069,101 @@ def test_manager_does_not_skip_jobs_sync_when_sources_are_empty(
     )
     assert calls
     assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
+
+
+def test_manager_continues_after_sync_timeout_when_non_example_jobs_exist(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    observed = "2026-06-16 12:00:00"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('a16z', 'https://jobs.example.com/a16z', 'consider_a16z')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (key, source_key, remote_id, name)
+            VALUES ('a16z:acme', 'a16z', 'acme', 'Acme')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                id, board_key, provider_id, remote_id, status,
+                first_seen_at, last_seen_at, synced_at
+            ) VALUES (
+                'a16z:acme:greenhouse:1', 'a16z:acme', 'greenhouse', '1', 'open',
+                ?, ?, ?
+            )
+            """,
+            (observed, observed, observed),
+        )
+        conn.execute(
+            """
+            INSERT INTO job_sync_runs (
+                id, board_key, provider_id, synced_at, success, job_count,
+                new_count, unchanged_count, changed_count, reopened_count,
+                closed_count, started_at, status, authoritative,
+                committed_batch_count
+            ) VALUES (
+                'run-real', 'a16z:acme', 'greenhouse', ?, 1, 1, 1, 0, 0, 0, 0,
+                ?, 'succeeded', 1, 1
+            )
+            """,
+            (observed, observed),
+        )
+        conn.commit()
+
+    def boom(*args, **kwargs):
+        del args, kwargs
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = boom
+    metrics = namespace["run_sync_metrics"](
+        tmp_path / "sync_metrics.json",
+        env={},
+        timeout_seconds=1,
+    )
+    assert metrics["partialSyncTimeout"] is True
+    assert metrics["jobsPersisted"] == 1
+    assert metrics["jobSyncRuns"] == 1
+
+
+def test_manager_reraises_sync_timeout_without_non_example_jobs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('example', 'example://openopps/synthetic', 'example')
+            """
+        )
+        conn.commit()
+
+    def boom(*args, **kwargs):
+        del args, kwargs
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = boom
+    with pytest.raises(TimeoutError, match="openopps sync"):
+        namespace["run_sync_metrics"](
+            tmp_path / "sync_metrics.json",
+            env={},
+            timeout_seconds=1,
+        )
 
 
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
