@@ -1,5 +1,5 @@
-
 """OpenOpps Kaggle implementation core."""
+
 from __future__ import annotations
 
 import base64
@@ -58,7 +58,6 @@ from openopps_kaggle.constants import (
     METADATA_TABLES,
     NB_FILE,
     NB_ID,
-    NOTEBOOK_JOB_ROUTE_LIMIT,
     NOTEBOOK_SYNC_ENV_DEFAULTS,
     NOTEBOOK_SYNC_TIMEOUT_SECONDS,
     OpenOppsColumnRow as OpenOppsColumnRow,
@@ -117,7 +116,10 @@ def _file_sha256(path: Path) -> str:
 
 @lru_cache(maxsize=1)
 def runtime_generator_script_sha256() -> str:
-    from openopps_kaggle.runtime_manifest import runtime_generator_script_sha256 as _pkg_sha
+    from openopps_kaggle.runtime_manifest import (
+        runtime_generator_script_sha256 as _pkg_sha,
+    )
+
     return _pkg_sha()
 
 
@@ -950,8 +952,16 @@ def _write_data_artifacts(
         _checkpoint_sqlite(build_db)
 
         _write_full_table_exports(output_dir, build_db)
-        from openopps_kaggle.bundle.disk import require_disk_headroom, MIN_FREE_BYTES_FOR_SQLITE_MUTATION
-        require_disk_headroom("before_sqlite_projection", min_free_bytes=MIN_FREE_BYTES_FOR_SQLITE_MUTATION, path=build_db.parent)
+        from openopps_kaggle.bundle.disk import (
+            require_disk_headroom,
+            MIN_FREE_BYTES_FOR_SQLITE_MUTATION,
+        )
+
+        require_disk_headroom(
+            "before_sqlite_projection",
+            min_free_bytes=MIN_FREE_BYTES_FOR_SQLITE_MUTATION,
+            path=build_db.parent,
+        )
         _project_sqlite_for_public_upload(build_db)
         _truncate_sqlite_text_for_public_upload(build_db)
         _normalize_sqlite_schema_for_public_upload(build_db)
@@ -2200,9 +2210,7 @@ def _public_snapshot_size_blockers(
     if db_path.is_file():
         size = db_path.stat().st_size
         if size > PUBLIC_SQLITE_MAX_BYTES:
-            blockers.append(
-                f"public_sqlite_oversize:{size}>{PUBLIC_SQLITE_MAX_BYTES}"
-            )
+            blockers.append(f"public_sqlite_oversize:{size}>{PUBLIC_SQLITE_MAX_BYTES}")
     exports_root = output_dir / "exports"
     if exports_root.is_dir():
         total = 0
@@ -2228,8 +2236,7 @@ def _job_versions_with_structured_skills(db_path: Path) -> int:
             if table_exists is None:
                 return 0
             columns = {
-                str(row[1])
-                for row in conn.execute("PRAGMA table_info('job_versions')")
+                str(row[1]) for row in conn.execute("PRAGMA table_info('job_versions')")
             }
             if "skills" not in columns:
                 return 0
@@ -2290,7 +2297,9 @@ def snapshot_quality_report(
     for issue in sqlite_report["duplicateErrors"]:
         hard_blockers.append(f"sqlite_duplicate_error:{issue}")
 
-    size_blockers = _public_snapshot_size_blockers(output_dir=output_dir, db_path=db_path)
+    size_blockers = _public_snapshot_size_blockers(
+        output_dir=output_dir, db_path=db_path
+    )
     hard_blockers.extend(size_blockers)
 
     status_counts = _nested_dict(status, "database", "counts")
@@ -2316,9 +2325,7 @@ def snapshot_quality_report(
     job_sync_runs = _int_count(
         sync_metrics.get("jobSyncRuns"), sqlite_counts.get("successfulJobSyncRuns")
     )
-    job_sync_attempts = _int_count(
-        sync_metrics.get("jobSyncAttempts"), job_sync_runs
-    )
+    job_sync_attempts = _int_count(sync_metrics.get("jobSyncAttempts"), job_sync_runs)
     jobs_persisted = _int_count(sync_metrics.get("jobsPersisted"), persisted_jobs)
     provider_errors = _dict_value(sync_metrics.get("providerErrors"))
     provider_error_details = _dict_value(sync_metrics.get("providerErrorDetails"))
@@ -2364,8 +2371,14 @@ def snapshot_quality_report(
     ):
         hard_blockers.append("dominant_provider_failures")
 
-    if job_sync_attempts > job_sync_runs and "dominant_provider_failures" not in hard_blockers:
+    if (
+        job_sync_attempts > job_sync_runs
+        and "dominant_provider_failures" not in hard_blockers
+    ):
         warnings.append("incomplete_job_sync_attempts")
+
+    if sync_metrics.get("partialSyncTimeout") is True:
+        warnings.append("partial_sync_timeout")
 
     if provider_errors and not any(
         blocker.startswith("unclassified_provider_errors")
@@ -2413,6 +2426,9 @@ def snapshot_quality_report(
                 "jobSyncAttempts",
                 "jobSyncRuns",
                 "jobsDeduped",
+                "partialSyncTimeout",
+                "reconstructedFromDurableRuns",
+                "timeoutSeconds",
                 "skipped",
                 "duplicateRoutesSkipped",
                 "retries",
@@ -2660,6 +2676,7 @@ def _path_is_relative_to(path: Path, parent: Path) -> bool:
 
 def _stage_runtime_generator_dir(upload_dir: Path) -> None:
     from openopps_kaggle.runtime_manifest import stage_runtime_package
+
     stage_runtime_package(upload_dir)
 
 
@@ -3589,12 +3606,8 @@ KAGGLE_SYNC_TIMEOUT_SECONDS = float(
         "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
     )
 )
-KAGGLE_JOB_ROUTE_LIMIT = int(
-    os.environ.get(
-        "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT",
-        "__OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT__",
-    )
-)
+KAGGLE_TIMEOUT_EVIDENCE_MAX_RUNS = 100_000
+KAGGLE_TIMEOUT_EVIDENCE_MAX_JOBS = 2_000_000
 KAGGLE_METADATA_WAIT_SECONDS = float(
     os.environ.get("OPENOPPS_KAGGLE_METADATA_WAIT_SECONDS", "120")
 )
@@ -4236,7 +4249,9 @@ def emit_disk_usage(label: str, path: Path = OUTPUT_DIR) -> None:
     )
 
 
-def snapshot_non_example_job_count(db_path: Path) -> int:
+def snapshot_job_sync_run_high_water(db_path: Path) -> int:
+    # The managed sync appends runs and does not VACUUM or rebuild this table.
+    # Keep that invariant if this rowid watermark is reused elsewhere.
     if not db_path.exists():
         return 0
     with sqlite3.connect(db_path) as conn:
@@ -4246,19 +4261,194 @@ def snapshot_non_example_job_count(db_path: Path) -> int:
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
-        if not {"jobs", "boards", "sources"} <= tables:
+        if "job_sync_runs" not in tables:
             return 0
         return int(
-            conn.execute(
-                "SELECT count(*) FROM jobs "
-                "WHERE board_key IN ("
-                "SELECT b.key FROM boards b "
-                "JOIN sources s ON s.key = b.source_key "
-                "WHERE s.key != 'example' "
-                "AND ifnull(s.url, '') NOT LIKE 'example://%'"
-                ")"
-            ).fetchone()[0]
+            conn.execute("SELECT coalesce(max(rowid), 0) FROM job_sync_runs").fetchone()[
+                0
+            ]
         )
+
+
+def _sqlite_utc_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _strict_nonnegative_sqlite_int(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return None
+    return value
+
+
+def partial_timeout_sync_metrics(
+    db_path: Path,
+    *,
+    baseline_run_rowid: int,
+    invocation_started_at: datetime,
+    timeout_seconds: float | None,
+) -> dict:
+    if not db_path.exists():
+        return {}
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        required_tables = {
+            "boards",
+            "jobs",
+            "job_sync_observations",
+            "job_sync_runs",
+            "sources",
+        }
+        if not required_tables <= tables:
+            return {}
+        run_rows = [
+            row
+            for row in conn.execute(
+                "SELECT r.rowid AS run_rowid, r.id, r.provider_id, r.status, "
+                "r.success, r.authoritative, r.committed_batch_count, "
+                "r.job_count, r.started_at, r.finished_at, r.error_kind "
+                "FROM job_sync_runs r "
+                "JOIN boards b ON b.key = r.board_key "
+                "JOIN sources s ON s.key = b.source_key "
+                "WHERE r.rowid > ? "
+                "AND s.key != 'example' "
+                "AND ifnull(s.url, '') NOT LIKE 'example://%' "
+                "LIMIT ?",
+                (baseline_run_rowid, KAGGLE_TIMEOUT_EVIDENCE_MAX_RUNS + 1),
+            )
+        ]
+        if len(run_rows) > KAGGLE_TIMEOUT_EVIDENCE_MAX_RUNS:
+            return {}
+        claimed_job_count = 0
+        for row in run_rows:
+            job_count = _strict_nonnegative_sqlite_int(row["job_count"])
+            if job_count is not None:
+                claimed_job_count += job_count
+            if claimed_job_count > KAGGLE_TIMEOUT_EVIDENCE_MAX_JOBS:
+                return {}
+        fresh_run_ids = {str(row["id"]) for row in run_rows}
+        fetched_jobs_by_run: dict[str, set[str]] = {
+            run_id: set() for run_id in fresh_run_ids
+        }
+        sorted_run_ids = sorted(fresh_run_ids)
+        for offset in range(0, len(sorted_run_ids), 500):
+            run_id_batch = sorted_run_ids[offset : offset + 500]
+            placeholders = ", ".join("?" for _ in run_id_batch)
+            for row in conn.execute(
+                "SELECT o.sync_run_id, o.job_id "
+                "FROM job_sync_observations o "
+                "JOIN jobs j ON j.id = o.job_id "
+                f"WHERE o.sync_run_id IN ({placeholders}) "
+                "AND o.observation_kind != 'closed'",
+                run_id_batch,
+            ):
+                run_id = str(row["sync_run_id"])
+                job_id = str(row["job_id"])
+                if run_id and job_id:
+                    fetched_jobs_by_run[run_id].add(job_id)
+
+    invocation_started_at = invocation_started_at.astimezone(UTC)
+    evidence_observed_at = datetime.now(UTC)
+    successful_run_ids: set[str] = set()
+    continuation_run_ids: set[str] = set()
+    durable_job_counts: dict[str, int] = {}
+    invalid_reasons: dict[str, str] = {}
+    for row in run_rows:
+        run_id = str(row["id"] or "").strip()
+        started_at = _sqlite_utc_datetime(row["started_at"])
+        finished_at = _sqlite_utc_datetime(row["finished_at"])
+        committed_batch_count = _strict_nonnegative_sqlite_int(
+            row["committed_batch_count"]
+        )
+        job_count = _strict_nonnegative_sqlite_int(row["job_count"])
+        fetched_job_count = len(fetched_jobs_by_run.get(run_id, set()))
+        evidence_is_consistent = (
+            bool(run_id)
+            and started_at is not None
+            and started_at >= invocation_started_at
+            and finished_at is not None
+            and finished_at >= started_at
+            and finished_at <= evidence_observed_at
+            and committed_batch_count is not None
+            and job_count is not None
+            and fetched_job_count == job_count
+            and (
+                (job_count == 0 and committed_batch_count == 0)
+                or (job_count > 0 and committed_batch_count > 0)
+            )
+        )
+        run_is_successful = (
+            evidence_is_consistent
+            and row["status"] == "succeeded"
+            and row["success"] == 1
+            and row["authoritative"] == 1
+            and row["error_kind"] is None
+        )
+        if evidence_is_consistent and job_count is not None:
+            durable_job_counts[run_id] = job_count
+        if run_is_successful:
+            successful_run_ids.add(run_id)
+            if job_count and fetched_job_count:
+                continuation_run_ids.add(run_id)
+        elif not evidence_is_consistent:
+            invalid_reasons[run_id] = "inconsistent_run_evidence"
+
+    if not continuation_run_ids:
+        return {}
+
+    provider_errors: dict[str, int] = {}
+    provider_error_details: dict[str, dict[str, int]] = {}
+    for row in run_rows:
+        run_id = str(row["id"])
+        if run_id in successful_run_ids:
+            continue
+        provider_id = str(row["provider_id"] or "unknown")
+        if run_id in invalid_reasons:
+            reason = invalid_reasons[run_id]
+        elif row["error_kind"]:
+            reason = str(row["error_kind"])
+        elif row["status"] != "succeeded":
+            reason = str(row["status"] or "interrupted")
+        elif not bool(row["authoritative"]):
+            reason = "non_authoritative"
+        elif int(row["committed_batch_count"] or 0) <= 0:
+            reason = "uncommitted"
+        else:
+            reason = "unobserved"
+        provider_errors[provider_id] = provider_errors.get(provider_id, 0) + 1
+        details = provider_error_details.setdefault(provider_id, {})
+        details[reason] = details.get(reason, 0) + 1
+
+    data = {
+        "name": "sync",
+        "jobs": sum(durable_job_counts[run_id] for run_id in successful_run_ids),
+        "jobsPersisted": sum(durable_job_counts.values()),
+        "jobSyncAttempts": len(run_rows),
+        "jobSyncRuns": len(successful_run_ids),
+        "providerErrors": provider_errors,
+        "providerErrorDetails": provider_error_details,
+        "partialSyncTimeout": True,
+        "reconstructedFromDurableRuns": True,
+    }
+    if timeout_seconds is not None:
+        data["timeoutSeconds"] = timeout_seconds
+    return data
 
 
 def run_sync_metrics(
@@ -4271,6 +4461,8 @@ def run_sync_metrics(
         "Running full OpenOpps snapshot: openopps sync --metrics-json "
         "(packaged catalog sources, boards, then jobs)."
     )
+    baseline_run_rowid = snapshot_job_sync_run_high_water(DB_PATH)
+    invocation_started_at = datetime.now(UTC)
     try:
         return run_json(
             [
@@ -4283,34 +4475,19 @@ def run_sync_metrics(
             timeout_seconds=timeout_seconds,
         )
     except TimeoutError:
-        real_jobs = snapshot_non_example_job_count(DB_PATH)
-        if real_jobs <= 0:
+        data = partial_timeout_sync_metrics(
+            DB_PATH,
+            baseline_run_rowid=baseline_run_rowid,
+            invocation_started_at=invocation_started_at,
+            timeout_seconds=timeout_seconds,
+        )
+        if not data:
             raise
         print(
-            "Full sync timed out after writing "
-            f"{real_jobs} non-example jobs; continuing with the partial snapshot."
+            "Full sync timed out after this invocation completed "
+            f"{data['jobSyncRuns']} fresh authoritative job runs persisting "
+            f"{data['jobsPersisted']} jobs; continuing with the partial snapshot."
         )
-        with sqlite3.connect(DB_PATH) as conn:
-            successful_runs = int(
-                conn.execute(
-                    "SELECT count(*) FROM job_sync_runs WHERE success = 1"
-                ).fetchone()[0]
-            )
-            open_jobs = int(
-                conn.execute(
-                    "SELECT count(*) FROM jobs WHERE status = 'open'"
-                ).fetchone()[0]
-            )
-        data = {
-            "name": "sync",
-            "jobSyncRuns": successful_runs,
-            "jobSyncAttempts": successful_runs,
-            "jobsPersisted": open_jobs,
-            "jobsDeduped": 0,
-            "providerErrors": {},
-            "providerErrorDetails": {},
-            "partialSyncTimeout": True,
-        }
         output_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
         print(f"Wrote {output_path}")
         return data
@@ -4842,10 +5019,6 @@ copy_latest_input_db()
             "__OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS__",
             str(NOTEBOOK_SYNC_TIMEOUT_SECONDS),
         )
-        .replace(
-            "__OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT__",
-            str(NOTEBOOK_JOB_ROUTE_LIMIT),
-        )
     )
 
 
@@ -4910,8 +5083,7 @@ for key, value in OPENOPPS_SYNC_ENV_DEFAULTS.items():
 
 rehydrate_public_snapshot_for_openopps(openopps_env)
 run(["openopps", "admin", "db", "init"], env=openopps_env)
-print(f"OpenOpps bounded jobs sync timeout: {KAGGLE_SYNC_TIMEOUT_SECONDS:g}s")
-print(f"OpenOpps bounded jobs sync route limit: {KAGGLE_JOB_ROUTE_LIMIT}")
+print(f"OpenOpps full snapshot timeout: {KAGGLE_SYNC_TIMEOUT_SECONDS:g}s")
 sync_metrics = run_sync_metrics(
     OUTPUT_DIR / "sync_metrics.json",
     env=openopps_env,

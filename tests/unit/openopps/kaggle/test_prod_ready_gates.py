@@ -9,9 +9,9 @@ import pytest
 
 import openopps_kaggle.generator as gen
 from openopps_kaggle.constants import (
-    NOTEBOOK_JOB_ROUTE_LIMIT,
     PUBLIC_EXPORTS_MAX_BYTES,
     PUBLIC_SQLITE_MAX_BYTES,
+    NOTEBOOK_SYNC_TIMEOUT_SECONDS,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -32,31 +32,31 @@ def _write_quality_bundle(output_dir: Path) -> Path:
             )
             conn.execute(f"CREATE TABLE {_quote_identifier(table.name)} ({columns})")
         conn.execute(
-            f'INSERT INTO {_quote_identifier("sources")} '
+            f"INSERT INTO {_quote_identifier('sources')} "
             f"({_quote_identifier('key')}) VALUES (?)",
             ("source-1",),
         )
         conn.execute(
-            f'INSERT INTO {_quote_identifier("boards")} '
+            f"INSERT INTO {_quote_identifier('boards')} "
             f"({_quote_identifier('key')}, {_quote_identifier('source_key')}) "
             "VALUES (?, ?)",
             ("board-1", "source-1"),
         )
         conn.execute(
-            f'INSERT INTO {_quote_identifier("board_providers")} '
+            f"INSERT INTO {_quote_identifier('board_providers')} "
             f"({_quote_identifier('id')}, {_quote_identifier('source_key')}, "
             f"{_quote_identifier('board_key')}, {_quote_identifier('provider_id')}, "
             f"{_quote_identifier('support_level')}) VALUES (?, ?, ?, ?, ?)",
             ("route-1", "source-1", "board-1", "greenhouse", "jobs"),
         )
         conn.execute(
-            f'INSERT INTO {_quote_identifier("jobs")} '
+            f"INSERT INTO {_quote_identifier('jobs')} "
             f"({_quote_identifier('id')}, {_quote_identifier('board_key')}, "
             f"{_quote_identifier('status')}) VALUES (?, ?, ?)",
             ("job-1", "board-1", "open"),
         )
         conn.execute(
-            f'INSERT INTO {_quote_identifier("job_sync_runs")} '
+            f"INSERT INTO {_quote_identifier('job_sync_runs')} "
             f"({_quote_identifier('id')}, {_quote_identifier('board_key')}, "
             f"{_quote_identifier('success')}) VALUES (?, ?, ?)",
             ("sync-run-1", "board-1", 1),
@@ -65,8 +65,8 @@ def _write_quality_bundle(output_dir: Path) -> Path:
     return db_path
 
 
-def test_manager_sync_contract_is_bounded_jobs_sync() -> None:
-    """Manager notebook setup embeds bounded jobs sync (not unfiltered openopps sync)."""
+def test_manager_sync_contract_is_full_openopps_sync() -> None:
+    """Manager notebook setup embeds the full catalog-to-jobs snapshot command."""
     notebook = gen.notebook()
     notebook_source = "\n".join(
         line
@@ -79,17 +79,14 @@ def test_manager_sync_contract_is_bounded_jobs_sync() -> None:
     )
     setup_source = gen._notebook_setup_source()
     combined = notebook_source + "\n" + setup_source
+    compact_setup = "".join(setup_source.split())
 
     assert "--metrics-json" in combined
-    assert "--freshness-seconds" in combined
-    assert "--limit" in combined
-    # Embedded helper builds argv for jobs sync.
-    assert '"jobs"' in setup_source
-    assert '"sync"' in setup_source
-    assert "openopps jobs sync" in gen._dataset_description()
-    assert NOTEBOOK_JOB_ROUTE_LIMIT == 120
-    # Unfiltered full CLI sync is not the manager path.
-    assert "openopps\",\n            \"sync\",\n            \"--metrics-json\"" not in setup_source
+    assert '["openopps","sync","--metrics-json",]' in compact_setup
+    assert "openopps sync --metrics-json" in gen._dataset_description()
+    assert "bounded jobs sync" not in combined
+    assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" not in combined
+    assert NOTEBOOK_SYNC_TIMEOUT_SECONDS == 6000
 
 
 def test_public_upload_writer_hard_fails_legacy_sources_enabled(
@@ -128,8 +125,7 @@ def test_public_upload_writer_clean_db_integrity_ok(tmp_path: Path) -> None:
     with sqlite3.connect(public_db) as conn:
         integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
         cols = {
-            str(row[1])
-            for row in conn.execute("PRAGMA table_info(sources)").fetchall()
+            str(row[1]) for row in conn.execute("PRAGMA table_info(sources)").fetchall()
         }
     assert integrity == "ok"
     assert "enabled" not in cols
@@ -172,9 +168,7 @@ def test_snapshot_quality_blocks_oversize_sqlite(tmp_path: Path, monkeypatch) ->
         include_quality_file=False,
     )
     assert report["status"] == "fail"
-    assert any(
-        b.startswith("public_sqlite_oversize:") for b in report["hardBlockers"]
-    )
+    assert any(b.startswith("public_sqlite_oversize:") for b in report["hardBlockers"])
 
 
 def test_public_sqlite_max_bytes_constant_is_positive() -> None:
@@ -202,8 +196,8 @@ def test_fail_closed_publish_recipes_require_db_or_allow_stale() -> None:
     assert "--allow-stale" in version_block
     assert "args=(publication publish" in create_block
     assert "args=(publication publish" in version_block
-    assert '{{ kaggle }} datasets create' not in create_block
-    assert '{{ kaggle }} datasets version' not in version_block
+    assert "{{ kaggle }} datasets create" not in create_block
+    assert "{{ kaggle }} datasets version" not in version_block
 
 
 def test_web_search_index_requires_kaggle_sqlite_message() -> None:
@@ -217,13 +211,18 @@ def test_web_search_index_requires_kaggle_sqlite_message() -> None:
 
 def test_ci_kaggle_bundle_smoke_uses_pinned_canonical_just_recipe() -> None:
     """Artifacts CI installs pinned Just and invokes the shared local gate graph."""
-    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d" in workflow
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d"
+        in workflow
+    )
     assert "tool: just@1.56.0" in workflow
     assert "run: just ci-artifacts" in workflow
 
 
-def test_dataset_description_documents_size_and_bounded_sync() -> None:
+def test_dataset_description_documents_size_and_full_sync() -> None:
     description = gen._dataset_description()
-    assert "jobs sync" in description
-    assert "freshness-seconds" in description
+    assert "openopps sync --metrics-json" in description
+    assert "6000s budget" in description

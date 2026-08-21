@@ -1,15 +1,26 @@
 """OpenOpps Kaggle constants and schema tables."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 from pydantic import BaseModel, Field
 from openopps.models import (
-    BoardProviderRow, BoardRow, JobPayloadSnapshotRow, JobRow,
-    JobSyncObservationRow, JobSyncRunRow, JobVersionBulletRow,
-    JobVersionLocationRow, JobVersionRow, JobVersionSkillKeywordRow,
-    JobVersionSkillRow, SourceRow,
+    BoardProviderRow,
+    BoardRow,
+    JobPayloadSnapshotRow,
+    JobRow,
+    JobSyncObservationRow,
+    JobSyncRunRow,
+    JobVersionBulletRow,
+    JobVersionLocationRow,
+    JobVersionRow,
+    JobVersionSkillKeywordRow,
+    JobVersionSkillRow,
+    SourceRow,
 )
+
+
 @dataclass(frozen=True)
 class Table:
     name: str
@@ -306,7 +317,6 @@ NOTEBOOK_SYNC_ENV_DEFAULTS: dict[str, str] = {
     "OPENOPPS_RETRY_ATTEMPTS": "2",
 }
 NOTEBOOK_SYNC_TIMEOUT_SECONDS = 6000
-NOTEBOOK_JOB_ROUTE_LIMIT = 120
 
 # Public snapshot size budgets for quality gate (manager + local publish).
 # Full payload SQLite + dual exports are disk-heavy on Kaggle; fail closed above these.
@@ -456,10 +466,10 @@ EVIDENCE_RESOURCES: tuple[Resource, ...] = (
         name="sync_metrics",
         path=SYNC_METRICS_FILE,
         description=(
-            "JSON metrics emitted by the bounded manager command "
-            "`openopps jobs sync --metrics-json --freshness-seconds 86400 "
-            "--limit 120` (defaults; overridable via OPENOPPS_JOB_ROUTE_* env), "
-            "including provider error summaries."
+            "JSON metrics emitted by the full manager command "
+            "`openopps sync --metrics-json`, including post-launch fresh-window "
+            "provider errors and explicit partial-timeout evidence when the "
+            "bounded notebook runtime expires after fresh authoritative work."
         ),
         format="json",
         mediatype="application/json",

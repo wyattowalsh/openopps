@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import csv
+from datetime import UTC, datetime
 import hashlib
 import json
 import shutil
@@ -154,11 +155,11 @@ def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
     operations = (repo_root / "web/content/docs/operations.mdx").read_text(
         encoding="utf-8"
     )
-    spec = (
-        repo_root / "openspec/specs/release-workflows/spec.md"
-    ).read_text(encoding="utf-8")
+    spec = (repo_root / "openspec/specs/release-workflows/spec.md").read_text(
+        encoding="utf-8"
+    )
 
-    # Manager/Kaggle contract is single-sourced as bounded jobs sync.
+    # The bounded command is documented only as the faster local seed path.
     assert (
         "openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120"
         in readme
@@ -343,7 +344,8 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert "openopps_env.setdefault(key, value)" in source
     assert 'openopps_env.setdefault("OPENOPPS_CACHE_ENABLED", "true")' in source
     assert 'openopps_env["OPENOPPS_CACHE_ENABLED"] = "false"' not in source
-    assert "def snapshot_non_example_job_count(" in source
+    assert "def snapshot_job_sync_run_high_water(" in source
+    assert "def partial_timeout_sync_metrics(" in source
     assert "partialSyncTimeout" in source
     assert "OPENOPPS_KAGGLE_SYNC_TIMEOUT_SECONDS" in source
     assert f'"{gen.NOTEBOOK_SYNC_TIMEOUT_SECONDS}"' in source
@@ -474,7 +476,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert '"sync",' in source
     assert '"--metrics-json",' in source
     assert "Running full OpenOpps snapshot" in source
-    assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" in source
+    assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" not in source
     assert "def require_kaggle_credentials()" in source
     assert gen.DB_FILE in source
 
@@ -505,9 +507,9 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert download_fn.index("required_runtime_package_sha256()") < download_fn.index(
         "shutil.copytree"
     )
-    assert download_fn.index("digest = verify_runtime_package_manifest()") < download_fn.index(
-        '"-m", "openopps_kaggle", "--help"'
-    )
+    assert download_fn.index(
+        "digest = verify_runtime_package_manifest()"
+    ) < download_fn.index('"-m", "openopps_kaggle", "--help"')
     assert "runtime_probe_env()" in download_fn
     run_fn = source[
         source.index("def run_openopps_kaggle(") : source.index(
@@ -906,9 +908,7 @@ def test_manager_notebook_rehydrate_rejects_unmapped_missing_column(
         app_table_names=namespace["APP_TABLE_NAMES"],
     )
     keep = tuple(
-        column
-        for column in _PRE_0004_JOB_SYNC_RUN_COLUMNS
-        if column != "job_count"
+        column for column in _PRE_0004_JOB_SYNC_RUN_COLUMNS if column != "job_count"
     )
     _strip_job_sync_run_columns(db_path, keep)
 
@@ -993,13 +993,13 @@ def _record_sync_calls(namespace: dict[str, Any]) -> list[list[str]]:
         return {"name": "jobs.sync", "jobSyncRuns": 0, "jobsPersisted": 0}
 
     namespace["run"] = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("run() must not be used when jobs sync is delegated to run_json")
+        AssertionError("run() must not be used when full sync is delegated to run_json")
     )
     namespace["run_json"] = capture_run_json
     return calls
 
 
-def test_manager_runs_jobs_sync_for_real_https_source(
+def test_manager_runs_full_openopps_sync_for_real_https_source(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1025,7 +1025,7 @@ def test_manager_runs_jobs_sync_for_real_https_source(
     assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
-def test_manager_runs_jobs_sync_for_mixed_example_and_real_sources(
+def test_manager_runs_full_openopps_sync_for_mixed_example_and_real_sources(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1053,7 +1053,7 @@ def test_manager_runs_jobs_sync_for_mixed_example_and_real_sources(
     assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
-def test_manager_does_not_skip_jobs_sync_when_sources_are_empty(
+def test_manager_runs_full_openopps_sync_when_sources_are_empty(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1071,27 +1071,21 @@ def test_manager_does_not_skip_jobs_sync_when_sources_are_empty(
     assert calls[0][:3] == ["openopps", "sync", "--metrics-json"]
 
 
-def test_manager_continues_after_sync_timeout_when_non_example_jobs_exist(
-    tmp_path: Path,
-    monkeypatch,
+def _seed_timeout_job(
+    db_path: Path,
+    *,
+    source_key: str = "a16z",
+    source_url: str = "https://jobs.example.com/a16z",
 ) -> None:
-    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
-    namespace = _notebook_setup_namespace()
-    db_path: Path = namespace["DB_PATH"]
-    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
-    observed = "2026-06-16 12:00:00"
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            """
-            INSERT INTO sources (key, url, provider_id)
-            VALUES ('a16z', 'https://jobs.example.com/a16z', 'consider_a16z')
-            """
+            "INSERT INTO sources (key, url, provider_id) VALUES (?, ?, ?)",
+            (source_key, source_url, "consider_a16z"),
         )
         conn.execute(
-            """
-            INSERT INTO boards (key, source_key, remote_id, name)
-            VALUES ('a16z:acme', 'a16z', 'acme', 'Acme')
-            """
+            "INSERT INTO boards (key, source_key, remote_id, name) "
+            "VALUES ('a16z:acme', ?, 'acme', 'Acme')",
+            (source_key,),
         )
         conn.execute(
             """
@@ -1100,25 +1094,86 @@ def test_manager_continues_after_sync_timeout_when_non_example_jobs_exist(
                 first_seen_at, last_seen_at, synced_at
             ) VALUES (
                 'a16z:acme:greenhouse:1', 'a16z:acme', 'greenhouse', '1', 'open',
-                ?, ?, ?
+                '2026-06-16 12:00:00', '2026-06-16 12:00:00',
+                '2026-06-16 12:00:00'
             )
-            """,
-            (observed, observed, observed),
+            """
         )
+        conn.commit()
+
+
+def _insert_timeout_run(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    provider_id: str = "greenhouse",
+    status: str = "succeeded",
+    success: int = 1,
+    authoritative: int = 1,
+    committed_batch_count: int = 1,
+    job_count: int = 1,
+    finished: bool = True,
+    error_kind: str | None = None,
+    observe_job: bool = True,
+    observation_kind: str = "new",
+    observation_job_id: str = "a16z:acme:greenhouse:1",
+    observed_at: str | None = None,
+) -> None:
+    observed = observed_at or datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
+    conn.execute(
+        """
+        INSERT INTO job_sync_runs (
+            id, board_key, provider_id, synced_at, success, job_count,
+            new_count, unchanged_count, changed_count, reopened_count,
+            closed_count, started_at, finished_at, status, error_kind,
+            authoritative, committed_batch_count
+        ) VALUES (
+            ?, 'a16z:acme', ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?, ?, ?, ?
+        )
+        """,
+        (
+            run_id,
+            provider_id,
+            observed,
+            success,
+            job_count,
+            job_count,
+            observed,
+            observed if finished else None,
+            status,
+            error_kind,
+            authoritative,
+            committed_batch_count,
+        ),
+    )
+    if observe_job:
         conn.execute(
             """
-            INSERT INTO job_sync_runs (
-                id, board_key, provider_id, synced_at, success, job_count,
-                new_count, unchanged_count, changed_count, reopened_count,
-                closed_count, started_at, status, authoritative,
-                committed_batch_count
-            ) VALUES (
-                'run-real', 'a16z:acme', 'greenhouse', ?, 1, 1, 1, 0, 0, 0, 0,
-                ?, 'succeeded', 1, 1
-            )
+            INSERT INTO job_sync_observations (
+                id, sync_run_id, job_id, observation_kind, observed_at
+            ) VALUES (?, ?, ?, ?, ?)
             """,
-            (observed, observed),
+            (
+                f"observation-{run_id}",
+                run_id,
+                observation_job_id,
+                observation_kind,
+                observed,
+            ),
         )
+
+
+def test_manager_rejects_historical_only_evidence_after_sync_timeout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(db_path)
+    with sqlite3.connect(db_path) as conn:
+        _insert_timeout_run(conn, run_id="historical-run")
         conn.commit()
 
     def boom(*args, **kwargs):
@@ -1126,14 +1181,281 @@ def test_manager_continues_after_sync_timeout_when_non_example_jobs_exist(
         raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
 
     namespace["run_json"] = boom
+    metrics_path = tmp_path / "sync_metrics.json"
+    with pytest.raises(TimeoutError, match="openopps sync"):
+        namespace["run_sync_metrics"](
+            metrics_path,
+            env={},
+            timeout_seconds=1,
+        )
+    assert not metrics_path.exists()
+
+
+def test_manager_partial_timeout_metrics_are_invocation_scoped(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(db_path)
+    with sqlite3.connect(db_path) as conn:
+        _insert_timeout_run(conn, run_id="historical-run")
+        conn.commit()
+
+    def add_fresh_runs_then_timeout(*args, **kwargs):
+        del args, kwargs
+        with sqlite3.connect(db_path) as conn:
+            _insert_timeout_run(conn, run_id="fresh-success")
+            _insert_timeout_run(
+                conn,
+                run_id="fresh-rippling-failure",
+                provider_id="rippling",
+                status="failed",
+                success=0,
+                authoritative=0,
+                committed_batch_count=0,
+                job_count=0,
+                error_kind="http_status",
+                observe_job=False,
+            )
+            _insert_timeout_run(
+                conn,
+                run_id="fresh-workday-failure",
+                provider_id="workday",
+                status="failed",
+                success=0,
+                authoritative=0,
+                committed_batch_count=0,
+                job_count=0,
+                error_kind="pagination_incomplete",
+                observe_job=False,
+            )
+            conn.commit()
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = add_fresh_runs_then_timeout
+    metrics_path = tmp_path / "sync_metrics.json"
+    metrics = namespace["run_sync_metrics"](
+        metrics_path,
+        env={},
+        timeout_seconds=6000,
+    )
+
+    assert metrics == {
+        "name": "sync",
+        "jobs": 1,
+        "jobsPersisted": 1,
+        "jobSyncAttempts": 3,
+        "jobSyncRuns": 1,
+        "providerErrors": {"rippling": 1, "workday": 1},
+        "providerErrorDetails": {
+            "rippling": {"http_status": 1},
+            "workday": {"pagination_incomplete": 1},
+        },
+        "partialSyncTimeout": True,
+        "reconstructedFromDurableRuns": True,
+        "timeoutSeconds": 6000,
+    }
+    assert json.loads(metrics_path.read_text(encoding="utf-8")) == metrics
+
+
+def test_manager_partial_timeout_counts_successful_empty_run_without_error(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(db_path)
+
+    def add_successful_runs_then_timeout(*args, **kwargs):
+        del args, kwargs
+        with sqlite3.connect(db_path) as conn:
+            _insert_timeout_run(conn, run_id="fresh-with-job")
+            _insert_timeout_run(
+                conn,
+                run_id="fresh-empty",
+                committed_batch_count=0,
+                job_count=0,
+                observe_job=False,
+            )
+            conn.commit()
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = add_successful_runs_then_timeout
     metrics = namespace["run_sync_metrics"](
         tmp_path / "sync_metrics.json",
         env={},
-        timeout_seconds=1,
+        timeout_seconds=6000,
     )
-    assert metrics["partialSyncTimeout"] is True
+
+    assert metrics["jobs"] == 1
     assert metrics["jobsPersisted"] == 1
-    assert metrics["jobSyncRuns"] == 1
+    assert metrics["jobSyncAttempts"] == 2
+    assert metrics["jobSyncRuns"] == 2
+    assert metrics["providerErrors"] == {}
+    assert metrics["providerErrorDetails"] == {}
+
+
+def test_manager_partial_timeout_observation_batches_cross_sqlite_parameter_limit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(db_path)
+    baseline_run_rowid = namespace["snapshot_job_sync_run_high_water"](db_path)
+    invocation_started_at = datetime.now(UTC)
+
+    with sqlite3.connect(db_path) as conn:
+        for index in range(1001):
+            _insert_timeout_run(conn, run_id=f"fresh-batched-{index}")
+        conn.commit()
+
+    metrics = namespace["partial_timeout_sync_metrics"](
+        db_path,
+        baseline_run_rowid=baseline_run_rowid,
+        invocation_started_at=invocation_started_at,
+        timeout_seconds=6000,
+    )
+
+    assert metrics["jobs"] == 1001
+    assert metrics["jobsPersisted"] == 1001
+    assert metrics["jobSyncAttempts"] == 1001
+    assert metrics["jobSyncRuns"] == 1001
+    assert metrics["providerErrors"] == {}
+
+
+@pytest.mark.parametrize(
+    (
+        "status",
+        "success",
+        "authoritative",
+        "committed_batch_count",
+        "finished",
+        "observe_job",
+    ),
+    [
+        ("failed", 0, 0, 0, True, False),
+        ("succeeded", 1, 0, 1, True, True),
+        ("succeeded", 1, 1, 0, True, True),
+        ("succeeded", 1, 1, 1, False, True),
+        ("succeeded", 1, 1, 1, True, False),
+    ],
+)
+def test_manager_rejects_incomplete_fresh_timeout_evidence(
+    tmp_path: Path,
+    monkeypatch,
+    status: str,
+    success: int,
+    authoritative: int,
+    committed_batch_count: int,
+    finished: bool,
+    observe_job: bool,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(db_path)
+
+    def add_incomplete_run_then_timeout(*args, **kwargs):
+        del args, kwargs
+        with sqlite3.connect(db_path) as conn:
+            _insert_timeout_run(
+                conn,
+                run_id="fresh-incomplete",
+                status=status,
+                success=success,
+                authoritative=authoritative,
+                committed_batch_count=committed_batch_count,
+                finished=finished,
+                observe_job=observe_job,
+            )
+            conn.commit()
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = add_incomplete_run_then_timeout
+    with pytest.raises(TimeoutError, match="openopps sync"):
+        namespace["run_sync_metrics"](
+            tmp_path / "sync_metrics.json",
+            env={},
+            timeout_seconds=6000,
+        )
+
+
+@pytest.mark.parametrize(
+    "run_kwargs",
+    [
+        {"success": "truthy"},
+        {"authoritative": "truthy"},
+        {"job_count": 2},
+        {"observation_kind": "closed"},
+        {"observation_job_id": "missing-job"},
+        {"observed_at": "not-a-timestamp"},
+        {"observed_at": "2999-01-01 00:00:00"},
+    ],
+)
+def test_manager_rejects_type_confused_or_inconsistent_timeout_evidence(
+    tmp_path: Path,
+    monkeypatch,
+    run_kwargs: dict[str, Any],
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(db_path)
+
+    def add_inconsistent_run_then_timeout(*args, **kwargs):
+        del args, kwargs
+        with sqlite3.connect(db_path) as conn:
+            _insert_timeout_run(conn, run_id="fresh-inconsistent", **run_kwargs)
+            conn.commit()
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = add_inconsistent_run_then_timeout
+    with pytest.raises(TimeoutError, match="openopps sync"):
+        namespace["run_sync_metrics"](
+            tmp_path / "sync_metrics.json",
+            env={},
+            timeout_seconds=6000,
+        )
+
+
+def test_manager_rejects_fresh_example_source_timeout_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENOPPS_KAGGLE_OUTPUT_DIR", str(tmp_path / "openoppsdb"))
+    namespace = _notebook_setup_namespace()
+    db_path: Path = namespace["DB_PATH"]
+    OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}")).init_db()
+    _seed_timeout_job(
+        db_path,
+        source_key="example",
+        source_url="example://openopps/synthetic",
+    )
+
+    def add_example_run_then_timeout(*args, **kwargs):
+        del args, kwargs
+        with sqlite3.connect(db_path) as conn:
+            _insert_timeout_run(conn, run_id="fresh-example")
+            conn.commit()
+        raise TimeoutError("Command exceeded 6000s: openopps sync --metrics-json")
+
+    namespace["run_json"] = add_example_run_then_timeout
+    with pytest.raises(TimeoutError, match="openopps sync"):
+        namespace["run_sync_metrics"](
+            tmp_path / "sync_metrics.json",
+            env={},
+            timeout_seconds=6000,
+        )
 
 
 def test_manager_reraises_sync_timeout_without_non_example_jobs(
@@ -2025,7 +2347,9 @@ def test_kaggle_artifact_cleanup_drops_private_sqlite_tables(tmp_path: Path) -> 
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE http_cache (key TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO http_cache VALUES ('cached')")
-        conn.execute("CREATE TABLE http_cache_metadata (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute(
+            "CREATE TABLE http_cache_metadata (key TEXT PRIMARY KEY, value TEXT)"
+        )
         conn.execute("INSERT INTO http_cache_metadata VALUES ('schema', 'v1')")
         conn.execute("CREATE TABLE alembic_version (version_num TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO alembic_version VALUES ('0001')")
@@ -2405,10 +2729,9 @@ def test_public_upload_stage_replaces_prior_tool_owned_dir(tmp_path: Path) -> No
 
     gen._stage_public_upload_dir(bundle_dir, upload_dir)
 
-    assert (
-        (upload_dir / "dataset-metadata.json").read_text(encoding="utf-8")
-        == '{"updated": true}\n'
-    )
+    assert (upload_dir / "dataset-metadata.json").read_text(
+        encoding="utf-8"
+    ) == '{"updated": true}\n'
 
 
 def test_public_upload_stage_rejects_dataset_descendant(tmp_path: Path) -> None:
@@ -2481,7 +2804,10 @@ def test_runtime_generator_stage_is_minimal(tmp_path: Path) -> None:
 
     assert "dataset-metadata.json" in actual_files
     assert gen.RUNTIME_MANIFEST_FILE in actual_files
-    assert any(path.startswith(f"{gen.RUNTIME_GENERATOR_PACKAGE_DIR}/") for path in actual_files)
+    assert any(
+        path.startswith(f"{gen.RUNTIME_GENERATOR_PACKAGE_DIR}/")
+        for path in actual_files
+    )
     assert metadata["id"] == gen.RUNTIME_GENERATOR_DATASET_ID
     assert metadata["isPrivate"] is True
     assert metadata["licenses"] == [{"name": gen.DATASET_LICENSE}]
@@ -2526,11 +2852,16 @@ def test_generator_cli_stages_runtime_generator_and_exits(
     )
 
     from openopps_kaggle.cli import main as cli_main  # ty: ignore[unresolved-import]
+
     cli_main()
 
     assert not output_dir.exists()
     names = {path.name for path in upload_dir.iterdir()}
-    assert names >= {"dataset-metadata.json", gen.RUNTIME_MANIFEST_FILE, gen.RUNTIME_GENERATOR_PACKAGE_DIR}
+    assert names >= {
+        "dataset-metadata.json",
+        gen.RUNTIME_MANIFEST_FILE,
+        gen.RUNTIME_GENERATOR_PACKAGE_DIR,
+    }
 
 
 def test_manager_notebook_generator_probe_env_strips_kaggle_credentials(
@@ -2678,14 +3009,13 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     assert "--allow-stale" in justfile
     assert "--expected-current-version" in justfile
     assert "--allow-no-rollback" in justfile
-    assert "execute=\"0\"" in justfile
+    assert 'execute="0"' in justfile
     assert "kaggle-bundle-smoke:" in justfile
     assert "{{ kaggle }} datasets status wyattowalsh/openoppsdb" in justfile
     assert "--live-file-metadata-browser-cookies" in justfile
     assert (
         'kaggle-ops-gen := "PYTHONPATH=scripts uv run --frozen --group ops '
-        'python -m openopps_kaggle"'
-        in justfile
+        'python -m openopps_kaggle"' in justfile
     )
     assert '"browser-cookie3==0.20.1"' in pyproject
     assert "kagglehub-live-readback" in justfile
@@ -2815,6 +3145,7 @@ def test_generator_cli_orchestrates_manager_runtime_bundle(
     )
 
     from openopps_kaggle.cli import main as cli_main  # ty: ignore[unresolved-import]
+
     cli_main()
 
     names = [name for name, _, _ in calls]
@@ -2897,7 +3228,9 @@ def test_live_file_metadata_can_use_kaggle_auth_repair(
         (),
         {},
     )
-    dataset_types_module: Any = types.ModuleType("kagglesdk.datasets.types.dataset_types")
+    dataset_types_module: Any = types.ModuleType(
+        "kagglesdk.datasets.types.dataset_types"
+    )
     dataset_types_module.DatasetSettings = type("DatasetSettings", (), {})
     dataset_types_module.DatasetSettingsFile = type("DatasetSettingsFile", (), {})
     dataset_types_module.DatasetSettingsFileColumn = type(
@@ -3022,7 +3355,9 @@ def test_live_file_metadata_skips_unauthenticated_kaggle_auth_after_official_upd
         (),
         {},
     )
-    dataset_types_module: Any = types.ModuleType("kagglesdk.datasets.types.dataset_types")
+    dataset_types_module: Any = types.ModuleType(
+        "kagglesdk.datasets.types.dataset_types"
+    )
     dataset_types_module.DatasetSettings = type("DatasetSettings", (), {})
     dataset_types_module.DatasetSettingsFile = type("DatasetSettingsFile", (), {})
     dataset_types_module.DatasetSettingsFileColumn = type(
@@ -3384,6 +3719,37 @@ def test_snapshot_quality_report_passes_for_complete_snapshot(tmp_path: Path) ->
     assert report["status"] == "pass"
     assert report["hardBlockers"] == []
     assert report["counts"]["currentJobs"] == 1
+
+
+def test_snapshot_quality_report_preserves_partial_timeout_evidence(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_quality_bundle(tmp_path)
+    sync_metrics = _sync_metrics(
+        job_sync_attempts=3,
+        job_sync_runs=1,
+        provider_errors={"workday": 2},
+        provider_error_details={"workday": {"pagination_incomplete": 2}},
+    )
+    sync_metrics["partialSyncTimeout"] = True
+    sync_metrics["reconstructedFromDurableRuns"] = True
+    sync_metrics["timeoutSeconds"] = 6000
+
+    report = gen.snapshot_quality_report(
+        output_dir=tmp_path,
+        db_path=db_path,
+        sync_metrics=sync_metrics,
+        status=_status(),
+        coverage=_coverage(),
+    )
+
+    assert report["status"] == "pass"
+    assert "partial_sync_timeout" in report["warnings"]
+    assert report["metrics"]["partialSyncTimeout"] is True
+    assert report["metrics"]["reconstructedFromDurableRuns"] is True
+    assert report["metrics"]["timeoutSeconds"] == 6000
+    assert report["providerErrors"] == {"workday": 2}
+    assert report["providerErrorDetails"] == {"workday": {"pagination_incomplete": 2}}
 
 
 def test_snapshot_quality_report_passes_for_parquet_only_exports(
