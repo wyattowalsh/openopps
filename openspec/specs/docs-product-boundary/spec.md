@@ -38,3 +38,23 @@ Interactive docs features SHALL not require new hosted services, authenticated u
 - **WHEN** public search artifacts need to change
 - **THEN** maintainers regenerate artifacts through documented CLI and `just` recipes
 - **AND** the docs app consumes the regenerated committed files without coupling deploy to a live sync runtime
+
+### Requirement: Saved-search counts remain bounded
+
+The web jobs board SHALL refresh saved-search counts without transferring the complete result membership or fingerprint set.
+
+#### Scenario: A search matches the full dataset
+
+- **WHEN** the saved search is refreshed
+- **THEN** request and response stay within explicit API budgets
+- **AND** refresh work is batched, deduplicated, and abortable
+
+### Requirement: Saved-search persistence is transactional
+
+The web jobs board SHALL update visible saved-search state only after its IndexedDB transaction succeeds.
+
+#### Scenario: Storage aborts or exceeds quota
+
+- **WHEN** a saved-search mutation fails
+- **THEN** prior persisted and visible state remains authoritative
+- **AND** the failure is handled without an unhandled rejection or partial replace import

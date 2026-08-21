@@ -8,4 +8,4 @@
 - [x] Make local saved-search writes/imports transactional with upgrade and failure coverage.
 - [x] Regenerate package-derived web data and prove deterministic output.
 - [x] Run focused Python and web gates, OpenSpec validation, and CLI integration tests.
-- [ ] Wheel smoke, main CI on origin, both deployments, and production smoke (maintainer/release path).
+- [x] Wheel smoke, main CI on origin, both deployments, and production smoke (maintainer/release path).
