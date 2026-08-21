@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE fixture [<!ENTITY bounded "fixture">]>
+<fixture>&bounded;</fixture>
