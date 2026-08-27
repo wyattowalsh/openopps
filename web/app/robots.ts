@@ -5,6 +5,24 @@ import { siteUrl } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 
+const PUBLIC_SEARCH_AND_TRAINING_BOTS = [
+	"Googlebot",
+	"OAI-SearchBot",
+	"Claude-SearchBot",
+	"PerplexityBot",
+	"GPTBot",
+	"ClaudeBot",
+	"Google-Extended",
+] as const;
+
+function publicPageRules(userAgent: string) {
+	return {
+		userAgent,
+		allow: "/",
+		disallow: ["/api/"],
+	};
+}
+
 export default async function robots(): Promise<MetadataRoute.Robots> {
 	if (shouldNoIndexDeployment()) {
 		return {
@@ -23,12 +41,12 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
 	];
 	return {
 		rules: [
-			{
-				userAgent: "*",
-				allow: "/",
-				disallow: ["/api/"],
-			},
+			publicPageRules("*"),
+			...PUBLIC_SEARCH_AND_TRAINING_BOTS.map((userAgent) =>
+				publicPageRules(userAgent),
+			),
 		],
 		sitemap: sitemaps,
+		host: new URL(siteUrl).host,
 	};
 }
