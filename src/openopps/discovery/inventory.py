@@ -59,6 +59,17 @@ DEFAULT_SHARED_GENERATED_PATHS: Mapping[str, str] = MappingProxyType(
 DEFAULT_PACKAGED_CATALOG_PATH: Final = (
     "src/openopps/providers/sources/data/portfolio_source_catalog.json"
 )
+DEFAULT_DISCOVERY_OWNED_PATHS: Mapping[str, str] = MappingProxyType(
+    {
+        "decision": (
+            "src/openopps/discovery/data/discovery_promotion_policy_decision.json"
+        ),
+        "envelope": (
+            "src/openopps/discovery/data/approved_ingestion_selector_envelope.json"
+        ),
+        "ledger": "src/openopps/discovery/data/promotion_decision_ledger.jsonl",
+    }
+)
 
 _LOGICAL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
@@ -631,7 +642,7 @@ def read_default_repository_projection(
         )["public_selector"]
 
     owned_paths = (
-        {name: None for name in DISCOVERY_OWNED_IDENTITY_NAMES}
+        dict(DEFAULT_DISCOVERY_OWNED_PATHS)
         if discovery_owned_paths is None
         else discovery_owned_paths
     )

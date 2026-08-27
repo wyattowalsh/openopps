@@ -5,11 +5,20 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Literal
 from urllib.parse import urlsplit
 
-from openopps.discovery.models import CandidateIdentity, CandidateOccurrence
-from openopps.discovery.transport import validate_public_locator
+from openopps.discovery.canonical import canonical_json_bytes
+from openopps.discovery.models import (
+    CandidateIdentity,
+    CandidateOccurrence,
+    NormalizedCandidate,
+)
+from openopps.discovery.transport import (
+    DiscoveryTransportError,
+    validate_public_locator,
+)
 
 
 REQUIRED_TAXONOMY_FIELDS = (
@@ -29,6 +38,7 @@ class IdentityCollision:
     candidate_keys: tuple[str, ...]
     reasons: tuple[str, ...]
     resolved: bool = False
+    identities: tuple[CandidateIdentity, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +67,22 @@ class TaxonomyValidation:
     complete: bool
     missing_fields: tuple[str, ...]
     source_year: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class RawOccurrenceInput:
+    """Pre-normalization occurrence. Invalid locators stay in the invalid set."""
+
+    occurrence_id: str
+    channel: Literal["official", "public_code", "search", "targeted_ats"]
+    key: str
+    url: str
+    provider_id: str
+    owner: str
+    provenance_ids: tuple[str, ...]
+    provider_token: str | None = None
+    candidate_kind: Literal["source", "board_route", "dataset", "catalog"] = "source"
+    adapter_id: str | None = None
 
 
 def normalize_candidate_identity(
@@ -118,6 +144,11 @@ def _collision_reasons(
         and left.provider_token == right.provider_token
     ):
         reasons.append("provider_token")
+    if reasons:
+        if left.owner != right.owner:
+            reasons.append("owner")
+        if left.provider_id != right.provider_id:
+            reasons.append("provider")
     return tuple(reasons)
 
 
@@ -135,13 +166,21 @@ def resolve_candidate_identities(
     occurrences: Iterable[CandidateOccurrence],
     *,
     approved_catalog: Iterable[CandidateIdentity],
+    invalid_occurrence_ids: Iterable[str] = (),
 ) -> IdentityResolution:
     """Deduplicate exact identities and retain every ambiguous collision."""
 
     occurrence_values = tuple(occurrences)
     occurrence_ids = tuple(item.occurrence_id for item in occurrence_values)
+    invalid_ids = tuple(invalid_occurrence_ids)
     if len(set(occurrence_ids)) != len(occurrence_ids):
         raise ValueError("candidate occurrence IDs must be unique")
+    if any(not item for item in invalid_ids) or len(set(invalid_ids)) != len(
+        invalid_ids
+    ):
+        raise ValueError("invalid occurrence IDs must be unique")
+    if set(invalid_ids) & set(occurrence_ids):
+        raise ValueError("invalid occurrence IDs collide with normalized IDs")
     unique = tuple(
         sorted({item.identity for item in occurrence_values}, key=_identity_sort_key)
     )
@@ -190,6 +229,7 @@ def resolve_candidate_identities(
         IdentityCollision(
             candidate_keys=tuple(identity.key for identity in pair),
             reasons=tuple(sorted(reasons)),
+            identities=pair,
         )
         for pair, reasons in sorted(
             collision_reasons.items(),
@@ -201,8 +241,8 @@ def resolve_candidate_identities(
     promotable = tuple(identity for identity in candidates if identity not in collided)
     already_approved = sum(identity in approved_set for identity in unique)
     return IdentityResolution(
-        observed_occurrences=len(occurrence_values),
-        invalid_occurrences=0,
+        observed_occurrences=len(occurrence_values) + len(invalid_ids),
+        invalid_occurrences=len(invalid_ids),
         normalized_occurrences=len(occurrence_values),
         duplicate_occurrences=len(occurrence_values) - len(unique),
         unique_candidates=len(unique),
@@ -237,4 +277,78 @@ def validate_taxonomy(values: Mapping[str, object]) -> TaxonomyValidation:
         complete=not missing,
         missing_fields=missing,
         source_year=source_year,
+    )
+
+
+def admit_raw_occurrences(
+    records: Iterable[RawOccurrenceInput],
+) -> tuple[tuple[CandidateOccurrence, ...], tuple[str, ...]]:
+    """Normalize public locators; invalid records remain explicitly invalid."""
+
+    values = tuple(records)
+    ids = tuple(item.occurrence_id for item in values)
+    if any(not item for item in ids) or len(set(ids)) != len(ids):
+        raise ValueError("raw occurrence IDs must be unique")
+    valid: list[CandidateOccurrence] = []
+    invalid: list[str] = []
+    for item in values:
+        try:
+            identity = normalize_candidate_identity(
+                key=item.key,
+                url=item.url,
+                provider_id=item.provider_id,
+                provider_token=item.provider_token,
+                owner=item.owner,
+                candidate_kind=item.candidate_kind,
+                adapter_id=item.adapter_id,
+            )
+        except (ValueError, DiscoveryTransportError):
+            invalid.append(item.occurrence_id)
+            continue
+        valid.append(
+            CandidateOccurrence(
+                occurrence_id=item.occurrence_id,
+                channel=item.channel,
+                identity=identity,
+                provenance_ids=item.provenance_ids,
+            )
+        )
+    return tuple(valid), tuple(invalid)
+
+
+def candidate_identity_id(identity: CandidateIdentity) -> str:
+    """Stable content identity for one normalized candidate."""
+
+    payload = canonical_json_bytes(
+        identity.model_dump(mode="json", by_alias=True, round_trip=True)
+    )
+    return sha256(payload).hexdigest()
+
+
+def normalized_candidates_from_resolution(
+    resolution: IdentityResolution,
+) -> tuple[NormalizedCandidate, ...]:
+    """Group duplicate occurrences while preserving sorted provenance edges."""
+
+    collision_ids_by_identity: dict[CandidateIdentity, list[str]] = defaultdict(list)
+    for collision in resolution.collisions:
+        collision_id = sha256(
+            canonical_json_bytes(
+                {
+                    "keys": list(collision.candidate_keys),
+                    "reasons": list(collision.reasons),
+                }
+            )
+        ).hexdigest()
+        for identity in collision.identities:
+            collision_ids_by_identity[identity].append(collision_id)
+    return tuple(
+        NormalizedCandidate(
+            candidate_id=candidate_identity_id(item.identity),
+            identity=item.identity,
+            occurrence_ids=item.occurrence_ids,
+            provenance_ids=item.provenance_ids,
+            collision_ids=tuple(sorted(set(collision_ids_by_identity[item.identity]))),
+        )
+        for item in resolution.candidates
     )

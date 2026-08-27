@@ -875,7 +875,7 @@ class DiscoveryBundleManifest(StrictDiscoveryModel):
 
 class PromotionSelection(StrictDiscoveryModel):
     manifest_digest: str = Field(pattern=SHA256_PATTERN)
-    candidate_ids: tuple[str, ...] = Field(min_length=1)
+    candidate_ids: tuple[str, ...] = Field(min_length=0)
     selection_digest: str = Field(pattern=SHA256_PATTERN)
 
     @field_validator("candidate_ids")

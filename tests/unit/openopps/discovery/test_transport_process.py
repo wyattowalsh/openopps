@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
-from contextlib import AbstractContextManager
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
@@ -10,6 +10,7 @@ import io
 import json
 import logging
 from pathlib import Path
+
 import pytest
 
 import openopps.discovery.isolation as isolation_module
@@ -554,6 +555,12 @@ def _redirect_policy(**overrides: object) -> RedirectPolicy:
             ("https://docs.example.test/start",),
             "locator_scheme",
             id="downgrade",
+        ),
+        pytest.param(
+            "file:///etc/passwd",
+            ("https://docs.example.test/start",),
+            "locator_scheme",
+            id="file-location",
         ),
         pytest.param(
             "https://untrusted.example.test/path",
@@ -1434,28 +1441,14 @@ def test_credential_free_environment_is_a_positive_allowlist(
     }
 
 
-class _MemoryFile(io.BytesIO):
-    def __init__(
-        self,
-        path: Path,
-        sink: dict[Path, bytes],
-    ) -> None:
-        super().__init__()
-        self._path = path
-        self._sink = sink
-
-    def __enter__(self) -> _MemoryFile:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object | None,
-    ) -> None:
-        if exc_type is None:
-            self._sink[self._path] = self.getvalue()
-        self.close()
+@contextmanager
+def _memory_file(path: Path, sink: dict[Path, bytes]) -> Iterator[io.BytesIO]:
+    buffer = io.BytesIO()
+    try:
+        yield buffer
+        sink[path] = buffer.getvalue()
+    finally:
+        buffer.close()
 
 
 class RecordingOpener:
@@ -1470,7 +1463,7 @@ class RecordingOpener:
     ) -> AbstractContextManager[io.BytesIO]:
         assert mode == "xb"
         self.paths.append(path)
-        return _MemoryFile(path, self.files)
+        return _memory_file(path, self.files)
 
 
 def test_application_filesystem_rejects_out_of_root_before_open(

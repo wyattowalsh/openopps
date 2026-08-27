@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 from collections.abc import Mapping
 import inspect
@@ -7,6 +8,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+from typing import Any
 
 import pytest
 
@@ -74,7 +76,10 @@ async def test_launcher_executes_resolved_validated_target(
     alias.symlink_to(target)
     observed: dict[str, object] = {}
 
-    async def refusing_exec(*argv: object, **kwargs: object) -> object:
+    async def refusing_exec(
+        *argv: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        **kwargs: Any,
+    ) -> asyncio.subprocess.Process:
         observed["argv"] = argv
         observed["kwargs"] = kwargs
         raise OSError("synthetic refusal")
@@ -206,7 +211,7 @@ def test_descriptor_relative_filesystem_detects_directory_swap_during_write(
     swapped = False
 
     def racing_open(
-        path: str | bytes | int,
+        path: str | bytes,
         flags: int,
         mode: int = 0o777,
         *,
@@ -276,7 +281,10 @@ async def test_real_process_has_fixed_module_safe_env_and_no_ambient_handles(
     observed: dict[str, object] = {}
     original = asyncio.create_subprocess_exec
 
-    async def recording_exec(*argv: object, **kwargs: object) -> object:
+    async def recording_exec(
+        *argv: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        **kwargs: Any,
+    ) -> asyncio.subprocess.Process:
         observed["argv"] = argv
         observed["kwargs"] = kwargs
         return await original(*argv, **kwargs)
@@ -420,7 +428,10 @@ async def test_process_timeout_and_pipe_overflow_are_bounded_and_cleaned_up(
     processes: list[asyncio.subprocess.Process] = []
     original = asyncio.create_subprocess_exec
 
-    async def recording_exec(*argv: object, **kwargs: object) -> object:
+    async def recording_exec(
+        *argv: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        **kwargs: Any,
+    ) -> asyncio.subprocess.Process:
         process = await original(*argv, **kwargs)
         processes.append(process)
         return process
@@ -453,7 +464,10 @@ async def test_process_cancellation_reaps_the_child(
     processes: list[asyncio.subprocess.Process] = []
     original = asyncio.create_subprocess_exec
 
-    async def recording_exec(*argv: object, **kwargs: object) -> object:
+    async def recording_exec(
+        *argv: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        **kwargs: Any,
+    ) -> asyncio.subprocess.Process:
         process = await original(*argv, **kwargs)
         processes.append(process)
         return process
@@ -479,3 +493,38 @@ async def test_process_cancellation_reaps_the_child(
         await task
 
     assert processes[0].returncode is not None
+
+
+def test_application_filesystem_production_default_omits_opener(
+    tmp_path: Path,
+) -> None:
+    parameters = inspect.signature(ApplicationFilesystem.__init__).parameters
+    assert parameters["opener"].default is None
+
+    root = _private_directory(tmp_path / "quarantine")
+    filesystem = ApplicationFilesystem(root=root)
+    destination = filesystem.write_new("result.json", b"{}\n")
+
+    assert filesystem._opener is None
+    assert destination == root / "result.json"
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    assert destination.stat().st_nlink == 1
+
+
+def test_discovery_package_does_not_construct_filesystem_with_injected_opener() -> None:
+    root = Path(__file__).resolve().parents[4] / "src" / "openopps" / "discovery"
+    injected: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.id if isinstance(func, ast.Name) else None
+            if isinstance(func, ast.Attribute):
+                name = func.attr
+            if name != "ApplicationFilesystem":
+                continue
+            if any(keyword.arg == "opener" for keyword in node.keywords):
+                injected.append(path.name)
+    assert injected == []

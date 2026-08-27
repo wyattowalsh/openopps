@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import replace
@@ -763,3 +764,36 @@ def test_atomic_no_replace_keeps_a_racing_target_untouched(
     target = output_root / str(manifest["manifestId"])
     assert (target / "sentinel").read_bytes() == sentinel
     assert not tuple(output_root.glob(".*.tmp"))
+
+
+def test_bundle_module_rejects_weaker_http_cache_and_plugin_seams() -> None:
+    source_path = (
+        Path(__file__).resolve().parents[4]
+        / "src"
+        / "openopps"
+        / "discovery"
+        / "bundle.py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+    forbidden = {
+        "openopps.http",
+        "openopps.cache",
+        "openopps.plugins",
+        "openopps.cli",
+        "httpx",
+        "httpcore",
+    }
+    assert imported.isdisjoint(forbidden)
+    assert "openopps.discovery.http_client" not in imported
+    assert any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "openopps.discovery.transport"
+        and any(alias.name == "validate_public_locator" for alias in node.names)
+        for node in ast.walk(tree)
+    )

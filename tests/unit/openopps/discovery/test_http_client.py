@@ -6,9 +6,10 @@ from collections import Counter
 from collections.abc import AsyncIterator, Iterable
 from datetime import UTC, datetime, timedelta
 import hashlib
+import inspect
 from pathlib import Path
 import ssl
-from typing import Any
+from typing import Any, cast
 
 import httpcore
 import httpx
@@ -657,7 +658,7 @@ async def test_fetch_rejects_untrusted_attempt_kind_before_budget_or_network() -
         with pytest.raises(DiscoveryHttpRuntimeError) as caught:
             await runtime.fetch(
                 validate_public_locator("https://example.com/data"),
-                attempt_kind="redirect",  # type: ignore[arg-type]
+                attempt_kind=cast(Any, "redirect"),
             )
 
     snapshot = caught.value.receipt.request_budget
@@ -844,11 +845,12 @@ def test_verified_observation_requires_exact_verified_manifest_member_binding(
 ) -> None:
     with pytest.raises(TypeError):
         VerifiedObservation()  # type: ignore[call-arg]
+    bundle_ctor: Any = VerifiedBundle
     with pytest.raises(TypeError):
-        VerifiedBundle(
+        bundle_ctor(
             manifest_id="f" * 64,
             member_paths=("resources/asserted.txt",),
-        )  # type: ignore[call-arg]
+        )
 
     content = b"exact"
     verified = _verified_bundle(tmp_path, content, tag="exact")
@@ -1298,9 +1300,82 @@ def test_http_client_has_no_runtime_cache_plugin_or_dynamic_import_path() -> Non
     }
 
     assert "openopps.cache" not in imported_names
+    assert "openopps.http" not in imported_names
     assert "openopps.plugins" not in imported_names
     assert "importlib" not in imported_names
     assert "importlib.metadata" not in imported_names
     assert called_names.isdisjoint(
         {"open", "__import__", "import_module", "entry_points"}
     )
+
+
+def _discovery_python_files() -> tuple[Path, ...]:
+    root = Path(__file__).resolve().parents[4] / "src" / "openopps" / "discovery"
+    return tuple(sorted(path for path in root.rglob("*.py") if path.name != "*.pyc"))
+
+
+def _imported_module_names(tree: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+            names.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return names
+
+
+def _calls_getaddrinfo(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "getaddrinfo":
+            return True
+        if isinstance(func, ast.Attribute) and func.attr == "getaddrinfo":
+            return True
+    return False
+
+
+def test_scout_http_stack_rejects_weaker_runtime_seams_and_injected_dns() -> None:
+    forbidden = (
+        "openopps.http",
+        "openopps.cache",
+        "openopps.plugins",
+        "openopps.cli",
+        "openopps.ingest",
+        "openopps.providers",
+        "openopps.storage",
+    )
+    scout_io = {
+        "http_client.py",
+        "transport.py",
+        "isolation.py",
+        "bundle.py",
+        "robots.py",
+        "worker.py",
+    }
+    getaddrinfo_files: list[str] = []
+    for path in _discovery_python_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported = _imported_module_names(tree)
+        assert not {
+            name
+            for name in imported
+            if any(
+                name == module or name.startswith(f"{module}.") for module in forbidden
+            )
+        }, path.name
+        if _calls_getaddrinfo(tree):
+            getaddrinfo_files.append(path.name)
+    assert getaddrinfo_files == []
+    assert scout_io <= {path.name for path in _discovery_python_files()}
+
+    for cls in (
+        DiscoveryHttpRuntime,
+        PinnedAsyncHTTPTransport,
+        PinnedAsyncNetworkBackend,
+    ):
+        resolver = inspect.signature(cls.__init__).parameters["resolver"]
+        assert resolver.default is inspect.Parameter.empty
+        assert resolver.kind is inspect.Parameter.KEYWORD_ONLY

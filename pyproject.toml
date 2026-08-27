@@ -35,6 +35,10 @@ packages = ["src/openopps"]
 "src/openopps/providers/sources/data/portfolio_source_catalog.json" = "openopps/providers/sources/data/portfolio_source_catalog.json"
 "src/openopps/providers/sources/data/source_policy_evidence.json" = "openopps/providers/sources/data/source_policy_evidence.json"
 "src/openopps/providers/sources/data/source_policy_evidence.schema.json" = "openopps/providers/sources/data/source_policy_evidence.schema.json"
+"src/openopps/discovery/data/approved_ingestion_selector_envelope.json" = "openopps/discovery/data/approved_ingestion_selector_envelope.json"
+"src/openopps/discovery/data/discovery_promotion_policy_decision.json" = "openopps/discovery/data/discovery_promotion_policy_decision.json"
+"src/openopps/discovery/data/evidence_only_decision_receipt.json" = "openopps/discovery/data/evidence_only_decision_receipt.json"
+"src/openopps/discovery/data/promotion_decision_ledger.jsonl" = "openopps/discovery/data/promotion_decision_ledger.jsonl"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

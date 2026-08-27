@@ -9,7 +9,7 @@ import pkgutil
 import subprocess
 import sys
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 from zipfile import ZipFile
 
 import pytest
@@ -60,6 +60,7 @@ ROOT = Path(__file__).resolve().parents[4]
 FORBIDDEN_DISCOVERY_IMPORTS = (
     "openopps.cache",
     "openopps.cli",
+    "openopps.http",
     "openopps.ingest",
     "openopps.plugins",
     "openopps.providers",
@@ -279,7 +280,7 @@ def test_diagnostics_never_render_untrusted_detail_and_remain_bounded() -> None:
     assert all("http" not in str(value) for value in attributes.values())
     with pytest.raises(DiagnosticRenderingError):
         render_metric_attributes(
-            channel="official",  # type: ignore[arg-type]
+            channel=cast(Any, "official"),
             terminal_state="failed",
             reason_code=BoundedReason.SECRET_DETECTED,
             complete=False,
@@ -322,7 +323,7 @@ def test_runtime_catalog_readback_matches_the_frozen_approved_inventory() -> Non
             if isinstance(record, SourceRecord)
         )
     adapter_rows = [
-        [provider_id, adapter.__module__, adapter.__qualname__]
+        [provider_id, adapter.__module__, getattr(adapter, "__qualname__")]
         for provider_id, adapter in BOARD_SOURCE_ADAPTERS.items()
     ]
     packaged = read_packaged_catalog_bytes(
@@ -392,10 +393,15 @@ def test_identity_projection_is_digest_only_deterministic_and_non_mutating(
     assert before == after
     assert tuple(item.name for item in first.v7_policy_inputs) == V7_POLICY_INPUT_NAMES
     assert first.public_selector.present is False
-    assert all(item.present is False for item in first.discovery_owned)
+    assert all(item.present is True for item in first.discovery_owned)
     assert tuple(item.name for item in first.discovery_owned) == (
         DISCOVERY_OWNED_IDENTITY_NAMES
     )
+    assert {item.name: item.size_bytes > 0 for item in first.discovery_owned} == {
+        "decision": True,
+        "envelope": True,
+        "ledger": True,
+    }
 
     wheel = tmp_path / "openopps-test.whl"
     with ZipFile(wheel, mode="w") as archive:
@@ -451,10 +457,16 @@ def test_core_surface_imports_do_not_load_operational_modules() -> None:
         "import importlib,json,sys\n"
         "before=set(sys.modules)\n"
         "for name in ("
+        "'openopps.discovery.api',"
+        "'openopps.discovery.bundle',"
         "'openopps.discovery.diagnostics',"
+        "'openopps.discovery.http_client',"
         "'openopps.discovery.inventory',"
+        "'openopps.discovery.isolation',"
+        "'openopps.discovery.robots',"
         "'openopps.discovery.schemas',"
-        "'openopps.discovery.api'"
+        "'openopps.discovery.transport',"
+        "'openopps.discovery.worker'"
         "): importlib.import_module(name)\n"
         "print(json.dumps(sorted(set(sys.modules)-before)))\n"
     )

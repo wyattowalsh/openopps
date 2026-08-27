@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from openopps.discovery.settings import DiscoverySettings
+from openopps.discovery.settings import (
+    DiscoverySettings,
+    format_discovery_settings_error,
+)
 
 
 ENV_PREFIX = "OPENOPPS_DISCOVERY_"
@@ -231,3 +234,87 @@ def test_discovery_settings_validation_error_hides_secret_bearing_input(
 
     assert marker not in str(exc_info.value)
     assert marker not in repr(exc_info.value)
+
+
+def test_format_discovery_settings_error_names_single_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_discovery_environment(monkeypatch)
+    monkeypatch.setenv(_environment_name("whole_run_timeout_seconds"), "0")
+
+    with pytest.raises(ValidationError) as exc_info:
+        DiscoverySettings()
+
+    assert (
+        format_discovery_settings_error(exc_info.value)
+        == "Invalid OpenOpps discovery configuration: "
+        "OPENOPPS_DISCOVERY_WHOLE_RUN_TIMEOUT_SECONDS."
+    )
+
+
+def test_format_discovery_settings_error_lists_first_three_unique_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_discovery_environment(monkeypatch)
+    for field_name in (
+        "whole_run_timeout_seconds",
+        "channel_timeout_seconds",
+        "channel_query_limit",
+        "channel_request_limit",
+    ):
+        monkeypatch.setenv(_environment_name(field_name), "0")
+
+    with pytest.raises(ValidationError) as exc_info:
+        DiscoverySettings()
+
+    message = format_discovery_settings_error(exc_info.value)
+
+    assert message == (
+        "Invalid OpenOpps discovery configuration: "
+        "OPENOPPS_DISCOVERY_WHOLE_RUN_TIMEOUT_SECONDS, "
+        "OPENOPPS_DISCOVERY_CHANNEL_TIMEOUT_SECONDS, "
+        "OPENOPPS_DISCOVERY_CHANNEL_QUERY_LIMIT, "
+        "and 1 more field(s)."
+    )
+    assert "CHANNEL_REQUEST_LIMIT" not in message
+
+
+def test_format_discovery_settings_error_does_not_echo_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_discovery_environment(monkeypatch)
+    marker = "formatter-secret-8b17"
+    monkeypatch.setenv(
+        _environment_name("whole_run_timeout_seconds"),
+        f"1password={marker}",
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        DiscoverySettings()
+
+    message = format_discovery_settings_error(exc_info.value)
+
+    assert marker not in message
+    assert "1password=" not in message
+
+
+def test_format_discovery_settings_error_empty_loc_uses_star() -> None:
+    marker = "empty-loc-secret-3d44"
+    error = ValidationError.from_exception_data(
+        "DiscoverySettings",
+        [{"type": "int_parsing", "loc": (), "input": marker}],
+    )
+
+    message = format_discovery_settings_error(error)
+
+    assert message == "Invalid OpenOpps discovery configuration: OPENOPPS_DISCOVERY_*."
+    assert marker not in message
+
+
+def test_format_discovery_settings_error_no_fields_fallback() -> None:
+    error = ValidationError.from_exception_data("DiscoverySettings", [])
+
+    assert (
+        format_discovery_settings_error(error)
+        == "Invalid OpenOpps discovery configuration."
+    )

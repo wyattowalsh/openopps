@@ -128,8 +128,8 @@ def _rewrite_manifest_without_prevalidation(root: Path, manifest: JsonObject) ->
     (root / "manifest.json").write_bytes(canonical_json_bytes(manifest))
 
 
-def _policy(**overrides: object) -> BundleVerificationPolicy:
-    values: dict[str, object] = {
+def _policy(**overrides: Any) -> BundleVerificationPolicy:
+    values: dict[str, Any] = {
         "max_evidence_age": MAX_EVIDENCE_AGE,
         "now": NOW,
         "replayed_manifest_ids": frozenset(),
@@ -141,7 +141,8 @@ def _policy(**overrides: object) -> BundleVerificationPolicy:
         "canonical_json_roles": frozenset(),
     }
     values.update(overrides)
-    return BundleVerificationPolicy(**values)
+    policy_cls: Any = BundleVerificationPolicy
+    return policy_cls(**values)
 
 
 def _bundle_resources(resources: Mapping[str, bytes]) -> list[BundleResource]:
@@ -592,6 +593,44 @@ def test_verify_bundle_rejects_future_stale_or_unsupported(
     _materialize_bundle(root, resources, manifest=manifest)
     with pytest.raises(BundleVerificationError):
         verify_bundle(root, policy=_policy())
+
+
+@pytest.mark.parametrize(
+    "policy_field",
+    [
+        pytest.param("replayed_manifest_ids", id="replayed"),
+        pytest.param("revoked_manifest_ids", id="revoked"),
+    ],
+)
+def test_verify_bundle_does_not_treat_manifest_id_as_replay_or_revocation_key(
+    tmp_path: Path,
+    policy_field: str,
+) -> None:
+    data = b"{}"
+    resources = {f"resources/{_sha256(data)}.json": data}
+    root = tmp_path / "bundle"
+    manifest = _materialize_bundle(root, resources)
+
+    verified = verify_bundle(
+        root,
+        policy=_policy(**{policy_field: frozenset({manifest["manifestId"]})}),
+    )
+
+    assert verified.manifest_id == manifest["manifestId"]
+
+
+@pytest.mark.parametrize(
+    "policy_field",
+    [
+        pytest.param("replayed_manifest_ids", id="replayed"),
+        pytest.param("revoked_manifest_ids", id="revoked"),
+    ],
+)
+def test_bundle_policy_rejects_non_sha256_legacy_replay_and_revocation_ids(
+    policy_field: str,
+) -> None:
+    with pytest.raises(BundleVerificationError, match="legacy manifest identity"):
+        _policy(**{policy_field: frozenset({"not-a-digest"})})
 
 
 @pytest.mark.parametrize(
