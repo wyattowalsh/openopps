@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ExplorerDashboard } from "@/components/openopps-search/explorer-dashboard";
 import { ExplorerEntityTabs } from "@/components/openopps-search/explorer-entity-tabs";
 import {
+	DEFAULT_EXPLORER_FILTERS,
 	DEFAULT_EXPLORER_SORT,
 	PAGE_SIZE,
 	activeFilterCount,
@@ -372,6 +373,14 @@ function OpenOppsSearchExplorerInner() {
 						loading={loadingManifest}
 						warning={error && !manifest ? error : null}
 						onInspectRows={openInspector}
+						onInspectFacet={(next) => {
+							setEntity(next.entity);
+							setFilters(() => ({
+								...DEFAULT_EXPLORER_FILTERS,
+								...next.filters,
+							}));
+							openInspector();
+						}}
 						onRetry={!manifest && error ? retryManifest : undefined}
 					/>
 				) : (
