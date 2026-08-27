@@ -8,6 +8,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  // Keep web/AGENTS.md as the OpenOpps SSOT; next dev otherwise appends a generated block.
+  agentRules: false,
   experimental: {
     cpus: 1,
   },
