@@ -148,6 +148,7 @@ _ACTIVE_CLI_CONTEXT: ContextVar[Any | None] = ContextVar(
 )
 
 
+
 def _example_data_script_path() -> Path:
     module_path = Path(__file__).resolve()
     candidates = (
@@ -1430,6 +1431,7 @@ def discovery_scout(
     output: Annotated[
         Path,
         typer.Option(
+            ...,
             *OUTPUT_OPTION_FLAGS,
             help=(
                 "Explicit quarantine output directory. Required. Scout writes "
@@ -1457,6 +1459,11 @@ def discovery_scout(
         prepare_selector_bound_scout,
     )
     from openopps.discovery.models import BoundedReason
+
+    # Lowest-direct Typer can bind a missing Path option to Path("--output")
+    # instead of failing closed. Treat that placeholder as omitted.
+    if output is None or output.name in OUTPUT_OPTION_FLAGS or str(output) in OUTPUT_OPTION_FLAGS:
+        raise typer.BadParameter("--output is required")
 
     repository_root = _discovery_repository_root()
     try:
