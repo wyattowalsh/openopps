@@ -567,9 +567,9 @@ Vercel, release publication, and destructive cleanup remain independent gates.
 
 - [x] 12.1 `F1201` Re-read branch, status, nested instructions, and protected unrelated paths. `[depends: B1099]` Evidence: `main`@`fd7bab3` even with origin; nested AGENTS isolation; protected providers/storage/kaggle/deployment/uv.lock/source-policy JSON clean; 0005 stays `.draft`; generated JSON clean; `maps/f1201-reread.md`.
 - [x] 12.2 `F1202` Confirm no agent or process still owns a file writer. `[depends: F1201]` Evidence: pin writer joined; no product exclusive lock; `maps/f1202-writers.md`. F1203 W-GIT not acquired.
-- [ ] 12.3 `F1203` Stage only reviewed named paths and inspect the exact index. `[depends: F1202] [writer: W-GIT]`
-- [ ] 12.4 `F1204` Create atomic conventional commits by logical change. `[depends: F1203] [writer: W-GIT]`
-- [ ] 12.5 `F1205` Verify each commit tree and local gates without amending, rebasing, stashing, or resetting. `[depends: F1204]`
+- [x] 12.3 `F1203` Stage only reviewed named paths and inspect the exact index. `[depends: F1202] [writer: W-GIT]` Evidence: staged D1053 candidates only; held `0005_update_snapshot_ledger.py.draft`; index inspected per commit.
+- [x] 12.4 `F1204` Create atomic conventional commits by logical change. `[depends: F1203] [writer: W-GIT]` Evidence: 7 commits `5ba0143..5a0f00d` plus this tick; no amend/rebase/stash.
+- [x] 12.5 `F1205` Verify each commit tree and local gates without amending, rebasing, stashing, or resetting. `[depends: F1204]` Evidence: `git diff --check` clean; ruff pass; `just ci-discovery` ok; 64 focused pytest passed; not pushed.
 - [ ] 12.6 `F1206` Push under current authority and verify remote branch SHA. `[depends: F1205] [writer: W-GIT]`
 - [ ] 12.7 `F1207` Monitor exact-SHA CI to terminal state. `[depends: F1206]`
 - [ ] 12.8 `F1208` Verify any automatic docs deployment for the exact SHA without mutating unrelated services. `[depends: F1207]`
