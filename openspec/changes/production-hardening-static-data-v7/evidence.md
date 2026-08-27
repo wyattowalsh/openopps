@@ -81,3 +81,18 @@ Known open proof and authority boundaries:
 - Reconcile all results before opening the next barrier: verified success, explicit read-only duplicate skip, or recovered failure with a replacement owner.
 - Resume a cleanly recoverable lane once; reassign after a second failure; stop for user authority on live, destructive, credentialed, or scope-expanding blockers.
 - Integrators inspect the combined diff and rerun focused tests; implementers cannot self-certify a cross-surface barrier.
+
+## XV701–XV799 shared-surface handoff (2026-08-22)
+
+Evidence note only. See [`xv7-handoff.md`](xv7-handoff.md).
+
+Wave 1 scout closed XV701–XV799 against HEAD
+`fd7bab3b4ddfad59dc4138e05905f891bcb1f44a`. v7 remains active.
+Handed off to `W-STORAGE` / `W-INGEST` only: `ingest.py`, `storage.py`,
+`models.py`, `alembic/**`. `W-SHARED-DELIVERY` stays inactive (Justfile,
+workflows, generated data, source-policy, public `SourceSelector`, Kaggle,
+public v7).
+
+This record does **not** satisfy live Workers upload/hash/promote/rollback
+(5.4–5.6), GitHub Release archive (5.7), v6 dual-read retirement (2.10),
+or tree/history cleanup (7.1–7.7). Those tasks stay `[ ]`.
