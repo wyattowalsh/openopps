@@ -2958,10 +2958,21 @@ def _snapshot_column_candidate(
 
 def _latest_timestamp_value(values: Iterable[Any]) -> str | None:
     parsed = [_parse_timestamp(value) for value in values]
-    timestamps = [value for value in parsed if value is not None]
+    timestamps = [
+        value
+        for value in parsed
+        if value is not None and _is_observed_timestamp(value)
+    ]
     if not timestamps:
         return None
     return _format_utc_timestamp(max(timestamps))
+
+
+def _is_observed_timestamp(value: datetime) -> bool:
+    """Drop future sentinels so snapshotAt reflects last real observation."""
+
+    horizon = datetime.now(timezone.utc) + timedelta(days=1)
+    return value <= horizon
 
 
 def _parse_timestamp(value: Any) -> datetime | None:

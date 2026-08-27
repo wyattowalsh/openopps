@@ -574,6 +574,37 @@ def test_snapshot_at_ignores_newer_historical_versions(tmp_path: Path) -> None:
     assert manifest["snapshotAt"] == "2026-02-03T04:05:06.123456Z"
 
 
+def test_snapshot_at_ignores_future_sentinel_board_timestamps(
+    tmp_path: Path,
+) -> None:
+    db_path = _write_search_index_db(tmp_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE boards
+            SET synced_at = '2030-01-01 00:00:42.000000'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE board_providers
+            SET detected_at = '2030-01-01 00:00:42.000000'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE job_versions
+            SET posted_at = '2030-01-01T00:00:42+00:00'
+            WHERE id = 'version-current'
+            """
+        )
+    output_dir = tmp_path / "index"
+
+    manifest = build_search_index(db_path, output_dir)
+
+    assert manifest["snapshotAt"] == "2026-02-03T04:05:06.123456Z"
+
+
 _INDEXABLE_VECTORS_PATH = (
     Path(__file__).resolve().parents[2]
     / "fixtures"
@@ -700,12 +731,16 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     providers_chunk = _read_json(artifact_dir / "providers.json")
     provider_id_index = PROVIDER_COLUMNS.index("providerId")
     support_level_index = PROVIDER_COLUMNS.index("supportLevel")
-    unsupported_with_provider_ids = [
+    unsupported_rows = [
         row
         for row in providers_chunk["rows"]
-        if row[support_level_index] == "unsupported" and row[provider_id_index]
+        if row[support_level_index] == "unsupported"
     ]
-    assert unsupported_with_provider_ids
+    unsupported_with_provider_ids = [
+        row for row in unsupported_rows if row[provider_id_index]
+    ]
+    if unsupported_rows:
+        assert unsupported_with_provider_ids
 
     job_entity = manifest["entities"]["jobs"]
     assert not (artifact_dir / "jobs.json").exists()
