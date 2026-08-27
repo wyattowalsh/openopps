@@ -18,6 +18,7 @@ export type JobsBoardSearchMeta = {
 	totalPages: number;
 	hasNextPage: boolean;
 	hasPreviousPage: boolean;
+	labeledAsMatches: boolean;
 };
 
 type UseJobsBoardSearchOptions = {
@@ -27,9 +28,12 @@ type UseJobsBoardSearchOptions = {
 	setPage: (page: number) => void | Promise<void>;
 	activeFilterCount: number;
 	sortKey: JobSortKey;
-	searchActive: boolean;
 	onIndexErrorClear?: () => void;
 };
+
+export function resolveJobsBoardSortKey(query: string): JobSortKey {
+	return query ? "relevance" : "latest";
+}
 
 export function useJobsBoardSearch({
 	manifest,
@@ -38,7 +42,6 @@ export function useJobsBoardSearch({
 	setPage,
 	activeFilterCount,
 	sortKey,
-	searchActive,
 	onIndexErrorClear,
 }: UseJobsBoardSearchOptions) {
 	const [searchRows, setSearchRows] = useState<SearchRow[]>([]);
@@ -67,25 +70,6 @@ export function useJobsBoardSearch({
 		if (!manifest) {
 			return;
 		}
-		if (!searchActive) {
-			searchRequestIdRef.current += 1;
-			let cancelled = false;
-			window.queueMicrotask(() => {
-				if (cancelled || !mountedRef.current) {
-					return;
-				}
-				setSearchRows([]);
-				setSearchMeta(null);
-				setSearchError(null);
-				setSearchLoading(false);
-				if (page !== 1) {
-					void setPage(1);
-				}
-			});
-			return () => {
-				cancelled = true;
-			};
-		}
 		const requestId = searchRequestIdRef.current + 1;
 		searchRequestIdRef.current = requestId;
 		const controller = new AbortController();
@@ -111,6 +95,7 @@ export function useJobsBoardSearch({
 						totalPages: result.totalPages,
 						hasNextPage: result.hasNextPage,
 						hasPreviousPage: result.hasPreviousPage,
+						labeledAsMatches: activeFilterCount > 0,
 					});
 					if (result.page !== page) {
 						void setPage(result.page);
@@ -153,7 +138,6 @@ export function useJobsBoardSearch({
 		deferredFilters,
 		manifest,
 		page,
-		searchActive,
 		searchRetryKey,
 		setPage,
 		sortKey,

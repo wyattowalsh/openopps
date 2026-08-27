@@ -13,9 +13,7 @@ async function waitForFirstJob(page: Page) {
 async function searchForFirstJob(page: Page, query = "platform") {
 	const search = page.getByLabel("Search jobs");
 	await expect(search).toBeVisible({ timeout: 30_000 });
-	await expect(
-		page.getByRole("heading", { name: "Search or filter open jobs" }),
-	).toBeVisible({ timeout: 30_000 });
+	await waitForFirstJob(page);
 	await search.fill(query);
 	await expect(search).toHaveValue(query);
 	await expect(page).toHaveURL(
@@ -24,6 +22,19 @@ async function searchForFirstJob(page: Page, query = "platform") {
 	);
 	return waitForFirstJob(page);
 }
+
+test("jobs board lists latest open jobs without a query", async ({ page }) => {
+	test.setTimeout(90_000);
+	await page.goto("/");
+	await waitForFirstJob(page);
+	await expect(page.getByLabel("Search jobs")).toHaveValue("");
+	await expect(page).not.toHaveURL(/[?&]q=/);
+	await expect(
+		page.getByRole("heading", { name: "Search or filter open jobs" }),
+	).toHaveCount(0);
+	await expect(page.getByText("default view")).toBeVisible();
+	await expect(page.getByText("Searching...")).toHaveCount(0);
+});
 
 test("jobs board supports local workflow controls without analytics", async ({
 	page,

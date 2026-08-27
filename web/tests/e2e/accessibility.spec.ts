@@ -17,9 +17,7 @@ async function waitForFirstJob(page: Page) {
 async function searchForFirstJob(page: Page) {
 	const search = page.getByLabel("Search jobs");
 	await expect(search).toBeVisible({ timeout: 30_000 });
-	await expect(
-		page.getByRole("heading", { name: "Search or filter open jobs" }),
-	).toBeVisible({ timeout: 30_000 });
+	await waitForFirstJob(page);
 	await search.fill("platform");
 	await expect(search).toHaveValue("platform");
 	await expect(page).toHaveURL(

@@ -1,3 +1,5 @@
+import { formatCount } from "@/components/openopps-search/search-utils";
+
 export type JobsBoardLiveStatusInput = {
 	manifestLoading: boolean;
 	manifestError: string | null;
@@ -28,6 +30,33 @@ export function buildJobsBoardLiveStatus({
 		return searchError;
 	}
 	return indexNote;
+}
+
+export type JobsBoardIndexNoteInput = {
+	searchLoading: boolean;
+	searchActive: boolean;
+	searchError: string | null;
+	searchMeta: { page: number; totalPages: number } | null;
+	currentPageRowCount: number;
+};
+
+export function resolveJobsBoardIndexNote({
+	searchLoading,
+	searchActive,
+	searchError,
+	searchMeta,
+	currentPageRowCount,
+}: JobsBoardIndexNoteInput): string | null {
+	if (searchLoading) {
+		return searchActive ? "Searching jobs..." : "Loading open jobs...";
+	}
+	if (searchError) {
+		return "Showing current results. Retry search for fresh matches.";
+	}
+	if (searchMeta) {
+		return `Showing page ${formatCount(searchMeta.page)} of ${formatCount(searchMeta.totalPages)} (${formatCount(currentPageRowCount)} rows on this page).`;
+	}
+	return null;
 }
 
 export type JobsBoardMatchDisplayInput = {

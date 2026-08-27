@@ -3,10 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-	filterAndSortJobs,
-	type JobSortKey,
-} from "@/components/jobs-board/jobs-board-filter-engine";
+import { filterAndSortJobs } from "@/components/jobs-board/jobs-board-filter-engine";
 import { useJobBoardFilterState } from "@/components/jobs-board/jobs-board-filter-state";
 import { bucketMatchCount, JOBS_BOARD_PAGE_SIZE } from "@/components/jobs-board/jobs-board-constants";
 import {
@@ -31,6 +28,7 @@ import {
 	jobsBoardSplitColumnClassName,
 	jobsBoardSplitGridClassName,
 	jobsBoardSplitListPaneClassName,
+	resolveJobsBoardIndexNote,
 	resolveJobsBoardMatchDisplay,
 } from "@/components/jobs-board/jobs-board-live-status";
 import { JobsBoardList } from "@/components/jobs-board/jobs-board-list";
@@ -45,7 +43,10 @@ import { resolveCreateSavedSearchBaseline } from "@/components/jobs-board/jobs-b
 import { JobsBoardToolbar } from "@/components/jobs-board/jobs-board-toolbar";
 import { useJobDetail } from "@/components/jobs-board/use-job-detail";
 import { useJobsBoardManifest } from "@/components/jobs-board/use-jobs-board-manifest";
-import { useJobsBoardSearch } from "@/components/jobs-board/use-jobs-board-search";
+import {
+	resolveJobsBoardSortKey,
+	useJobsBoardSearch,
+} from "@/components/jobs-board/use-jobs-board-search";
 import { useJobsOfflineCache } from "@/components/jobs-board/use-jobs-offline-cache";
 import { useSavedSearchFullCounts } from "@/components/jobs-board/use-saved-search-counts";
 import {
@@ -93,7 +94,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		setError(null);
 	}, [setError]);
 
-	const sortKey: JobSortKey = deferredFilters.query ? "relevance" : "latest";
+	const sortKey = resolveJobsBoardSortKey(deferredFilters.query);
 	const searchActive = activeFilterCount > 0;
 
 	const {
@@ -111,7 +112,6 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		setPage,
 		activeFilterCount,
 		sortKey,
-		searchActive,
 		onIndexErrorClear: clearIndexError,
 	});
 
@@ -463,34 +463,34 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 
 	const activeSearchMeta = searchMeta;
 	const activeSearchError = searchError;
-	const emptyLoadingResults = searchLoading;
 	const currentPageRowCount = rows.length;
+	const resultsPending =
+		searchLoading ||
+		Boolean(!loading && !error && !activeSearchMeta && !activeSearchError);
 	const matchDisplay = resolveJobsBoardMatchDisplay({
 		searchActive,
-		searchLoading,
-		totalMatches: activeSearchMeta?.totalMatches,
+		searchLoading: resultsPending,
+		totalMatches: activeSearchMeta?.labeledAsMatches
+			? activeSearchMeta.totalMatches
+			: undefined,
 		fallbackCount:
 			manifest?.openJobCount ??
 			manifest?.entities.jobs.count ??
 			visibleRows.length,
 	});
 	const displayedMatchCount = matchDisplay.matchCount ?? 0;
-	const indexNote = searchLoading
-		? searchActive
-			? "Searching jobs..."
-			: "Loading open jobs..."
-		: activeSearchError
-			? "Showing current results. Retry search for fresh matches."
-			: activeSearchMeta
-				? `Showing page ${formatCount(activeSearchMeta.page)} of ${formatCount(activeSearchMeta.totalPages)} (${formatCount(currentPageRowCount)} rows on this page).`
-				: !searchActive
-					? "Enter a search or use filters to browse the indexed jobs."
-					: null;
+	const indexNote = resolveJobsBoardIndexNote({
+		searchLoading: resultsPending,
+		searchActive,
+		searchError: activeSearchError,
+		searchMeta: activeSearchMeta,
+		currentPageRowCount,
+	});
 
 	const liveStatusMessage = buildJobsBoardLiveStatus({
 		manifestLoading: loading,
 		manifestError: error,
-		searchLoading,
+		searchLoading: resultsPending,
 		searchActive,
 		searchError: activeSearchError,
 		indexNote,
@@ -591,7 +591,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 									matchCount={displayedMatchCount}
 									activeFilterCount={activeFilterCount}
 									onClearFilters={handleClearFilters}
-									loadingResults={emptyLoadingResults}
+									loadingResults={resultsPending}
 								/>
 								<SearchPageControls
 									meta={activeSearchMeta}
@@ -607,7 +607,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 											matchCount={displayedMatchCount}
 											activeFilterCount={activeFilterCount}
 											onClearFilters={handleClearFilters}
-											loadingResults={emptyLoadingResults}
+											loadingResults={resultsPending}
 										/>
 										<SearchPageControls
 											meta={activeSearchMeta}

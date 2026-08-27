@@ -21,10 +21,12 @@ export function JobsBoardEmpty({
 		return (
 			<div className="opps-empty-state">
 				<h2 className="font-heading text-lg font-semibold text-foreground">
-					Searching open jobs
+					{hasActiveFilters ? "Searching open jobs" : "Loading open jobs"}
 				</h2>
 				<p className="mt-2 max-w-md text-sm leading-6">
-					Fetching matching rows for the active filters.
+					{hasActiveFilters
+						? "Fetching matching rows for the active filters."
+						: "Fetching the latest open roles."}
 				</p>
 			</div>
 		);
@@ -34,12 +36,12 @@ export function JobsBoardEmpty({
 		<div className="opps-empty-state">
 			<SearchX className="mb-4 size-10 text-muted-foreground/70" aria-hidden="true" />
 			<h2 className="font-heading text-lg font-semibold">
-				{hasActiveFilters ? "No open jobs match" : "Search or filter open jobs"}
+				{hasActiveFilters ? "No open jobs match" : "No open jobs"}
 			</h2>
 			<p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
 				{hasActiveFilters
 					? `${formatCount(matchCount)} roles pass the open-only filter with your current constraints. ${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"} may be too narrow.`
-					: "Use the search field, filters, or all-indexed toggle to load a paginated result set from the server."}
+					: "The current snapshot has no open roles to list."}
 			</p>
 			{hasActiveFilters ? (
 				<Button

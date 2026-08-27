@@ -9,6 +9,7 @@ import {
 	jobsBoardSplitColumnClassName,
 	jobsBoardSplitGridClassName,
 	jobsBoardSplitListPaneClassName,
+	resolveJobsBoardIndexNote,
 	resolveJobsBoardMatchDisplay,
 } from "./jobs-board-live-status";
 
@@ -67,9 +68,56 @@ describe("buildJobsBoardLiveStatus", () => {
 				searchLoading: false,
 				searchActive: false,
 				searchError: null,
-				indexNote: "Enter a search or use filters to browse the indexed jobs.",
+				indexNote: "Showing page 1 of 3 (50 rows on this page).",
 			}),
-		).toBe("Enter a search or use filters to browse the indexed jobs.");
+		).toBe("Showing page 1 of 3 (50 rows on this page).");
+	});
+});
+
+describe("resolveJobsBoardIndexNote", () => {
+	it("uses loading copy for the default browse and searching copy for a query", () => {
+		expect(
+			resolveJobsBoardIndexNote({
+				searchLoading: true,
+				searchActive: false,
+				searchError: null,
+				searchMeta: null,
+				currentPageRowCount: 0,
+			}),
+		).toBe("Loading open jobs...");
+		expect(
+			resolveJobsBoardIndexNote({
+				searchLoading: true,
+				searchActive: true,
+				searchError: null,
+				searchMeta: null,
+				currentPageRowCount: 0,
+			}),
+		).toBe("Searching jobs...");
+	});
+
+	it("does not tell users to enter a search while idle", () => {
+		expect(
+			resolveJobsBoardIndexNote({
+				searchLoading: false,
+				searchActive: false,
+				searchError: null,
+				searchMeta: null,
+				currentPageRowCount: 0,
+			}),
+		).toBeNull();
+	});
+
+	it("shows the current page once default browse results arrive", () => {
+		expect(
+			resolveJobsBoardIndexNote({
+				searchLoading: false,
+				searchActive: false,
+				searchError: null,
+				searchMeta: { page: 1, totalPages: 4 },
+				currentPageRowCount: 50,
+			}),
+		).toBe("Showing page 1 of 4 (50 rows on this page).");
 	});
 });
 
@@ -79,6 +127,17 @@ describe("resolveJobsBoardMatchDisplay", () => {
 			resolveJobsBoardMatchDisplay({
 				searchActive: false,
 				searchLoading: false,
+				totalMatches: undefined,
+				fallbackCount: 88800,
+			}),
+		).toEqual({ matchCount: 88800, showAsMatches: false });
+	});
+
+	it("keeps open-jobs labeling while the default browse is in flight", () => {
+		expect(
+			resolveJobsBoardMatchDisplay({
+				searchActive: false,
+				searchLoading: true,
 				totalMatches: undefined,
 				fallbackCount: 88800,
 			}),

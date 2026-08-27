@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("JobsBoardEmpty", () => {
-	it("does not show a fake match count before a search or filter", () => {
+	it("does not tell users to search before a loaded browse", () => {
 		render(
 			<JobsBoardEmpty
 				matchCount={1234}
@@ -19,8 +19,12 @@ describe("JobsBoardEmpty", () => {
 			/>,
 		);
 
-		expect(screen.getByText("Search or filter open jobs")).toBeTruthy();
-		expect(screen.getByText(/load a paginated result set from the server/i)).toBeTruthy();
+		expect(screen.getByText("No open jobs")).toBeTruthy();
+		expect(
+			screen.getByText("The current snapshot has no open roles to list."),
+		).toBeTruthy();
+		expect(screen.queryByText("Search or filter open jobs")).toBeNull();
+		expect(screen.queryByText(/load a paginated result set/i)).toBeNull();
 		expect(screen.queryByText(/1,234 roles pass/i)).toBeNull();
 		expect(screen.queryByRole("button", { name: /clear filters/i })).toBeNull();
 	});
@@ -37,7 +41,22 @@ describe("JobsBoardEmpty", () => {
 		expect(container.textContent).toMatch(/No open jobs match/);
 		expect(container.textContent).toMatch(/12 roles pass/i);
 		expect(screen.getByRole("button", { name: /clear filters/i })).toBeTruthy();
-	}, 15_000);
+	});
+
+	it("uses loading copy for the default browse instead of searching copy", () => {
+		render(
+			<JobsBoardEmpty
+				matchCount={0}
+				activeFilterCount={0}
+				onClearFilters={vi.fn()}
+				loadingResults
+			/>,
+		);
+
+		expect(screen.getByText("Loading open jobs")).toBeTruthy();
+		expect(screen.getByText("Fetching the latest open roles.")).toBeTruthy();
+		expect(screen.queryByText("Searching open jobs")).toBeNull();
+	});
 
 	it("is not a polite live region; the board-level status announces instead", () => {
 		const { container, rerender } = render(
