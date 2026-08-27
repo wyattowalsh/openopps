@@ -1,0 +1,45 @@
+"""Create the naïve update-snapshot ledger (header + twelve copies).
+
+Revision ID: 0005_update_snapshot_ledger
+Revises: 0004_job_sync_run_lifecycle
+Create Date: 2026-08-22
+
+G3 BLOCKER — L.1 is not landed.
+Gate G3 requires OpenSpec barriers D-B699, D-B799, D-B899, and D-B1099
+(`task-graph.yaml` G3). Those checkboxes are still open, so this revision
+must not join the Alembic upgrade graph.
+
+Alembic only loads `versions/*.py`. Keep this file as `.py.draft` until G3
+closes, then:
+
+1. Rename to `0005_update_snapshot_ledger.py` (keep down_revision = 0004).
+2. Union `UPDATE_SNAPSHOT_LEDGER_TABLES` into `MANAGED_SQLITE_TABLES`.
+3. Point `tests/integration/openopps/test_migrations.py` ALEMBIC_HEAD here.
+
+Do not copy http_cache, http_cache_metadata, alembic_version,
+openopps_tables, or openopps_columns. Do not add snapshot_id to live
+operational tables. Do not reuse JobPayloadSnapshotRow as the ledger.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from alembic import op
+
+revision: str = "0005_update_snapshot_ledger"
+down_revision: str | None = "0004_job_sync_run_lifecycle"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    from openopps.update_snapshot import create_update_snapshot_ledger_tables
+
+    create_update_snapshot_ledger_tables(op.get_bind())
+
+
+def downgrade() -> None:
+    from openopps.update_snapshot import drop_update_snapshot_ledger_tables
+
+    drop_update_snapshot_ledger_tables(op.get_bind())
