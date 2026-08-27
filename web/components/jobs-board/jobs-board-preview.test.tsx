@@ -94,6 +94,61 @@ describe("JobsBoardPreview", () => {
 		expect(screen.getByText("Structured posting body only.")).toBeTruthy();
 	}, 15_000);
 
+	it("keeps the preview pane shrinkable so nested detail can scroll", () => {
+		render(
+			<JobsBoardPreview
+				row={jobRow()}
+				selectedJobId="job-1"
+				detail={{
+					id: "job-1",
+					status: "open",
+					title: "Designer",
+					company: "Acme",
+					description: `${"Long posting description. ".repeat(80)}End of description.`,
+					skills: [{ name: "TypeScript" }, { name: "Design systems" }],
+				}}
+				loading={false}
+				error={null}
+			/>,
+		);
+
+		const article = screen.getByRole("article");
+		expectClassTokens(article, [
+			"flex",
+			"h-full",
+			"min-h-0",
+			"flex-1",
+			"flex-col",
+			"overflow-hidden",
+		]);
+		expect(classTokens(article.className).has("min-h-[24rem]")).toBe(false);
+		expect(classTokens(article.className).has("lg:min-h-[32rem]")).toBe(false);
+
+		const scroller = previewScroller(article);
+		expect(scroller).not.toBeNull();
+		expectClassTokens(scroller!, ["min-h-0", "flex-1", "overflow-y-auto"]);
+		expect(scroller!.textContent).toContain("End of description.");
+		expect(scroller!.textContent).toContain("TypeScript");
+		expect(scroller!.textContent).toContain("Design systems");
+	}, 15_000);
+
+	it("does not force a content min-height on the empty preview", () => {
+		render(
+			<JobsBoardPreview
+				row={null}
+				selectedJobId={null}
+				detail={null}
+				loading={false}
+				error={null}
+			/>,
+		);
+
+		const empty = screen.getByText("Select a job to preview posting details.");
+		expectClassTokens(empty, ["h-full", "min-h-0"]);
+		expect(classTokens(empty.className).has("min-h-[24rem]")).toBe(false);
+		expect(classTokens(empty.className).has("lg:min-h-[32rem]")).toBe(false);
+	}, 15_000);
+
 	it("renders allowed detail fields without rendering payload snapshots", () => {
 		const detail: JobDetailWithPrivateFields = {
 			id: "job-1",
@@ -131,6 +186,23 @@ describe("JobsBoardPreview", () => {
 		expect(screen.queryByText(/raw provider payload/i)).toBeNull();
 	}, 15_000);
 });
+
+function classTokens(className: string) {
+	return new Set(className.split(/\s+/).filter(Boolean));
+}
+
+function expectClassTokens(element: Element, tokens: string[]) {
+	const actual = classTokens(element.className);
+	for (const token of tokens) {
+		expect(actual.has(token)).toBe(true);
+	}
+}
+
+function previewScroller(article: Element) {
+	return Array.from(article.children).find((child) =>
+		classTokens(child.className).has("overflow-y-auto"),
+	);
+}
 
 function jobRow(url = "https://example.test/jobs/1"): SearchRow {
 	return [

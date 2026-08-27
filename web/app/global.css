@@ -285,7 +285,16 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-doc-body {
-    @apply mx-auto max-w-[85ch] text-[0.98rem] leading-7;
+    @apply mx-auto min-w-0 w-full max-w-[min(85ch,100%)] text-[0.98rem] leading-7;
+    overflow-wrap: break-word;
+  }
+
+  .openopps-doc-body pre {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .openopps-doc-body h2 {
@@ -297,7 +306,7 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-doc-body table {
-    @apply my-6 overflow-hidden rounded-[var(--opps-radius-lg)] border border-border bg-card/80 text-sm shadow-[0_12px_34px_color-mix(in_oklab,var(--foreground)_5%,transparent)];
+    @apply my-6 max-w-full overflow-x-auto rounded-[var(--opps-radius-lg)] border border-border bg-card/80 text-sm shadow-[0_12px_34px_color-mix(in_oklab,var(--foreground)_5%,transparent)];
   }
 
   .openopps-doc-body th {
@@ -400,7 +409,13 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid {
-    @apply my-8 overflow-hidden rounded-[var(--opps-radius-panel)] border border-border/70 bg-card/80 p-1 shadow-[0_14px_42px_color-mix(in_oklab,var(--foreground)_6%,transparent)];
+    @apply my-8 min-w-0 w-full max-w-full overflow-hidden rounded-[var(--opps-radius-panel)] border border-border/70 bg-card/80 p-1 shadow-[0_14px_42px_color-mix(in_oklab,var(--foreground)_6%,transparent)];
+  }
+
+  .openopps-mermaid-viewer {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
   }
 
   .openopps-mermaid-viewer:fullscreen {
@@ -444,7 +459,7 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid-viewport {
-    @apply relative min-h-[22rem] overflow-hidden rounded-[var(--opps-radius-lg)] border border-border/65 bg-background/45 bg-[linear-gradient(color-mix(in_oklab,var(--foreground)_5%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_oklab,var(--foreground)_5%,transparent)_1px,transparent_1px)] bg-[size:24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:min-h-[24rem];
+    @apply relative min-h-[22rem] min-w-0 w-full overflow-hidden rounded-[var(--opps-radius-lg)] border border-border/65 bg-background/45 bg-[linear-gradient(color-mix(in_oklab,var(--foreground)_5%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_oklab,var(--foreground)_5%,transparent)_1px,transparent_1px)] bg-[size:24px_24px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:min-h-[24rem];
   }
 
   .openopps-mermaid-viewport::after {
@@ -486,15 +501,15 @@ html > body[data-scroll-locked] {
   }
 
   .openopps-mermaid-canvas {
-    @apply flex min-h-[22rem] min-w-max cursor-grab touch-none select-none items-start justify-start px-6 pb-12 pt-16 transition-transform duration-200 ease-out active:cursor-grabbing md:min-h-[24rem] md:px-8 md:pb-14 md:pt-18;
+    @apply flex min-h-[22rem] min-w-0 w-full max-w-full cursor-grab touch-none select-none items-start justify-start px-6 pb-12 pt-16 transition-transform duration-200 ease-out active:cursor-grabbing md:min-h-[24rem] md:px-8 md:pb-14 md:pt-18;
     transform-origin: 0 0;
     will-change: transform;
   }
 
   .openopps-mermaid svg {
     display: block;
-    width: clamp(54rem, 106%, 64rem);
-    max-width: none;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     height: auto !important;
   }
@@ -532,10 +547,6 @@ html > body[data-scroll-locked] {
     .openopps-mermaid-pan-pad .openopps-mermaid-control {
       width: 1.55rem;
       height: 1.55rem;
-    }
-
-    .openopps-mermaid svg {
-      width: 54rem;
     }
   }
 
@@ -655,10 +666,22 @@ html > body[data-scroll-locked] {
     @apply bg-background;
   }
 
-  /* Keep docs prose measure readable (Route Ledger). */
-  #nd-page article,
+  /* Keep docs prose readable without expanding past the clipped Fumadocs column. */
+  #nd-page,
   #nd-page .prose {
-    max-width: 85ch;
+    min-width: 0;
+  }
+
+  #nd-page .prose {
+    max-width: min(85ch, 100%);
+  }
+
+  #nd-page .prose pre {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 }
 

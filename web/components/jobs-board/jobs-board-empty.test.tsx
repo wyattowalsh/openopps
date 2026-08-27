@@ -38,4 +38,30 @@ describe("JobsBoardEmpty", () => {
 		expect(container.textContent).toMatch(/12 roles pass/i);
 		expect(screen.getByRole("button", { name: /clear filters/i })).toBeTruthy();
 	}, 15_000);
+
+	it("is not a polite live region; the board-level status announces instead", () => {
+		const { container, rerender } = render(
+			<JobsBoardEmpty
+				matchCount={12}
+				activeFilterCount={2}
+				onClearFilters={vi.fn()}
+			/>,
+		);
+
+		expect(container.querySelector("[aria-live]")).toBeNull();
+		expect(screen.queryByRole("status")).toBeNull();
+
+		rerender(
+			<JobsBoardEmpty
+				matchCount={12}
+				activeFilterCount={2}
+				onClearFilters={vi.fn()}
+				loadingResults
+			/>,
+		);
+
+		expect(screen.getByText("Searching open jobs")).toBeTruthy();
+		expect(container.querySelector("[aria-live]")).toBeNull();
+		expect(screen.queryByRole("status")).toBeNull();
+	});
 });

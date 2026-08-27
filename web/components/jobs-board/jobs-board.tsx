@@ -22,7 +22,17 @@ import { JobsBoardLocalDataPanel } from "@/components/jobs-board/jobs-board-loca
 import { resolveSelectedJobRow } from "@/components/jobs-board/jobs-board-load-state";
 import { JobsBoardConfirmDialog } from "@/components/jobs-board/jobs-board-confirm-dialog";
 import { JobsBoardEmpty } from "@/components/jobs-board/jobs-board-empty";
-import { buildJobsBoardLiveStatus } from "@/components/jobs-board/jobs-board-live-status";
+import {
+	buildJobsBoardLiveStatus,
+	jobsBoardDesktopPreviewClassName,
+	jobsBoardLedgerClassName,
+	jobsBoardResultsFrameClassName,
+	jobsBoardSectionClassName,
+	jobsBoardSplitColumnClassName,
+	jobsBoardSplitGridClassName,
+	jobsBoardSplitListPaneClassName,
+	resolveJobsBoardMatchDisplay,
+} from "@/components/jobs-board/jobs-board-live-status";
 import { JobsBoardList } from "@/components/jobs-board/jobs-board-list";
 import { JobsBoardMetrics } from "@/components/jobs-board/jobs-board-metrics";
 import { JobsBoardPreview } from "@/components/jobs-board/jobs-board-preview";
@@ -455,11 +465,16 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	const activeSearchError = searchError;
 	const emptyLoadingResults = searchLoading;
 	const currentPageRowCount = rows.length;
-	const displayedMatchCount =
-		activeSearchMeta?.totalMatches ??
-		manifest?.openJobCount ??
-		manifest?.entities.jobs.count ??
-		visibleRows.length;
+	const matchDisplay = resolveJobsBoardMatchDisplay({
+		searchActive,
+		searchLoading,
+		totalMatches: activeSearchMeta?.totalMatches,
+		fallbackCount:
+			manifest?.openJobCount ??
+			manifest?.entities.jobs.count ??
+			visibleRows.length,
+	});
+	const displayedMatchCount = matchDisplay.matchCount ?? 0;
 	const indexNote = searchLoading
 		? searchActive
 			? "Searching jobs..."
@@ -482,23 +497,25 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 	});
 
 	return (
-		<section className="not-prose mx-auto w-full max-w-[96rem] px-3 py-4 sm:px-5 lg:px-6">
+		<section className={jobsBoardSectionClassName(hasPreviewSelection)}>
 			<p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
 				{liveStatusMessage ?? ""}
 			</p>
-			<div className="opps-ledger-shell">
-				<JobsBoardMetrics
-					manifest={manifest}
-					matchCount={displayedMatchCount}
-					searchActive={searchActive}
-				/>
+			<div className={jobsBoardLedgerClassName(hasPreviewSelection)}>
+				<div className="shrink-0">
+					<JobsBoardMetrics
+						manifest={manifest}
+						matchCount={matchDisplay.matchCount}
+						searchActive={matchDisplay.showAsMatches}
+					/>
+				</div>
 
-				<div className="mt-4">
+				<div className="mt-4 shrink-0">
 					<JobsBoardToolbar
 						filters={filters}
 						manifest={manifest}
-						matchCount={displayedMatchCount}
-						searchActive={searchActive}
+						matchCount={matchDisplay.matchCount}
+						searchActive={matchDisplay.showAsMatches}
 						activeFilterCount={activeFilterCount}
 						showHidden={localState.settings.showHidden}
 						savedSearches={savedSearchSummaries}
@@ -517,12 +534,12 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				</div>
 
 				{indexNote ? (
-					<p className="mt-3 text-xs text-muted-foreground">{indexNote}</p>
+					<p className="mt-3 shrink-0 text-xs text-muted-foreground">{indexNote}</p>
 				) : null}
 
 				{error ? (
 					<div
-						className="opps-error-banner mt-4"
+						className="opps-error-banner mt-4 shrink-0"
 						role="alert"
 						aria-live="assertive"
 					>
@@ -532,7 +549,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 
 				{activeSearchError ? (
 					<div
-						className="opps-error-banner mt-4"
+						className="opps-error-banner mt-4 shrink-0"
 						role="alert"
 						aria-live="assertive"
 					>
@@ -556,7 +573,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 
 				{loading ? (
 					<div
-						className="opps-loading mt-4 min-h-[24rem]"
+						className="opps-loading mt-4 min-h-[24rem] shrink-0"
 						role="status"
 						aria-live="polite"
 						aria-busy="true"
@@ -567,9 +584,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				) : null}
 
 				{!loading && !error ? (
-					<div className="mt-4">
+					<div className={jobsBoardResultsFrameClassName(hasPreviewSelection)}>
 						{visibleRows.length === 0 && !hasPreviewSelection ? (
-							<div className="grid gap-3">
+							<div className={jobsBoardSplitColumnClassName(false)}>
 								<JobsBoardEmpty
 									matchCount={displayedMatchCount}
 									activeFilterCount={activeFilterCount}
@@ -583,15 +600,9 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 								/>
 							</div>
 						) : (
-							<div
-								className={
-									hasPreviewSelection
-										? "grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
-										: "grid gap-4"
-								}
-							>
+							<div className={jobsBoardSplitGridClassName(hasPreviewSelection)}>
 								{visibleRows.length === 0 ? (
-									<div className="grid gap-3">
+									<div className={jobsBoardSplitColumnClassName(hasPreviewSelection)}>
 										<JobsBoardEmpty
 											matchCount={displayedMatchCount}
 											activeFilterCount={activeFilterCount}
@@ -605,14 +616,26 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 										/>
 									</div>
 								) : (
-									<div className="grid gap-3">
-										<JobsBoardList
-											rows={visibleRows}
-											selectedJobId={selectedJobId ?? ""}
-											jobRecords={localState.jobRecords}
-											jobLifecycleIndicators={lifecycleIndicatorsByJobId}
-											onSelectJob={handleSelectJob}
-										/>
+									<div className={jobsBoardSplitColumnClassName(hasPreviewSelection)}>
+										{hasPreviewSelection ? (
+											<div className={jobsBoardSplitListPaneClassName()}>
+												<JobsBoardList
+													rows={visibleRows}
+													selectedJobId={selectedJobId ?? ""}
+													jobRecords={localState.jobRecords}
+													jobLifecycleIndicators={lifecycleIndicatorsByJobId}
+													onSelectJob={handleSelectJob}
+												/>
+											</div>
+										) : (
+											<JobsBoardList
+												rows={visibleRows}
+												selectedJobId={selectedJobId ?? ""}
+												jobRecords={localState.jobRecords}
+												jobLifecycleIndicators={lifecycleIndicatorsByJobId}
+												onSelectJob={handleSelectJob}
+											/>
+										)}
 										<SearchPageControls
 											meta={activeSearchMeta}
 											loading={searchLoading}
@@ -621,7 +644,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 									</div>
 								)}
 								{hasPreviewSelection ? (
-									<div className="hidden lg:block">
+									<div className={jobsBoardDesktopPreviewClassName()}>
 										<JobsBoardPreview
 											row={selectedRow}
 											selectedJobId={selectedJobId}

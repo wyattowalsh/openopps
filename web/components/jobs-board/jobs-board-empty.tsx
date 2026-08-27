@@ -19,7 +19,7 @@ export function JobsBoardEmpty({
 	const hasActiveFilters = activeFilterCount > 0;
 	if (loadingResults) {
 		return (
-			<div className="opps-empty-state" role="status" aria-live="polite">
+			<div className="opps-empty-state">
 				<h2 className="font-heading text-lg font-semibold text-foreground">
 					Searching open jobs
 				</h2>
@@ -31,7 +31,7 @@ export function JobsBoardEmpty({
 	}
 
 	return (
-		<div className="opps-empty-state" role="status" aria-live="polite">
+		<div className="opps-empty-state">
 			<SearchX className="mb-4 size-10 text-muted-foreground/70" aria-hidden="true" />
 			<h2 className="font-heading text-lg font-semibold">
 				{hasActiveFilters ? "No open jobs match" : "Search or filter open jobs"}

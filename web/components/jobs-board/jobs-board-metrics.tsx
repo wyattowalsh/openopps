@@ -6,15 +6,23 @@ import { formatCount, formatDate } from "@/components/openopps-search/search-uti
 
 type JobsBoardMetricsProps = {
 	manifest: SearchManifest | null;
-	matchCount: number;
+	matchCount: number | null;
 	searchActive: boolean;
 };
 
-function Metric({ label, value }: { label: string; value?: number }) {
+function Metric({
+	label,
+	value,
+}: {
+	label: string;
+	value?: number | string | null;
+}) {
+	const display =
+		value === null ? "—" : typeof value === "string" ? value : formatCount(value);
 	return (
 		<div className="opps-metric">
 			<div className="font-heading text-xl font-semibold text-primary">
-				{formatCount(value)}
+				{display}
 			</div>
 			<div className="mt-1 truncate font-mono text-[0.68rem] font-semibold tracking-normal text-muted-foreground">
 				{label}

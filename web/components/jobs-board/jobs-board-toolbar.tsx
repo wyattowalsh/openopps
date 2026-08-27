@@ -39,10 +39,29 @@ import { cn } from "@/lib/utils";
 
 export const JOBS_BOARD_WIDE_SEARCH_DESC_ID = "jobs-board-wide-search-desc";
 
+export function jobsBoardToolbarCountLabel({
+	matchCount,
+	searchActive,
+	includeAllIndexed,
+}: {
+	matchCount: number | null;
+	searchActive: boolean;
+	includeAllIndexed: boolean;
+}): string {
+	if (searchActive && matchCount == null) {
+		return "Searching...";
+	}
+	const count = formatCount(matchCount ?? 0);
+	if (searchActive) {
+		return `${count} matches`;
+	}
+	return `${count} ${includeAllIndexed ? "indexed jobs" : "open jobs"}`;
+}
+
 type JobsBoardToolbarProps = {
 	filters: JobBoardFilters;
 	manifest: SearchManifest | null;
-	matchCount: number;
+	matchCount: number | null;
 	searchActive: boolean;
 	activeFilterCount: number;
 	showHidden: boolean;
@@ -498,8 +517,11 @@ export function JobsBoardToolbar({
 					<div className="min-w-0 flex-1 space-y-2">
 						<div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
 							<Badge variant="outline">
-								{formatCount(matchCount)}{" "}
-								{searchActive ? "matches" : filters.includeAllIndexed ? "indexed jobs" : "open jobs"}
+								{jobsBoardToolbarCountLabel({
+									matchCount,
+									searchActive,
+									includeAllIndexed: filters.includeAllIndexed,
+								})}
 							</Badge>
 							{activeFilterCount > 0 ? (
 								<Badge variant="secondary">

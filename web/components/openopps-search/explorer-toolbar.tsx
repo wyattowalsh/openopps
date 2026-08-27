@@ -59,11 +59,11 @@ export function ExplorerToolbar({
 	const activeFilters = activeFilterCount(entity, filters);
 
 	return (
-		<div className="opps-toolbar mt-4">
-			<div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(12rem,0.4fr)]">
-				<label className="grid gap-1.5 text-sm font-semibold">
-					<span className="flex items-center gap-2">
-						<Search className="size-4" />
+		<div className="opps-toolbar mt-4 min-w-0 [&>*]:min-w-0">
+			<div className="flex min-w-0 flex-wrap items-end gap-3 [&>*]:min-w-0">
+				<label className="grid min-w-0 w-full basis-full gap-1.5 text-sm font-semibold sm:flex-1 sm:basis-[12rem]">
+					<span className="flex min-w-0 items-center gap-2">
+						<Search className="size-4 shrink-0" />
 						Search
 					</span>
 					<input
@@ -75,7 +75,7 @@ export function ExplorerToolbar({
 							}))
 						}
 						placeholder="company, title, board, provider, route"
-						className="opps-input opps-input--search"
+						className="opps-input opps-input--search w-full min-w-0 max-w-full"
 						aria-label="Search dataset"
 					/>
 				</label>
@@ -85,10 +85,11 @@ export function ExplorerToolbar({
 					value={sortKey}
 					onChange={(value) => onSortChange(value as ExplorerSortKey)}
 					options={SORT_OPTIONS[entity]}
+					className="w-full basis-full sm:max-w-xs sm:flex-none"
 				/>
 			</div>
 
-			<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+			<div className="grid min-w-0 gap-3 [&>*]:min-w-0 md:grid-cols-2 xl:grid-cols-4">
 				<ExplorerFilterSelect
 					label="Source"
 					value={filters.source}
@@ -142,7 +143,7 @@ export function ExplorerToolbar({
 							}
 							options={explorerFacetOptions(manifest?.facets.employmentTypes)}
 						/>
-						<label className="grid gap-1.5 text-sm font-semibold">
+						<label className="grid min-w-0 max-w-full gap-1.5 text-sm font-semibold">
 							<span>Location</span>
 							<input
 								value={filters.location}
@@ -153,7 +154,7 @@ export function ExplorerToolbar({
 									}))
 								}
 								placeholder="city, country, remote"
-								className="opps-input"
+								className="opps-input w-full min-w-0 max-w-full"
 								aria-label="Location"
 							/>
 						</label>
@@ -184,7 +185,7 @@ export function ExplorerToolbar({
 				) : null}
 			</div>
 
-			<div className="flex flex-col gap-3 border-t border-border/70 pt-3 md:flex-row md:items-center md:justify-between">
+			<div className="flex min-w-0 flex-col gap-3 border-t border-border/70 pt-3 md:flex-row md:items-center md:justify-between">
 				<div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
 					<span className="font-semibold text-foreground">
 						{formatCount(matchCount)} matches

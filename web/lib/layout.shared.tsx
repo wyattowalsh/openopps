@@ -29,6 +29,10 @@ export function baseOptions(): BaseLayoutProps {
 				url: "/explorer",
 			},
 			{
+				text: "Docs",
+				url: "/docs",
+			},
+			{
 				text: "GitHub",
 				url: githubUrl,
 				external: true,

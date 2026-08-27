@@ -292,7 +292,7 @@ export function JobsBoardPreview({
 }: JobsBoardPreviewProps) {
 	if (!row && !selectedJobId) {
 		return (
-			<div className="opps-empty h-full min-h-[24rem] text-sm text-muted-foreground lg:min-h-[32rem]">
+			<div className="opps-empty h-full min-h-0 text-sm text-muted-foreground">
 				Select a job to preview posting details.
 			</div>
 		);
@@ -340,9 +340,9 @@ export function JobsBoardPreview({
 
 	return (
 		<article
-			className={`flex h-full min-h-[24rem] flex-col overflow-hidden lg:min-h-[32rem] ${paneChromeClass}`.trim()}
+			className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden ${paneChromeClass}`.trim()}
 		>
-			<header className="border-b border-border/70 pb-4">
+			<header className="shrink-0 border-b border-border/70 pb-4">
 				<div className="flex flex-wrap items-center gap-2">
 					<Badge variant="success">
 						{text(detail?.status) || (row ? text(row[J.status]) : "selected")}
@@ -446,7 +446,7 @@ export function JobsBoardPreview({
 				</div>
 			</header>
 
-			<div className="flex-1 overflow-y-auto">
+			<div className="min-h-0 flex-1 overflow-y-auto">
 				{onNotesChange ? (
 					<Section title="Local notes">
 						<label className="grid gap-2">
