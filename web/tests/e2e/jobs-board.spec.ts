@@ -84,7 +84,11 @@ test("jobs board supports local workflow controls without analytics", async ({
 	}
 	const previewSave = page.getByRole("article").getByRole("button", { name: /^save$/i });
 	await expect(previewSave).toBeVisible();
-	await previewSave.click();
+	await expect(page.getByText("Loading full description...")).toHaveCount(0, {
+		timeout: 20_000,
+	});
+	await previewSave.focus();
+	await page.keyboard.press("Enter");
 	await expect(page.getByText("saved").first()).toBeVisible();
 	const closePreviewButton = page.getByRole("button", {
 		name: /close job preview/i,
