@@ -3,10 +3,17 @@ import "./global.css";
 import { TelemetryProvider } from "@/components/telemetry-provider";
 import { shouldNoIndexDeployment } from "@/lib/job-detail-utils";
 import { appName, siteUrl, socialImages } from "@/lib/shared";
+import {
+	describedbyLlmsUrl,
+	jobsFeedUrl,
+	siteWideCopy,
+} from "@/lib/site-metadata";
 import type { Metadata } from "next";
 
-const siteDescription =
-	"Developer documentation for the OpenOpps CLI, public hiring boards, providers, storage, and exports.";
+const heading700Woff2 = new URL(
+	"../node_modules/@fontsource/monaspace-argon/files/monaspace-argon-latin-700-normal.woff2",
+	import.meta.url,
+);
 
 export const metadata: Metadata = {
 	metadataBase: new URL(siteUrl),
@@ -15,7 +22,7 @@ export const metadata: Metadata = {
 		default: appName,
 		template: `%s | ${appName}`,
 	},
-	description: siteDescription,
+	description: siteWideCopy.description,
 	robots: shouldNoIndexDeployment()
 		? {
 				index: false,
@@ -45,8 +52,7 @@ export const metadata: Metadata = {
 	},
 	openGraph: {
 		title: appName,
-		description:
-			"Open public hiring boards, check provider support, and sync public job postings.",
+		description: siteWideCopy.description,
 		url: siteUrl,
 		siteName: appName,
 		images: [
@@ -61,7 +67,7 @@ export const metadata: Metadata = {
 	twitter: {
 		card: "summary_large_image",
 		title: appName,
-		description: siteDescription,
+		description: siteWideCopy.description,
 		images: [socialImages.repository],
 	},
 };
@@ -69,6 +75,21 @@ export const metadata: Metadata = {
 export default function Layout({ children }: LayoutProps<"/">) {
 	return (
 		<html lang="en" suppressHydrationWarning>
+			<link
+				rel="preload"
+				href={heading700Woff2.href}
+				as="font"
+				type="font/woff2"
+				crossOrigin="anonymous"
+				fetchPriority="high"
+			/>
+			<link rel="describedby" href={describedbyLlmsUrl()} />
+			<link
+				rel="alternate"
+				type="application/atom+xml"
+				title="OpenOpps latest open jobs"
+				href={jobsFeedUrl()}
+			/>
 			<body className="flex min-h-screen flex-col">
 				<RootProvider>
 					<TelemetryProvider>{children}</TelemetryProvider>

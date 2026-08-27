@@ -17,6 +17,7 @@ import {
 } from "@/lib/job-detail-utils";
 import { getPublicJobDetail } from "@/lib/jobs-public-data";
 import { appName, socialImages } from "@/lib/shared";
+import { jobBreadcrumbJsonLd, jsonLdScriptProps } from "@/lib/site-metadata";
 
 type JobDeepLinkPageProps = {
 	params: Promise<{ id: string }>;
@@ -64,7 +65,7 @@ export async function generateMetadata({
 		},
 		twitter: {
 			card: "summary_large_image",
-			title,
+			title: `${title} | ${appName}`,
 			description,
 			images: [socialImages.database],
 		},
@@ -82,9 +83,13 @@ export default async function JobDeepLinkPage({ params }: JobDeepLinkPageProps) 
 	const postingUrl = safeJobExternalUrl(detail.postingUrl);
 	const applyUrl = safeJobExternalUrl(detail.applyUrl);
 	const jsonLd = jobPostingJsonLd(detail);
+	const indexable = isIndexableJobDetail(detail);
 
 	return (
 		<section className="not-prose mx-auto w-full max-w-[72rem] px-3 py-6 sm:px-5 lg:px-6">
+			{indexable ? (
+				<script {...jsonLdScriptProps(jobBreadcrumbJsonLd({ title, jobId: detail.id }))} />
+			) : null}
 			{jsonLd ? (
 				<script
 					type="application/ld+json"

@@ -1,5 +1,5 @@
 export const appName = "OpenOpps";
-export const siteUrl = "https://openopps.dev";
+export const siteUrl = "https://www.openopps.dev";
 export const docsRoute = "/docs";
 export const docsImageRoute = "/og/docs";
 export const docsContentRoute = "/llms.mdx/docs";

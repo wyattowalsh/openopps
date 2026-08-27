@@ -79,7 +79,7 @@ test.describe("v7 public data without the legacy v6 tree", () => {
 
 		const sitemap = await request.get("/sitemap.xml");
 		expect(sitemap.ok()).toBe(true);
-		expect(await sitemap.text()).toContain("https://openopps.dev/");
+		expect(await sitemap.text()).toContain("https://www.openopps.dev/");
 		const jobsSitemap = await request.get("/jobs/sitemap/0.xml");
 		expect(jobsSitemap.ok()).toBe(true);
 		expect(await jobsSitemap.text()).toContain(

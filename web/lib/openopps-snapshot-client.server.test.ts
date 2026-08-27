@@ -6,6 +6,7 @@ import {
 	EXPECTED_PROVIDER_COLUMNS,
 } from "@/components/openopps-search/search-utils";
 
+import { siteUrl } from "@/lib/shared";
 import { createPublicDataSnapshotClient } from "./openopps-snapshot-client.server";
 
 const originalEnv = { ...process.env };
@@ -65,7 +66,7 @@ describe("server snapshot-client precedence", () => {
 			createPublicDataSnapshotClient().getSearchManifest(),
 		).resolves.toEqual(searchManifest);
 		expect(fetchMock).toHaveBeenCalledWith(
-			new URL("https://openopps.dev/data/openopps-search/manifest.json"),
+			new URL(`${siteUrl}/data/openopps-search/manifest.json`),
 			expect.objectContaining({ cache: "no-store" }),
 		);
 	});
