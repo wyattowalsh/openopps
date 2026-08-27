@@ -124,5 +124,5 @@ export function jobsBoardSplitListPaneClassName(): string {
 }
 
 export function jobsBoardDesktopPreviewClassName(): string {
-	return "relative z-10 hidden h-full min-h-0 overflow-hidden lg:flex lg:flex-col [&>article]:h-full [&>article]:min-h-0 [&>article]:flex-1 [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-1";
+	return "relative z-10 isolate hidden h-full min-h-0 overflow-hidden lg:flex lg:flex-col [&>article]:h-full [&>article]:min-h-0 [&>article]:flex-1 [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-1";
 }

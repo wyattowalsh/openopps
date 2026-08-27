@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+
+async function activatePreviewControl(page: Page, control: Locator) {
+	await expect(control).toBeVisible();
+	await control.focus();
+	await page.keyboard.press("Enter");
+}
 
 async function waitForFirstJob(page: Page) {
 	const firstJob = page
@@ -82,19 +88,19 @@ test("jobs board supports local workflow controls without analytics", async ({
 			"hidden",
 		);
 	}
-	const previewSave = page.getByRole("article").getByRole("button", { name: /^save$/i });
+	const previewArticle = page.getByRole("article");
+	const previewSave = previewArticle.getByRole("button", { name: /^save$/i });
 	await expect(previewSave).toBeVisible();
 	await expect(page.getByText("Loading full description...")).toHaveCount(0, {
 		timeout: 20_000,
 	});
-	await previewSave.focus();
-	await page.keyboard.press("Enter");
+	await activatePreviewControl(page, previewSave);
 	await expect(page.getByText("saved").first()).toBeVisible();
-	const closePreviewButton = page.getByRole("button", {
+	const closePreviewButton = previewArticle.getByRole("button", {
 		name: /close job preview/i,
 	});
 	if (await closePreviewButton.isVisible()) {
-		await closePreviewButton.click();
+		await activatePreviewControl(page, closePreviewButton);
 	}
 
 	await page.getByRole("button", { name: /open app settings/i }).click();
