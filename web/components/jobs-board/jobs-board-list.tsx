@@ -56,12 +56,17 @@ export function JobsBoardList({
 		}
 	}, [rows, selectedJobId]);
 
+	const virtualItems = virtualizer.getVirtualItems();
+
 	const handleKeyDown = useCallback(
 		(event: React.KeyboardEvent<HTMLDivElement>) => {
 			if (rows.length === 0) {
 				return;
 			}
-			if (event.key === "Enter" && activeFocusedIndex >= 0) {
+			if (
+				(event.key === "Enter" || event.key === " ") &&
+				activeFocusedIndex >= 0
+			) {
 				event.preventDefault();
 				const jobId = text(rows[activeFocusedIndex]?.[J.id]);
 				if (jobId) {
@@ -83,6 +88,34 @@ export function JobsBoardList({
 		},
 		[activeFocusedIndex, onSelectJob, rows, virtualizer],
 	);
+
+	const handleMouseDown = useCallback(
+		(event: React.MouseEvent<HTMLDivElement>) => {
+			if (!(event.target instanceof Element)) {
+				return;
+			}
+			const option = event.target.closest("[role='option']");
+			if (!(option instanceof HTMLElement)) {
+				return;
+			}
+			const jobId = option.dataset.jobId?.trim();
+			if (!jobId) {
+				return;
+			}
+			event.preventDefault();
+			parentRef.current?.focus();
+			onSelectJob(jobId);
+		},
+		[onSelectJob],
+	);
+
+	const handleFocus = useCallback(() => {
+		if (rows.length === 0 || activeFocusedIndex >= 0) {
+			return;
+		}
+		setFocusedIndex(0);
+	}, [activeFocusedIndex, rows.length]);
+
 	const activeDescendant =
 		activeFocusedIndex >= 0
 			? jobsBoardOptionId(text(rows[activeFocusedIndex]?.[J.id]))
@@ -91,24 +124,27 @@ export function JobsBoardList({
 	return (
 		<div
 			ref={parentRef}
-			className="openopps-data-table-wrap h-full min-h-[24rem] overflow-y-auto lg:min-h-[32rem]"
+			className="openopps-data-table-wrap h-full min-h-[24rem] overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 lg:min-h-[32rem]"
 			role="listbox"
 			aria-label="Open jobs results"
 			aria-activedescendant={activeDescendant}
+			aria-orientation="vertical"
 			tabIndex={0}
 			onKeyDown={handleKeyDown}
+			onMouseDown={handleMouseDown}
+			onFocus={handleFocus}
 		>
 			<div
 				className="relative w-full"
 				style={{ height: `${virtualizer.getTotalSize()}px` }}
 			>
-				{virtualizer.getVirtualItems().map((virtualRow) => {
+				{virtualItems.map((virtualRow) => {
 					const row = rows[virtualRow.index];
 					const jobId = text(row[J.id]);
 					return (
 						<div
 							key={virtualRow.key}
-							className="absolute top-0 left-0 w-full"
+							className="absolute top-0 left-0 min-h-11 w-full"
 							role="presentation"
 							style={{
 								height: `${virtualRow.size}px`,

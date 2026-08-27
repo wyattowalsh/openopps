@@ -39,6 +39,23 @@ async function expectNoAxeViolations(
 	expect(scan.violations).toEqual([]);
 }
 
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function expectOptionNameMatchesVisibleText(page: Page) {
+	const firstJob = page
+		.getByRole("listbox", { name: /open jobs results/i })
+		.getByRole("option")
+		.first();
+	await expect(firstJob).not.toHaveAttribute("aria-label");
+	const visibleTitle = (await firstJob.locator("span").first().innerText()).trim();
+	expect(visibleTitle.length).toBeGreaterThan(0);
+	await expect(firstJob).toHaveAccessibleName(
+		new RegExp(escapeRegExp(visibleTitle)),
+	);
+}
+
 test("jobs workbench and local settings pass baseline accessibility checks", async ({
 	page,
 }) => {
@@ -49,6 +66,7 @@ test("jobs workbench and local settings pass baseline accessibility checks", asy
 		page.getByRole("button", { name: /save current search/i }),
 	).toBeVisible();
 	await searchForFirstJob(page);
+	await expectOptionNameMatchesVisibleText(page);
 
 	// Exclude the virtualized jobs listbox from full axe runs: option density and
 	// focus management are covered by unit contracts and keyboard paths instead of
@@ -70,6 +88,9 @@ test("mobile preview sheet keeps dialog semantics", async ({ page }) => {
 
 	const firstJob = await searchForFirstJob(page);
 	await firstJob.click();
+	await expect(page).toHaveURL((url) => url.searchParams.has("job"), {
+		timeout: 15_000,
+	});
 
 	const dialog = page.getByRole("dialog", { name: /job preview/i });
 	await expect(dialog).toBeVisible();

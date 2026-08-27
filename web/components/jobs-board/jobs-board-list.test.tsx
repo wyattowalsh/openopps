@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JobsBoardList } from "./jobs-board-list";
@@ -43,24 +44,65 @@ describe("JobsBoardList", () => {
 		);
 
 		const listbox = screen.getByRole("listbox", { name: "Open jobs results" });
+		expect(listbox.getAttribute("aria-orientation")).toBe("vertical");
 		fireEvent.keyDown(listbox, { key: "ArrowDown" });
 
-		const firstOption = screen.getByRole("option", {
-			name: "Engineer at Acme",
-		});
+		const options = screen.getAllByRole("option");
+		const firstOption = options[0];
+		const secondOption = options[1];
+		expect(firstOption.getAttribute("aria-label")).toBeNull();
+		expect(firstOption.textContent).toMatch(/Engineer/);
+		expect(firstOption.textContent).toMatch(/Acme/);
 		expect(listbox.getAttribute("aria-activedescendant")).toBe(firstOption.id);
 		expect(firstOption.getAttribute("aria-posinset")).toBe("1");
 		expect(firstOption.getAttribute("aria-setsize")).toBe("2");
 
 		fireEvent.keyDown(listbox, { key: "End" });
-		const secondOption = screen.getByRole("option", {
-			name: "Designer at Acme",
-		});
 		expect(listbox.getAttribute("aria-activedescendant")).toBe(secondOption.id);
 
 		fireEvent.keyDown(listbox, { key: "Enter" });
 		expect(onSelectJob).toHaveBeenCalledWith("job-2");
+
+		onSelectJob.mockClear();
+		fireEvent.keyDown(listbox, { key: " " });
+		expect(onSelectJob).toHaveBeenCalledWith("job-2");
 	}, 15_000);
+
+	it("selects a row on click and keeps listbox focus", async () => {
+		const user = userEvent.setup();
+		const onSelectJob = vi.fn();
+		render(
+			<JobsBoardList
+				rows={[row("job-1", "Engineer"), row("job-2", "Designer")]}
+				selectedJobId=""
+				onSelectJob={onSelectJob}
+			/>,
+		);
+
+		const listbox = screen.getByRole("listbox", { name: "Open jobs results" });
+		const firstOption = screen.getAllByRole("option")[0];
+		await user.click(firstOption);
+		expect(onSelectJob).toHaveBeenCalledWith("job-1");
+		expect(document.activeElement).toBe(listbox);
+		expect(firstOption.getAttribute("aria-label")).toBeNull();
+	});
+
+	it("selects a row on mousedown so Chromium clicks are not swallowed", () => {
+		const onSelectJob = vi.fn();
+		render(
+			<JobsBoardList
+				rows={[row("job-1", "Engineer"), row("job-2", "Designer")]}
+				selectedJobId=""
+				onSelectJob={onSelectJob}
+			/>,
+		);
+
+		const listbox = screen.getByRole("listbox", { name: "Open jobs results" });
+		const firstOption = screen.getAllByRole("option")[0];
+		fireEvent.mouseDown(firstOption);
+		expect(onSelectJob).toHaveBeenCalledWith("job-1");
+		expect(document.activeElement).toBe(listbox);
+	});
 });
 
 function row(id: string, title: string): SearchRow {

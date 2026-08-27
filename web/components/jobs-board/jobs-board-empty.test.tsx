@@ -40,7 +40,12 @@ describe("JobsBoardEmpty", () => {
 
 		expect(container.textContent).toMatch(/No open jobs match/);
 		expect(container.textContent).toMatch(/12 roles pass/i);
-		expect(screen.getByRole("button", { name: /clear filters/i })).toBeTruthy();
+		expect(
+			screen.getByRole("region", { name: "No open jobs match" }),
+		).toBeTruthy();
+		const clearFilters = screen.getByRole("button", { name: /clear filters/i });
+		expect(clearFilters).toBeTruthy();
+		expect(clearFilters.className).toMatch(/min-h-11/);
 	});
 
 	it("uses loading copy for the default browse instead of searching copy", () => {
@@ -69,6 +74,9 @@ describe("JobsBoardEmpty", () => {
 
 		expect(container.querySelector("[aria-live]")).toBeNull();
 		expect(screen.queryByRole("status")).toBeNull();
+		expect(
+			screen.getByRole("region", { name: "No open jobs match" }),
+		).toBeTruthy();
 
 		rerender(
 			<JobsBoardEmpty
@@ -82,5 +90,8 @@ describe("JobsBoardEmpty", () => {
 		expect(screen.getByText("Searching open jobs")).toBeTruthy();
 		expect(container.querySelector("[aria-live]")).toBeNull();
 		expect(screen.queryByRole("status")).toBeNull();
+		expect(
+			screen.getByRole("region", { name: "Searching open jobs" }),
+		).toBeTruthy();
 	});
 });

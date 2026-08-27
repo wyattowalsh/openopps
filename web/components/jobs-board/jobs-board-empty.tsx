@@ -3,6 +3,8 @@ import { SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCount } from "@/components/openopps-search/search-utils";
 
+const EMPTY_TITLE_ID = "openopps-jobs-empty-title";
+
 type JobsBoardEmptyProps = {
 	matchCount: number;
 	activeFilterCount: number;
@@ -19,8 +21,16 @@ export function JobsBoardEmpty({
 	const hasActiveFilters = activeFilterCount > 0;
 	if (loadingResults) {
 		return (
-			<div className="opps-empty-state">
-				<h2 className="font-heading text-lg font-semibold text-foreground">
+			<div
+				className="opps-empty-state"
+				role="region"
+				aria-labelledby={EMPTY_TITLE_ID}
+				aria-busy="true"
+			>
+				<h2
+					id={EMPTY_TITLE_ID}
+					className="font-heading text-lg font-semibold text-foreground"
+				>
 					{hasActiveFilters ? "Searching open jobs" : "Loading open jobs"}
 				</h2>
 				<p className="mt-2 max-w-md text-sm leading-6">
@@ -33,9 +43,16 @@ export function JobsBoardEmpty({
 	}
 
 	return (
-		<div className="opps-empty-state">
-			<SearchX className="mb-4 size-10 text-muted-foreground/70" aria-hidden="true" />
-			<h2 className="font-heading text-lg font-semibold">
+		<div
+			className="opps-empty-state"
+			role="region"
+			aria-labelledby={EMPTY_TITLE_ID}
+		>
+			<SearchX
+				className="mb-4 size-10 text-muted-foreground/70"
+				aria-hidden="true"
+			/>
+			<h2 id={EMPTY_TITLE_ID} className="font-heading text-lg font-semibold">
 				{hasActiveFilters ? "No open jobs match" : "No open jobs"}
 			</h2>
 			<p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
@@ -47,8 +64,8 @@ export function JobsBoardEmpty({
 				<Button
 					type="button"
 					variant="outline"
-					size="sm"
-					className="mt-4"
+					size="default"
+					className="mt-4 min-h-11 min-w-11 px-3"
 					onClick={onClearFilters}
 				>
 					Clear filters

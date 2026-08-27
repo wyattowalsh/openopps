@@ -87,9 +87,9 @@ export function JobsBoardListItem({
 			aria-selected={selected}
 			aria-posinset={posInSet}
 			aria-setsize={setSize}
+			data-job-id={jobId}
 			data-selected={selected ? "true" : "false"}
 			data-focused={focused ? "true" : "false"}
-			aria-label={`${title} at ${company}`}
 		>
 			<div className="flex min-w-0 items-baseline gap-2">
 				<span className="min-w-0 flex-1 truncate font-heading text-sm font-semibold leading-tight">
