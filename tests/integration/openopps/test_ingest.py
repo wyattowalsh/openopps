@@ -1849,3 +1849,378 @@ def _seed_existing_job_route(store: OpenOppsStore, *, provider_id: str) -> None:
             )
         ],
     )
+
+
+def _sha(payload: object) -> str:
+    from hashlib import sha256
+
+    from openopps.discovery.canonical import canonical_json_bytes
+
+    return sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def _b899_pin(source_ids: tuple[str, ...], *, denied: frozenset[str] = frozenset()):
+    from openopps.ingest import ApprovedIngestionPin
+
+    return ApprovedIngestionPin(
+        frozen_source_ids=source_ids,
+        denied_source_keys=denied,
+        envelope_id=_sha({"keys": list(source_ids)}),
+        catalog_content_digest=_sha("b899-catalog"),
+        catalog_tree_digest=_sha("b899-catalog"),
+        selector_digest=_sha(list(source_ids)),
+        policy_digest=_sha("b899-policy"),
+        promotion_digest=_sha("b899-promotion"),
+        checkout_sha="b" * 40,
+    )
+
+
+def _job_capable_provider(
+    *,
+    source_key: str,
+    board_key: str,
+    provider_id: str,
+    token: str | None,
+) -> BoardProviderRecord:
+    return BoardProviderRecord(
+        id=f"{source_key}:{board_key}:{provider_id}",
+        source_key=source_key,
+        board_key=board_key,
+        provider_id=provider_id,
+        support_level=ProviderSupport.JOBS,
+        token=token,
+        last_status="route_ready" if token else None,
+    )
+
+
+def _board(source_key: str, slug: str, name: str) -> BoardRecord:
+    return BoardRecord(
+        key=f"{source_key}:{slug}",
+        source_key=source_key,
+        remote_id=slug,
+        name=name,
+        domain=f"{slug}.example.test",
+    )
+
+
+class _PinCatalogAdapter:
+    def __init__(
+        self, pages: dict[str, tuple[list[BoardRecord], list[BoardProviderRecord]]]
+    ):
+        self._pages = pages
+        self.fetched: list[str] = []
+
+    async def iter_boards(self, _client, source, *, page_size: int):
+        self.fetched.append(source.key)
+        if source.provider_id == "getro":
+            raise AssertionError("blocked getro source must not start network work")
+        boards, providers = self._pages[source.key]
+        yield boards, providers, {"version": {"pageSize": page_size}}
+
+
+def _mock_lever_jobs(token: str, jobs: list[dict[str, object]]) -> Any:
+    return respx.get(f"https://api.lever.co/v0/postings/{token}").mock(
+        return_value=httpx.Response(200, json=jobs)
+    )
+
+
+def _assert_redacted_metrics(payload: dict[str, object]) -> None:
+    rendered = json.dumps(payload, default=str)
+    assert "http://" not in rendered
+    assert "https://" not in rendered
+    assert "unaccounted" not in rendered
+    assert "example.test" not in rendered
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_pinned_ingest_conserves_every_job_capable_route(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    catalog = {
+        "pin-greenhouse": SourceRecord(
+            key="pin-greenhouse",
+            url="pin-greenhouse://source",
+            provider_id="greenhouse_source",
+        ),
+        "pin-lever": SourceRecord(
+            key="pin-lever",
+            url="pin-lever://source",
+            provider_id="lever_source",
+        ),
+        "pin-dup": SourceRecord(
+            key="pin-dup",
+            url="pin-dup://source",
+            provider_id="greenhouse_source",
+        ),
+        "pin-missing": SourceRecord(
+            key="pin-missing",
+            url="pin-missing://source",
+            provider_id="greenhouse_source",
+        ),
+        "pin-getro-blocked": SourceRecord(
+            key="pin-getro-blocked",
+            url="pin-getro-blocked://source",
+            provider_id="getro",
+        ),
+    }
+    stored_only = SourceRecord(
+        key="local-custom-b899",
+        url="https://custom.example.test/jobs",
+        provider_id="manual",
+    )
+    pages = {
+        "pin-greenhouse": (
+            [
+                _board("pin-greenhouse", "acme", "Acme"),
+                _board("pin-greenhouse", "beta", "Beta"),
+            ],
+            [
+                _job_capable_provider(
+                    source_key="pin-greenhouse",
+                    board_key="pin-greenhouse:acme",
+                    provider_id="greenhouse",
+                    token="acme",
+                ),
+                _job_capable_provider(
+                    source_key="pin-greenhouse",
+                    board_key="pin-greenhouse:beta",
+                    provider_id="greenhouse",
+                    token="beta",
+                ),
+            ],
+        ),
+        "pin-lever": (
+            [_board("pin-lever", "leverco", "Lever Co")],
+            [
+                _job_capable_provider(
+                    source_key="pin-lever",
+                    board_key="pin-lever:leverco",
+                    provider_id="lever",
+                    token="leverco",
+                )
+            ],
+        ),
+        "pin-dup": (
+            [_board("pin-dup", "acme", "Acme Duplicate")],
+            [
+                _job_capable_provider(
+                    source_key="pin-dup",
+                    board_key="pin-dup:acme",
+                    provider_id="greenhouse",
+                    token="acme",
+                )
+            ],
+        ),
+        "pin-missing": (
+            [_board("pin-missing", "ghost", "Ghost")],
+            [
+                _job_capable_provider(
+                    source_key="pin-missing",
+                    board_key="pin-missing:ghost",
+                    provider_id="greenhouse",
+                    token=None,
+                )
+            ],
+        ),
+    }
+    adapter = _PinCatalogAdapter(pages)
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        board_concurrency=1,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    store.upsert_source(stored_only)
+    monkeypatch.setattr(ingest_module, "BOARD_SOURCE_CATALOG", catalog)
+    monkeypatch.setattr(
+        ingest_module, "all_board_sources", lambda: list(catalog.values())
+    )
+
+    def build_adapter(provider_id: str, _settings):
+        if provider_id == "getro":
+            raise AssertionError("blocked getro adapter must not be built")
+        return adapter
+
+    monkeypatch.setattr(ingest_module, "build_source_adapter", build_adapter)
+    _mock_greenhouse_jobs(
+        "acme",
+        [
+            {
+                "id": 11,
+                "title": "Engineer",
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/11",
+            }
+        ],
+    )
+    _mock_greenhouse_jobs(
+        "beta",
+        [
+            {
+                "id": 12,
+                "title": "Designer",
+                "absolute_url": "https://boards.greenhouse.io/beta/jobs/12",
+            }
+        ],
+    )
+    _mock_lever_jobs("leverco", [])
+
+    pin = _b899_pin(tuple(catalog), denied=frozenset({"pin-getro-blocked"}))
+    metrics = await ingest_module.sync_all(
+        settings=settings,
+        store=store,
+        pin=pin,
+        catalog=catalog,
+    )
+    payload = metrics.as_dict()
+    sources = payload["conservation"]["sources"]
+    routes = payload["conservation"]["routes"]
+
+    assert payload["name"] == "sync"
+    assert payload["attestation"] == "degraded"
+    assert payload["degradedClass"] in {"partial", "policy_blocked", "missing_metadata"}
+    assert payload["attestation"] != payload["degradedClass"]
+    assert sources["planned"] == 5
+    assert sources["succeeded"] == 4
+    assert sources["policyBlocked"] == 1
+    assert sources["planned"] == sum(
+        sources[name]
+        for name in (
+            "succeeded",
+            "failed",
+            "timedOut",
+            "freshSkipped",
+            "policyBlocked",
+            "rateLimited",
+            "cancelled",
+            "unstarted",
+        )
+    )
+    assert routes["planned"] == 5
+    assert routes["succeeded"] == 3
+    assert routes["duplicateSkipped"] == 1
+    assert routes["missingMetadata"] == 1
+    assert routes["planned"] == sum(
+        routes[name]
+        for name in (
+            "succeeded",
+            "failed",
+            "timedOut",
+            "freshSkipped",
+            "deferred",
+            "duplicateSkipped",
+            "missingMetadata",
+            "policyBlocked",
+            "rateLimited",
+            "cancelled",
+            "unstarted",
+        )
+    )
+    assert adapter.fetched == [
+        "pin-greenhouse",
+        "pin-lever",
+        "pin-dup",
+        "pin-missing",
+    ]
+    assert "pin-getro-blocked" not in adapter.fetched
+    assert store.get_source("local-custom-b899") is not None
+    with sqlite3.connect(tmp_path / "openopps.db") as conn:
+        runs = conn.execute(
+            "SELECT board_key, provider_id, status FROM job_sync_runs ORDER BY board_key"
+        ).fetchall()
+    assert {(row[0], row[1]) for row in runs} == {
+        ("pin-greenhouse:acme", "greenhouse"),
+        ("pin-greenhouse:beta", "greenhouse"),
+        ("pin-lever:leverco", "lever"),
+    }
+    assert all(row[2] == "succeeded" for row in runs)
+    _assert_redacted_metrics(payload)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_pinned_ingest_is_complete_when_every_pin_route_succeeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    catalog = {
+        "pin-greenhouse": SourceRecord(
+            key="pin-greenhouse",
+            url="pin-greenhouse://source",
+            provider_id="greenhouse_source",
+        ),
+        "pin-lever": SourceRecord(
+            key="pin-lever",
+            url="pin-lever://source",
+            provider_id="lever_source",
+        ),
+    }
+    pages = {
+        "pin-greenhouse": (
+            [_board("pin-greenhouse", "acme", "Acme")],
+            [
+                _job_capable_provider(
+                    source_key="pin-greenhouse",
+                    board_key="pin-greenhouse:acme",
+                    provider_id="greenhouse",
+                    token="acme",
+                )
+            ],
+        ),
+        "pin-lever": (
+            [_board("pin-lever", "leverco", "Lever Co")],
+            [
+                _job_capable_provider(
+                    source_key="pin-lever",
+                    board_key="pin-lever:leverco",
+                    provider_id="lever",
+                    token="leverco",
+                )
+            ],
+        ),
+    }
+    adapter = _PinCatalogAdapter(pages)
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        source_concurrency=1,
+        board_concurrency=1,
+        cache_enabled=False,
+    )
+    store = OpenOppsStore(settings)
+    monkeypatch.setattr(ingest_module, "BOARD_SOURCE_CATALOG", catalog)
+    monkeypatch.setattr(
+        ingest_module, "all_board_sources", lambda: list(catalog.values())
+    )
+    monkeypatch.setattr(
+        ingest_module,
+        "build_source_adapter",
+        lambda _provider_id, _settings: adapter,
+    )
+    _mock_greenhouse_jobs(
+        "acme",
+        [
+            {
+                "id": 1,
+                "title": "Engineer",
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/1",
+            }
+        ],
+    )
+    _mock_lever_jobs("leverco", [])
+
+    metrics = await ingest_module.sync_all(
+        settings=settings,
+        store=store,
+        pin=_b899_pin(tuple(catalog)),
+        catalog=catalog,
+    )
+    payload = metrics.as_dict()
+    assert payload["attestation"] == "complete"
+    assert payload["degradedClass"] is None
+    assert payload["conservation"]["sources"]["planned"] == 2
+    assert payload["conservation"]["sources"]["succeeded"] == 2
+    assert payload["conservation"]["sources"]["complete"] is True
+    assert payload["conservation"]["routes"]["planned"] == 2
+    assert payload["conservation"]["routes"]["succeeded"] == 2
+    assert payload["conservation"]["routes"]["complete"] is True
+    _assert_redacted_metrics(payload)

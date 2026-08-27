@@ -108,6 +108,27 @@ MANAGED_SQLITE_TABLES: set[str] = {
     "openopps_tables",
     "openopps_columns",
 }
+# G3 UNMET — L.1 is not landed. Do not union UPDATE_SNAPSHOT_LEDGER_TABLES
+# into MANAGED_SQLITE_TABLES until D-B699, D-B799, D-B899, and D-B1099 close.
+# Do not copy http_cache, http_cache_metadata, alembic_version,
+# openopps_tables, or openopps_columns into update_snapshot_* tables.
+UPDATE_SNAPSHOT_LEDGER_TABLES: frozenset[str] = frozenset(
+    {
+        "update_snapshots",
+        "update_snapshot_sources",
+        "update_snapshot_boards",
+        "update_snapshot_board_providers",
+        "update_snapshot_jobs",
+        "update_snapshot_job_versions",
+        "update_snapshot_job_version_locations",
+        "update_snapshot_job_version_skills",
+        "update_snapshot_job_version_skill_keywords",
+        "update_snapshot_job_version_bullets",
+        "update_snapshot_job_payload_snapshots",
+        "update_snapshot_job_sync_runs",
+        "update_snapshot_job_sync_observations",
+    }
+)
 
 
 class DatabaseSchemaError(RuntimeError):

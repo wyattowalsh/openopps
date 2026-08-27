@@ -25,6 +25,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticUndefined
 from sqlalchemy import Column, JSON, UniqueConstraint
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
@@ -2671,6 +2672,260 @@ class JobSyncObservationRow(SQLModel, table=True):
         index=True,
         description="UTC timestamp when the observation was recorded.",
     )
+
+
+class UpdateSnapshotAttestation(StrEnum):
+    """Public attestation for one cadence-neutral update snapshot."""
+
+    COMPLETE = "complete"
+    DEGRADED = "degraded"
+    FAILED = "failed"
+
+
+class UpdateSnapshotRow(SQLModel, table=True):
+    """Header for one naïve full-copy update snapshot.
+
+    `snapshot_id` identifies a logical update run, not a calendar day.
+    Retention is indefinite: this table has no TTL or prune columns.
+    """
+
+    __tablename__ = "update_snapshots"
+
+    snapshot_id: str = SQLField(
+        primary_key=True,
+        min_length=1,
+        description=(
+            "Cadence-neutral logical update identity. Not a calendar day; "
+            "bounded retries inside one update reuse this id."
+        ),
+    )
+    captured_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC timestamp when this logical update was captured.",
+    )
+    appended_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC timestamp when the naïve copies were appended.",
+    )
+    collection_status: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Collection outcome for this update: complete, partial, or failed.",
+    )
+    validation_ok: bool = SQLField(
+        index=True,
+        description="Whether SQLite construction and validation succeeded.",
+    )
+    attestation: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Public attestation: complete, degraded, or failed.",
+    )
+    run_digest: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Digest of the appended update (for example sha256 hex).",
+    )
+    schema_revision: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Alembic revision that owns this ledger schema.",
+    )
+    row_counts: JsonDict = SQLField(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Copied row counts keyed by operational table name.",
+    )
+
+
+def _sqlmodel_field_is_set(value: object) -> bool:
+    return value is not PydanticUndefined and value is not None
+
+
+def _clone_sqlfield_without_live_fk(field_info: Any) -> Any:
+    """Copy a SQLModel field, dropping FKs onto live operational tables."""
+
+    kwargs: dict[str, Any] = {}
+    if field_info.description:
+        kwargs["description"] = field_info.description
+    if field_info.primary_key is True:
+        kwargs["primary_key"] = True
+    if field_info.index is True:
+        kwargs["index"] = True
+    if field_info.unique is True:
+        kwargs["unique"] = True
+    sa_column = field_info.sa_column
+    if _sqlmodel_field_is_set(sa_column):
+        kwargs["sa_column"] = Column(sa_column.type, nullable=sa_column.nullable)
+    if field_info.default_factory not in {None, PydanticUndefined}:
+        kwargs["default_factory"] = field_info.default_factory
+    elif field_info.default is not PydanticUndefined:
+        kwargs["default"] = field_info.default
+    return SQLField(**kwargs)
+
+
+def _naive_update_snapshot_copy(
+    source: type[SQLModel],
+    *,
+    name: str,
+    tablename: str,
+    uniques: tuple[tuple[str, tuple[str, ...]], ...] = (),
+) -> type[SQLModel]:
+    """Build a naïve full-copy table class keyed by snapshot_id plus original PK."""
+
+    annotations: dict[str, Any] = {"snapshot_id": str}
+    namespace: dict[str, Any] = {
+        "__tablename__": tablename,
+        "__module__": __name__,
+        "__doc__": (
+            f"Naïve full-copy of `{source.__tablename__}` for one update snapshot. "
+            "FK is snapshot_id → update_snapshots only; live operational FKs are not copied."
+        ),
+        "__annotations__": annotations,
+        "snapshot_id": SQLField(
+            primary_key=True,
+            foreign_key="update_snapshots.snapshot_id",
+            min_length=1,
+            description=(
+                "Cadence-neutral logical update identity. Not a calendar day."
+            ),
+        ),
+    }
+    unique_constraints = tuple(
+        UniqueConstraint("snapshot_id", *columns, name=constraint_name)
+        for constraint_name, columns in uniques
+    )
+    if unique_constraints:
+        namespace["__table_args__"] = unique_constraints
+    for field_name, field_info in source.model_fields.items():
+        annotations[field_name] = field_info.annotation
+        namespace[field_name] = _clone_sqlfield_without_live_fk(field_info)
+    return type(name, (SQLModel,), namespace, table=True)
+
+
+UpdateSnapshotSourceRow = _naive_update_snapshot_copy(
+    SourceRow,
+    name="UpdateSnapshotSourceRow",
+    tablename="update_snapshot_sources",
+)
+UpdateSnapshotBoardRow = _naive_update_snapshot_copy(
+    BoardRow,
+    name="UpdateSnapshotBoardRow",
+    tablename="update_snapshot_boards",
+    uniques=(
+        ("uq_update_snapshot_board_source_remote", ("source_key", "remote_id")),
+    ),
+)
+UpdateSnapshotBoardProviderRow = _naive_update_snapshot_copy(
+    BoardProviderRow,
+    name="UpdateSnapshotBoardProviderRow",
+    tablename="update_snapshot_board_providers",
+    uniques=(
+        (
+            "uq_update_snapshot_board_provider",
+            ("source_key", "board_key", "provider_id"),
+        ),
+    ),
+)
+UpdateSnapshotJobRow = _naive_update_snapshot_copy(
+    JobRow,
+    name="UpdateSnapshotJobRow",
+    tablename="update_snapshot_jobs",
+    uniques=(
+        (
+            "uq_update_snapshot_job_remote",
+            ("board_key", "provider_id", "remote_id"),
+        ),
+    ),
+)
+UpdateSnapshotJobVersionRow = _naive_update_snapshot_copy(
+    JobVersionRow,
+    name="UpdateSnapshotJobVersionRow",
+    tablename="update_snapshot_job_versions",
+    uniques=(
+        ("uq_update_snapshot_job_version_content", ("job_id", "content_hash")),
+        ("uq_update_snapshot_job_version_number", ("job_id", "version")),
+    ),
+)
+UpdateSnapshotJobVersionLocationRow = _naive_update_snapshot_copy(
+    JobVersionLocationRow,
+    name="UpdateSnapshotJobVersionLocationRow",
+    tablename="update_snapshot_job_version_locations",
+    uniques=(
+        (
+            "uq_update_snapshot_job_version_location",
+            ("job_version_id", "ordinal", "label"),
+        ),
+    ),
+)
+UpdateSnapshotJobVersionSkillRow = _naive_update_snapshot_copy(
+    JobVersionSkillRow,
+    name="UpdateSnapshotJobVersionSkillRow",
+    tablename="update_snapshot_job_version_skills",
+    uniques=(
+        ("uq_update_snapshot_job_version_skill", ("job_version_id", "ordinal")),
+    ),
+)
+UpdateSnapshotJobVersionSkillKeywordRow = _naive_update_snapshot_copy(
+    JobVersionSkillKeywordRow,
+    name="UpdateSnapshotJobVersionSkillKeywordRow",
+    tablename="update_snapshot_job_version_skill_keywords",
+    uniques=(
+        (
+            "uq_update_snapshot_job_skill_keyword",
+            ("skill_id", "ordinal", "keyword"),
+        ),
+    ),
+)
+UpdateSnapshotJobVersionBulletRow = _naive_update_snapshot_copy(
+    JobVersionBulletRow,
+    name="UpdateSnapshotJobVersionBulletRow",
+    tablename="update_snapshot_job_version_bullets",
+    uniques=(
+        (
+            "uq_update_snapshot_job_version_bullet",
+            ("job_version_id", "kind", "ordinal", "text"),
+        ),
+    ),
+)
+UpdateSnapshotJobPayloadSnapshotRow = _naive_update_snapshot_copy(
+    JobPayloadSnapshotRow,
+    name="UpdateSnapshotJobPayloadSnapshotRow",
+    tablename="update_snapshot_job_payload_snapshots",
+    uniques=(
+        (
+            "uq_update_snapshot_job_payload_snapshot",
+            ("job_id", "payload_kind", "payload_hash"),
+        ),
+    ),
+)
+UpdateSnapshotJobSyncRunRow = _naive_update_snapshot_copy(
+    JobSyncRunRow,
+    name="UpdateSnapshotJobSyncRunRow",
+    tablename="update_snapshot_job_sync_runs",
+)
+UpdateSnapshotJobSyncObservationRow = _naive_update_snapshot_copy(
+    JobSyncObservationRow,
+    name="UpdateSnapshotJobSyncObservationRow",
+    tablename="update_snapshot_job_sync_observations",
+)
+
+UPDATE_SNAPSHOT_COPY_MODELS: tuple[type[SQLModel], ...] = (
+    UpdateSnapshotSourceRow,
+    UpdateSnapshotBoardRow,
+    UpdateSnapshotBoardProviderRow,
+    UpdateSnapshotJobRow,
+    UpdateSnapshotJobVersionRow,
+    UpdateSnapshotJobVersionLocationRow,
+    UpdateSnapshotJobVersionSkillRow,
+    UpdateSnapshotJobVersionSkillKeywordRow,
+    UpdateSnapshotJobVersionBulletRow,
+    UpdateSnapshotJobPayloadSnapshotRow,
+    UpdateSnapshotJobSyncRunRow,
+    UpdateSnapshotJobSyncObservationRow,
+)
 
 
 def _record_to_row_data(
