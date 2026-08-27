@@ -149,6 +149,7 @@ def test_root_help_groups_commands_by_user_journey():
     assert "Everyday workflow" in result.output
     assert "Operational surfaces" in result.output
     assert "Advanced admin" in result.output
+    assert "Quarantined source discovery" in result.output
     assert "local-first route ledger" in result.output
     assert "Automation" in result.output
 
@@ -420,6 +421,48 @@ def test_boards_sync_uses_progress_for_human_output(monkeypatch, tmp_path: Path)
 
     assert result.exit_code == 0
     assert calls == [("Syncing boards", True, False)]
+
+
+def test_unscoped_sync_metrics_json_includes_conservation(monkeypatch, tmp_path: Path):
+    from openopps.metrics import empty_route_conservation, empty_source_conservation
+
+    calls = []
+
+    async def fake_ingest_sync_all(**kwargs):
+        calls.append(sorted(kwargs))
+        metrics = SyncMetrics(name="sync").finish()
+        metrics.source_conservation = empty_source_conservation()
+        metrics.route_conservation = empty_route_conservation()
+        metrics.schema_version = 1
+        metrics.run_id = "ingest-test"
+        metrics.attestation = "degraded"
+        metrics.degraded_class = "unstarted"
+        metrics.evidence_digest = "sha256:" + "b" * 64
+        return metrics
+
+    def fake_run_sync_with_progress(label, run, *, enabled, verbose=False):
+        calls.append((label, enabled, verbose))
+        return run(lambda _message: None)
+
+    monkeypatch.setattr(cli_module, "ingest_sync_all", fake_ingest_sync_all)
+    monkeypatch.setattr(
+        cli_module, "_run_sync_with_progress", fake_run_sync_with_progress
+    )
+
+    result = invoke(tmp_path, "sync", "--metrics-json")
+
+    assert result.exit_code == 0
+    assert calls[0] == ("Syncing OpenOpps", False, False)
+    payload = json.loads(result.output)
+    assert payload["name"] == "sync"
+    assert payload["attestation"] == "degraded"
+    assert payload["degradedClass"] == "unstarted"
+    assert payload["attestation"] != payload["degradedClass"]
+    assert payload["conservation"]["sources"]["planned"] == 0
+    assert payload["conservation"]["routes"]["planned"] == 0
+    assert "http://" not in result.output
+    assert "https://" not in result.output
+    assert "unaccounted" not in result.output
 
 
 def test_top_level_sync_runs_sources_boards_and_jobs_in_order(

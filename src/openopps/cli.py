@@ -38,8 +38,19 @@ from openopps.enrichment import enrich_metadata
 from openopps.export import export_records
 from openopps.health import check_provider_health
 from openopps.http import build_async_client
-from openopps.ingest import all_board_sources, sync_boards, sync_jobs, sync_sources
-from openopps.metrics import ProgressReporter, ProgressUpdate, SyncMetrics
+from openopps.ingest import (
+    all_board_sources,
+    sync_all as ingest_sync_all,
+    sync_boards,
+    sync_jobs,
+    sync_sources,
+)
+from openopps.metrics import (
+    ProgressReporter,
+    ProgressUpdate,
+    SyncMetrics,
+    combine_sync_metrics,
+)
 from openopps.intro import play_intro, render_intro_frame
 from openopps.migrations import DatabaseSchemaError
 from openopps.models import (
@@ -243,7 +254,25 @@ admin_app = typer.Typer(
     help="Advanced dry-run diagnostics, manual route edits, and local maintenance."
 )
 admin_sources_app = typer.Typer(
-    help="Advanced source registration, adapter sampling, and offline yield reports."
+    help=(
+        "Advanced source registration, adapter sampling, quarantined scout and "
+        "offline verify, and yield reports."
+    )
+)
+discovery_app = typer.Typer(
+    help=(
+        "Quarantined source discovery: scout into an explicit output directory, "
+        "verify bundles offline, and dry-run a digest-bound promotion preview. "
+        "Selector-bound execution is advanced admin "
+        "and uses the private approved-ingestion envelope, not the v7 public "
+        "SourceSelector. Does not promote, sync, or activate candidates."
+    ),
+    epilog=(
+        "Promotion apply and scheduled ingest are separate workflows. Scout, "
+        "verify, and preview-promotion never add candidates to the catalog, "
+        "activate them, or run source sync in the same invocation. Preview has "
+        "no apply option. Discovery is not same-run with ingest."
+    ),
 )
 admin_boards_app = typer.Typer(
     help="Advanced board registration, enrichment, and explicit route metadata."
@@ -264,6 +293,7 @@ app.add_typer(cache_app, name="cache", rich_help_panel=PANEL_OPERATIONS)
 app.add_typer(plugins_app, name="plugins", rich_help_panel=PANEL_OPERATIONS)
 app.add_typer(examples_app, name="examples", rich_help_panel=PANEL_OPERATIONS)
 app.add_typer(admin_app, name="admin", rich_help_panel=PANEL_ADMIN)
+app.add_typer(discovery_app, name="discovery", rich_help_panel=PANEL_ADMIN)
 admin_app.add_typer(admin_sources_app, name="sources")
 admin_app.add_typer(admin_boards_app, name="boards")
 admin_app.add_typer(admin_providers_app, name="providers")
@@ -358,6 +388,82 @@ def _json(data: object) -> None:
     console.print_json(json.dumps(data, default=str))
 
 
+def _discovery_repository_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _discovery_json(data: object) -> None:
+    typer.echo(json.dumps(data, default=str, sort_keys=True))
+
+
+def _emit_discovery_result(payload: dict[str, object], *, json_output: bool) -> None:
+    if json_output:
+        _discovery_json(payload)
+        return
+    command = str(payload.get("command", "discovery"))
+    status = str(payload.get("status", "complete"))
+    console.print(f"{command} {status}")
+    if payload.get("manifestPath"):
+        console.print(f"manifest {payload['manifestPath']}")
+    console.print(
+        "Candidates were not promoted or activated. Repository promotion is a "
+        "separate dry-run-first workflow."
+    )
+
+
+def _emit_promotion_preview_result(
+    payload: dict[str, object], *, json_output: bool
+) -> None:
+    if json_output:
+        _discovery_json(payload)
+        return
+    command = str(payload.get("command", "preview-promotion"))
+    status = str(payload.get("status", "preview"))
+    console.print(f"{command} {status}")
+    if payload.get("identityClosure"):
+        console.print("identity-closure")
+    if payload.get("decisionId"):
+        console.print(f"decision {payload['decisionId']}")
+    if payload.get("catalogUnchanged"):
+        console.print("catalog unchanged")
+    console.print(
+        "Did not apply, stage, commit, or mutate Git, SQLite, Kaggle, or the catalog."
+    )
+
+
+def _emit_discovery_failure(error: Exception, *, json_output: bool) -> None:
+    from openopps.discovery.api import (
+        ScoutCommandError,
+        render_discovery_diagnostic,
+    )
+
+    if isinstance(error, ScoutCommandError):
+        diagnostic = render_discovery_diagnostic(error.reason, detail=error.detail)
+        command = error.command
+    else:
+        from openopps.discovery.models import BoundedReason
+
+        diagnostic = render_discovery_diagnostic(
+            BoundedReason.EVIDENCE_INCOMPLETE, detail=str(error)
+        )
+        command = "discovery"
+    payload: dict[str, object] = {
+        "activated": False,
+        "command": command,
+        "diagnostic": diagnostic.as_dict(),
+        "promoted": False,
+        "status": "invalid",
+    }
+    if command == "preview-promotion":
+        payload["applied"] = False
+        payload["mutated"] = False
+    if json_output:
+        _discovery_json(payload)
+    else:
+        console.print(diagnostic.summary)
+    raise typer.Exit(code=1)
+
+
 def _export_metadata(entity: str, filters: dict[str, Any]) -> dict[str, Any]:
     return {
         "entity": entity,
@@ -448,36 +554,7 @@ def _ignore_progress(_update: ProgressUpdate) -> None:
 
 
 def _combine_sync_metrics(name: str, *metrics: SyncMetrics) -> SyncMetrics:
-    combined = SyncMetrics(name=name)
-    for item in metrics:
-        combined.pages += item.pages
-        combined.boards += item.boards
-        combined.board_providers += item.board_providers
-        combined.jobs += item.jobs
-        combined.jobs_persisted += item.jobs_persisted
-        combined.job_sync_attempts += item.job_sync_attempts
-        combined.job_sync_runs += item.job_sync_runs
-        combined.jobs_deduped += item.jobs_deduped
-        combined.skipped += item.skipped
-        combined.duplicate_routes_skipped += item.duplicate_routes_skipped
-        combined.retries += item.retries
-        for provider_id, count in item.provider_errors.items():
-            combined.provider_errors[provider_id] = (
-                combined.provider_errors.get(provider_id, 0) + count
-            )
-        for provider_id, details in item.provider_error_details.items():
-            combined_details = combined.provider_error_details.setdefault(
-                provider_id, {}
-            )
-            for reason, count in details.items():
-                combined_details[reason] = combined_details.get(reason, 0) + count
-    if metrics:
-        combined.started_at = min(item.started_at for item in metrics)
-        combined.finished_at = max(
-            item.finished_at or item.started_at for item in metrics
-        )
-        return combined
-    return combined.finish()
+    return combine_sync_metrics(name, *metrics)
 
 
 @contextmanager
@@ -797,6 +874,20 @@ def sync_all(
 
     def run(report: ProgressReporter) -> SyncMetrics:
         async def _run() -> SyncMetrics:
+            if source_key is None:
+                return await ingest_sync_all(
+                    settings=settings,
+                    store=store,
+                    board_key=board,
+                    provider_id=provider_filter,
+                    output=output,
+                    page_size=page_size,
+                    max_candidates=max_candidates,
+                    limit=limit,
+                    verbose=verbose,
+                    report=report,
+                    repository_root=_discovery_repository_root(),
+                )
             source_metrics = await sync_sources(
                 settings=settings,
                 store=store,
@@ -1312,6 +1403,184 @@ def sources_yield(
             for item in data["sources"]
         ],
     )
+
+
+DISCOVERY_SCOUT_HELP = (
+    "Write a quarantined discovery bundle to an explicit output directory. "
+    "Selector-bound scout pins the private approved-ingestion envelope and "
+    "does not accept the v7 public SourceSelector. Does not mutate SQLite, "
+    "catalogs, Git, or Kaggle, has no apply option, and is not same-run with "
+    "ingest or promotion."
+)
+DISCOVERY_VERIFY_HELP = (
+    "Offline-verify a quarantine bundle without rewriting it or activating "
+    "candidates. Re-validates the private approved-ingestion envelope; does "
+    "not accept the v7 public SourceSelector or run ingest in the same invocation."
+)
+DISCOVERY_PREVIEW_HELP = (
+    "Dry-run a digest-bound repository promotion preview without applying. "
+    "Omitting a manifest previews the on-disk identity-closure envelope, "
+    "decision, and ledger. Passing a quarantine manifest offline-verifies it "
+    "first. Does not mutate Git remotes, operational SQLite, Kaggle, or "
+    "Cloudflare, and has no apply option."
+)
+
+
+def discovery_scout(
+    output: Annotated[
+        Path,
+        typer.Option(
+            *OUTPUT_OPTION_FLAGS,
+            help=(
+                "Explicit quarantine output directory. Required. Scout writes "
+                "only here and never mutates SQLite, catalogs, Git, or Kaggle."
+            ),
+            file_okay=False,
+            dir_okay=True,
+            writable=True,
+            resolve_path=True,
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    from openopps.discovery.api import (
+        ScoutCommandError,
+        run_offline_quarantine_scout,
+    )
+    from openopps.discovery.diagnostics import (
+        SelectorBoundError,
+        attach_selector_bound_observability,
+        prepare_selector_bound_scout,
+    )
+    from openopps.discovery.models import BoundedReason
+
+    repository_root = _discovery_repository_root()
+    try:
+        pin = prepare_selector_bound_scout(repository_root)
+        payload = run_offline_quarantine_scout(
+            output,
+            repository_root=repository_root,
+        )
+        payload = attach_selector_bound_observability(
+            payload,
+            pin=pin,
+            invocation_identity=str(payload.get("executionId", "scout")),
+        )
+    except SelectorBoundError as error:
+        _emit_discovery_failure(
+            ScoutCommandError(
+                BoundedReason.EVIDENCE_INCOMPLETE,
+                command="scout",
+                detail=str(error),
+            ),
+            json_output=json_output,
+        )
+        return
+    except ScoutCommandError as error:
+        _emit_discovery_failure(error, json_output=json_output)
+        return
+    _emit_discovery_result(payload, json_output=json_output)
+
+
+def discovery_verify_scout(
+    manifest: Annotated[
+        Path,
+        typer.Argument(
+            help="Quarantine manifest.json path or the bundle directory that contains it."
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    from openopps.discovery.api import (
+        ScoutCommandError,
+        verify_scout_manifest_path,
+    )
+    from openopps.discovery.diagnostics import (
+        SelectorBoundError,
+        attach_selector_bound_observability,
+        prepare_selector_bound_scout,
+    )
+    from openopps.discovery.models import BoundedReason
+
+    repository_root = _discovery_repository_root()
+    try:
+        pin = prepare_selector_bound_scout(repository_root)
+        payload = verify_scout_manifest_path(manifest)
+        payload = attach_selector_bound_observability(
+            payload,
+            pin=pin,
+            invocation_identity=str(payload.get("manifestId", "verify-scout")),
+        )
+    except SelectorBoundError as error:
+        _emit_discovery_failure(
+            ScoutCommandError(
+                BoundedReason.EVIDENCE_INCOMPLETE,
+                command="verify-scout",
+                detail=str(error),
+            ),
+            json_output=json_output,
+        )
+        return
+    except ScoutCommandError as error:
+        _emit_discovery_failure(error, json_output=json_output)
+        return
+    _emit_discovery_result(payload, json_output=json_output)
+
+
+def discovery_preview_promotion(
+    manifest: Annotated[
+        Path | None,
+        typer.Argument(
+            help=(
+                "Optional quarantine manifest.json or bundle directory. Omit to "
+                "preview the on-disk identity-closure decision. When provided, "
+                "offline-verify that bundle before preview. Never applies."
+            ),
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    from openopps.discovery.api import (
+        ScoutCommandError,
+        preview_repository_promotion,
+    )
+
+    repository_root = _discovery_repository_root()
+    try:
+        payload = preview_repository_promotion(
+            repository_root,
+            manifest=manifest,
+        )
+    except ScoutCommandError as error:
+        _emit_discovery_failure(error, json_output=json_output)
+        return
+    _emit_promotion_preview_result(payload, json_output=json_output)
+
+
+discovery_app.command("scout", help=DISCOVERY_SCOUT_HELP)(discovery_scout)
+admin_sources_app.command("scout", help=DISCOVERY_SCOUT_HELP)(discovery_scout)
+discovery_app.command("verify-scout", help=DISCOVERY_VERIFY_HELP)(
+    discovery_verify_scout
+)
+admin_sources_app.command("verify-scout", help=DISCOVERY_VERIFY_HELP)(
+    discovery_verify_scout
+)
+discovery_app.command("preview-promotion", help=DISCOVERY_PREVIEW_HELP)(
+    discovery_preview_promotion
+)
+admin_sources_app.command("preview-promotion", help=DISCOVERY_PREVIEW_HELP)(
+    discovery_preview_promotion
+)
 
 
 @sources_app.command(
