@@ -18,7 +18,7 @@ setup:
 quick: python-quality cli-help test-cli openspec-list openspec-validate-all
 
 # Canonical local validation graph. GitHub Actions invokes the same lane recipes.
-ci: ci-python ci-openspec ci-web ci-artifacts
+ci: ci-python ci-openspec ci-discovery ci-web ci-artifacts
 
 # Python 3.12 release gate.
 ci-python: lock-check python-quality test-cov cli-help wheel-catalog-smoke
@@ -28,6 +28,9 @@ ci-python-compat: lock-check test
 
 # OpenSpec contract gate.
 ci-openspec: openspec-list openspec-validate-all
+
+# Offline source-discovery contract gate. No live network, upload, or apply.
+ci-discovery: source-discovery-ci
 
 # Web product gate.
 ci-web: web-check web-build web-test web-e2e web-a11y web-lint web-search-artifacts-check
@@ -60,6 +63,61 @@ build-wheel:
 wheel-catalog-smoke:
     uv build --wheel --out-dir /tmp/openopps-wheels
     uv run python scripts/smoke_wheel_catalog.py
+
+# Local B699 promotion wheel readback. Does not upload Workers or push Kaggle.
+promotion-wheel-readback:
+    uv run pytest tests/unit/openopps/discovery/test_promotion_apply.py tests/unit/openopps/discovery/test_promotion_shared_delivery.py -q
+    uv build --wheel --out-dir /tmp/openopps-wheels
+    uv run python scripts/smoke_wheel_catalog.py
+    uv run python scripts/smoke_promotion_wheel.py
+
+
+# --- Source discovery (offline, no apply) ---
+
+# Validate committed discovery JSON Schemas against current models.
+source-discovery-schema-check:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py schema
+
+# Validate committed sanitized fixtures without live network access.
+source-discovery-fixtures-check:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py fixtures
+
+# Offline-verify one quarantine manifest. Fail-closed; does not rewrite or activate.
+source-discovery-manifest-check manifest="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    manifest="$1"; manifest="${manifest#manifest=}"
+    [[ -n "$manifest" ]] || { echo "manifest is required" >&2; exit 2; }
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py manifest --manifest "$manifest"
+
+# Dry-run a digest-bound promotion preview. Defaults to the on-disk identity closure.
+source-discovery-promotion-preview manifest="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    manifest="$1"; manifest="${manifest#manifest=}"
+    args=(promotion-preview)
+    if [[ -n "$manifest" ]]; then args+=(--manifest "$manifest"); fi
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py "${args[@]}"
+
+# Validate the private approved-ingestion selector envelope against the packaged catalog.
+source-discovery-private-envelope-check:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py private-envelope
+
+# Conserve selector accounting over the pinned envelope as unstarted terminals.
+source-discovery-accounting-check:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py accounting
+
+# Run the offline discovery/promotion benchmark fixture (evidence-only; no numeric SLO).
+source-discovery-benchmark-check:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py benchmark
+
+# Validate portable skill evals, frontmatter, dry-run projection, and docs-steward skip.
+source-discovery-skill-eval-check:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py skill-eval
+
+# Canonical offline discovery gate graph mirrored by CI.
+source-discovery-ci:
+    OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py ci
 
 # Validate the exact committed public-corpus rights evidence offline.
 source-policy-check:

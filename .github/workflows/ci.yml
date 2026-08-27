@@ -217,6 +217,40 @@ jobs:
       - name: Run web gate
         run: just ci-web
 
+
+  discovery:
+    name: Source discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      OPENOPPS_DISCOVERY_NETWORK: disabled
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras --dev --python 3.12
+
+      - name: Install Just
+        uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2.85.12
+        with:
+          tool: just@1.56.0
+
+      - name: Run offline discovery gates
+        run: just ci-discovery
+
   artifacts:
     name: Generated artifacts
     runs-on: ubuntu-latest
@@ -249,7 +283,7 @@ jobs:
   supply-chain:
     name: Wheel SBOM and attestation
     if: github.event_name != 'pull_request'
-    needs: [python, lowest-direct, openspec, security, web, artifacts]
+    needs: [python, lowest-direct, openspec, security, web, artifacts, discovery]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

@@ -1,20 +1,158 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import subprocess
 import tomllib
+import types
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 ARCHIVE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "public-data-archive.yml"
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
+JUSTFILE_PATH = REPO_ROOT / "Justfile"
+GATES_SCRIPT_PATH = REPO_ROOT / "scripts" / "source_discovery_gates.py"
 ACTION_REF = re.compile(r"^\s*uses:\s*[^\s#]+@([0-9a-f]{40})(?:\s+#.*)?$", re.MULTILINE)
 ANY_ACTION = re.compile(r"^\s*uses:\s*([^\s#]+)(?:\s+#.*)?$", re.MULTILINE)
 UNSAFE_JUST_PARAMETER = re.compile(
     r"\{\{\s*(?:allow_stale|change|dataset|db|message|output|page_size|timeout|version)\s*\}\}"
 )
+JUST_RECIPE = re.compile(
+    r"^([a-z][a-z0-9-]*)"
+    r"((?: [a-z][a-z0-9-]*(?:=\"[^\"]*\")?)*)"
+    r":(.*)\n"
+    r"((?:(?:    |\t).*\n|\n)*)",
+    re.MULTILINE,
+)
+DISCOVERY_JUST_GATES = {
+    "source-discovery-schema-check": "schema",
+    "source-discovery-fixtures-check": "fixtures",
+    "source-discovery-manifest-check": "manifest",
+    "source-discovery-promotion-preview": "promotion-preview",
+    "source-discovery-private-envelope-check": "private-envelope",
+    "source-discovery-accounting-check": "accounting",
+    "source-discovery-benchmark-check": "benchmark",
+    "source-discovery-skill-eval-check": "skill-eval",
+    "source-discovery-ci": "ci",
+}
+DISCOVERY_CI_GATES = (
+    "schema",
+    "fixtures",
+    "replay-bundle",
+    "promotion-preview",
+    "private-envelope",
+    "accounting",
+    "skill-eval",
+    "benchmark",
+)
+DISCOVERY_ALLOWED_RUNS = (
+    "uv python install 3.12",
+    "uv sync --frozen --all-extras --dev --python 3.12",
+    "just ci-discovery",
+)
+DISCOVERY_ALLOWED_ACTIONS = (
+    "actions/checkout@",
+    "astral-sh/setup-uv@",
+    "taiki-e/install-action@",
+)
+DISCOVERY_FORBIDDEN = re.compile(
+    r"(?:"
+    r"git\s+commit|git\s+push|gh\s+pr\b|gh\s+release\b|"
+    r"peter-evans/create-pull-request|actions/upload-artifact|"
+    r"actions/upload-pages-artifact|actions/create-release|"
+    r"softprops/action-gh-release|"
+    r"pypa/gh-action-pypi-publish|npm\s+publish|twine\s+upload|"
+    r"wrangler\s+(?:deploy|publish)|kaggle\s+|helm\s+install|"
+    r"kubectl\s+apply|--apply\b|repository_dispatch|"
+    r"OPENOPPS_DISCOVERY_NETWORK\s*[:=]\s*(?!disabled\b)\S+"
+    r")",
+    re.IGNORECASE,
+)
+WORKFLOW_SCHEDULE_TRIGGER = re.compile(
+    r"(?m)^[ \t]*schedule:[ \t]*(?:#.*)?$"
+)
+RUN_STEP = re.compile(r"^[ \t]+run:[ \t]+(.+)$", re.MULTILINE)
+D1011_CI_GATES = (
+    "schema",
+    "fixtures",
+    "replay-bundle",
+    "skill-eval",
+    "private-envelope",
+    "accounting",
+)
+D1015_FORBIDDEN_EXAMPLES = {
+    "live-scout-schedule": "  schedule:\n    - cron: '17 4 * * *'\n",
+    "networked-live-dispatch": "repository_dispatch:\n    types: [live-scout]\n",
+    "unsanitized-bundle-upload": "uses: actions/upload-artifact@deadbeef\n",
+    "commit": "git commit -m 'activate scout'\n",
+    "push": "git push origin main\n",
+    "pr": "gh pr create --fill\n",
+    "install": "helm install openopps ./chart\n",
+    "publish": "npm publish\n",
+    "release": "gh release create v0.1.0\n",
+    "deploy": "wrangler deploy\n",
+    "live-discovery-network": "OPENOPPS_DISCOVERY_NETWORK: enabled\n",
+}
+
+
+def _parse_just_recipes(text: str) -> dict[str, tuple[str, str, str]]:
+    return {
+        match.group(1): (match.group(2).strip(), match.group(3).strip(), match.group(4))
+        for match in JUST_RECIPE.finditer(text)
+    }
+
+
+def _workflow_job(workflow: str, name: str) -> str:
+    match = re.search(
+        rf"^  {re.escape(name)}:\n(?:.*\n)*?(?=^  [a-z0-9-]+:|\Z)",
+        workflow,
+        re.MULTILINE,
+    )
+    assert match is not None, f"missing GitHub Actions job {name!r}"
+    return match.group(0)
+
+
+def _load_discovery_gates_module() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "openopps_source_discovery_gates",
+        GATES_SCRIPT_PATH,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _discovery_recipe_text() -> str:
+    recipes = _parse_just_recipes(JUSTFILE_PATH.read_text(encoding="utf-8"))
+    chunks: list[str] = []
+    for name in ("ci-discovery", *DISCOVERY_JUST_GATES):
+        params, deps, body = recipes[name]
+        chunks.append(f"{name} {params}: {deps}\n{body}")
+    return "".join(chunks)
+
+
+def _discovery_ci_path_text() -> str:
+    return "\n".join(
+        (
+            _workflow_job(WORKFLOW_PATH.read_text(encoding="utf-8"), "discovery"),
+            _discovery_recipe_text(),
+            GATES_SCRIPT_PATH.read_text(encoding="utf-8"),
+        )
+    )
+
+
+def _public_workflow_paths() -> list[Path]:
+    return sorted(
+        path
+        for pattern in ("*.yml", "*.yaml")
+        for path in WORKFLOW_DIR.glob(pattern)
+    )
 
 
 def test_dependency_update_ownership_is_disjoint() -> None:
@@ -60,11 +198,12 @@ def test_workflow_uses_supported_python_matrix_and_shared_just_lanes() -> None:
         "ci-python",
         "ci-python-compat",
         "ci-web",
+        "ci-discovery",
         "security-audit",
         "test-lowest-direct",
     ):
         assert f"run: just {recipe}" in workflow
-    assert workflow.count("timeout-minutes:") == 8
+    assert workflow.count("timeout-minutes:") == 9
 
 
 def test_web_gate_installs_and_runs_all_supported_browser_engines() -> None:
@@ -81,7 +220,7 @@ def test_attestation_is_non_pr_least_privilege_and_post_gate() -> None:
 
     assert "if: github.event_name != 'pull_request'" in supply_chain
     assert (
-        "needs: [python, lowest-direct, openspec, security, web, artifacts]"
+        "needs: [python, lowest-direct, openspec, security, web, artifacts, discovery]"
         in supply_chain
     )
     assert "attestations: write" in supply_chain
@@ -334,3 +473,161 @@ def test_operator_docs_match_kaggle_and_offline_release_contract() -> None:
     assert "default-off offline-search installer" in public_release_docs
     assert "Chromium/Firefox/WebKit" in public_release_docs
     assert "production-snapshot rights approval" in public_release_docs
+
+
+def test_discovery_just_recipes_delegate_to_canonical_gates_script() -> None:
+    recipes = _parse_just_recipes(JUSTFILE_PATH.read_text(encoding="utf-8"))
+
+    for recipe, gate in DISCOVERY_JUST_GATES.items():
+        assert recipe in recipes, recipe
+        params, deps, body = recipes[recipe]
+        assert deps == ""
+        assert "scripts/source_discovery_gates.py" in body
+        assert body.count("scripts/") == body.count("scripts/source_discovery_gates.py")
+        assert "OPENOPPS_DISCOVERY_NETWORK=disabled" in body
+        assert "from openopps" not in body
+        assert "python -c" not in body
+        assert "uv run openopps" not in body
+        invocation = re.search(
+            r"OPENOPPS_DISCOVERY_NETWORK=disabled uv run python "
+            r"scripts/source_discovery_gates.py (.+)$",
+            body,
+            re.MULTILINE,
+        )
+        assert invocation is not None, recipe
+        argument = invocation.group(1).strip()
+        if recipe == "source-discovery-promotion-preview":
+            assert params == 'manifest=""'
+            assert "args=(promotion-preview)" in body
+            assert argument == '"${args[@]}"'
+        elif recipe == "source-discovery-manifest-check":
+            assert params == 'manifest=""'
+            assert argument.split()[0] == "manifest"
+        else:
+            assert argument.split()[0] == gate
+
+    _, ci_discovery_deps, ci_discovery_body = recipes["ci-discovery"]
+    assert ci_discovery_deps == "source-discovery-ci"
+    assert ci_discovery_body.strip() == ""
+    _, ci_deps, _ = recipes["ci"]
+    assert "ci-discovery" in ci_deps.split()
+
+
+def test_canonical_discovery_ci_gates_match_script_entry_points() -> None:
+    module = _load_discovery_gates_module()
+
+    assert module.CI_GATES == DISCOVERY_CI_GATES
+    assert all(name in module.CI_GATES for name in D1011_CI_GATES)
+    for gate in DISCOVERY_JUST_GATES.values():
+        assert gate in module.DISPATCH
+    for gate in DISCOVERY_CI_GATES:
+        assert gate in module.DISPATCH
+    source = GATES_SCRIPT_PATH.read_text(encoding="utf-8")
+    assert "_require_offline()" in source
+    assert "run_offline_quarantine_scout" in source
+    assert '["--check"]' in source
+
+
+def test_discovery_ci_yaml_mirrors_just_without_duplicating_gate_commands() -> None:
+    job = _workflow_job(WORKFLOW_PATH.read_text(encoding="utf-8"), "discovery")
+
+    assert "run: just ci-discovery" in job
+    assert "source_discovery_gates.py" not in job
+    assert tuple(RUN_STEP.findall(job)) == DISCOVERY_ALLOWED_RUNS
+
+
+def test_public_discovery_ci_is_offline_pinned_read_only_and_credential_free() -> None:
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    job = _workflow_job(workflow, "discovery")
+    header = workflow.split("jobs:", maxsplit=1)[0]
+
+    assert "OPENOPPS_DISCOVERY_NETWORK: disabled" in job
+    assert "persist-credentials: false" in job
+    assert job.count("persist-credentials: false") == job.count(
+        "uses: actions/checkout@"
+    )
+    assert "permissions:\n      contents: read" in job
+    assert "contents: write" not in job
+    assert "id-token: write" not in job
+    assert "secrets." not in job
+    assert "${{ secrets" not in job
+    uses = ANY_ACTION.findall(job)
+    assert uses
+    assert len(ACTION_REF.findall(job)) == len(uses)
+    assert all(
+        any(action.startswith(prefix) for prefix in DISCOVERY_ALLOWED_ACTIONS)
+        for action in uses
+    )
+    assert "schedule:" not in header
+    assert "repository_dispatch:" not in header
+    assert "push:" in header
+    assert "pull_request:" in header
+    assert "workflow_dispatch:" in header
+
+
+def test_discovery_ci_is_limited_to_committed_sanitized_fixtures() -> None:
+    module = _load_discovery_gates_module()
+    fixture_root = module.FIXTURE_ROOT
+    assert fixture_root == REPO_ROOT / "tests" / "fixtures" / "discovery"
+    payload = json.loads(
+        (fixture_root / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert payload["environment"]["network"] == "disabled"
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "tests/fixtures/discovery"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    tracked_rel = {
+        path.removeprefix("tests/fixtures/discovery/") for path in tracked
+    }
+    assert "manifest.json" in tracked_rel
+    members = {member["path"] for member in payload["members"]}
+    assert members <= tracked_rel
+
+
+def test_discovery_gates_refuse_live_network_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_discovery_gates_module()
+    monkeypatch.setenv("OPENOPPS_DISCOVERY_NETWORK", "disabled")
+    module._require_offline()
+    monkeypatch.delenv("OPENOPPS_DISCOVERY_NETWORK", raising=False)
+    module._require_offline()
+    monkeypatch.setenv("OPENOPPS_DISCOVERY_NETWORK", "enabled")
+    with pytest.raises(module.GateError, match="OPENOPPS_DISCOVERY_NETWORK=disabled"):
+        module._require_offline()
+
+
+def test_public_workflows_reject_live_scout_schedule_triggers() -> None:
+    paths = _public_workflow_paths()
+    assert paths
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert WORKFLOW_SCHEDULE_TRIGGER.search(text) is None, path.name
+
+
+def test_discovery_ci_path_has_no_live_or_mutating_steps() -> None:
+    path_text = _discovery_ci_path_text()
+    assert DISCOVERY_FORBIDDEN.search(path_text) is None
+    assert WORKFLOW_SCHEDULE_TRIGGER.search(path_text) is None
+    assert "--apply" not in path_text
+
+
+def test_discovery_governance_detector_rejects_d1015_examples() -> None:
+    assert (
+        DISCOVERY_FORBIDDEN.search("OPENOPPS_DISCOVERY_NETWORK: disabled\n") is None
+    )
+    assert (
+        DISCOVERY_FORBIDDEN.search(
+            "OPENOPPS_DISCOVERY_NETWORK=disabled uv run python\n"
+        )
+        is None
+    )
+    for name, sample in D1015_FORBIDDEN_EXAMPLES.items():
+        if name == "live-scout-schedule":
+            assert WORKFLOW_SCHEDULE_TRIGGER.search(sample) is not None, name
+            continue
+        assert DISCOVERY_FORBIDDEN.search(sample) is not None, name
