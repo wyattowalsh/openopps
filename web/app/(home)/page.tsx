@@ -9,7 +9,7 @@ const JOBS_BOARD_FIRST_PAINT_LIST_MIN_HEIGHT_PX = 3400;
 const FIRST_PAINT_METRICS = [
 	{ label: "open jobs", value: "0" },
 	{ label: "indexed jobs", value: "0" },
-	{ label: "sources", value: "0" },
+	{ label: "boards", value: "0" },
 	{ label: "routes", value: "0" },
 ] as const;
 

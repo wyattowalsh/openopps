@@ -30,7 +30,7 @@ describe("JobsBoardMetrics", () => {
 		expect(metricMap(container)).toEqual({
 			matches: "—",
 			"open jobs": "88,800",
-			"indexed jobs": "90,000",
+			boards: "25,907",
 			routes: "120",
 		});
 	});
@@ -46,6 +46,9 @@ describe("JobsBoardMetrics", () => {
 
 		expect(metricMap(container).matches).toBe("40");
 		expect(metricMap(container)["open jobs"]).toBe("88,800");
+		expect(metricMap(container).boards).toBe("25,907");
+		expect(metricMap(container).routes).toBe("120");
+		expect(metricMap(container)["indexed jobs"]).toBeUndefined();
 	});
 
 	it("keeps the open-jobs strip when search is idle", () => {
@@ -60,7 +63,7 @@ describe("JobsBoardMetrics", () => {
 		expect(metricMap(container)).toEqual({
 			"open jobs": "88,800",
 			"indexed jobs": "90,000",
-			sources: "700",
+			boards: "25,907",
 			routes: "120",
 		});
 	});
@@ -87,7 +90,7 @@ function manifest({ openJobCount }: { openJobCount: number }): SearchManifest {
 				database: "kaggle/openoppsdb.sqlite",
 				sourceRows: 700,
 				providerRoutes: 120,
-				boards: 10,
+				boards: 25907,
 				jobs: 90000,
 				openJobs: openJobCount,
 			},
@@ -100,7 +103,7 @@ function manifest({ openJobCount }: { openJobCount: number }): SearchManifest {
 		defaultFilters: { jobs: { status: "open" } },
 		entities: {
 			jobs: { count: 90000, columns: [] },
-			boards: { count: 10, columns: [] },
+			boards: { count: 25907, columns: [] },
 			providers: { count: 120, columns: [] },
 		},
 		facets: {

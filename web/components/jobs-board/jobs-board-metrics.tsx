@@ -38,7 +38,7 @@ export function JobsBoardMetrics({
 }: JobsBoardMetricsProps) {
 	const totalJobs = manifest?.entities.jobs.count;
 	const openJobs = manifest?.openJobCount ?? totalJobs;
-	const sourceRows = manifest?.counts?.snapshot?.sourceRows;
+	const boards = manifest?.counts?.snapshot?.boards ?? manifest?.entities.boards.count;
 	const providerRoutes = manifest?.counts?.snapshot?.providerRoutes;
 	const kaggleId = manifest?.kaggleDatasetId ?? "wyattowalsh/openoppsdb";
 	const kaggleUrl = `https://www.kaggle.com/datasets/${kaggleId}`;
@@ -46,13 +46,13 @@ export function JobsBoardMetrics({
 		? [
 				{ label: "matches", value: matchCount },
 				{ label: "open jobs", value: openJobs },
-				{ label: "indexed jobs", value: totalJobs },
+				{ label: "boards", value: boards },
 				{ label: "routes", value: providerRoutes },
 			]
 		: [
 				{ label: "open jobs", value: openJobs },
 				{ label: "indexed jobs", value: totalJobs },
-				{ label: "sources", value: sourceRows },
+				{ label: "boards", value: boards },
 				{ label: "routes", value: providerRoutes },
 			];
 
