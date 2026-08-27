@@ -19,7 +19,7 @@ OpenOpps is a Python 3.12+ CLI-only v0.1 project managed with `uv` and `pyprojec
 - `./Justfile` is the contributor command router. Keep recipes as thin wrappers around documented `uv`, `pnpm`, and OpenSpec commands, and keep CI jobs mirrored by local recipes.
 - `./.github/workflows/` contains CI/CD validation. Keep workflows least-privilege, cache-aware, and aligned with `just ci`; update workflows and just recipes together.
 - Keep OpenOpps CLI-first. Do not add prompt, TUI, browser, web app, or hosted-service flows unless the user explicitly changes product scope.
-- Live authority remains separate from local discovery work: no Cloudflare Workers upload, no Kaggle mutation, no Alembic `0005` until G3, and source-policy 688 stays blocked pending written grants. Offline scout/verify/preview and `just ci-discovery` are not live publication proof.
+- Live authority remains separate from local discovery work: no Cloudflare Workers upload, no Kaggle mutation, no Alembic `0005` until G3, and source-policy 1780 stays blocked pending written grants. Offline scout/verify/preview and `just ci-discovery` are not live publication proof.
 - Keep CLI help polished and tested. Use Typer/Rich help panels for user-facing discoverability, and add semantic tests for help text instead of brittle full-output snapshots.
 - Use current OpenSpec agent surfaces for public workflow changes: `list/status --json`, `instructions --json`, strict validation, and schema validation when local schema customizations are introduced. Keep `openspec/config.yaml` rules synced with repo workflow expectations.
 

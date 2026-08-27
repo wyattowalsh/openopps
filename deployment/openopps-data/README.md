@@ -37,7 +37,7 @@ just source-policy-check
 just source-policy-audit
 ```
 
-`just ci` is the canonical local graph for Python, OpenSpec, web, browser, and generated-artifact gates. `source-policy-check` is intentionally structural: it validates canonical bytes, schema, evidence, and the exact v6 corpus identity. `source-policy-audit` is the release-eligibility gate and must exit zero before generation or upload. The current committed-v6 audit is release-ineligible: 7 of 695 sources mirror repository catalog declarations, 0 are independently verified, and 688 are blocked, so the audit exits 2 and no selector may be rendered. `just security-audit` is network-dependent. None of these commands deploys the public-data Worker.
+`just ci` is the canonical local graph for Python, OpenSpec, web, browser, and generated-artifact gates. `source-policy-check` is intentionally structural: it validates canonical bytes, schema, evidence, and the exact v6 corpus identity. `source-policy-audit` is the release-eligibility gate and must exit zero before generation or upload. The current committed-v6 audit is release-ineligible: 7 of 1787 sources mirror repository catalog declarations, 0 are independently verified, and 1780 are blocked, so the audit exits 2 and no selector may be rendered. `just security-audit` is network-dependent. None of these commands deploys the public-data Worker.
 
 Keep the exact source SHA and command outputs with the release evidence. Local success is not origin-CI success; require the GitHub Actions run for the same SHA before production promotion.
 

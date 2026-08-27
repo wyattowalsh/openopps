@@ -370,7 +370,7 @@ def test_source_policy_docs_distinguish_structure_from_release_eligibility() -> 
         assert "source-policy-check" in document
         assert "source-policy-audit" in document
         assert "0 are independently verified" in document
-        assert "688 are blocked" in document
+        assert "1780 are blocked" in document
     deployment = documents[1]
     assert "openopps-data-<archive-sha256>.tar.gz" in deployment
     assert "output filename must use it exactly" not in deployment

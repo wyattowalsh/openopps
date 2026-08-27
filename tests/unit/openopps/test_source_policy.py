@@ -39,11 +39,21 @@ DEFAULT_MANIFEST_PATH = (
     REPOSITORY_ROOT / "web" / "public" / "data" / "openopps-search" / "manifest.json"
 )
 EXPECTED_SOURCE_DIGEST = (
-    "08088cbebaf3c45cc7a05c30f99252bda454869633266901ea4781bc2a08c8ec"
+    "2de3d0f9907ca56be1767888d84de7499b6b65acbcbe3c6ce026784f9c25a5e6"
 )
 EXPECTED_BLOCKED_DIGEST = (
-    "c10d1ae394bf8d905b6e59c310007ece0048e324e834455824a99335cd3ef014"
+    "4075848b08163cd9a6e8a757efa36a73eff30e95e0ac91d31a39a1903b28e865"
 )
+EXPECTED_GETRO_DIGEST = (
+    "44b0d2cf74c93c571794dcd694088930f75f92aa8be41223bbed10ac3c646989"
+)
+EXPECTED_CONSIDER_DIGEST = (
+    "0a1cfd4830715a05aa972fc8b1e4a03f97650fbec3686f7ed507655d15c4d338"
+)
+EXPECTED_UNREVIEWED_DIGEST = (
+    "d157e8cf7e6b4042e02a1366d7e95bb480c2ef120985dd824c691e76678505ca"
+)
+EXPECTED_UNREVIEWED_SAMPLE = ("1011vcportfolio", "10xteam")
 EXPECTED_ALLOWED = {
     "1871",
     "cncf-landscape",
@@ -66,16 +76,16 @@ def test_committed_policy_is_canonical_complete_and_fail_closed() -> None:
     evidence = load_source_policy_evidence(DEFAULT_EVIDENCE_PATH)
     audit = audit_source_policy(corpus=corpus, evidence=evidence)
 
-    assert len(corpus.source_keys) == 695
+    assert len(corpus.source_keys) == 1787
     assert compute_source_keys_sha256(corpus.source_keys) == EXPECTED_SOURCE_DIGEST
-    assert audit.source_count == 695
+    assert audit.source_count == 1787
     assert audit.allowed_count == 7
     assert audit.catalog_declared_allowed_count == 7
     assert audit.independently_verified_allowed_count == 0
     assert audit.allowed_evidence_basis == (
         "repository_catalog_declarations_not_independent_legal_review"
     )
-    assert audit.blocked_count == 688
+    assert audit.blocked_count == 1780
     assert audit.blocked_source_keys_sha256 == EXPECTED_BLOCKED_DIGEST
     assert set(audit.allowed_source_keys) == EXPECTED_ALLOWED
     assert DEFAULT_CORPUS_PATH.read_bytes() == canonical_json_bytes(
@@ -92,10 +102,8 @@ def test_platform_terms_and_historical_blocks_are_explicit() -> None:
     decisions = {decision.id: decision for decision in evidence.decisions}
 
     getro = decisions["getro-terms-v3-1"]
-    assert getro.scope.source_count == 500
-    assert getro.scope.source_keys_sha256 == (
-        "74c68057324d0daae49916f285930f77da749b095047a2b7a54f2cce4cb66cb5"
-    )
+    assert getro.scope.source_count == 426
+    assert getro.scope.source_keys_sha256 == EXPECTED_GETRO_DIGEST
     assert getro.axes.access == "permission_required"
     assert getro.axes.redistribution == "permission_required"
     assert getro.axes.sync == "blocked"
@@ -105,21 +113,21 @@ def test_platform_terms_and_historical_blocks_are_explicit() -> None:
     assert getro.evidence[0].sections == ("7.2.8", "8.2")
 
     consider = decisions["consider-terms-observed-2026-08-13"]
-    assert consider.scope.source_count == 186
-    assert consider.scope.source_keys_sha256 == (
-        "c5bd8177dfb5e3fe0d1c636223838548f94a8586f1e3116297c6bbda9b2a8c7a"
-    )
+    assert consider.scope.source_count == 945
+    assert consider.scope.source_keys_sha256 == EXPECTED_CONSIDER_DIGEST
     assert consider.axes.access == "permission_required"
     assert consider.axes.redistribution == "permission_required"
     assert consider.axes.sync == "blocked"
     assert consider.axes.publication == "blocked"
     assert consider.evidence[0].sections == ("1.4(l)",)
 
-    unavailable = decisions["historical-sources-unavailable"]
-    assert unavailable.scope.source_keys == ("credoventures", "qplusequality")
-    assert unavailable.axes.access == "unavailable"
-    assert unavailable.axes.sync == "blocked"
-    assert unavailable.axes.publication == "blocked"
+    unreviewed = decisions["historical-snapshot-sources-unreviewed"]
+    assert unreviewed.scope.source_count == 409
+    assert unreviewed.scope.source_keys_sha256 == EXPECTED_UNREVIEWED_DIGEST
+    assert unreviewed.scope.source_keys[:2] == EXPECTED_UNREVIEWED_SAMPLE
+    assert unreviewed.axes.access == "unavailable"
+    assert unreviewed.axes.sync == "blocked"
+    assert unreviewed.axes.publication == "blocked"
 
     audit = audit_source_policy(corpus=corpus, evidence=evidence)
     platform_keys = {
@@ -129,7 +137,7 @@ def test_platform_terms_and_historical_blocks_are_explicit() -> None:
         and BOARD_SOURCE_CATALOG[key].provider_id
         in {"getro", "consider", "consider_a16z"}
     }
-    assert len(platform_keys) == 686
+    assert len(platform_keys) == 1371
     assert platform_keys <= set(audit.blocked_source_keys)
 
 
@@ -187,17 +195,17 @@ def test_deny_overlay_never_grants_and_preserves_exact_historical_blocks() -> No
         source_keys=("uncovered-future-source",), evidence=evidence
     )
     historical_matches = match_source_policy_denials(
-        source_keys=("credoventures", "qplusequality"), evidence=evidence
+        source_keys=EXPECTED_UNREVIEWED_SAMPLE, evidence=evidence
     )
 
     assert allowed_matches == {}
     assert unknown_matches == {}
-    assert set(historical_matches) == {"credoventures", "qplusequality"}
+    assert set(historical_matches) == set(EXPECTED_UNREVIEWED_SAMPLE)
     assert {
         decision.id
         for decisions in historical_matches.values()
         for decision in decisions
-    } == {"historical-sources-unavailable"}
+    } == {"historical-snapshot-sources-unreviewed"}
 
 
 def test_schema_is_model_derived_and_committed_canonically() -> None:
@@ -219,7 +227,7 @@ def test_repository_snapshot_validation_closes_over_v6_manifest() -> None:
         corpus_path=DEFAULT_CORPUS_PATH,
         manifest_path=DEFAULT_MANIFEST_PATH,
     )
-    assert audit.blocked_count == 688
+    assert audit.blocked_count == 1780
     assert audit.blocked_source_keys_sha256 == EXPECTED_BLOCKED_DIGEST
 
 
@@ -227,7 +235,7 @@ def test_current_corpus_cannot_render_a_sync_selector() -> None:
     corpus = load_source_corpus(DEFAULT_CORPUS_PATH)
     evidence = load_source_policy_evidence(DEFAULT_EVIDENCE_PATH)
 
-    with pytest.raises(SourcePolicyBlockedError, match=r"688.*c10d1ae"):
+    with pytest.raises(SourcePolicyBlockedError, match=r"1780.*4075848b"):
         render_source_selector(corpus=corpus, evidence=evidence)
 
 
@@ -251,7 +259,7 @@ def test_repository_selector_renders_from_single_loaded_snapshot(
         source_policy_module, "load_source_policy_evidence", load_evidence_once
     )
 
-    with pytest.raises(SourcePolicyBlockedError, match=r"688.*c10d1ae"):
+    with pytest.raises(SourcePolicyBlockedError, match=r"1780.*4075848b"):
         render_repository_source_selector(
             corpus_path=DEFAULT_CORPUS_PATH,
             evidence_path=DEFAULT_EVIDENCE_PATH,
@@ -340,9 +348,9 @@ def test_unresolved_catalog_states_are_representable_but_blocked() -> None:
 @pytest.mark.parametrize(
     ("command", "expected_code", "stdout_fragment", "stderr_fragment"),
     [
-        ("validate", 0, '"blockedCount":688', ""),
-        ("audit", 2, '"blockedCount":688', "blocks 688 sources"),
-        ("render-selector", 2, "", "selector blocked by 688"),
+        ("validate", 0, '"blockedCount":1780', ""),
+        ("audit", 2, '"blockedCount":1780', "blocks 1780 sources"),
+        ("render-selector", 2, "", "selector blocked by 1780"),
     ],
 )
 def test_cli_commands_are_deterministic_and_fail_closed(
