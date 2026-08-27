@@ -1,9 +1,13 @@
-import type { ComponentType, ReactNode, SVGProps } from "react";
+import type { ComponentType, CSSProperties, ReactNode, SVGProps } from "react";
 import Link from "next/link";
 
 import type { Entity, SearchTopValue } from "@/components/openopps-search/search-types";
 import { formatCount } from "@/components/openopps-search/search-utils";
 import { cn } from "@/lib/utils";
+
+/** One `opps-provider-row` plus `space-y-2` gap; used to reserve CLS slots. */
+export const RANKED_LEDGER_ROW_PX = 46;
+export const RANKED_LEDGER_GAP_PX = 8;
 
 export type CoverageTone = "primary" | "info" | "warning";
 
@@ -21,6 +25,21 @@ export type RankedLedgerItem = {
 	onActivate?: () => void;
 	activateLabel?: string;
 };
+
+export function rankedLedgerReservePx(rows: number, rowPx = RANKED_LEDGER_ROW_PX) {
+	const count = Math.max(0, Math.floor(rows));
+	if (count <= 0) {
+		return 0;
+	}
+	return count * rowPx + (count - 1) * RANKED_LEDGER_GAP_PX;
+}
+
+export function explorerDeferredStyle(heightPx: number): CSSProperties {
+	return {
+		contentVisibility: "auto",
+		containIntrinsicSize: `auto ${Math.max(0, Math.round(heightPx))}px`,
+	};
+}
 
 export function clampCoveragePercent(value: number | undefined) {
 	if (!Number.isFinite(value)) {
@@ -137,7 +156,7 @@ export function CoverageMeter({
 }) {
 	const width = clampCoveragePercent(percent);
 	return (
-		<div className="mt-2 flex min-w-0 items-center gap-2">
+		<div className="mt-2 flex min-h-2 min-w-0 items-center gap-2">
 			<div
 				className="h-2 min-w-0 flex-1 overflow-hidden rounded-[var(--opps-radius-sm)] bg-muted"
 				role="meter"
@@ -164,11 +183,18 @@ export function CoverageMeter({
 export function RankedLedgerList({
 	items,
 	emptyLabel,
+	reserveCount = 0,
+	busy = false,
 }: {
 	items: RankedLedgerItem[];
 	emptyLabel: string;
+	reserveCount?: number;
+	busy?: boolean;
 }) {
 	if (items.length === 0) {
+		if (reserveCount > 0) {
+			return <RankedLedgerSkeleton count={reserveCount} />;
+		}
 		return (
 			<p className="rounded-[var(--opps-radius-md)] border border-dashed border-border/80 px-3 py-3 text-sm text-muted-foreground">
 				{emptyLabel}
@@ -176,10 +202,40 @@ export function RankedLedgerList({
 		);
 	}
 	return (
-		<ul className="min-w-0 space-y-2">
+		<ul
+			className="min-w-0 space-y-2"
+			style={{ minHeight: rankedLedgerReservePx(Math.max(items.length, reserveCount)) }}
+			aria-busy={busy || undefined}
+		>
 			{items.map((item, index) => (
 				<li key={item.key} className="min-w-0">
 					<RankedLedgerRow item={item} rank={index} />
+				</li>
+			))}
+		</ul>
+	);
+}
+
+export function RankedLedgerSkeleton({ count }: { count: number }) {
+	const slots = Math.max(0, Math.floor(count));
+	return (
+		<ul
+			className="min-w-0 space-y-2"
+			style={{ minHeight: rankedLedgerReservePx(slots) }}
+			aria-hidden="true"
+		>
+			{Array.from({ length: slots }, (_, index) => (
+				<li key={index} className="opps-provider-row min-w-0">
+					<div className="min-w-0">
+						<div className="flex min-w-0 items-center gap-2 text-xs">
+							<span className="shrink-0 font-mono tabular-nums tracking-normal text-muted-foreground">
+								{formatLedgerRank(index)}
+							</span>
+							<span className="h-3 w-28 max-w-full rounded-[var(--opps-radius-sm)] bg-muted" />
+						</div>
+						<div className="mt-1 h-2 min-w-0 overflow-hidden rounded-[var(--opps-radius-sm)] bg-muted" />
+					</div>
+					<div className="h-3 w-8 shrink-0 rounded-[var(--opps-radius-sm)] bg-muted" />
 				</li>
 			))}
 		</ul>
@@ -336,13 +392,15 @@ export function ExplorerMetric({
 			<div className="mt-1 truncate font-mono text-[0.68rem] font-semibold tracking-normal text-muted-foreground">
 				{label}
 			</div>
-			{sharePercent != null ? (
-				<CoverageMeter
-					percent={sharePercent}
-					tone={tone}
-					label={shareLabel}
-				/>
-			) : null}
+			<div className="min-h-[2.25rem]">
+				{sharePercent != null ? (
+					<CoverageMeter
+						percent={sharePercent}
+						tone={tone}
+						label={shareLabel}
+					/>
+				) : null}
+			</div>
 		</>
 	);
 	const metricClassName = cn(
@@ -390,7 +448,7 @@ export function ExplorerFilterSelect({
 	return (
 		<label className={cn("grid min-w-0 max-w-full gap-1.5 text-sm font-semibold", className)}>
 			<span className="flex min-w-0 items-center gap-2">
-				{Icon ? <Icon className="size-4 shrink-0" /> : null}
+				{Icon ? <Icon className="size-4 shrink-0" width={16} height={16} aria-hidden="true" /> : null}
 				{label}
 			</span>
 			<select

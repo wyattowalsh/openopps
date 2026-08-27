@@ -16,7 +16,17 @@ import {
 	Tags,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import {
+	startTransition,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ComponentType,
+	type ReactNode,
+	type SVGProps,
+} from "react";
 import { useQueryStates } from "nuqs";
 
 import type {
@@ -53,14 +63,24 @@ import {
 import { loadInitialJobsChunk } from "./search-index-loader";
 import {
 	coverageShare,
+	explorerDeferredStyle,
 	ExplorerEmptyPanel,
 	ExplorerMetric,
 	jobsBoardSearchHref,
 	RankedLedgerList,
+	RankedLedgerSkeleton,
+	rankedLedgerReservePx,
 	rankedTopValueItems,
 	CoverageMeter,
 	type RankedLedgerItem,
 } from "./explorer-shared";
+
+const COVERAGE_LEDGER_LIMIT = 8;
+const BOARD_LEDGER_LIMIT = 6;
+const LATEST_JOB_TEASER_LIMIT = 8;
+const LINEAGE_RESERVE_PX = 720;
+const SUGGESTION_RESERVE_PX = 280;
+const INDEX_RESERVE_PX = 360;
 
 type ExplorerDashboardProps = {
 	manifest: SearchManifest | null;
@@ -90,15 +110,27 @@ export function ExplorerDashboard({
 	onRetry,
 	onInspectFacet,
 }: ExplorerDashboardProps) {
-	const dashboard = buildDashboardModel(manifest);
-	const suggestionCount = countSuggestions(manifest);
+	const dashboard = useMemo(() => buildDashboardModel(manifest), [manifest]);
+	const suggestionCount = useMemo(() => countSuggestions(manifest), [manifest]);
 	const inspect = useExplorerInspect(onInspectRows, onInspectFacet);
-	const latestJobs = useLatestOpenJobs(manifest);
+	const coverageLabels = useMemo(
+		() => ({
+			sources: labelMap(manifest?.suggestions?.sources),
+			providers: labelMap(manifest?.suggestions?.providers),
+			locations: labelMap(manifest?.suggestions?.locations),
+			departments: labelMap(manifest?.suggestions?.departments),
+			companies: labelMap(manifest?.suggestions?.companies),
+			skills: labelMap(manifest?.suggestions?.skills),
+		}),
+		[manifest],
+	);
 	const openShare = coverageShare(dashboard?.totals.openJobs, dashboard?.totals.jobs);
 	const artifactShare = coverageShare(
 		dashboard?.artifacts.detailShardRecords,
 		dashboard?.totals.jobs ?? manifest?.entities.jobs.count,
 	);
+	const coverageReserve = loading ? COVERAGE_LEDGER_LIMIT : 0;
+	const boardReserve = loading ? BOARD_LEDGER_LIMIT : 0;
 
 	return (
 		<div className="min-w-0 space-y-4 [&>*]:min-w-0">
@@ -120,7 +152,7 @@ export function ExplorerDashboard({
 					onClick={onInspectRows}
 					disabled={!manifest}
 				>
-					<FileSearch className="mr-2 size-4" />
+					<FileSearch className="mr-2 size-4" width={16} height={16} aria-hidden="true" />
 					Inspect rows
 				</Button>
 			</div>
@@ -170,8 +202,8 @@ export function ExplorerDashboard({
 			</div>
 
 			<LatestJobsTeaser
-				rows={latestJobs.rows}
-				loading={latestJobs.loading}
+				manifest={manifest}
+				pending={loading}
 				sync={dashboard?.sync}
 			/>
 
@@ -184,8 +216,11 @@ export function ExplorerDashboard({
 				>
 					<RankedLedgerList
 						emptyLabel="Source coverage awaits the manifest v4 dashboard aggregate."
+						reserveCount={coverageReserve}
+						busy={loading}
 						items={rankedTopValueItems(dashboard?.top.sourcesByJobs, {
-							labels: labelMap(manifest?.suggestions?.sources),
+							labels: coverageLabels.sources,
+							limit: COVERAGE_LEDGER_LIMIT,
 							snapshotTotal: dashboard?.totals.jobs,
 							onSelect: (value) => inspect("jobs", { source: value }),
 							inspectNoun: "jobs",
@@ -199,8 +234,11 @@ export function ExplorerDashboard({
 				>
 					<RankedLedgerList
 						emptyLabel="Provider coverage awaits the manifest v4 dashboard aggregate."
+						reserveCount={coverageReserve}
+						busy={loading}
 						items={rankedTopValueItems(dashboard?.top.providersByJobs, {
-							labels: labelMap(manifest?.suggestions?.providers),
+							labels: coverageLabels.providers,
+							limit: COVERAGE_LEDGER_LIMIT,
 							snapshotTotal: dashboard?.totals.jobs,
 							onSelect: (value) => inspect("jobs", { provider: value }),
 							inspectNoun: "jobs",
@@ -214,8 +252,11 @@ export function ExplorerDashboard({
 				>
 					<RankedLedgerList
 						emptyLabel="Location suggestions are not in this artifact yet."
+						reserveCount={coverageReserve}
+						busy={loading}
 						items={rankedTopValueItems(dashboard?.top.locations, {
-							labels: labelMap(manifest?.suggestions?.locations),
+							labels: coverageLabels.locations,
+							limit: COVERAGE_LEDGER_LIMIT,
 							snapshotTotal: dashboard?.totals.jobs,
 							onSelect: (value) => inspect("jobs", { location: value }),
 							inspectNoun: "jobs",
@@ -224,7 +265,10 @@ export function ExplorerDashboard({
 				</DashboardCard>
 			</div>
 
-			<div className="grid min-w-0 gap-3 xl:grid-cols-3 [&>*]:min-w-0">
+			<div
+				className="grid min-w-0 gap-3 xl:grid-cols-3 [&>*]:min-w-0"
+				style={explorerDeferredStyle(rankedLedgerReservePx(BOARD_LEDGER_LIMIT) + 120)}
+			>
 				<DashboardCard
 					title="Departments"
 					icon={TableProperties}
@@ -232,9 +276,11 @@ export function ExplorerDashboard({
 				>
 					<RankedLedgerList
 						emptyLabel="Department suggestions are not in this artifact yet."
+						reserveCount={boardReserve}
+						busy={loading}
 						items={rankedTopValueItems(dashboard?.top.departments, {
-							labels: labelMap(manifest?.suggestions?.departments),
-							limit: 6,
+							labels: coverageLabels.departments,
+							limit: BOARD_LEDGER_LIMIT,
 							snapshotTotal: dashboard?.totals.jobs,
 							hrefFor: (value) => jobsBoardSearchHref({ department: value }),
 						})}
@@ -247,9 +293,11 @@ export function ExplorerDashboard({
 				>
 					<RankedLedgerList
 						emptyLabel="Company suggestions are not in this artifact yet."
+						reserveCount={boardReserve}
+						busy={loading}
 						items={rankedTopValueItems(dashboard?.top.companies, {
-							labels: labelMap(manifest?.suggestions?.companies),
-							limit: 6,
+							labels: coverageLabels.companies,
+							limit: BOARD_LEDGER_LIMIT,
 							snapshotTotal: dashboard?.totals.jobs,
 							hrefFor: (value) => jobsBoardSearchHref({ q: value }),
 						})}
@@ -262,9 +310,11 @@ export function ExplorerDashboard({
 				>
 					<RankedLedgerList
 						emptyLabel="Skill suggestions are not in this artifact yet."
+						reserveCount={boardReserve}
+						busy={loading}
 						items={rankedTopValueItems(dashboard?.top.skills, {
-							labels: labelMap(manifest?.suggestions?.skills),
-							limit: 6,
+							labels: coverageLabels.skills,
+							limit: BOARD_LEDGER_LIMIT,
 							snapshotTotal: dashboard?.totals.jobs,
 							hrefFor: (value) => jobsBoardSearchHref({ skill: value }),
 						})}
@@ -272,13 +322,16 @@ export function ExplorerDashboard({
 				</DashboardCard>
 			</div>
 
-			<div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] [&>*]:min-w-0">
+			<div
+				className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] [&>*]:min-w-0"
+				style={explorerDeferredStyle(rankedLedgerReservePx(COVERAGE_LEDGER_LIMIT) + 160)}
+			>
 				<DashboardCard
 					title="Data quality"
 					icon={Sparkles}
 					description="Completeness checks emitted by the search-index generator. Bars are true 0–100% coverage."
 				>
-					<QualityList metrics={dashboard?.dataQuality} />
+					<QualityList metrics={dashboard?.dataQuality} reserveCount={coverageReserve} busy={loading} />
 				</DashboardCard>
 				<DashboardCard
 					title="Route health"
@@ -292,6 +345,8 @@ export function ExplorerDashboard({
 							</h3>
 							<RankedLedgerList
 								emptyLabel="Support-level counts are not in this artifact yet."
+								reserveCount={boardReserve}
+								busy={loading}
 								items={routeHealthItems(
 									dashboard?.routeHealth.supportLevels,
 									dashboard?.totals.providerRoutes,
@@ -305,6 +360,8 @@ export function ExplorerDashboard({
 							</h3>
 							<RankedLedgerList
 								emptyLabel="Route-status counts are not in this artifact yet."
+								reserveCount={boardReserve}
+								busy={loading}
 								items={routeHealthItems(
 									dashboard?.routeHealth.routeStatuses,
 									dashboard?.totals.providerRoutes,
@@ -317,12 +374,17 @@ export function ExplorerDashboard({
 			</div>
 
 			<p className="opps-kicker">Lineage</p>
-			<LineageAnalysis lineage={lineage} onInspectRows={onInspectRows} inspect={inspect} />
+			<LineageSection
+				lineage={lineage}
+				loading={loading}
+				onInspectRows={onInspectRows}
+				inspect={inspect}
+			/>
 
-			<section className="min-w-0">
+			<section className="min-w-0" style={explorerDeferredStyle(SUGGESTION_RESERVE_PX)}>
 				<div className="mb-3 flex min-w-0 items-start gap-2">
 					<div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[var(--opps-radius-md)] border border-primary/25 bg-primary/10 text-primary">
-						<BarChart3 className="size-4" />
+						<BarChart3 className="size-4" width={16} height={16} aria-hidden="true" />
 					</div>
 					<div className="min-w-0">
 						<h2 className="font-heading text-base font-semibold leading-snug tracking-normal">
@@ -379,7 +441,10 @@ export function ExplorerDashboard({
 			</section>
 
 			<p className="opps-kicker">Index</p>
-			<div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] [&>*]:min-w-0">
+			<div
+				className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] [&>*]:min-w-0"
+				style={explorerDeferredStyle(INDEX_RESERVE_PX)}
+			>
 				<DashboardCard
 					title="Snapshot provenance"
 					icon={Database}
@@ -470,7 +535,7 @@ export function ExplorerDashboard({
 					onClick={onInspectRows}
 					disabled={!manifest}
 				>
-					<FileSearch className="mr-2 size-4" />
+					<FileSearch className="mr-2 size-4" width={16} height={16} aria-hidden="true" />
 					Inspect rows
 				</Button>
 			</div>
@@ -529,11 +594,10 @@ function useLatestOpenJobs(manifest: SearchManifest | null) {
 				if (cancelled) {
 					return;
 				}
-				const openRows = chunk.rows.filter((row) => {
-					const status = text(row[J.status]).toLowerCase();
-					return !status || status === "open";
+				setResult({
+					path: requestedPath,
+					rows: takeLatestOpenJobs(chunk.rows, LATEST_JOB_TEASER_LIMIT),
 				});
-				setResult({ path: requestedPath, rows: openRows.slice(0, 8) });
 			})
 			.catch(() => {
 				if (!cancelled) {
@@ -552,42 +616,70 @@ function useLatestOpenJobs(manifest: SearchManifest | null) {
 	return { rows: resolved, loading: result?.path !== path };
 }
 
+function takeLatestOpenJobs(rows: SearchRow[], limit: number) {
+	const taken: SearchRow[] = [];
+	for (const row of rows) {
+		const status = text(row[J.status]).toLowerCase();
+		if (status && status !== "open") {
+			continue;
+		}
+		taken.push(row);
+		if (taken.length >= limit) {
+			break;
+		}
+	}
+	return taken;
+}
+
 function LatestJobsTeaser({
-	rows,
-	loading,
+	manifest,
+	pending,
 	sync,
 }: {
-	rows: SearchRow[];
-	loading: boolean;
+	manifest: SearchManifest | null;
+	pending: boolean;
 	sync: SearchDashboard["sync"] | undefined;
 }) {
+	const { rows, loading } = useLatestOpenJobs(manifest);
+	const waiting = pending || loading;
+	const reserveCount = waiting || rows.length > 0 ? LATEST_JOB_TEASER_LIMIT : 0;
 	return (
 		<DashboardCard
 			title="Latest open jobs"
 			icon={Activity}
 			description="Fresh titles from the latest-jobs chunk. Open a row on the jobs board."
 		>
-			{sync?.totals7d ? (
-				<p className="mb-3 font-mono text-[0.72rem] tracking-normal text-muted-foreground">
-					<span className="text-accent">7d sync</span>
-					{" · "}
-					{formatCount(sync.totals7d.new)} new
-					{" · "}
-					{formatCount(sync.totals7d.changed)} changed
-					{" · "}
-					{formatCount(sync.totals7d.closed)} closed
-					{" · "}
-					{formatCount(sync.totals7d.reopened)} reopened
-				</p>
-			) : null}
-			{loading ? (
-				<p className="text-sm text-muted-foreground">Loading latest open jobs…</p>
+			<div className="mb-3 min-h-4 font-mono text-[0.72rem] tracking-normal text-muted-foreground">
+				{sync?.totals7d ? (
+					<p>
+						<span className="text-accent">7d sync</span>
+						{" · "}
+						{formatCount(sync.totals7d.new)} new
+						{" · "}
+						{formatCount(sync.totals7d.changed)} changed
+						{" · "}
+						{formatCount(sync.totals7d.closed)} closed
+						{" · "}
+						{formatCount(sync.totals7d.reopened)} reopened
+					</p>
+				) : waiting ? (
+					<p aria-hidden="true">&nbsp;</p>
+				) : null}
+			</div>
+			{waiting ? (
+				<>
+					<p className="sr-only">Loading latest open jobs…</p>
+					<RankedLedgerSkeleton count={reserveCount} />
+				</>
 			) : rows.length === 0 ? (
 				<p className="rounded-[var(--opps-radius-md)] border border-dashed border-border/80 px-3 py-3 text-sm text-muted-foreground">
 					Latest open jobs are not in this snapshot yet.
 				</p>
 			) : (
-				<ul className="min-w-0 space-y-2">
+				<ul
+					className="min-w-0 space-y-2"
+					style={{ minHeight: rankedLedgerReservePx(Math.max(rows.length, reserveCount)) }}
+				>
 					{rows.map((row) => {
 						const id = text(row[J.id]);
 						const title = text(row[J.title]) || "Untitled role";
@@ -683,22 +775,33 @@ function buildDashboardModel(manifest: SearchManifest | null): DashboardModel | 
 	};
 }
 
-function LineageAnalysis({
+function LineageSection({
 	lineage,
+	loading,
 	onInspectRows,
 	inspect,
 }: {
 	lineage: LineageAggregate | null;
+	loading: boolean;
 	onInspectRows: () => void;
 	inspect: (entity: Entity, patch?: Partial<ExplorerFilters>) => void;
 }) {
 	if (!lineage) {
+		if (loading) {
+			return (
+				<div
+					className="min-w-0 overflow-hidden rounded-[var(--opps-radius-lg)] border border-border/75 bg-background/60"
+					style={{ minHeight: LINEAGE_RESERVE_PX, ...explorerDeferredStyle(LINEAGE_RESERVE_PX) }}
+					aria-busy="true"
+				/>
+			);
+		}
 		return (
 			<ExplorerEmptyPanel
 				heading="Lineage not in this snapshot"
 				action={
 					<Button type="button" variant="outline" size="sm" onClick={onInspectRows}>
-						<FileSearch className="mr-2 size-4" />
+						<FileSearch className="mr-2 size-4" width={16} height={16} aria-hidden="true" />
 						Inspect rows
 					</Button>
 				}
@@ -713,7 +816,98 @@ function LineageAnalysis({
 			</ExplorerEmptyPanel>
 		);
 	}
-	const network = buildLineageNetworkModel(lineage);
+	return (
+		<LazyMounted reservePx={LINEAGE_RESERVE_PX}>
+			<LineageAnalysis lineage={lineage} inspect={inspect} />
+		</LazyMounted>
+	);
+}
+
+function LazyMounted({
+	children,
+	reservePx,
+}: {
+	children: ReactNode;
+	reservePx: number;
+}) {
+	const ref = useRef<HTMLDivElement>(null);
+	const [mounted, setMounted] = useState(false);
+
+	useEffect(() => {
+		const node = ref.current;
+		if (!node || mounted) {
+			return;
+		}
+
+		let finished = false;
+		const mount = () => {
+			if (finished) {
+				return;
+			}
+			finished = true;
+			startTransition(() => {
+				setMounted(true);
+			});
+		};
+
+		if (typeof IntersectionObserver === "undefined") {
+			const id = window.setTimeout(mount, 0);
+			return () => {
+				finished = true;
+				window.clearTimeout(id);
+			};
+		}
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) {
+					mount();
+				}
+			},
+			{ rootMargin: "280px 0px" },
+		);
+		observer.observe(node);
+
+		const cancelIdle =
+			typeof window.requestIdleCallback === "function"
+				? (() => {
+						const id = window.requestIdleCallback(mount, { timeout: 2200 });
+						return () => window.cancelIdleCallback(id);
+					})()
+				: (() => {
+						const id = window.setTimeout(mount, 2200);
+						return () => window.clearTimeout(id);
+					})();
+
+		return () => {
+			finished = true;
+			observer.disconnect();
+			cancelIdle();
+		};
+	}, [mounted]);
+
+	return (
+		<div
+			ref={ref}
+			className="min-w-0"
+			style={{
+				minHeight: mounted ? undefined : reservePx,
+				...explorerDeferredStyle(reservePx),
+			}}
+		>
+			{mounted ? children : null}
+		</div>
+	);
+}
+
+function LineageAnalysis({
+	lineage,
+	inspect,
+}: {
+	lineage: LineageAggregate;
+	inspect: (entity: Entity, patch?: Partial<ExplorerFilters>) => void;
+}) {
+	const network = useMemo(() => buildLineageNetworkModel(lineage), [lineage]);
 	return (
 		<div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] [&>*]:min-w-0">
 			<DashboardCard
@@ -1044,7 +1238,7 @@ function DashboardCard({
 		<section className="min-w-0 rounded-[var(--opps-radius-lg)] border border-border/75 bg-background/60 p-3 shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_5%,transparent)]">
 			<div className="mb-3 flex items-start gap-2">
 				<div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[var(--opps-radius-md)] border border-primary/25 bg-primary/10 text-primary">
-					<Icon className="size-4" />
+					<Icon className="size-4" width={16} height={16} aria-hidden="true" />
 				</div>
 				<div className="min-w-0">
 					<h2 className="font-heading text-base font-semibold leading-snug tracking-normal">
@@ -1078,9 +1272,20 @@ function MetadataGrid({ items }: { items: Array<{ label: string; value: string }
 	);
 }
 
-function QualityList({ metrics }: { metrics: SearchDashboard["dataQuality"] | undefined }) {
+function QualityList({
+	metrics,
+	reserveCount = 0,
+	busy = false,
+}: {
+	metrics: SearchDashboard["dataQuality"] | undefined;
+	reserveCount?: number;
+	busy?: boolean;
+}) {
 	const rows = (metrics ?? []).slice(0, 10);
 	if (rows.length === 0) {
+		if (reserveCount > 0) {
+			return <RankedLedgerSkeleton count={reserveCount} />;
+		}
 		return (
 			<p className="rounded-[var(--opps-radius-md)] border border-dashed border-border/80 px-3 py-3 text-sm text-muted-foreground">
 				Data-quality aggregates are emitted by manifest v4 search-index builds.
@@ -1090,6 +1295,8 @@ function QualityList({ metrics }: { metrics: SearchDashboard["dataQuality"] | un
 	return (
 		<RankedLedgerList
 			emptyLabel="Data-quality aggregates are emitted by manifest v4 search-index builds."
+			reserveCount={reserveCount}
+			busy={busy}
 			items={rows.map((metric) => {
 				const percentage = coverageShare(metric.count, metric.total) || clampPercent(metric.percentage);
 				return {

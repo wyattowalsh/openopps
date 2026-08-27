@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 describe("ExplorerDashboard", () => {
-	it("renders full source-provider-board-job lineage analysis", () => {
+	it("renders full source-provider-board-job lineage analysis", async () => {
 		renderDashboard(
 			<ExplorerDashboard
 				manifest={null}
@@ -42,7 +42,7 @@ describe("ExplorerDashboard", () => {
 			/>,
 		);
 
-		expect(screen.getByText("Full lineage map")).not.toBeNull();
+		expect(await screen.findByText("Full lineage map")).not.toBeNull();
 		expect(screen.getByText("Source-provider routes")).not.toBeNull();
 		expect(screen.getByText("Source-board reach")).not.toBeNull();
 		expect(screen.getByText("Board job paths")).not.toBeNull();
@@ -50,7 +50,44 @@ describe("ExplorerDashboard", () => {
 		expect(screen.getByText("12 / 15 open")).not.toBeNull();
 	}, 15_000);
 
-	it("uses a ruled stage strip instead of nested lineage cards", () => {
+	it("defers heavy lineage until the map is near the viewport", async () => {
+		const callbacks: IntersectionObserverCallback[] = [];
+		class FakeIntersectionObserver {
+			constructor(callback: IntersectionObserverCallback) {
+				callbacks.push(callback);
+			}
+			disconnect() {}
+			observe() {}
+			takeRecords(): IntersectionObserverEntry[] {
+				return [];
+			}
+			unobserve() {}
+		}
+		vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+		vi.stubGlobal("requestIdleCallback", undefined);
+
+		try {
+			renderDashboard(
+				<ExplorerDashboard
+					manifest={null}
+					lineage={lineageAggregate}
+					loading={false}
+					onInspectRows={() => {}}
+				/>,
+			);
+			expect(screen.queryByText("Full lineage map")).toBeNull();
+			expect(callbacks.length).toBeGreaterThan(0);
+			callbacks[0]?.(
+				[{ isIntersecting: true } as IntersectionObserverEntry],
+				{} as IntersectionObserver,
+			);
+			expect(await screen.findByText("Full lineage map")).not.toBeNull();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("uses a ruled stage strip instead of nested lineage cards", async () => {
 		renderDashboard(
 			<ExplorerDashboard
 				manifest={null}
@@ -59,10 +96,29 @@ describe("ExplorerDashboard", () => {
 				onInspectRows={() => {}}
 			/>,
 		);
+		expect(await screen.findByText("Source rows")).not.toBeNull();
 		const stage = screen.getByText("Source rows").parentElement;
 		expect(stage?.className).not.toContain("bg-card");
-		expect(screen.getByText("Source rows")).not.toBeNull();
 		expect(screen.getByText("Provider routes")).not.toBeNull();
+	});
+
+	it("reserves coverage and latest-jobs slots while the manifest is loading", () => {
+		const { container } = renderDashboard(
+			<ExplorerDashboard
+				manifest={null}
+				lineage={null}
+				loading={true}
+				onInspectRows={() => {}}
+			/>,
+		);
+		expect(screen.getByText("Source coverage")).not.toBeNull();
+		expect(screen.getByText("Latest open jobs")).not.toBeNull();
+		expect(screen.queryByText("Latest open jobs are not in this snapshot yet.")).toBeNull();
+		expect(screen.queryByText("Lineage not in this snapshot")).toBeNull();
+		const reserved = [...container.querySelectorAll("ul")].filter((node) =>
+			(node.getAttribute("style") ?? "").includes("min-height"),
+		);
+		expect(reserved.length).toBeGreaterThan(3);
 	});
 
 	it("renders ranked coverage bars for top sources, providers, and locations", () => {
@@ -132,7 +188,7 @@ describe("ExplorerDashboard", () => {
 		});
 	});
 
-	it("inspects lineage paths with source and provider filters", () => {
+	it("inspects lineage paths with source and provider filters", async () => {
 		const onInspectFacet = vi.fn();
 		renderDashboard(
 			<ExplorerDashboard
@@ -144,7 +200,7 @@ describe("ExplorerDashboard", () => {
 			/>,
 		);
 		fireEvent.click(
-			screen.getByRole("button", {
+			await screen.findByRole("button", {
 				name: "Inspect lineage path a16z -> greenhouse -> a16z:acme",
 			}),
 		);
@@ -260,7 +316,7 @@ describe("ExplorerDashboard", () => {
 		).not.toBeNull();
 	});
 
-	it("tightens hierarchy with snapshot, coverage, lineage, and inspect CTAs", () => {
+	it("tightens hierarchy with snapshot, coverage, lineage, and inspect CTAs", async () => {
 		const { container } = renderDashboard(
 			<ExplorerDashboard
 				manifest={dashboardManifest()}
@@ -269,6 +325,7 @@ describe("ExplorerDashboard", () => {
 				onInspectRows={() => {}}
 			/>,
 		);
+		expect(await screen.findByText("Full lineage map")).not.toBeNull();
 		const kickers = [...container.querySelectorAll(".opps-kicker")].map(
 			(node) => node.textContent,
 		);

@@ -9,9 +9,12 @@ import {
 	ExplorerMetric,
 	jobsBoardSearchHref,
 	RankedLedgerList,
+	RankedLedgerSkeleton,
 	clampCoveragePercent,
 	coverageShare,
+	explorerDeferredStyle,
 	formatLedgerRank,
+	rankedLedgerReservePx,
 	rankedTopValueItems,
 	routeHealthTone,
 } from "./explorer-shared";
@@ -205,6 +208,31 @@ describe("RankedLedgerList", () => {
 		);
 		expect(screen.getByRole("link", { name: "Open python on jobs board" }).getAttribute("href")).toBe(
 			"/?skill=python",
+		);
+	});
+
+	it("reserves skeleton ledger slots so empty coverage lists keep their height", () => {
+		const { container } = render(
+			<RankedLedgerList emptyLabel="none" reserveCount={8} items={[]} />,
+		);
+		const list = container.querySelector("ul");
+		expect(list?.getAttribute("style")).toContain(`${rankedLedgerReservePx(8)}px`);
+		expect(container.querySelectorAll("li")).toHaveLength(8);
+		expect(screen.queryByText("none")).toBeNull();
+	});
+});
+
+describe("deferred layout helpers", () => {
+	it("sizes reserved ledger slots and content-visibility containment", () => {
+		expect(rankedLedgerReservePx(8)).toBe(8 * 46 + 7 * 8);
+		expect(explorerDeferredStyle(320)).toMatchObject({
+			contentVisibility: "auto",
+			containIntrinsicSize: "auto 320px",
+		});
+		const { container } = render(<RankedLedgerSkeleton count={3} />);
+		expect(container.querySelectorAll("li")).toHaveLength(3);
+		expect(container.querySelector("ul")?.getAttribute("style")).toContain(
+			`${rankedLedgerReservePx(3)}px`,
 		);
 	});
 });

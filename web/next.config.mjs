@@ -18,9 +18,37 @@ const config = {
       'public/data/openopps-search/**/*',
     ],
   },
+  images: {
+    formats: ['image/avif', 'image/webp'],
+  },
   // `pnpm types:check` is the explicit docs type gate before production builds.
   typescript: {
     ignoreBuildErrors: false,
+  },
+  async headers() {
+    return [
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+        ],
+      },
+    ];
   },
   async redirects() {
     return [
