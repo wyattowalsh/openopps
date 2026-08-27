@@ -70,6 +70,24 @@ Synced jobs include deterministic enrichment fields derived from provider payloa
 
 Board lists and exports can be narrowed by source, detected provider route, market, location, domain, job availability, staff-count range, and limit. Job lists and exports share the same filter path and can be narrowed by source, board, provider, normalized location, department, team, workplace type, remote level, employment type, salary range overlap, skill, simple title/company/description query, posted date range, and limit. Job filters use normalized enriched fields rather than provider-specific raw payloads; `--provider any` and `--provider all` remain aliases for no provider filter.
 
+## Quarantined Source Discovery
+
+`openopps discovery` is an advanced quarantined scout. It is not the everyday `openopps sync` / `sources sync` catalog crawl, is not the daily snapshot writer, and is not same-run with `openopps sync`. Default unscoped `openopps sync` remains the snapshot writer and pins the packaged private approved-ingestion envelope before network work. Scout output is not a snapshot and is not live publication evidence.
+
+```bash
+uv run openopps discovery scout --output /absolute/quarantine-root --json
+uv run openopps discovery verify-scout /absolute/quarantine-root/manifest.json --json
+uv run openopps discovery preview-promotion --json
+```
+
+The same callbacks are aliased as `openopps admin sources scout`, `verify-scout`, and `preview-promotion`. None of these commands accept `--apply`. Scout writes only to the explicit `--output` directory. It does not mutate operational SQLite, Git, the packaged catalog, Kaggle, or Cloudflare, and it cannot activate candidates in the same invocation. `verify-scout` is offline and read-only; it accepts a `manifest.json` path or the bundle directory. The current CLI scout publishes an evaluation quarantine bundle from an empty occurrence set against read-only v7 policy digests; channel enumerators remain replay-library surfaces, not a live crawl from this command.
+
+Selector-bound daily pinning uses the packaged private envelope at `src/openopps/discovery/data/approved_ingestion_selector_envelope.json`. It does not accept the v7 public `SourceSelector`. Explicit local-custom sources (`openopps admin sources add`) stay outside that scheduled selector. `preview-promotion` is a digest-bound dry-run of the on-disk identity-closure envelope, decision, receipt, and ledger. Omitting a manifest previews the on-disk identity closure; passing a quarantine manifest offline-verifies it first. Preview does not reserve, apply, acquire the promotion lock, or grant authority (`applied=false`, `grantsAuthority=false`).
+
+Public CI keeps `OPENOPPS_DISCOVERY_NETWORK=disabled` and replays only committed sanitized fixtures. `just ci` includes the offline `ci-discovery` lane. A live scout schedule is a separate, unexercised maintainer authority gate. Live scheduler provisioning, credential selection, activation, retention, and execution are separate unexercised authority gates. Source-policy remains fail-closed: 688 sources stay blocked pending written Getro/Consider grants. Catalog declarations are not independent positive verification, and eligibility is not green.
+
+The portable skill at [`skills/openopps-source-scout/`](skills/openopps-source-scout/) is advisory and inert. It does not scout, promote, sync, or install. Do not live-install harness projections.
+
 ## Provider Coverage
 
 Provider coverage is an offline report over persisted SQLite data. It does not fetch sources, probe routes, or sample live jobs, so percentages must come from representative persisted source snapshots rather than estimates:
@@ -244,11 +262,15 @@ Values can also be loaded from a local `.env` file. Copy `.env.example` to
 `.env` for local overrides; `.env` is ignored so machine-specific settings stay
 out of commits.
 
+Isolated scout limits use a separate `OPENOPPS_DISCOVERY_*` process environment (timeouts, queries, bytes, candidates, evidence retention). They are not `OpenOppsSettings` and do not change `openopps sync`. Public CI and offline discovery gates require `OPENOPPS_DISCOVERY_NETWORK=disabled`; public CI does not run a live scout.
+
 ## Repository Layout
 
 | Path                              | Purpose                                                                    |
 | --------------------------------- | -------------------------------------------------------------------------- |
 | `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                       |
+| `src/openopps/discovery/`         | Isolated quarantined scout, evaluation, and promotion-preview evidence.    |
+| `skills/openopps-source-scout/`   | Advisory inert source-scout skill; not an install or promotion path.       |
 | `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                     |
 | `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes.      |
 | `src/openopps/cache.py`           | HTTP JSON cache table management.                                          |
@@ -338,7 +360,7 @@ just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-`just ci` composes `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts`. Those lanes cover the Python release gate, strict OpenSpec validation, web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata/bundle smoke, and repository drift. Network-dependent Python and web audits are added by `just ci-full`; `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe.
+`just ci` composes `ci-python`, `ci-openspec`, `ci-discovery`, `ci-web`, and `ci-artifacts`. Those lanes cover the Python release gate, strict OpenSpec validation, offline source-discovery contract gates (`OPENOPPS_DISCOVERY_NETWORK=disabled`; no live scout), web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata/bundle smoke, and repository drift. Network-dependent Python and web audits are added by `just ci-full`; `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe.
 `just web-search-index-check` is the explicit maintainer parity gate for the committed v6 transition snapshot; it requires a local `kaggle/openoppsdb.sqlite`, regenerates `web/public/data/openopps-search/`, and fails on remaining snapshot drift.
 
 GitHub Actions also runs supported Python 3.12/3.13/3.14 and lowest-direct dependency lanes. Its non-pull-request supply-chain job builds and attests the Python wheel SBOM; the uploaded workflow artifact has 30-day retention. Public-data archive publication is intentionally separate and manual, requires immutable releases plus a pre-created exact draft, and uses isolated least-privilege attest, publish, and readback jobs.

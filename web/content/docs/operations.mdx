@@ -1,6 +1,6 @@
 ---
 title: Operations
-description: Storage, export, validation, and troubleshooting workflows.
+description: Storage, export, quarantined scout accounting, validation, and troubleshooting workflows.
 ---
 
 Use this page for local CLI operations and docs validation while working on OpenOpps v0.1. There is no hosted runtime to initialize; durable state lives in local SQLite files controlled by `OPENOPPS_` settings.
@@ -160,6 +160,81 @@ The report is offline and reads persisted SQLite records only. It does not fetch
 
 `openopps providers coverage --json` also exposes `gaps.sourceScope` for v0.1 startup-board exclusions (WorkAtAStartup), Wellfound/Angel unsupported rationales, and the Editorial label audit decision.
 
+## Quarantined source discovery
+
+`openopps discovery` is advanced admin, not an everyday sync stage. It is not same-run with `openopps sync`, `sources sync`, `boards sync`, or `jobs sync`. Default unscoped `openopps sync` remains the snapshot writer and keeps using the last reviewed approved catalog. Scout output is an explicit quarantine directory, not a snapshot and not live publication evidence.
+
+```bash
+uv run openopps discovery scout --output /absolute/quarantine-root --json
+uv run openopps discovery verify-scout /absolute/quarantine-root --json
+uv run openopps discovery preview-promotion --json
+just ci-discovery
+just source-policy-check
+just source-policy-audit
+```
+
+The same callbacks are aliased as `openopps admin sources scout`, `verify-scout`, and `preview-promotion`. None accept `--apply`. Scout writes only the required `--output` directory. It does not mutate operational SQLite, Git, the packaged catalog, Kaggle, or Cloudflare, and it cannot activate candidates in the same invocation. The current CLI scout publishes an evaluation bundle from an empty occurrence set against read-only v7 policy digests. Channel enumerators stay replay-library surfaces.
+
+Command strings are on [CLI](/docs/cli#quarantined-source-discovery). Isolated `OPENOPPS_DISCOVERY_*` limits are on [Configuration](/docs/configuration#isolated-discovery-scout). Taxonomy fields are on [Providers](/docs/providers#required-discovery-taxonomy). Skill contributor gates are on [Contributing](/docs/contributing#quarantined-discovery-and-the-source-scout-skill).
+
+### Policy declaration versus independent verification
+
+Declared catalog status is not verified live rights. v7 source-policy is a deny-only overlay. `just source-policy-check` runs `scripts/source_policy_review.py validate`: canonical evidence bytes, schema, and the exact committed-v6 corpus identity. That structural gate is part of `just ci` via `ci-artifacts`. It is not permission to publish.
+
+`just source-policy-audit` runs the same validator, prints the eligibility summary, and exits 2 while any source is blocked. The audit type fixes `independentlyVerifiedAllowedCount` at `0` and labels allowed keys `repository_catalog_declarations_not_independent_legal_review`. Current committed-v6 counts: 695 sources, 7 catalog-declared allowed, 0 independently verified, 688 blocked. The 688 stay blocked pending written Getro/Consider grants (`getro-terms-v3-1`, `consider-terms-observed-2026-08-13`, plus two historical unavailable keys). Do not treat a green structural check as eligibility, and do not render a selector or publish while the audit is red.
+
+Discovery promotion binds those read-only v7 digests in `openopps.discovery.policy` and requires independent positive closure of five operations: `access`, `license`, `redistribution`, `sync`, and `publication`. Deny-overlay strings such as `allowed`, `public`, or `granted` stay `unresolved`. Untrusted observations and `sourceAttribution` never grant permission; attribution is a requirement only. A `DiscoveryPromotionPolicyDecision` plus the evidence-only receipt still set `grantsAuthority=false`. Scout, verify, preview, CI, and scheduled workflows cannot mint a positive decision or invoke apply.
+
+### Complete versus degraded accounting
+
+Conservation of a planned set is not a complete attestation. Candidate, source, and route denominators are exact and mutually exclusive.
+
+Scout candidate accounting (`ScoutCandidateAccounting` in `src/openopps/discovery/models.py`) conserves:
+
+```text
+observedCandidateOccurrences = invalidOccurrences + normalizedOccurrences
+normalizedOccurrences = duplicateOccurrences + uniqueCandidates
+uniqueCandidates = alreadyApproved + quarantinedCandidates
+quarantinedCandidates = promotable + blocked + unsupported + inconclusive
+```
+
+Source terminals (`SourceAccounting` in `src/openopps/discovery/accounting.py`):
+
+```text
+planned = succeeded + failed + timedOut + freshSkipped + policyBlocked
+        + rateLimited + cancelled + unstarted
+```
+
+`complete` is true only when the run is terminal `succeeded`, every planned id is accounted, none of `failed` / `timedOut` / `policyBlocked` / `rateLimited` / `cancelled` / `unstarted` are present, and every `succeeded` or `freshSkipped` outcome is authoritative with a freshness-context digest that matches the pin. Fresh skips are not a completeness exemption without that digest.
+
+Route terminals (`RouteAccounting`) add `deferred`, `duplicateSkipped`, and `missingMetadata`. `complete` additionally forbids deferred, missing-metadata, and the failed classes above. Each `duplicateSkipped` route must name exactly one canonical representative that is an authoritative `succeeded` or `freshSkipped` bound to the same freshness context. A duplicate group of only skips fails closed.
+
+`classify_typed_degraded` returns `complete` with no class only when source and route are both complete, every operation terminal is `succeeded`, the operation channel state is `complete`, and `run_state` is `succeeded`. Otherwise it returns `degraded` plus one of `TYPED_DEGRADED_CLASSES`: `failed`, `timed_out`, `policy_blocked`, `rate_limited`, `cancelled`, `unstarted`, `missing_metadata`, `deferred`, `partial`, `nonterminal`. Multiple count classes collapse to `partial`, or to `nonterminal` when that class is present. Complete source or route accounting cannot pair with a non-succeeded run, and a complete attestation cannot carry a degraded class.
+
+Selector-bound `openopps sync --metrics-json` attaches `attestation` and `degradedClass` from that classifier. `jobSyncAttempts` versus `jobSyncRuns` still counts durable route attempts versus authoritative successes; those counters are not a complete attestation. `just source-discovery-accounting-check` conserves the pinned envelope as unstarted terminals and does not ingest.
+
+### Bundle freshness, replay, rollback, and revocation
+
+`discovery verify-scout` calls `verify_bundle` with `evaluation_bundle_verification_policy`: timezone-aware `observedAt`, a supported schema and profile, and `max_evidence_age` of 48 hours. Future-dated or stale evidence fails closed. That window is not the v7 public-data snapshot freshness gate.
+
+`OPENOPPS_DISCOVERY_EVIDENCE_RETENTION_SECONDS` (default `86400`) is a separate scout setting: the maximum age for exact-verified quarantine evidence to be reusable by a later isolated scout. Conditional reuse still requires those prior exact-verified bytes; verify-scout does not refetch.
+
+Replay here is offline fixture replay, not a live crawl. Channel enumerators (`enumerate_official_channel`, `enumerate_public_code_channel`, `enumerate_search_channel`, `enumerate_targeted_ats_channel`) consume maintainer-owned seeds plus captured observations and emit a closed `ChannelReplayReceipt`. They do not open sockets. Public CI and `just ci-discovery` set `OPENOPPS_DISCOVERY_NETWORK=disabled` and replay committed sanitized fixtures.
+
+Promotion-intent replay is a different, forbidden operation. Durable state is the hash-chained JSONL ledger at `src/openopps/discovery/data/promotion_decision_ledger.jsonl`. The only states are `reserved`, `applied`, and `revoked`; transitions are append-only (`reserved` → `applied` or `revoked`, `applied` → `revoked`, `revoked` terminal). Global replay keys are `decisionId` and `promotionIntentDigest` only. A semantic manifest digest is reusable content identity, not a global blacklist. `BundleVerificationPolicy.replayed_manifest_ids` / `revoked_manifest_ids` are legacy fields; CLI verify passes empty sets.
+
+There is no `openopps discovery rollback` command and no `--apply` flag. `preview-promotion` is a digest-bound dry-run (`applied=false`, `grantsAuthority=false`) and writes no repository files. The committed evidence-only receipt at `src/openopps/discovery/data/evidence_only_decision_receipt.json` also has `grantsAuthority=false`. Reserve, apply, recover, and revoke require `invocation_mode="maintainer"` in `openopps.discovery.promotion_runtime`. Recovery uses `choose_recovery_action`: `finalize` only when every owned path matches the journal `after` bytes; otherwise `restore_and_revoke` restores each journal `before` image and appends `revoked`. `revoke_promotion` appends `revoked` under the repository lock. That is a forward compensating ledger operation plus restored bytes, not a Git history rewrite. Reverted promotion digests stay revoked and need a fresh bundle and review. Candidate manifests cannot carry approval, reviewer, signature, receipt, or revocation fields.
+
+Kaggle `allow_no_rollback=1` on this page is a first-create dataset acknowledgement. It is not discovery ledger rollback.
+
+### Skill non-authority and isolated validator
+
+The portable skill at `skills/openopps-source-scout/` is advisory. Skill prose does not confine tools already authorized in a parent Codex, Cursor, or Grok Build harness. A suggestion is never approval, policy permission, review, promotion, or runtime activation. The parent harness is outside OpenOpps enforcement.
+
+Acceptance is only through the deterministic isolated validator `openopps.discovery.isolation.launch_isolated_scout` (committed fixtures via `skills/openopps-source-scout/scripts/validate_fixture.py`). The worker is a credential-free, allowlisted, bounded process that writes only a parent-owned new quarantine file; that is an application contract, not an OS sandbox claim. Do not live-install harness projections under `.agents/skills/` or `.cursor/skills/`. Selected Codex/Cursor copies must remain absent; Grok has no repository projection. Do not run `wagents --apply` or a live skill install from this workflow.
+
+`just source-discovery-skill-eval-check` runs the read-only evals, frontmatter, dry-run projection, and docs-steward skip gates. `resolve_docs_steward.py` searches with `uv run wagents skills search docs-steward --json` and skips when `wagents` is absent.
+
 ## Validation
 
 Use `just` from the repository root for the contributor validation graph:
@@ -167,6 +242,8 @@ Use `just` from the repository root for the contributor validation graph:
 ```bash
 just quick
 just ci
+just ci-discovery
+just source-policy-check
 just lock-check
 just openspec-validate-all
 just web-check
@@ -179,7 +256,7 @@ just kaggle-meta
 just kaggle-bundle-check kaggle/openoppsdb.sqlite
 ```
 
-`just ci` composes `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts`. These lanes cover the Python release gate, strict OpenSpec validation, web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata and clean-bundle smoke, and repository drift.
+`just ci` composes `ci-python`, `ci-openspec`, `ci-discovery`, `ci-web`, and `ci-artifacts`. These lanes cover the Python release gate, strict OpenSpec validation, offline source-discovery gates with `OPENOPPS_DISCOVERY_NETWORK=disabled`, web type/build/unit/browser/accessibility/lint/search-artifact checks, Kaggle metadata and clean-bundle smoke, and repository drift. `ci-artifacts` runs `source-policy-check` and does not run `source-policy-audit`.
 
 `just ci-full` runs `just ci` plus the network-dependent `security-audit` (Python `pip-audit` and the full web dependency graph via `pnpm audit --audit-level high`) and `test-lowest-direct`. Use `ci` for day-to-day PR confidence; use `ci-full` before release or when dependency/security surfaces change.
 
@@ -352,6 +429,7 @@ GitHub Actions mirrors local validation instead of inventing a second build path
 - Python package tests and coverage through `uv`.
 - Lock-file consistency through `uv lock --check`.
 - OpenSpec strict validation for every active change.
+- Offline source-discovery schema, fixture, bundle, skill-eval, private-envelope, accounting, and promotion-preview gates with discovery network disabled.
 - Web generated data, MDX/type-check, build, tests, browser checks, and lint through `pnpm`.
 - Kaggle metadata generation for exported schema changes.
 - Dependency review on pull requests, supported Python 3.12/3.13/3.14 lanes, lowest-direct dependency testing, and network-dependent security audits.
@@ -375,3 +453,6 @@ When CI changes, update `Justfile`, this operations page, root README, and repo 
 | Workday sync is slow                   | Lower `OPENOPPS_WORKDAY_CONCURRENCY` and narrow sync with `--source`, `--board`, or `--provider workday`.      |
 | Export output is unexpectedly empty    | Confirm the database has data with `uv run openopps admin db status` and inspect filters.                      |
 | Docs navigation is stale               | Update `web/content/docs/meta.json`, then run `cd web && pnpm types:check`.                                  |
+| `just source-policy-audit` exits 2     | Expected while 688 sources remain blocked pending written Getro/Consider grants. Structural `just source-policy-check` staying green is not eligibility. |
+| `discovery verify-scout` reports stale | Evaluation bundles use a 48-hour `max_evidence_age`. Re-scout; this is not a promotion rollback. |
+| A source-scout suggestion looks approved | The skill is advisory. Acceptance is only `launch_isolated_scout` / `validate_fixture.py`. Do not live-install harness projections. |

@@ -30,7 +30,38 @@ OpenOpps packages a small set of low-friction non-VC source families as source a
 | Employer ranking CSV          | `fortune500`          | Included ranking seed data; supports embedded user-supplied CSV rows for reviewed local refreshes.         |
 | Ecosystem landscape           | `cncf-landscape`      | Reads CNCF `landscape.yml` public fields and intentionally excludes logos and Crunchbase-derived fields.   |
 
-Each packaged source includes taxonomy metadata such as `providerType`, `coverageMode`, `accessType`, `licenseStatus`, `refreshCadence`, and `sourceAttribution` in the source `raw_metadata` payload.
+Each packaged source may carry taxonomy metadata in `raw_metadata`. Discovery promotion requires the eight required fields below as non-empty strings; packaged catalog values are not a promotion grant.
+
+## Required Discovery Taxonomy
+
+Discovery candidates use `CandidateTaxonomy` (`src/openopps/discovery/data/candidate-taxonomy.schema.json`) and `REQUIRED_TAXONOMY_FIELDS` in `src/openopps/discovery/identity.py`. `validate_taxonomy` requires all eight required fields as non-empty strings. `sourceYear` is optional (four-digit integer 1900–9999 when present). Unknown field names fail closed.
+
+| Field | Required |
+| ----- | -------- |
+| `providerType` | yes |
+| `coverageMode` | yes |
+| `accessType` | yes |
+| `licenseStatus` | yes |
+| `refreshCadence` | yes |
+| `sourceCategory` | yes |
+| `sourceAttribution` | yes |
+| `inclusionReason` | yes |
+| `sourceYear` | no |
+
+Values may remain null while quarantined. `validate_taxonomy` reports `complete` only when every required field is a non-empty string. Missing or blank required fields leave taxonomy `incomplete`. Incomplete taxonomy cannot promote: evaluation will not mark the candidate `promotable`, and `revalidate_selected_candidates` in `src/openopps/discovery/promotion.py` raises `PromotionPreviewError` (`selected candidate taxonomy is incomplete`).
+
+These counts are frozen before-state evidence from barrier B000 (commit `8e3c797b975a1f79844c1906e96c0993d88ab1f1`), not current live catalog totals. At that baseline, 895 records have exactly 8/8 required taxonomy values, 1,975 have 0/8, no record is partially populated, and `sourceYear` is present on zero records.
+
+| Frozen taxonomy baseline | Count |
+| ------------------------ | ----- |
+| Complete required taxonomy (exactly 8/8) | 895 |
+| No standard taxonomy fields (0/8) | 1,975 |
+| Partially populated records | 0 |
+| `sourceYear` present | 0 |
+
+Future promotion is expected to change counts. Do not treat 895/1,975 as a current production inventory.
+
+See [CLI](/docs/cli#quarantined-source-discovery) for scout, verify, and preview command strings.
 
 ## Support Levels
 

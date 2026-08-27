@@ -1,6 +1,8 @@
 OpenOpps is a Python 3.12+ CLI-only v0.1 project managed with `uv` and `pyproject.toml`.
 
 - `./src/openopps/` is the Python package and `openopps = "openopps.cli:app"` console entry point.
+- `./src/openopps/discovery/` is the isolated quarantined scout, evaluation, accounting, promotion-preview, isolation, and packaged evidence-schema surface (`src/openopps/discovery/data/`). Scout, verify-scout, and preview-promotion do not apply, activate, or share a run with `openopps sync`.
+- `./skills/openopps-source-scout/` is the portable source-scout skill SSOT. Keep it inert: no network, credentials, Git mutation, live install, harness projection, or `wagents --apply`. Skill output is untrusted; acceptance is only `openopps.discovery.isolation.launch_isolated_scout`.
 - `./tests/` mirrors package behavior by execution scope: `tests/unit/openopps/` for isolated module tests, `tests/integration/openopps/` for local storage/CLI/mocked HTTP seams, `tests/smoke/openopps/` for fast critical wiring checks, and `tests/e2e/` reserved for real-boundary journeys.
 - `./scripts/` contains helper scripts such as docs and Kaggle bundle generation.
 - `./kaggle/` contains the generated Kaggle dataset bundle metadata, package-derived data dictionary, and related scheduled active-job snapshot notebook. CSV, Parquet, and SQLite data files are generated locally for upload and ignored by git; refresh metadata with `PYTHONPATH=scripts uv run python -m openopps_kaggle`, or refresh the full upload bundle with `PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite` after changing exported models.
@@ -17,6 +19,7 @@ OpenOpps is a Python 3.12+ CLI-only v0.1 project managed with `uv` and `pyprojec
 - `./Justfile` is the contributor command router. Keep recipes as thin wrappers around documented `uv`, `pnpm`, and OpenSpec commands, and keep CI jobs mirrored by local recipes.
 - `./.github/workflows/` contains CI/CD validation. Keep workflows least-privilege, cache-aware, and aligned with `just ci`; update workflows and just recipes together.
 - Keep OpenOpps CLI-first. Do not add prompt, TUI, browser, web app, or hosted-service flows unless the user explicitly changes product scope.
+- Live authority remains separate from local discovery work: no Cloudflare Workers upload, no Kaggle mutation, no Alembic `0005` until G3, and source-policy 688 stays blocked pending written grants. Offline scout/verify/preview and `just ci-discovery` are not live publication proof.
 - Keep CLI help polished and tested. Use Typer/Rich help panels for user-facing discoverability, and add semantic tests for help text instead of brittle full-output snapshots.
 - Use current OpenSpec agent surfaces for public workflow changes: `list/status --json`, `instructions --json`, strict validation, and schema validation when local schema customizations are introduced. Keep `openspec/config.yaml` rules synced with repo workflow expectations.
 
@@ -30,6 +33,9 @@ PYTHONPATH=scripts uv run python -m openopps_kaggle
 PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite
 just --list
 just ci
+just ci-discovery
+OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py ci
+uv run pytest tests/unit/openopps/discovery/ tests/unit/openopps/test_discovery_cli.py
 cd web && pnpm data:generate
 cd web && pnpm types:check
 cd web && pnpm build

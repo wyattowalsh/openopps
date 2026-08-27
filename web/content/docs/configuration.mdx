@@ -23,7 +23,7 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | ------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
 | `OPENOPPS_DB_URL`               | `sqlite:///openoppsdb.sqlite`                             | Database URL used by storage commands and sync jobs.               |
 | `OPENOPPS_MAX_CONNECTIONS`      | `40`                                                      | Maximum HTTP connection pool size.                                 |
-| `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency for aggregate board discovery.          |
+| `OPENOPPS_SOURCE_CONCURRENCY`   | `4`                                                       | Source adapter concurrency during source sync and provider health checks, not the isolated scout. |
 | `OPENOPPS_SOURCE_TIMEOUT_SECONDS` | `900.0`                                                 | Maximum seconds one source adapter can run before timed-out skip.  |
 | `OPENOPPS_SOURCE_FRESHNESS_SECONDS` | `0.0`                                                 | Skip recently synced source catalogs during unscoped full-sync retries. |
 | `OPENOPPS_BOARD_CONCURRENCY`    | `16`                                                      | Concurrent ready board routes and board-scoped listing/detail work during job sync, route health checks, and providers that fan out across job pages. |
@@ -44,6 +44,40 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_PLUGIN_DISABLED`      | empty                                                     | Comma-separated plugin entry-point names to skip.                  |
 | `OPENOPPS_PLUGIN_ALLOWED`       | empty                                                     | Comma-separated plugin entry-point names allowed to execute.       |
 | `OPENOPPS_NO_INTRO`             | unset                                                     | Suppress the interactive startup portal animation.                 |
+
+### Isolated discovery scout
+
+The isolated scout uses a separate settings model (`DiscoverySettings` in `src/openopps/discovery/settings.py`). `OPENOPPS_DISCOVERY_*` budget fields are not part of `OpenOppsSettings`, do not load `.env`, and do not change `openopps sync`. Values must be canonical positive decimals. Invalid values fail closed without echoing the input.
+
+Scout output is an explicit directory, not the operational database. `openopps discovery scout --output /absolute/quarantine-root --json` (also `openopps admin sources scout`) writes one evaluation quarantine bundle under that required `--output` path. There is no scout-output environment variable. `OPENOPPS_DB_URL` still names the CLI SQLite ledger for sync, cache, and `admin db` commands; the scout does not open or mutate that file, catalogs, Git, Kaggle, or Cloudflare.
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `OPENOPPS_DISCOVERY_WHOLE_RUN_TIMEOUT_SECONDS` | `300` | Whole isolated invocation wall-clock limit (max `3600`). |
+| `OPENOPPS_DISCOVERY_CHANNEL_TIMEOUT_SECONDS` | `120` | Per-channel wall-clock limit (max `1800`). |
+| `OPENOPPS_DISCOVERY_CHANNEL_QUERY_LIMIT` | `20` | Trusted predeclared queries per channel (max `1000`). |
+| `OPENOPPS_DISCOVERY_CHANNEL_REQUEST_LIMIT` | `100` | Requests including retries, redirects, and pagination per channel (max `5000`). |
+| `OPENOPPS_DISCOVERY_ORIGIN_LIMIT` | `25` | Distinct validated public HTTPS origins per channel (max `500`). |
+| `OPENOPPS_DISCOVERY_REDIRECT_LIMIT` | `5` | Manually validated redirect hops per logical request (max `10`). |
+| `OPENOPPS_DISCOVERY_PER_HOST_CONCURRENCY` | `2` | Simultaneous connections per origin (max `16`). |
+| `OPENOPPS_DISCOVERY_OVERALL_CONCURRENCY` | `8` | Simultaneous requests across channels (max `64`). |
+| `OPENOPPS_DISCOVERY_RESPONSE_MAX_BYTES` | `1048576` | Decoded bytes admitted from one response (max `10485760`). |
+| `OPENOPPS_DISCOVERY_AGGREGATE_RESPONSE_MAX_BYTES` | `67108864` | Decoded bytes admitted across the invocation (max `268435456`). |
+| `OPENOPPS_DISCOVERY_CANDIDATE_LIMIT` | `1000` | Candidate occurrences per channel before remaining work is unstarted (max `10000`). |
+| `OPENOPPS_DISCOVERY_RETRY_ATTEMPT_LIMIT` | `3` | Total attempts per logical request (max `10`). |
+| `OPENOPPS_DISCOVERY_PAGINATION_LIMIT` | `20` | Pagination requests per logical enumeration (max `1000`). |
+| `OPENOPPS_DISCOVERY_PARSER_MAX_DEPTH` | `32` | Trusted structural nesting depth (max `128`). |
+| `OPENOPPS_DISCOVERY_EVIDENCE_RETENTION_SECONDS` | `86400` | Maximum age for exact verified quarantine evidence to be reusable by a later scout (max `604800`). |
+
+| Variable | Public/CI/offline value | Purpose |
+| -------- | ----------------------- | ------- |
+| `OPENOPPS_DISCOVERY_NETWORK` | `disabled` | Gate flag for public CI, `just ci-discovery` / `just source-discovery-*`, and `scripts/source_discovery_gates.py`. Not a `DiscoverySettings` field. |
+
+Public CI (the `discovery` job in `.github/workflows/ci.yml`), local offline recipes, and other CI-shaped runs require `OPENOPPS_DISCOVERY_NETWORK=disabled`. The gate refuses any other value; unset defaults to `disabled`. Public CI replays committed sanitized fixtures and does not run a live scout.
+
+A live scout schedule is a separate, unexercised maintainer authority gate. This page does not provision GitHub Actions `schedule:`, Cloudflare Cron, hosted runners, or a private live-network profile, and it does not document a live-scheduler environment as if one were enabled.
+
+Remote content cannot raise a trusted limit. The scout does not use the runtime SQLite HTTP cache or stale-on-error behavior. See [CLI](/docs/cli#quarantined-source-discovery) for command strings.
 
 ### Web app public data release
 
@@ -77,6 +111,8 @@ OPENOPPS_DB_URL=sqlite:///data/openopps.db uv run openopps admin db status
 OPENOPPS_BOARD_CONCURRENCY=8 OPENOPPS_JOB_ROUTE_LIMIT=100 uv run openopps jobs sync --provider workday --metrics-json
 OPENOPPS_PROVIDER_CONCURRENCY=4 uv run openopps admin providers probe-routes --source a16z --provider any --limit 25 --json
 OPENOPPS_USER_AGENT='openopps/0.1 (contact: jobs@example.com)' uv run openopps admin sources test yc
+OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py ci
+uv run openopps discovery scout --output /absolute/quarantine-root --json
 ```
 
 For repeated local use from the repository checkout, place values in `.env` at the repository root:
@@ -95,7 +131,7 @@ OPENOPPS_PLUGIN_ALLOWED=trusted-plugin
 OPENOPPS_PLUGIN_DISABLED=broken-plugin
 ```
 
-Unscoped `jobs sync` targets all persisted ready routes. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs.
+`DiscoverySettings` ignores `.env`; do not put `OPENOPPS_DISCOVERY_*` or `OPENOPPS_DISCOVERY_NETWORK` in that file. Unscoped `jobs sync` targets all persisted ready routes. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs.
 
 The [Jobs](/) and [Explorer](/explorer) surfaces use the committed v6 snapshot only while no v7 channel is configured. Refresh that transition artifact with `just web-search-index` after updating the local `kaggle/openoppsdb.sqlite` export. See [Public Data Releases](/docs/public-data-releases) for v7 configuration, governance, delivery, and cutover gates.
 
@@ -117,6 +153,9 @@ Prefer flags for one run and environment variables for durable local policy:
 | Lower concurrent route probing             | `OPENOPPS_PROVIDER_CONCURRENCY=6`       |
 | Hide the animation once                      | `--no-intro`                            |
 | Hide the animation everywhere                | `OPENOPPS_NO_INTRO=1`                   |
+| Bound one isolated scout                     | `OPENOPPS_DISCOVERY_*`                  |
+| Write scout output                           | `--output <dir>` (not `OPENOPPS_DB_URL`) |
+| Keep public/CI/offline discovery gates offline | `OPENOPPS_DISCOVERY_NETWORK=disabled` |
 
 By default, discovered plugins are visible but not executed. Set `OPENOPPS_PLUGIN_ALLOWED` to run specific trusted entry points. If `OPENOPPS_PLUGIN_AUTOLOAD=true`, every discovered plugin is eligible unless its entry-point name appears in `OPENOPPS_PLUGIN_DISABLED`. Disabled entries are still skipped even if also allow-listed.
 

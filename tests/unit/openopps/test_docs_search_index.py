@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import runpy
 import sqlite3
 import sys
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import pytest
 
 from openopps.models import SourceRecord
+
+
+class _LoadedScriptFunction(Protocol):
+    __globals__: dict[str, Any]
+
+    def __call__(self, *args: Any, **kwargs: Any) -> dict[str, Any]: ...
+
 
 _SEARCH_INDEX_SCRIPT = (
     Path(__file__).resolve().parents[3] / "scripts" / "generate_docs_search_index.py"
@@ -23,7 +31,7 @@ build_search_index = cast(
     _SEARCH_INDEX_NAMESPACE["build_search_index"],
 )
 build_search_release = cast(
-    "Callable[..., dict[str, Any]]",
+    _LoadedScriptFunction,
     _SEARCH_INDEX_NAMESPACE["build_search_release"],
 )
 SEARCH_INDEX_VERSION = cast(int, _SEARCH_INDEX_NAMESPACE["SEARCH_INDEX_VERSION"])
@@ -51,7 +59,7 @@ source_policy_denial_errors = cast(
     _SEARCH_INDEX_NAMESPACE["_source_policy_denial_errors"],
 )
 read_source_policy_inputs = cast(
-    "Callable[[], dict[str, Any]]",
+    _LoadedScriptFunction,
     _SEARCH_INDEX_NAMESPACE["_read_source_policy_inputs"],
 )
 detail_bucket = cast(
@@ -790,6 +798,11 @@ def test_generated_search_index_artifact_matches_local_db_when_available(
     artifact_dir = repo_root / "web" / "public" / "data" / "openopps-search"
     if not db_path.exists() or not (artifact_dir / "manifest.json").exists():
         pytest.skip("local SQLite DB or generated docs search index is unavailable")
+    if os.environ.get("OPENOPPS_WEB_SEARCH_INDEX_CHECK") != "1":
+        pytest.skip(
+            "local sqlite is not CI evidence; regen is maintainer-only "
+            "(OPENOPPS_WEB_SEARCH_INDEX_CHECK=1)"
+        )
 
     output_dir = tmp_path / "openopps-search"
     build_search_index(db_path, output_dir)

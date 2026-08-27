@@ -30,6 +30,7 @@ Use `just` from the repository root for local parity with GitHub Actions. Prefer
 ```bash
 just quick
 just ci
+just ci-discovery
 just lock-check
 just openspec-validate-all
 just web-check
@@ -51,7 +52,7 @@ cd web && pnpm test
 just web-search-index-check
 ```
 
-`just ci` composes the `ci-python`, `ci-openspec`, `ci-web`, and `ci-artifacts` lanes; `just ci-full` adds network-dependent security audits and lowest-direct dependency testing. `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe. GitHub Actions adds the supported Python matrix, dependency review, and a non-PR wheel/SBOM attestation job. The current supply-chain job attests the Python wheel only, not a v7 public-data recovery archive.
+`just ci` composes the `ci-python`, `ci-openspec`, `ci-discovery`, `ci-web`, and `ci-artifacts` lanes; `just ci-full` adds network-dependent security audits and lowest-direct dependency testing. The discovery lane is offline only (`OPENOPPS_DISCOVERY_NETWORK=disabled`); see [Quarantined discovery and the source-scout skill](#quarantined-discovery-and-the-source-scout-skill). `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe. GitHub Actions adds the supported Python matrix, dependency review, and a non-PR wheel/SBOM attestation job. The current supply-chain job attests the Python wheel only, not a v7 public-data recovery archive.
 
 ## Web App Workflow
 
@@ -107,6 +108,62 @@ rtk npx -y @fission-ai/openspec@1.6.0 validate --all --strict
 
 When commands, workflows, or generated surfaces change, update the relevant MDX page, root README, nested `AGENTS.md`, `Justfile`, CI workflow, and OpenSpec change in the same logical workstream.
 
+## Quarantined discovery and the source-scout skill
+
+Source discovery is CLI-first and fail-closed. Use `openopps discovery scout|verify-scout|preview-promotion` (or the `admin sources` aliases). Do not add `--apply`, TUI, browser, or hosted-service flows.
+
+### Local offline gates
+
+Contributor and public CI runs stay offline. The Just recipes are thin wrappers around `scripts/source_discovery_gates.py` and set `OPENOPPS_DISCOVERY_NETWORK=disabled`. Prefer the canonical graph; use a named recipe when you need a single gate:
+
+```bash
+just ci-discovery
+just source-discovery-schema-check
+just source-discovery-fixtures-check
+just source-discovery-manifest-check manifest=<path>
+just source-discovery-promotion-preview
+just source-discovery-private-envelope-check
+just source-discovery-accounting-check
+just source-discovery-benchmark-check
+just source-discovery-skill-eval-check
+```
+
+`just ci-discovery` is an alias of `just source-discovery-ci` and is the same offline graph GitHub Actions runs. `source-discovery-manifest-check` requires a quarantine manifest path and does not rewrite or activate it. `source-discovery-promotion-preview` is a digest-bound dry-run; omit `manifest=` to preview the on-disk identity closure. None of these recipes apply, upload, or open a live network path.
+
+### Tests
+
+Focused discovery tests live under `tests/unit/openopps/discovery/` and `tests/unit/openopps/test_discovery_cli.py`:
+
+```bash
+uv run pytest tests/unit/openopps/discovery tests/unit/openopps/test_discovery_cli.py -q
+```
+
+### Source-scout skill
+
+The skill SSOT at `skills/openopps-source-scout/` is **inert** and **advisory**. Skill prose does not confine tools already authorized in Codex, Cursor, or Grok Build, and a suggestion is never approval, policy permission, review, promotion, or runtime activation. Do not run `wagents --apply` or any live harness install in the contributor flow.
+
+Acceptance is only through the deterministic isolated validator `openopps.discovery.isolation.launch_isolated_scout` (via `skills/openopps-source-scout/scripts/validate_fixture.py` for committed fixtures). Do not live-install harness projections under `.agents/skills/` or `.cursor/skills/`. Selected Codex/Cursor copies must remain absent; Grok has no repository projection.
+
+Read-only skill helpers:
+
+```bash
+uv run python skills/openopps-source-scout/scripts/validate_evals.py
+uv run python skills/openopps-source-scout/scripts/validate_frontmatter.py
+uv run python skills/openopps-source-scout/scripts/dry_run_projection.py
+uv run python skills/openopps-source-scout/scripts/resolve_docs_steward.py
+uv run pytest tests/unit/openopps/discovery/test_source_scout_skill.py tests/unit/openopps/test_discovery_cli.py -q
+```
+
+`resolve_docs_steward.py` searches for docs-steward with `uv run wagents skills search docs-steward --json` and skips when `wagents` is absent. Do not install `wagents`, run `wagents --apply`, or run a live skill install from this lane. Agent-fabricated `approved`, reviewer, signature, receipt, or promotion fields are rejected before evaluation.
+
+### Public CI
+
+Public CI stays offline. The discovery job in `.github/workflows/ci.yml` sets `OPENOPPS_DISCOVERY_NETWORK=disabled`, checks out with `persist-credentials: false`, and runs `just ci-discovery`. Do not add a live-scout `schedule:` trigger (or any live network dispatch) to that workflow.
+
+Contributor discovery work does not provision private schedulers, mutate Kaggle, or upload Workers. Those remain separate unexercised maintainer authority gates. Live scheduler provisioning, credential selection, activation, retention, and execution are separate unexercised authority gates. A local green `just ci-discovery` does not authorize a live scout, catalog apply, dataset publish, or deploy.
+
+When discovery commands, schemas, or the skill boundary change, update README, this page, [CLI](/docs/cli), [Operations](/docs/operations), [Configuration](/docs/configuration), [Providers](/docs/providers), and nested `AGENTS.md` in the same workstream. Do not regenerate `web/lib/generated/openopps-data.json` from this docs lane.
+
 ## Source and Provider Changes
 
 Source adapters discover candidate company boards. Provider adapters detect or fetch postings from public job-board providers.
@@ -116,6 +173,7 @@ Source adapters discover candidate company boards. Provider adapters detect or f
 - Keep route probing dry-run-first; persist with `--apply` only after matched routes are reviewed.
 - Add semantic tests for provider support and normalized output.
 - Use `providers coverage`, `providers audit`, and `admin sources yield` to evaluate persisted coverage before changing public claims.
+- Keep quarantined discovery off the ingest path: scout/verify/preview never share a run with `openopps sync`, and they have no `--apply` option.
 
 Installed Python plugins are not sandboxed and run in the same process as OpenOpps. Use `OPENOPPS_PLUGIN_ALLOWED` for trusted plugin entry points and `OPENOPPS_PLUGIN_AUTOLOAD=true` only in controlled environments.
 

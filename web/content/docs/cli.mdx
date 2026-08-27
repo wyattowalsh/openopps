@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Command groups, workflow order, filters, and output modes for the OpenOpps CLI.
+description: Command groups, workflow order, filters, output modes, and quarantined discovery for the OpenOpps CLI.
 ---
 
 OpenOpps exposes the `openopps` console script from `openopps.cli:app`. Treat the CLI as a local data pipeline: source catalogs become durable board records, board records become executable provider routes, provider routes become normalized jobs, and exports preserve the resulting ledger for audit or analysis.
@@ -49,6 +49,8 @@ The normal sequence is:
 
 Use `status` or `doctor` between steps to see counts, route readiness, cache state, plugin load state, and the next recommended action.
 
+`openopps discovery` is not a step in this sequence. Scout, verify-scout, and preview-promotion are advanced admin commands and are not same-run with ingest (`openopps sync`, `sources sync`, `boards sync`, or `jobs sync`).
+
 ## Safety Classes
 
 | Class | Examples | What changes |
@@ -56,9 +58,10 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | Read-only local inspection | `status`, `doctor`, `sources list`, `providers coverage`, `plugins list`, `cache status` | Reads local SQLite/catalog state only. |
 | Writes local SQLite state | `examples seed`, `sources sync`, `boards sync`, `jobs sync`, `admin boards add`, `admin db init` | Creates or updates records under `OPENOPPS_DB_URL` and cache settings. |
 | Live upstream diagnostics | `admin sources test`, `providers health`, `admin providers probe-routes` | Calls public source or provider endpoints; dry-run unless the command documents `--apply`. |
+| Quarantined discovery | `discovery scout`, `discovery verify-scout`, `discovery preview-promotion` (also `admin sources` aliases) | Scout writes only an explicit quarantine directory. Verify is offline and read-only. Preview is a read-only on-disk B699 identity-closure dry-run. No `--apply`. Not same-run with `sync`. |
 | Destructive local maintenance | `admin cache purge` | Deletes local cache records; scope with `--namespace` when possible. |
 
-`--apply` is intentionally absent from most everyday commands. When it appears on diagnostics such as route probing or health checks, treat it as the boundary between inspection and persistence.
+`--apply` is intentionally absent from most everyday commands. When it appears on diagnostics such as route probing or health checks, treat it as the boundary between inspection and persistence. Quarantined discovery commands never expose `--apply`.
 
 ## Command Groups
 
@@ -74,11 +77,12 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | `cache` | `status` | Inspect the SQLite request cache. |
 | `plugins` | `list` | Inspect installed plugin entry points, capabilities, and failures. |
 | `examples` | `seed` | Seed deterministic synthetic demo data. |
-| `admin` | `sources`, `boards`, `providers`, `cache`, `db` | Advanced registration, route diagnostics, cache purge, and DB maintenance. |
+| `discovery` | `scout`, `verify-scout`, `preview-promotion` | Quarantined scout into an explicit output directory, offline bundle verify, and digest-bound promotion preview. Advanced admin; does not promote, sync, or activate candidates. |
+| `admin` | `sources`, `boards`, `providers`, `cache`, `db` | Advanced registration, quarantined scout aliases, route diagnostics, cache purge, and DB maintenance. |
 
 ## Admin inventory
 
-Use these commands for registration, portable backups, and route metadata repair. They are grouped under `openopps admin` and are separate from everyday `sync` workflows.
+Use these commands for registration, portable backups, and route metadata repair. They are grouped under `openopps admin` and are separate from everyday `sync` workflows. `admin sources add`, `test`, and `yield` stay the custom-catalog, adapter-sample, and persisted-yield commands. Quarantined scout, verify, and promotion preview are aliased under `admin sources` so OpenSpec command strings stay available; the primary group is `openopps discovery`.
 
 | Group | Command | Purpose |
 | ----- | ------- | ------- |
@@ -91,6 +95,9 @@ Use these commands for registration, portable backups, and route metadata repair
 | `admin providers` | `detect <url>` | Detect which packaged provider adapter matches a public board URL without a board scope. |
 | `admin providers` | `probe-routes` | Try route candidates and report boards that can fetch jobs; `--apply` persists matches. |
 | `admin providers` | `registry` | Inspect the durable `board_providers` route registry before job sync. |
+| `admin sources` | `scout --output <dir>` | Same callback as `discovery scout`. Requires an explicit quarantine directory. No `--apply`. |
+| `admin sources` | `verify-scout <manifest>` | Same callback as `discovery verify-scout`. Offline verify of `manifest.json` or the bundle directory. |
+| `admin sources` | `preview-promotion [manifest]` | Same callback as `discovery preview-promotion`. Read-only on-disk B699 identity-closure dry-run. No `--apply`. |
 
 ```bash
 uv run openopps admin db export --output /tmp/openopps-backup.sqlite
@@ -98,6 +105,33 @@ uv run openopps admin db vacuum
 uv run openopps admin boards add-provider a16z:example --provider ashbyhq --url 'https://jobs.ashbyhq.com/example'
 uv run openopps admin providers detect 'https://jobs.ashbyhq.com/example'
 ```
+
+## Quarantined source discovery
+
+`openopps discovery` is the advanced-admin group for quarantined source discovery. Root help places it on the Advanced admin panel so everyday `sync`, `sources`, `boards`, and `jobs` stay primary. It does not promote, sync, or activate candidates, and it is not same-run with ingest (`openopps sync`) or with `sources sync` / `boards sync` / `jobs sync`.
+
+The same callbacks are aliased as `openopps admin sources scout`, `verify-scout`, and `preview-promotion`. None of these commands accept `--apply`.
+
+Scout requires `--output <directory>` (`-o` / `-O`) and writes only there. `--json` (`-j` / `-J`) emits machine-readable JSON. There is no `--apply` option; passing `--apply` is rejected. Default unscoped `openopps sync` remains the snapshot writer and keeps using the last reviewed approved catalog. Ledger/L.2 snapshot tables are not landed. Scout output is not a snapshot and is not live publication evidence.
+
+```bash
+uv run openopps discovery scout --output /absolute/quarantine-root --json
+uv run openopps discovery verify-scout /absolute/quarantine-root --json
+uv run openopps discovery preview-promotion --json
+uv run openopps admin sources scout --output /absolute/quarantine-root --json
+uv run openopps admin sources verify-scout /absolute/quarantine-root --json
+uv run openopps admin sources preview-promotion --json
+```
+
+| Command | Options and arguments | What it does | What it does not do |
+| ------- | --------------------- | ------------ | ------------------- |
+| `discovery scout` | `--output <dir>` (required; `-o` / `-O`), `--json` (`-j` / `-J`) | Writes one evaluation quarantine bundle under the explicit directory. Selector-bound scout pins the private approved-ingestion envelope and does not accept the v7 public `SourceSelector`. | Mutate operational SQLite, catalogs, Git, Kaggle, or Cloudflare; accept `--apply`; run ingest or promotion in the same invocation. |
+| `discovery verify-scout` | `<manifest>` (required path), `--json` (`-j` / `-J`) | Offline-verifies `manifest.json` or the bundle directory that contains it. Re-validates the private approved-ingestion envelope. | Rewrite or repair the bundle; activate candidates; accept `--apply`; run ingest in the same invocation. |
+| `discovery preview-promotion` | optional `[manifest]`, `--json` (`-j` / `-J`) | Dry-run a digest-bound repository promotion preview without applying. Omit the manifest to preview the on-disk B699 identity-closure envelope, decision, receipt, and ledger. Pass a quarantine manifest to offline-verify that bundle first, then preview an empty candidate selection bound to the verified digest. | Reserve, apply, acquire the promotion lock, or grant authority. Does not mutate Git remotes, operational SQLite, Kaggle, Cloudflare, or the catalog. There is no `--apply` option. |
+
+The current CLI scout publishes a bundle from an empty occurrence set against read-only v7 policy digests. Channel enumerators (`official`, `public_code`, `search`, `targeted_ats`) are replay-library surfaces, not a live crawl from this command. Public CI keeps `OPENOPPS_DISCOVERY_NETWORK=disabled`. Isolated scout limits live under `OPENOPPS_DISCOVERY_*` and do not change `openopps sync`; see [Configuration](/docs/configuration#isolated-discovery-scout).
+
+Scout JSON includes `activated=false` and `promoted=false`. Preview JSON includes `applied=false` and `grantsAuthority=false`. Omitting the preview manifest sets `identityClosure=true` for the on-disk B699 identity-closure path. Treat those fields as evidence, not as an apply path.
 
 ## Job inspection
 
@@ -120,8 +154,8 @@ Examples use long flags for readability. The CLI also exposes script-friendly sh
 | `--board` | `-b`, `-B` | Job sync/list/export and route diagnostics. |
 | `--provider` | `-p`, `-P` | Board, job, provider, and route scopes. |
 | `--limit` | `-n`, `-N` | List and diagnostic result limits. |
-| `--json` | `-j`, `-J` | Machine-readable command output. |
-| `--output` | `-o`, `-O` | Export or no-DB output paths. |
+| `--json` | `-j`, `-J` | Machine-readable command output, including discovery scout, verify, and preview. |
+| `--output` | `-o`, `-O` | Export or no-DB output paths, and the required scout quarantine directory. |
 | `--format` | `-f`, `-F` | Export format selection. |
 | `--metrics-json` | `-m`, `-M` | Sync metrics output. |
 | `--refresh-cache` | `-r`, `-R` | Fresh upstream reads for cacheable request paths. |
@@ -219,4 +253,6 @@ For schema, SQLite, and search-index details, see [Data Model](/docs/data-model)
 | A board has provider hints but no jobs | `uv run openopps admin providers registry --include-missing --json` |
 | Route metadata is missing | `uv run openopps admin providers probe-routes --source <source> --provider any --limit 25 --json` |
 | Cached data looks stale | Rerun the command with `--refresh-cache` or purge a specific namespace. |
+| Need a quarantined candidate bundle | `uv run openopps discovery scout --output <dir> --json` then `discovery verify-scout` (or the `admin sources` aliases) |
+| Need a promotion dry-run | `uv run openopps discovery preview-promotion --json` (on-disk B699 identity closure; no `--apply`) |
 | Export output is empty | Check `status`, then rerun the matching `list` command with the same filters and `--json`. |
