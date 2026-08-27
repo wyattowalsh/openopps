@@ -20,6 +20,7 @@ const DOC_ROUTES = [
 	"/explorer",
 	"/llms.txt",
 	"/llms-full.txt",
+	"/feed.xml",
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

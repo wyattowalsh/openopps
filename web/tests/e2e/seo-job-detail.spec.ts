@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 let thinJobPath: string | undefined;
+let indexableJobPath: string | undefined;
 
 test.beforeAll(async ({ request }) => {
 	const idsResponse = await request.get("/data/openopps-search/jobs-detail-ids.json");
@@ -15,6 +16,10 @@ test.beforeAll(async ({ request }) => {
 	const indexableIds = new Set(indexablePayload.ids);
 	const thinJobId = idsPayload.ids.find((id) => !indexableIds.has(id));
 	thinJobPath = thinJobId ? `/jobs/${encodeURIComponent(thinJobId)}` : undefined;
+	const indexableJobId = indexablePayload.ids[0];
+	indexableJobPath = indexableJobId
+		? `/jobs/${encodeURIComponent(indexableJobId)}`
+		: undefined;
 });
 
 test("thin job detail pages are noindexed and omit JobPosting", async ({
@@ -34,4 +39,23 @@ page,
 	);
 	await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
 	await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
+});
+
+test("indexable job pages emit BreadcrumbList and stay indexable", async ({
+	page,
+}) => {
+	test.skip(!indexableJobPath, "generated snapshot has no indexable job details");
+
+	await page.goto(indexableJobPath!);
+	await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+	await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+		"href",
+		`https://www.openopps.dev${indexableJobPath}`,
+	);
+	const jsonLd = await page.locator('script[type="application/ld+json"]').allTextContents();
+	expect(jsonLd.join("\n")).toContain("BreadcrumbList");
+	const robots = page.locator('meta[name="robots"]');
+	if ((await robots.count()) > 0) {
+		await expect(robots).not.toHaveAttribute("content", /noindex/);
+	}
 });
