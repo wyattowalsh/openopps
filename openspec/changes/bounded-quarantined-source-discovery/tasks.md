@@ -570,7 +570,7 @@ Vercel, release publication, and destructive cleanup remain independent gates.
 - [x] 12.3 `F1203` Stage only reviewed named paths and inspect the exact index. `[depends: F1202] [writer: W-GIT]` Evidence: staged D1053 candidates only; held `0005_update_snapshot_ledger.py.draft`; index inspected per commit.
 - [x] 12.4 `F1204` Create atomic conventional commits by logical change. `[depends: F1203] [writer: W-GIT]` Evidence: 7 commits `5ba0143..5a0f00d` plus this tick; no amend/rebase/stash.
 - [x] 12.5 `F1205` Verify each commit tree and local gates without amending, rebasing, stashing, or resetting. `[depends: F1204]` Evidence: `git diff --check` clean; ruff pass; `just ci-discovery` ok; 64 focused pytest passed; not pushed.
-- [ ] 12.6 `F1206` Push under current authority and verify remote branch SHA. `[depends: F1205] [writer: W-GIT]`
+- [x] 12.6 `F1206` Push under current authority and verify remote branch SHA. `[depends: F1205] [writer: W-GIT]` Evidence: `git push origin main` `fd7bab3..2cd06ee`; local HEAD `2cd06ee6d4f169a8689c7dac42f7e3045cfe24e3` equals `origin/main`.
 - [ ] 12.7 `F1207` Monitor exact-SHA CI to terminal state. `[depends: F1206]`
 - [ ] 12.8 `F1208` Verify any automatic docs deployment for the exact SHA without mutating unrelated services. `[depends: F1207]`
 - [ ] 12.9 `F1209` Perform bounded read-only production smoke only for repository-approved public routes. `[depends: F1208]`
