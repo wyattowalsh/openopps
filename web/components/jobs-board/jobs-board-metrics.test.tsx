@@ -8,7 +8,7 @@ import type { SearchManifest } from "@/components/openopps-search/search-types";
 import { JobsBoardMetrics } from "./jobs-board-metrics";
 
 vi.mock("next/link", () => ({
-	default: ({ children, href }: { children: unknown; href: string }) => (
+	default: ({ children, href }: { children: React.ReactNode; href: string }) => (
 		<a href={href}>{children}</a>
 	),
 }));
@@ -99,7 +99,9 @@ function manifest({ openJobCount }: { openJobCount: number }): SearchManifest {
 		defaultEntity: "jobs",
 		defaultFilters: { jobs: { status: "open" } },
 		entities: {
-			jobs: { count: 90000 },
+			jobs: { count: 90000, columns: [] },
+			boards: { count: 10, columns: [] },
+			providers: { count: 120, columns: [] },
 		},
 		facets: {
 			sources: [],
@@ -110,5 +112,5 @@ function manifest({ openJobCount }: { openJobCount: number }): SearchManifest {
 			workplaces: [],
 			employmentTypes: [],
 		},
-	} as SearchManifest;
+	} as unknown as SearchManifest;
 }
