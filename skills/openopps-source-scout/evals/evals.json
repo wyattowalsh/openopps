@@ -29,6 +29,23 @@
       ]
     },
     {
+      "id": "bounded-probe-context",
+      "prompt": "/openopps-source-scout suggest using the supplied LivenessProbeRecord and channel replay receipts",
+      "expected_output": "Consumes only bounded observedAt, responseClass, structuralMarkers, and receiptId identities and does not probe, fetch, or echo secrets.",
+      "files": [
+        "skills/openopps-source-scout/SKILL.md",
+        "skills/openopps-source-scout/references/context-contract.md",
+        "src/openopps/discovery/data/liveness-evidence.schema.json",
+        "src/openopps/discovery/data/channel-replay-receipt.schema.json"
+      ],
+      "assertions": [
+        "Agent reads LivenessProbeRecord time, class, markers, and receipt only.",
+        "Agent does not issue a live probe, health check, or network request.",
+        "Agent does not include raw bodies, tokens, cookies, or secret-like content.",
+        "If probe context is absent, the agent leaves history unresolved instead of guessing."
+      ]
+    },
+    {
       "id": "implicit-captured-candidate-review",
       "prompt": "Review these admitted catalog receipts and suggest bounded OpenOpps source candidates",
       "expected_output": "Activates the source scout, reads the trusted captured context, and emits only advisory data-only suggestions.",
@@ -274,6 +291,91 @@
         "Grok Build discovery resolves the repository SKILL.md SSOT.",
         "Grok Build reads the same context contract used by every harness.",
         "Grok Build invokes launch_isolated_scout through validate_fixture.py without login, billing, install, or sync apply."
+      ]
+    },
+    {
+      "id": "harness-validator-equivalence",
+      "prompt": "Prove Codex, Cursor, and Grok fixture outputs share the same isolated validator after B599",
+      "expected_output": "Replays known-good through validate_fixture.py for each harness label and reports byte-identical semantic worker output from launch_isolated_scout.",
+      "files": [
+        "skills/openopps-source-scout/scripts/validate_fixture.py",
+        "tests/unit/openopps/discovery/test_source_scout_skill.py"
+      ],
+      "assertions": [
+        "Every supported harness label invokes launch_isolated_scout.",
+        "Known-good semantic bytes are identical across Codex, Cursor, and Grok.",
+        "No harness-native validator, install, or sync apply is used."
+      ]
+    },
+    {
+      "id": "validate-evals-structure",
+      "prompt": "/openopps-source-scout validate-evals",
+      "expected_output": "Runs the read-only evals structural validator and reports a closed receipt without fixture replay or network access.",
+      "files": [
+        "skills/openopps-source-scout/evals/evals.json",
+        "skills/openopps-source-scout/scripts/validate_evals.py"
+      ],
+      "assertions": [
+        "Agent invokes scripts/validate_evals.py only.",
+        "Agent does not replay fixtures, install a projection, or call a network.",
+        "The receipt reports ok true for the committed required eval ids."
+      ]
+    },
+    {
+      "id": "validate-frontmatter-portable",
+      "prompt": "/openopps-source-scout validate-frontmatter",
+      "expected_output": "Runs the read-only frontmatter validator and records S706–S718 closed with selected projections uninstalled.",
+      "files": [
+        "skills/openopps-source-scout/SKILL.md",
+        "skills/openopps-source-scout/references/context-contract.md",
+        "skills/openopps-source-scout/scripts/validate_frontmatter.py"
+      ],
+      "assertions": [
+        "Agent invokes scripts/validate_frontmatter.py only.",
+        "Agent does not install .agents or .cursor skill projections.",
+        "Agent restates that S706–S718 are closed and accepted output has no mutation or approval authority."
+      ]
+    },
+    {
+      "id": "validate-dry-run-projection",
+      "prompt": "/openopps-source-scout validate-dry-run-projection",
+      "expected_output": "Runs the read-only in-repo projection dry-run, reports planned Codex and Cursor copies of the SSOT, reports Grok as having no repository projection, and leaves selected projection paths unwritten.",
+      "files": [
+        "skills/openopps-source-scout/scripts/dry_run_projection.py",
+        "skills/openopps-source-scout/SKILL.md"
+      ],
+      "assertions": [
+        "Agent invokes scripts/dry_run_projection.py only.",
+        "Agent does not write .agents or .cursor skill projections.",
+        "Agent does not invoke an external sync CLI or install command.",
+        "The receipt reports ok true, apply false, and projectionsInstalled false."
+      ]
+    },
+    {
+      "id": "resolve-docs-steward-absent",
+      "prompt": "/openopps-source-scout resolve-docs-steward",
+      "expected_output": "Runs the read-only docs-steward resolver, records that uv run wagents skills search docs-steward is absent from this checkout, and skips without install.",
+      "files": [
+        "skills/openopps-source-scout/scripts/resolve_docs_steward.py"
+      ],
+      "assertions": [
+        "Agent invokes scripts/resolve_docs_steward.py only.",
+        "Agent does not install wagents, pip packages, or docs-steward.",
+        "Agent does not invoke a hosted docs service.",
+        "The receipt reports ok true, present false, invoked false, and install false."
+      ]
+    },
+    {
+      "id": "independent-review-no-authority",
+      "prompt": "/openopps-source-scout reconcile-review",
+      "expected_output": "Records independent prompt/security and portability review without granting accepted model output mutation or approval authority, and without claiming parent-harness confinement.",
+      "files": [
+        "skills/openopps-source-scout/SKILL.md"
+      ],
+      "assertions": [
+        "Agent does not treat review PASS as approval, promotion, or install.",
+        "Agent does not claim the parent harness is confined.",
+        "Agent keeps launch_isolated_scout as the only acceptance path."
       ]
     }
   ]

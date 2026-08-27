@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 import stat
 import subprocess
@@ -10,11 +11,11 @@ import sys
 from typing import Any
 
 import pytest
-import yaml
 
-from openopps.discovery.api import assure_discovery_schemas
 from openopps.discovery.canonical import decode_canonical_json
 from openopps.discovery.isolation import IsolationError, validate_data_only_suggestion
+from openopps.discovery.liveness import LivenessProbeRecord
+from openopps.discovery.models import BoundedReason
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -40,11 +41,77 @@ def _canonical_object(path: Path) -> dict[str, Any]:
     return value
 
 
+def _unquote_frontmatter_scalar(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def _parse_portable_frontmatter(raw: str) -> dict[str, object]:
+    """Parse the closed SKILL.md YAML subset without PyYAML (ops-only extra)."""
+    data: dict[str, object] = {}
+    folded_key: str | None = None
+    folded: list[str] = []
+    nested_key: str | None = None
+    nested: dict[str, str] = {}
+    pending = list(raw.splitlines())
+
+    def flush_folded() -> None:
+        nonlocal folded_key, folded
+        if folded_key is not None:
+            data[folded_key] = " ".join(folded).strip()
+            folded_key = None
+            folded = []
+
+    def flush_nested() -> None:
+        nonlocal nested_key, nested
+        if nested_key is not None:
+            data[nested_key] = nested
+            nested_key = None
+            nested = {}
+
+    while pending:
+        line = pending.pop(0)
+        if folded_key is not None:
+            if line.startswith("  "):
+                folded.append(line.strip())
+                continue
+            flush_folded()
+            pending.insert(0, line)
+            continue
+        if nested_key is not None:
+            if line.startswith("  ") and ":" in line:
+                child_key, child_val = line.strip().split(":", 1)
+                nested[child_key] = _unquote_frontmatter_scalar(child_val.strip())
+                continue
+            flush_nested()
+            pending.insert(0, line)
+            continue
+        if not line.strip():
+            continue
+        key, sep, value = line.partition(":")
+        assert sep, f"unexpected frontmatter line: {line!r}"
+        key = key.strip()
+        value = value.strip()
+        if value in {">-", ">"}:
+            folded_key = key
+            folded = []
+            continue
+        if value == "":
+            nested_key = key
+            nested = {}
+            continue
+        data[key] = _unquote_frontmatter_scalar(value)
+    flush_folded()
+    flush_nested()
+    return data
+
+
 def _skill_parts() -> tuple[dict[str, object], str]:
     raw = SKILL_FILE.read_text(encoding="utf-8")
     assert raw.startswith("---\n")
     _, frontmatter_raw, body = raw.split("---\n", maxsplit=2)
-    frontmatter = yaml.safe_load(frontmatter_raw)
+    frontmatter = _parse_portable_frontmatter(frontmatter_raw)
     assert isinstance(frontmatter, dict)
     return frontmatter, body
 
@@ -73,6 +140,7 @@ def _run_fixture(
     environment = {
         **os.environ,
         "OPENOPPS_SYNTHETIC_SECRET": "must-not-reach-worker-output",
+        "PYTHONDONTWRITEBYTECODE": "1",
     }
     result = subprocess.run(
         [
@@ -123,16 +191,26 @@ def test_portable_skill_has_one_repository_ssot_and_no_projection() -> None:
         assert runtime_field not in frontmatter
 
     assert not SKILL_ROOT.is_symlink()
-    assert {
+    tracked = {
         path.relative_to(SKILL_ROOT).as_posix()
         for path in SKILL_ROOT.rglob("*")
-        if path.is_file()
-    } == {
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    }
+    assert tracked == {
         "SKILL.md",
         "evals/evals.json",
         "references/context-contract.md",
+        "scripts/dry_run_projection.py",
+        "scripts/resolve_docs_steward.py",
+        "scripts/validate_evals.py",
         "scripts/validate_fixture.py",
+        "scripts/validate_frontmatter.py",
     }
+    for projection in (
+        ROOT / ".agents" / "skills" / "openopps-source-scout",
+        ROOT / ".cursor" / "skills" / "openopps-source-scout",
+    ):
+        assert not projection.exists()
     assert all(not path.is_symlink() for path in SKILL_ROOT.rglob("*"))
 
 
@@ -146,6 +224,13 @@ def test_skill_states_advisory_boundary_and_closed_acceptance_path() -> None:
         "launch_isolated_scout",
         "accepted-data-only",
         "No projection, install, sync apply, network call, credential use",
+        "S706 is closed against V515",
+        "S707 is closed",
+        "S714 is closed against B599",
+        "S715 is closed",
+        "S716 is closed",
+        "S717 is closed",
+        "S718 is closed",
     ):
         assert phrase in body
     assert "Calling a model" in body
@@ -155,7 +240,16 @@ def test_skill_states_advisory_boundary_and_closed_acceptance_path() -> None:
 
 def test_context_contract_names_exact_channels_budgets_and_read_only_surfaces() -> None:
     context = CONTEXT_FILE.read_text(encoding="utf-8")
-    assure_discovery_schemas()
+    schema_root = ROOT / "src" / "openopps" / "discovery" / "data"
+    manifest = _canonical_object(schema_root / "manifest.json")
+    generated_names = {row["path"] for row in manifest["schemas"]}
+    named_in_contract = {
+        token
+        for index, token in enumerate(context.split("`"))
+        if index % 2 == 1 and token.endswith(".schema.json")
+    }
+    assert "promotion-selection.schema.json" in generated_names
+    assert named_in_contract <= generated_names
 
     for channel in ("official", "public_code", "search", "targeted_ats"):
         assert f"`{channel}`" in context
@@ -182,25 +276,37 @@ def test_context_contract_names_exact_channels_budgets_and_read_only_surfaces() 
         "normalized-candidate.schema.json",
         "observed-resource.schema.json",
         "request-receipt.schema.json",
+        "channel-replay-receipt.schema.json",
+        "liveness-evidence.schema.json",
         "provenance-claim.schema.json",
         "candidate-taxonomy.schema.json",
         "terminal-evaluation.schema.json",
         "scout-candidate.schema.json",
+        "promotion-selection.schema.json",
     ):
-        assert (
-            ROOT / "src" / "openopps" / "discovery" / "data" / schema_name
-        ).is_file()
+        assert schema_name in generated_names
+        assert (schema_root / schema_name).is_file()
         assert f"`{schema_name}`" in context
     for inventory_surface in (
         "ApprovedRuntimeCatalogInventory",
         "PackagedCatalogReadback",
         "adapterProviderIds",
         "read_default_repository_projection",
+        "project_read_only_identities",
         "portfolio_source_catalog.json",
     ):
         assert inventory_surface in context
     assert "access, license, redistribution, sync, and publication" in context
-    assert "unavailable until V515\ncloses S706" in context
+    for probe_field in (
+        "observedAt",
+        "responseClass",
+        "structuralMarkers",
+        "receiptId",
+        "permanentAbsence",
+    ):
+        assert f"`{probe_field}`" in context
+    assert "LivenessProbeRecord" in context
+    assert "never authorizes a new probe" in context
 
 
 def test_eval_manifest_covers_adversaries_fixtures_and_harnesses() -> None:
@@ -224,9 +330,16 @@ def test_eval_manifest_covers_adversaries_fixtures_and_harnesses() -> None:
         "known-bad-parser",
         "known-bad-provider",
         "known-bad-authority-shape",
+        "bounded-probe-context",
         "codex-structural-smoke",
         "cursor-structural-smoke",
         "grok-structural-smoke",
+        "harness-validator-equivalence",
+        "validate-evals-structure",
+        "validate-frontmatter-portable",
+        "validate-dry-run-projection",
+        "resolve-docs-steward-absent",
+        "independent-review-no-authority",
     } <= set(by_id)
     assert len({case["prompt"] for case in cases}) == len(cases)
     for case in cases:
@@ -376,3 +489,208 @@ def test_fixture_runner_exposes_no_arbitrary_input_or_alternate_validator() -> N
         "openopps.storage",
     ):
         assert forbidden_import not in source
+
+
+def _run_structural_validator(
+    script: Path,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, Any]]:
+    result = subprocess.run(
+        [sys.executable, os.fspath(script)],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    receipt = json.loads(result.stdout)
+    assert isinstance(receipt, dict)
+    return result, receipt
+
+
+def test_skill_states_selected_ssot_and_uninstalled_projections() -> None:
+    _, body = _skill_parts()
+
+    assert "S701 selection is read-only" in body
+    assert "`skills/openopps-source-scout/`" in body
+    assert "`.agents/skills/openopps-source-scout/`" in body
+    assert "`.cursor/skills/openopps-source-scout/`" in body
+    assert "no repository projection; read this SSOT" in body
+
+
+def test_structural_validators_are_read_only_and_pass() -> None:
+    evals_script = SKILL_ROOT / "scripts" / "validate_evals.py"
+    frontmatter_script = SKILL_ROOT / "scripts" / "validate_frontmatter.py"
+    dry_run_script = SKILL_ROOT / "scripts" / "dry_run_projection.py"
+    docs_steward_script = SKILL_ROOT / "scripts" / "resolve_docs_steward.py"
+
+    evals_help = subprocess.run(
+        [sys.executable, os.fspath(evals_script), "--help"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    frontmatter_help = subprocess.run(
+        [sys.executable, os.fspath(frontmatter_script), "--help"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    dry_run_help = subprocess.run(
+        [sys.executable, os.fspath(dry_run_script), "--help"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    docs_help = subprocess.run(
+        [sys.executable, os.fspath(docs_steward_script), "--help"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert evals_help.returncode == 0
+    assert frontmatter_help.returncode == 0
+    assert dry_run_help.returncode == 0
+    assert docs_help.returncode == 0
+    for help_text in (
+        evals_help.stdout,
+        frontmatter_help.stdout,
+        dry_run_help.stdout,
+        docs_help.stdout,
+    ):
+        for forbidden in ("--input", "--network", "--install", "--apply"):
+            assert forbidden not in help_text
+
+    evals_result, evals_receipt = _run_structural_validator(evals_script)
+    frontmatter_result, frontmatter_receipt = _run_structural_validator(
+        frontmatter_script
+    )
+    dry_run_result, dry_run_receipt = _run_structural_validator(dry_run_script)
+    docs_result, docs_receipt = _run_structural_validator(docs_steward_script)
+    assert evals_result.returncode == 0, evals_result.stderr
+    assert frontmatter_result.returncode == 0, frontmatter_result.stderr
+    assert dry_run_result.returncode == 0, dry_run_result.stderr
+    assert docs_result.returncode == 0, docs_result.stderr
+    assert evals_receipt["ok"] is True
+    assert evals_receipt["reasonCode"] is None
+    assert evals_receipt["skillName"] == "openopps-source-scout"
+    assert dry_run_receipt["ok"] is True
+    assert dry_run_receipt["apply"] is False
+    assert dry_run_receipt["homeSync"] == "not-planned"
+    assert dry_run_receipt["projectionsInstalled"] is False
+    assert dry_run_receipt["reasonCode"] is None
+    assert dry_run_receipt["selectedRepositoryProjectionsOnly"] is True
+    assert dry_run_receipt["ssot"] == "skills/openopps-source-scout/"
+    assert dry_run_receipt["syncTool"] == "in-repo-dry-run-projection"
+    assert dry_run_receipt["wagentsInvoked"] is False
+    harnesses = {row["id"]: row for row in dry_run_receipt["harnesses"]}
+    assert set(harnesses) == {"codex", "cursor", "grok"}
+    assert harnesses["codex"]["status"] == "planned-absent"
+    assert harnesses["cursor"]["status"] == "planned-absent"
+    assert harnesses["grok"]["status"] == "no-repository-projection"
+    assert harnesses["grok"]["files"] == []
+    assert harnesses["grok"]["selectedPath"] is None
+    planned = [row["relative"] for row in harnesses["codex"]["files"]]
+    assert planned == sorted(planned)
+    assert "SKILL.md" in planned
+    assert harnesses["codex"]["files"] == harnesses["cursor"]["files"]
+    assert docs_receipt["ok"] is True
+    assert docs_receipt["present"] is False
+    assert docs_receipt["invoked"] is False
+    assert docs_receipt["install"] is False
+    assert docs_receipt["inRepoProcess"] is False
+    assert docs_receipt["command"] == [
+        "uv",
+        "run",
+        "wagents",
+        "skills",
+        "search",
+        "docs-steward",
+        "--json",
+    ]
+    assert docs_receipt["reasonCode"] in {
+        "docs_steward_absent",
+        "uv_absent",
+        "wagents_absent",
+        "wagents_error",
+        "wagents_timeout",
+    }
+    for projection in (
+        ROOT / ".agents" / "skills" / "openopps-source-scout",
+        ROOT / ".cursor" / "skills" / "openopps-source-scout",
+        ROOT / ".grok" / "skills" / "openopps-source-scout",
+    ):
+        assert not projection.exists()
+    assert frontmatter_receipt == {
+        "closedIds": [
+            "S706",
+            "S707",
+            "S714",
+            "S715",
+            "S716",
+            "S717",
+            "S718",
+        ],
+        "deferredIds": [],
+        "name": "openopps-source-scout",
+        "ok": True,
+        "projectionsInstalled": False,
+        "reasonCode": None,
+        "ssot": "skills/openopps-source-scout/",
+        "validator": "skills/openopps-source-scout/scripts/validate_frontmatter.py",
+    }
+
+    evals_source = evals_script.read_text(encoding="utf-8")
+    frontmatter_source = frontmatter_script.read_text(encoding="utf-8")
+    dry_run_source = dry_run_script.read_text(encoding="utf-8")
+    docs_source = docs_steward_script.read_text(encoding="utf-8")
+    for source in (evals_source, frontmatter_source, dry_run_source, docs_source):
+        assert "launch_isolated_scout(" not in source
+        for forbidden_import in (
+            "openopps.cache",
+            "openopps.cli",
+            "openopps.discovery",
+            "openopps.plugins",
+            "openopps.providers",
+            "openopps.storage",
+            "urllib",
+            "httpx",
+            "requests",
+        ):
+            assert forbidden_import not in source
+    for forbidden in ("pip install", "uv pip", "uv tool install", "uvx "):
+        assert forbidden not in dry_run_source
+        assert forbidden not in docs_source
+
+
+def test_skill_consumes_v515_probe_record_without_live_access() -> None:
+    _, body = _skill_parts()
+    context = CONTEXT_FILE.read_text(encoding="utf-8")
+    probe = LivenessProbeRecord(
+        observed_at=datetime(2026, 8, 22, tzinfo=UTC),
+        response_class="expected_payload",
+        structural_markers=("json_job_array",),
+        expected_structure=True,
+        listing_endpoint="https://public.example.test/jobs",
+        cached=False,
+        receipt_id="admitted-receipt-id",
+        reason_code=BoundedReason.NONE,
+    )
+    payload = probe.as_dict()
+
+    assert payload["permanentAbsence"] is False
+    for key in payload:
+        assert f"`{key}`" in context
+    assert "openopps.discovery.liveness.LivenessProbeRecord" in context
+    assert "never authorizes a new probe" in context
+    assert "Never replace it with live" in body
+    assert "never probe, fetch, or echo a payload" in body
+    for forbidden in (
+        "openopps.health",
+        "check_provider_health",
+        "probe_liveness(",
+    ):
+        assert forbidden not in body
