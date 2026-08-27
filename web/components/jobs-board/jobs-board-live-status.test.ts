@@ -210,6 +210,8 @@ describe("jobs board desktop split layout", () => {
 		expect(jobsBoardSplitListPaneClassName()).toContain("[&>div]:min-h-0");
 
 		const preview = jobsBoardDesktopPreviewClassName();
+		expect(preview).toContain("relative");
+		expect(preview).toContain("z-10");
 		expect(preview).toContain("hidden");
 		expect(preview).toContain("lg:flex");
 		expect(preview).toContain("lg:flex-col");

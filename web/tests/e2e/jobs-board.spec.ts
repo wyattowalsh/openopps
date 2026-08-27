@@ -53,12 +53,12 @@ test("jobs board supports local workflow controls without analytics", async ({
 	});
 
 	await page.goto("/");
-	await expect(
-		page.getByRole("button", { name: /save current search/i }),
-	).toBeVisible();
+	const saveSearch = page.getByRole("button", { name: /save current search/i });
+	await expect(saveSearch).toBeVisible();
 	const firstJob = await searchForFirstJob(page);
+	await expect(saveSearch).toBeEnabled({ timeout: 15_000 });
 
-	await page.getByRole("button", { name: /save current search/i }).click();
+	await saveSearch.click();
 	// hasText scopes to the details node; page.getByText inside filter({has}) is not reliable.
 	const savedDetails = page.locator("details").filter({ hasText: "Saved searches" });
 	await expect(savedDetails).toBeVisible({ timeout: 20_000 });
@@ -82,8 +82,9 @@ test("jobs board supports local workflow controls without analytics", async ({
 			"hidden",
 		);
 	}
-	await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible();
-	await page.getByRole("button", { name: /^save$/i }).click();
+	const previewSave = page.getByRole("article").getByRole("button", { name: /^save$/i });
+	await expect(previewSave).toBeVisible();
+	await previewSave.click();
 	await expect(page.getByText("saved").first()).toBeVisible();
 	const closePreviewButton = page.getByRole("button", {
 		name: /close job preview/i,
@@ -120,7 +121,7 @@ test("jobs board results support keyboard preview activation", async ({ page }) 
 
 	const list = page.getByRole("listbox", { name: /open jobs results/i });
 	await list.focus();
-	await page.keyboard.press("ArrowDown");
+	await page.keyboard.press("Home");
 	await expect(list.getByRole("option").first()).toHaveAttribute(
 		"data-focused",
 		"true",
@@ -128,7 +129,9 @@ test("jobs board results support keyboard preview activation", async ({ page }) 
 	);
 
 	await page.keyboard.press("Enter");
-	await expect(page.getByRole("button", { name: /^save$/i })).toBeVisible({
+	await expect(
+		page.getByRole("article").getByRole("button", { name: /^save$/i }),
+	).toBeVisible({
 		timeout: 15_000,
 	});
 	await expect(

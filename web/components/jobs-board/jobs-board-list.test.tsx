@@ -103,6 +103,22 @@ describe("JobsBoardList", () => {
 		expect(onSelectJob).toHaveBeenCalledWith("job-1");
 		expect(document.activeElement).toBe(listbox);
 	});
+
+	it("drops the landing min-height when filling a split pane", () => {
+		render(
+			<JobsBoardList
+				rows={[row("job-1", "Engineer")]}
+				selectedJobId="job-1"
+				onSelectJob={vi.fn()}
+				fillHeight
+			/>,
+		);
+
+		const listbox = screen.getByRole("listbox", { name: "Open jobs results" });
+		expect(listbox.className).toContain("min-h-0");
+		expect(listbox.className).not.toContain("min-h-[24rem]");
+		expect(listbox.className).not.toContain("lg:min-h-[32rem]");
+	});
 });
 
 function row(id: string, title: string): SearchRow {

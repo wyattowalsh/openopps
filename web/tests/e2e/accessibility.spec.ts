@@ -114,7 +114,9 @@ test("delete saved search uses an accessible confirmation dialog", async ({
 }) => {
 	await page.goto("/");
 	await searchForFirstJob(page);
-	await page.getByRole("button", { name: /save current search/i }).click();
+	const saveSearch = page.getByRole("button", { name: /save current search/i });
+	await expect(saveSearch).toBeEnabled({ timeout: 15_000 });
+	await saveSearch.click();
 	const savedDetails = page.locator("details").filter({ hasText: "Saved searches" });
 	await expect(savedDetails).toBeVisible({ timeout: 20_000 });
 	await savedDetails.locator("summary").click();

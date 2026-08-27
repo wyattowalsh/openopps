@@ -5,7 +5,7 @@ test("explorer row inspector supports keyboard navigation and activation", async
 }) => {
 	test.setTimeout(90_000);
 	await page.goto("/explorer");
-	await page.getByRole("button", { name: /inspect rows/i }).click();
+	await page.getByRole("button", { name: /^inspect rows$/i }).first().click();
 	await page.getByRole("button", { name: /show boards/i }).click();
 
 	const list = page.getByRole("list", { name: /boards results/i });
@@ -18,7 +18,7 @@ test("explorer row inspector supports keyboard navigation and activation", async
 	});
 
 	await list.focus();
-	await page.keyboard.press("ArrowDown");
+	await page.keyboard.press("Home");
 	await expect(list.getByRole("listitem").first()).toHaveAttribute(
 		"data-focused",
 		"true",

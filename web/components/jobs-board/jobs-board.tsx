@@ -625,6 +625,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 													jobRecords={localState.jobRecords}
 													jobLifecycleIndicators={lifecycleIndicatorsByJobId}
 													onSelectJob={handleSelectJob}
+													fillHeight
 												/>
 											</div>
 										) : (

@@ -18,6 +18,7 @@ import {
 	JobsBoardListItem,
 } from "@/components/jobs-board/jobs-board-list-item";
 import { J, text } from "@/components/openopps-search/search-utils";
+import { cn } from "@/lib/utils";
 
 type JobsBoardListProps = {
 	rows: SearchRow[];
@@ -25,6 +26,7 @@ type JobsBoardListProps = {
 	jobRecords?: Record<string, JobWorkflowRecord>;
 	jobLifecycleIndicators?: Record<string, JobLifecycleIndicator[]>;
 	onSelectJob: (jobId: string) => void;
+	fillHeight?: boolean;
 };
 
 export function JobsBoardList({
@@ -33,6 +35,7 @@ export function JobsBoardList({
 	jobRecords = {},
 	jobLifecycleIndicators = {},
 	onSelectJob,
+	fillHeight = false,
 }: JobsBoardListProps) {
 	const parentRef = useRef<HTMLDivElement>(null);
 	const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -124,7 +127,10 @@ export function JobsBoardList({
 	return (
 		<div
 			ref={parentRef}
-			className="openopps-data-table-wrap h-full min-h-[24rem] overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 lg:min-h-[32rem]"
+			className={cn(
+				"openopps-data-table-wrap h-full min-h-0 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				!fillHeight && "min-h-[24rem] lg:min-h-[32rem]",
+			)}
 			role="listbox"
 			aria-label="Open jobs results"
 			aria-activedescendant={activeDescendant}
