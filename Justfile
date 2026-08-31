@@ -21,7 +21,7 @@ quick: python-quality cli-help test-cli openspec-list openspec-validate-all
 ci: ci-python ci-openspec ci-discovery ci-web ci-artifacts
 
 # Python 3.12 release gate.
-ci-python: lock-check python-quality test-cov cli-help wheel-catalog-smoke
+ci-python: lock-check python-quality test-cov cli-help wheel-catalog-smoke agent-plugins-check
 
 # Compatibility gate used by the Python 3.13/3.14 CI matrix lanes.
 ci-python-compat: lock-check test
@@ -118,6 +118,11 @@ source-discovery-skill-eval-check:
 # Canonical offline discovery gate graph mirrored by CI.
 source-discovery-ci:
     OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py ci
+
+# Validate Agent Plugins 1.0.0 packages against vendored schemas.
+agent-plugins-check:
+    uv run python scripts/verify_agent_plugins.py
+    uv run pytest tests/unit/openopps/test_agent_plugins.py tests/unit/openopps/discovery/test_source_scout_skill.py -q
 
 # Validate the exact committed public-corpus rights evidence offline.
 source-policy-check:

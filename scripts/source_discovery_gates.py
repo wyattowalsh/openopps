@@ -25,18 +25,30 @@ CORPUS_PATH = FIXTURE_ROOT / "benchmark" / "corpus.json"
 SCHEMA_SCRIPT = REPO_ROOT / "scripts" / "generate_discovery_schemas.py"
 FIXTURE_SCRIPT = REPO_ROOT / "scripts" / "generate_discovery_fixtures.py"
 SKILL_SCRIPTS = (
-    REPO_ROOT / "skills" / "openopps-source-scout" / "scripts" / "validate_evals.py",
     REPO_ROOT
+    / "agent-plugins"
+    / "openopps.dev"
+    / "skills"
+    / "openopps-source-scout"
+    / "scripts"
+    / "validate_evals.py",
+    REPO_ROOT
+    / "agent-plugins"
+    / "openopps.dev"
     / "skills"
     / "openopps-source-scout"
     / "scripts"
     / "validate_frontmatter.py",
     REPO_ROOT
+    / "agent-plugins"
+    / "openopps.dev"
     / "skills"
     / "openopps-source-scout"
     / "scripts"
     / "dry_run_projection.py",
     REPO_ROOT
+    / "agent-plugins"
+    / "openopps.dev"
     / "skills"
     / "openopps-source-scout"
     / "scripts"
@@ -326,7 +338,7 @@ def gate_skill_eval() -> dict[str, object]:
     results = [_run_python_script(script) for script in SKILL_SCRIPTS]
     return {
         "gate": "skill-eval",
-        "library": "skills/openopps-source-scout/scripts",
+        "library": "agent-plugins/openopps.dev/skills/openopps-source-scout/scripts",
         "ok": True,
         "results": results,
     }

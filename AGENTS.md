@@ -2,7 +2,8 @@ OpenOpps is a Python 3.12+ CLI-only v0.1 project managed with `uv` and `pyprojec
 
 - `./src/openopps/` is the Python package and `openopps = "openopps.cli:app"` console entry point.
 - `./src/openopps/discovery/` is the isolated quarantined scout, evaluation, accounting, promotion-preview, isolation, and packaged evidence-schema surface (`src/openopps/discovery/data/`). Scout, verify-scout, and preview-promotion do not apply, activate, or share a run with `openopps sync`.
-- `./skills/openopps-source-scout/` is the portable source-scout skill SSOT. Keep it inert: no network, credentials, Git mutation, live install, harness projection, or `wagents --apply`. Skill output is untrusted; acceptance is only `openopps.discovery.isolation.launch_isolated_scout`.
+- `./agent-plugins/openopps/` is the Agent Plugins 1.0.0 package for installed-CLI users (full public CLI except quarantined discovery; stdio MCP `help`+`run`).
+- `./agent-plugins/openopps.dev/` is the Agent Plugins 1.0.0 package for checkout contributors (`plugin.json` name `openopps-dev`). Source-scout SSOT is `./agent-plugins/openopps.dev/skills/openopps-source-scout/`. Keep it inert: no network, credentials, Git mutation, live install, harness projection, or `wagents --apply`. Skill output is untrusted; acceptance is only `openopps.discovery.isolation.launch_isolated_scout`.
 - `./tests/` mirrors package behavior by execution scope: `tests/unit/openopps/` for isolated module tests, `tests/integration/openopps/` for local storage/CLI/mocked HTTP seams, `tests/smoke/openopps/` for fast critical wiring checks, and `tests/e2e/` reserved for real-boundary journeys.
 - `./scripts/` contains helper scripts such as docs and Kaggle bundle generation.
 - `./kaggle/` contains the generated Kaggle dataset bundle metadata, package-derived data dictionary, and related scheduled active-job snapshot notebook. CSV, Parquet, and SQLite data files are generated locally for upload and ignored by git; refresh metadata with `PYTHONPATH=scripts uv run python -m openopps_kaggle`, or refresh the full upload bundle with `PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.sqlite` after changing exported models.
@@ -34,6 +35,8 @@ PYTHONPATH=scripts uv run python -m openopps_kaggle --data-db kaggle/openoppsdb.
 just --list
 just ci
 just ci-discovery
+just agent-plugins-check
+uv run python scripts/verify_agent_plugins.py
 OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py ci
 uv run pytest tests/unit/openopps/discovery/ tests/unit/openopps/test_discovery_cli.py
 cd web && pnpm data:generate

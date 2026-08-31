@@ -69,7 +69,7 @@ benchmark ADR `src/openopps/discovery/data/benchmark-adr.json` remains
 `verdict=defer` with `numericRegressionThreshold=null`.
 
 Four finite channel families (skill/OpenSpec finite-channel rule;
-`skills/openopps-source-scout/references/context-contract.md`; OpenSpec
+`agent-plugins/openopps.dev/skills/openopps-source-scout/references/context-contract.md`; OpenSpec
 `source-discovery` “Discovery channels are finite and explicit”):
 
 | Channel value | Family |

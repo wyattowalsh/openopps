@@ -86,7 +86,7 @@ Selector-bound daily pinning uses the packaged private envelope at `src/openopps
 
 Public CI keeps `OPENOPPS_DISCOVERY_NETWORK=disabled` and replays only committed sanitized fixtures. `just ci` includes the offline `ci-discovery` lane. A live scout schedule is a separate, unexercised maintainer authority gate. Live scheduler provisioning, credential selection, activation, retention, and execution are separate unexercised authority gates. Source-policy remains fail-closed: 1780 sources stay blocked pending written Getro/Consider grants and independent review of snapshot-only keys. Catalog declarations are not independent positive verification, and eligibility is not green.
 
-The portable skill at [`skills/openopps-source-scout/`](skills/openopps-source-scout/) is advisory and inert. It does not scout, promote, sync, or install. Do not live-install harness projections.
+The portable skill at [`agent-plugins/openopps.dev/skills/openopps-source-scout/`](agent-plugins/openopps.dev/skills/openopps-source-scout/) is advisory and inert. It does not scout, promote, sync, or install. Do not live-install harness projections.
 
 ## Provider Coverage
 
@@ -131,6 +131,22 @@ Installed plugins are discovered but not executed by default. Use `OPENOPPS_PLUG
 See `examples/plugins/minimal-openopps-plugin/` for a minimal `pyproject.toml` entry-point package and no-op source/provider/route/metadata/cache/CLI contribution template.
 
 Installed Python plugins are not sandboxed. Only install plugins from sources you trust because plugin code runs in the same Python process as OpenOpps.
+
+## Agent Plugins
+
+Two [Agent Plugins 1.0.0](https://www.openopps.dev/docs/agent-plugins) packages live in the checkout so favorite agents can drive OpenOpps from a local client path (no hosted marketplace or hosted MCP):
+
+| Plugin | Root | Audience |
+| --- | --- | --- |
+| `openopps` | [`agent-plugins/openopps/`](agent-plugins/openopps/) | Installed-CLI users (public CLI except quarantined discovery) |
+| `openopps-dev` | [`agent-plugins/openopps.dev/`](agent-plugins/openopps.dev/) | Checkout contributors (source-scout, discovery CLI, isolation, evals) |
+
+Each package is `plugin.json`, `skills/`, `mcp.json`, and `./bin/mcp`. MCP tools are `help` and `run` only. There is no public `openopps mcp` command. User `run` refuses `discovery` and `admin sources scout|verify-scout|preview-promotion`. Contributor `run` allows only those three discovery commands (JSON). `examples/plugins/` stays the Python `openopps.plugins` template.
+
+```bash
+just agent-plugins-check
+uv run python scripts/verify_agent_plugins.py
+```
 
 ## Examples
 
@@ -270,7 +286,9 @@ Isolated scout limits use a separate `OPENOPPS_DISCOVERY_*` process environment 
 | --------------------------------- | -------------------------------------------------------------------------- |
 | `src/openopps/`                   | Python package and `openopps` Typer CLI entry point.                       |
 | `src/openopps/discovery/`         | Isolated quarantined scout, evaluation, and promotion-preview evidence.    |
-| `skills/openopps-source-scout/`   | Advisory inert source-scout skill; not an install or promotion path.       |
+| `agent-plugins/openopps/`         | Agent Plugins 1.0.0 package for installed-CLI users.                       |
+| `agent-plugins/openopps.dev/`     | Agent Plugins 1.0.0 package for checkout contributors.                     |
+| `agent-plugins/openopps.dev/skills/openopps-source-scout/`   | Advisory inert source-scout skill; not an install or promotion path.       |
 | `src/openopps/providers/sources/` | Firm aggregator board source adapters.                                     |
 | `src/openopps/providers/boards/`  | Board provider adapters that fetch jobs from discovered board routes.      |
 | `src/openopps/cache.py`           | HTTP JSON cache table management.                                          |

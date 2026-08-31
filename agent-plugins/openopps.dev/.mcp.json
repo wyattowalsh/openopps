@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "openopps-dev": {
+      "type": "stdio",
+      "command": "./bin/mcp"
+    }
+  }
+}

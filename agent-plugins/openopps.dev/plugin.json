@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openopps-dev",
+  "version": "1.0.0",
+  "description": "Checkout contributor plugin for quarantined OpenOpps source discovery, isolation, and evals.",
+  "license": "MIT",
+  "homepage": "https://www.openopps.dev/docs/agent-plugins",
+  "repository": "https://github.com/wyattowalsh/openopps",
+  "keywords": ["openopps", "discovery", "source-scout"]
+}

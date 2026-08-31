@@ -244,6 +244,10 @@ JSONL exports stream line-delimited records and empty JSONL/CSV exports produce 
 
 For schema, SQLite, and search-index details, see [Data Model](/docs/data-model).
 
+## Agent Plugins
+
+Favorite agents can drive OpenOpps through two [Agent Plugins 1.0.0](/docs/agent-plugins) packages in the checkout (`agent-plugins/openopps/` for installed-CLI users and `agent-plugins/openopps.dev/` for contributors). Clients start bundled `./bin/mcp` (`help` and `run` only). There is no public `openopps mcp` command. User `run` refuses `discovery` and `admin sources scout|verify-scout|preview-promotion`. Contributor `run` allows only those three discovery commands (JSON). Python `openopps.plugins` remains a different system; see `examples/plugins/`.
+
 ## Troubleshooting Map
 
 | Symptom | Command to run first |

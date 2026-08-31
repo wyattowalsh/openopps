@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openopps",
+  "version": "1.0.0",
+  "description": "Drive the public OpenOpps CLI except quarantined discovery, plus the read-only Jobs and Explorer site.",
+  "license": "MIT",
+  "homepage": "https://www.openopps.dev/docs/agent-plugins",
+  "repository": "https://github.com/wyattowalsh/openopps",
+  "keywords": ["openopps", "jobs", "cli"]
+}

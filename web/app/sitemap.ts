@@ -16,6 +16,7 @@ const DOC_ROUTES = [
 	"/docs/providers",
 	"/docs/operations",
 	"/docs/public-data-releases",
+	"/docs/agent-plugins",
 	"/docs/contributing",
 	"/explorer",
 	"/llms.txt",

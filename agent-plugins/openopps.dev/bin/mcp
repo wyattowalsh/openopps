@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""Agent Plugins 1.0.0 stdio MCP: tools help and run only.
+
+Resolves the OpenOpps CLI as OPENOPPS_BIN, then openopps on PATH, then
+`uv run openopps` in a checkout whose pyproject.toml names the openopps project.
+There is no public `openopps mcp` command.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Mapping
+
+
+PROTOCOL_VERSION = "2024-11-05"
+DISCOVERY_VERBS = frozenset({"scout", "verify-scout", "preview-promotion"})
+USER_PLUGIN = "openopps"
+DEV_PLUGIN = "openopps-dev"
+JSON_FLAGS = frozenset({"--json", "--metrics-json"})
+
+
+def plugin_root() -> Path:
+    env = os.environ.get("PLUGIN_ROOT")
+    if env:
+        return Path(env).resolve()
+    return Path(__file__).resolve().parent.parent
+
+
+def load_plugin_name(root: Path | None = None) -> str:
+    manifest = (root or plugin_root()) / "plugin.json"
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    name = document.get("name")
+    if name not in {USER_PLUGIN, DEV_PLUGIN}:
+        raise RuntimeError(f"unsupported plugin name {name!r}")
+    return str(name)
+
+
+def _strip_openopps_prefix(argv: list[str]) -> list[str]:
+    tokens = [token for token in argv if token != ""]
+    if tokens and Path(tokens[0]).name in {"openopps", "openopps.exe"}:
+        return tokens[1:]
+    return tokens
+
+
+def positional_tokens(argv: list[str]) -> list[str]:
+    tokens = _strip_openopps_prefix(argv)
+    positional: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            positional.extend(
+                item for item in tokens[index + 1 :] if not item.startswith("-")
+            )
+            break
+        if token.startswith("-"):
+            index += 1
+            continue
+        positional.append(token)
+        index += 1
+    return positional
+
+
+def user_run_refusal(argv: list[str]) -> str | None:
+    tokens = positional_tokens(argv)
+    if not tokens:
+        return "user run requires a public OpenOpps command; use the help tool for usage"
+    if tokens[0] == "discovery":
+        return (
+            "openopps discovery is quarantined; use the openopps-dev plugin "
+            "from a checkout"
+        )
+    if (
+        len(tokens) >= 3
+        and tokens[0] == "admin"
+        and tokens[1] == "sources"
+        and tokens[2] in DISCOVERY_VERBS
+    ):
+        return (
+            "admin sources scout|verify-scout|preview-promotion is quarantined; "
+            "use the openopps-dev plugin from a checkout"
+        )
+    return None
+
+
+def dev_run_refusal(argv: list[str]) -> str | None:
+    tokens = positional_tokens(argv)
+    if (
+        len(tokens) >= 2
+        and tokens[0] == "discovery"
+        and tokens[1] in DISCOVERY_VERBS
+    ):
+        return None
+    return (
+        "openopps-dev run allows only openopps discovery scout|verify-scout|"
+        "preview-promotion (JSON)"
+    )
+
+
+def run_refusal(plugin_name: str, argv: list[str]) -> str | None:
+    if plugin_name == USER_PLUGIN:
+        return user_run_refusal(argv)
+    if plugin_name == DEV_PLUGIN:
+        return dev_run_refusal(argv)
+    return f"unsupported plugin {plugin_name}"
+
+
+def prefer_json_argv(argv: list[str]) -> list[str]:
+    tokens = _strip_openopps_prefix(argv)
+    if any(token in JSON_FLAGS or token.startswith("--json=") for token in tokens):
+        return tokens
+    return [*tokens, "--json"]
+
+
+def find_checkout(start: Path) -> Path | None:
+    current = start.resolve()
+    for candidate in (current, *current.parents):
+        pyproject = candidate / "pyproject.toml"
+        if not pyproject.is_file():
+            continue
+        try:
+            text = pyproject.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if re.search(r'(?m)^name\s*=\s*"openopps"\s*$', text):
+            return candidate
+    return None
+
+
+def resolve_openopps(root: Path) -> tuple[list[str], Path | None]:
+    env_bin = os.environ.get("OPENOPPS_BIN")
+    if env_bin:
+        return ([env_bin], None)
+    path_bin = shutil.which("openopps")
+    if path_bin:
+        return ([path_bin], None)
+    checkout = find_checkout(root)
+    if checkout is not None and shutil.which("uv") is not None:
+        return (["uv", "run", "openopps"], checkout)
+    raise FileNotFoundError(
+        "openopps CLI not found: set OPENOPPS_BIN, install openopps on PATH, "
+        "or run from an OpenOpps checkout with uv"
+    )
+
+
+def _tool_result(text: str, *, is_error: bool = False) -> dict[str, Any]:
+    return {
+        "content": [{"type": "text", "text": text}],
+        "isError": is_error,
+    }
+
+
+def execute_openopps(
+    argv: list[str],
+    *,
+    root: Path,
+    timeout: float = 120.0,
+) -> subprocess.CompletedProcess[str]:
+    command, cwd = resolve_openopps(root)
+    env = os.environ.copy()
+    env.pop("PLUGIN_ROOT", None)
+    env.pop("PLUGIN_DATA", None)
+    return subprocess.run(
+        [*command, *argv],
+        cwd=str(cwd) if cwd is not None else None,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+
+
+def format_process(result: subprocess.CompletedProcess[str]) -> str:
+    chunks = [f"exit_code={result.returncode}"]
+    if result.stdout:
+        chunks.append("stdout:\n" + result.stdout)
+    if result.stderr:
+        chunks.append("stderr:\n" + result.stderr)
+    return "\n\n".join(chunks)
+
+
+def handle_help(plugin_name: str, arguments: Mapping[str, Any], root: Path) -> dict[str, Any]:
+    del plugin_name
+    raw = arguments.get("argv", [])
+    if raw is None:
+        raw = []
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        return _tool_result("help argv must be an array of strings", is_error=True)
+    argv = _strip_openopps_prefix(raw)
+    if "--help" not in argv and "-h" not in argv:
+        argv = [*argv, "--help"]
+    try:
+        result = execute_openopps(argv, root=root)
+    except FileNotFoundError as exc:
+        return _tool_result(str(exc), is_error=True)
+    except subprocess.TimeoutExpired:
+        return _tool_result("openopps help timed out", is_error=True)
+    return _tool_result(format_process(result), is_error=result.returncode != 0)
+
+
+def handle_run(plugin_name: str, arguments: Mapping[str, Any], root: Path) -> dict[str, Any]:
+    raw = arguments.get("argv")
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        return _tool_result("run argv must be an array of strings", is_error=True)
+    refusal = run_refusal(plugin_name, raw)
+    if refusal is not None:
+        return _tool_result(refusal, is_error=True)
+    argv = _strip_openopps_prefix(raw)
+    if plugin_name == DEV_PLUGIN:
+        argv = prefer_json_argv(argv)
+    try:
+        result = execute_openopps(argv, root=root)
+    except FileNotFoundError as exc:
+        return _tool_result(str(exc), is_error=True)
+    except subprocess.TimeoutExpired:
+        return _tool_result("openopps run timed out", is_error=True)
+    return _tool_result(format_process(result), is_error=result.returncode != 0)
+
+
+def tools_list(plugin_name: str) -> list[dict[str, Any]]:
+    run_description = (
+        "Run a public OpenOpps CLI command. Refuses discovery and admin sources "
+        "scout|verify-scout|preview-promotion."
+        if plugin_name == USER_PLUGIN
+        else "Run only openopps discovery scout|verify-scout|preview-promotion (JSON). "
+        "Refuses sync and every other command. Fixture/eval scripts stay as "
+        "uv run python, not MCP tools."
+    )
+    argv_schema = {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "Tokens after `openopps`, for example [\"jobs\", \"list\", \"--json\"].",
+    }
+    return [
+        {
+            "name": "help",
+            "description": "Show OpenOpps CLI help for a command path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"argv": argv_schema},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "run",
+            "description": run_description,
+            "inputSchema": {
+                "type": "object",
+                "properties": {"argv": argv_schema},
+                "required": ["argv"],
+                "additionalProperties": False,
+            },
+        },
+    ]
+
+
+def handle_tool_call(
+    plugin_name: str, name: str, arguments: Mapping[str, Any], root: Path
+) -> dict[str, Any]:
+    if name == "help":
+        return handle_help(plugin_name, arguments, root)
+    if name == "run":
+        return handle_run(plugin_name, arguments, root)
+    return _tool_result(f"unknown tool {name}", is_error=True)
+
+
+def _read_headers(stdin: Any) -> dict[str, str] | None:
+    headers: dict[str, str] = {}
+    while True:
+        line = stdin.readline()
+        if line == b"":
+            return None
+        if line in {b"\r\n", b"\n"}:
+            return headers
+        decoded = line.decode("utf-8").strip()
+        if ":" not in decoded:
+            raise ValueError(f"invalid MCP header {decoded!r}")
+        key, value = decoded.split(":", 1)
+        headers[key.strip().lower()] = value.strip()
+
+
+def read_message(stdin: Any) -> dict[str, Any] | None:
+    first = stdin.peek(1) if hasattr(stdin, "peek") else b""
+    if first.startswith(b"{"):
+        line = stdin.readline()
+        if line == b"":
+            return None
+        payload = json.loads(line.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("MCP message must be an object")
+        return payload
+    headers = _read_headers(stdin)
+    if headers is None:
+        return None
+    length = int(headers.get("content-length", "0"))
+    body = stdin.read(length)
+    if len(body) != length:
+        raise ValueError("truncated MCP body")
+    payload = json.loads(body.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("MCP message must be an object")
+    return payload
+
+
+def write_message(stdout: Any, payload: dict[str, Any]) -> None:
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    stdout.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body)
+    stdout.flush()
+
+
+def _initialize_result(plugin_name: str, requested: str | None) -> dict[str, Any]:
+    version = requested if requested == PROTOCOL_VERSION else PROTOCOL_VERSION
+    return {
+        "protocolVersion": version,
+        "capabilities": {"tools": {"listChanged": False}},
+        "serverInfo": {"name": plugin_name, "version": "1.0.0"},
+    }
+
+
+def dispatch(plugin_name: str, message: dict[str, Any], root: Path) -> dict[str, Any] | None:
+    method = message.get("method")
+    msg_id = message.get("id")
+    params = message.get("params") if isinstance(message.get("params"), dict) else {}
+    if method == "notifications/initialized" or (
+        isinstance(method, str) and method.startswith("notifications/")
+    ):
+        return None
+    if msg_id is None:
+        return None
+    if method == "initialize":
+        requested = params.get("protocolVersion") if isinstance(params, dict) else None
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": _initialize_result(plugin_name, requested if isinstance(requested, str) else None),
+        }
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {}}
+    if method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {"tools": tools_list(plugin_name)},
+        }
+    if method == "tools/call":
+        name = str(params.get("name", ""))
+        arguments = params.get("arguments")
+        if not isinstance(arguments, dict):
+            arguments = {}
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": handle_tool_call(plugin_name, name, arguments, root),
+        }
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "error": {"code": -32601, "message": f"method not found: {method}"},
+    }
+
+
+def serve(stdin: Any | None = None, stdout: Any | None = None) -> int:
+    root = plugin_root()
+    plugin_name = load_plugin_name(root)
+    input_stream = stdin or sys.stdin.buffer
+    output_stream = stdout or sys.stdout.buffer
+    while True:
+        try:
+            message = read_message(input_stream)
+        except ValueError as exc:
+            write_message(
+                output_stream,
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": str(exc)},
+                },
+            )
+            return 1
+        if message is None:
+            return 0
+        response = dispatch(plugin_name, message, root)
+        if response is not None:
+            write_message(output_stream, response)
+
+
+def main() -> int:
+    return serve()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

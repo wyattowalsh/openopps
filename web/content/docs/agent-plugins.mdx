@@ -1,0 +1,81 @@
+---
+title: Agent Plugins
+description: Two Agent Plugins 1.0.0 packages for driving OpenOpps from favorite agents: openopps for installed CLI users and openopps-dev for checkout contributors.
+---
+
+OpenOpps ships two [Agent Plugins 1.0.0](https://agent-plugins.org/specification) packages in the repository tree. Clients load them from a local filesystem path. v1 has no public marketplace, npm package, or hosted MCP URL.
+
+These packages are **not** Python `openopps.plugins` entry points. The example at `examples/plugins/minimal-openopps-plugin/` remains a Python template.
+
+| Plugin `name` | Root | Audience |
+| --- | --- | --- |
+| `openopps` | `agent-plugins/openopps/` | End users of the installed CLI |
+| `openopps-dev` | `agent-plugins/openopps.dev/` | Checkout contributors |
+
+Plugin names are kebab-case so Grok and Claude validators accept them. The contributor **directory** keeps the dotted path `openopps.dev/` as the checkout SSOT.
+
+Each root is spec-shaped: `plugin.json`, `skills/<dir>/SKILL.md`, `mcp.json`, plugin-bundled `./bin/mcp`, and `LICENSE`. v1 omits `extensions` and client-extension directories. `.mcp.json` is a Grok/Claude filename alias of the same stdio `./bin/mcp` (no `$schema`).
+
+## Local client path
+
+Point the agent client at the package directory in this checkout (or a copy of that directory). Do not register a hosted MCP URL. There is no public `openopps mcp` Typer command; the client starts `./bin/mcp` with `cwd` `${PLUGIN_ROOT}`.
+
+Inner CLI resolution, in order:
+
+1. `OPENOPPS_BIN` if set
+2. `openopps` on the inherited `PATH`
+3. `uv run openopps` after walking to the OpenOpps `pyproject.toml`
+
+Do not put machine-local `OPENOPPS_BIN` in committed `mcp.json` `env`. Do not set `env.PLUGIN_ROOT` or `env.PLUGIN_DATA` (the client injects those).
+
+### Harness install (local checkout)
+
+From the repository root, `ROOT` is the OpenOpps checkout. Do not copy source-scout into `.agents/skills/` or `.cursor/skills/`, and do not run `wagents --apply`.
+
+| Client | Install |
+| --- | --- |
+| Grok Build | `grok plugin install "$ROOT/agent-plugins/openopps" --trust` and the same for `openopps.dev`. Optional: add those directories to `[plugins].paths`. |
+| Cursor | Symlink or copy each package into `~/.cursor/plugins/local/` (`openopps`, `openopps-dev`). |
+| Codex | Add a local catalog whose `source.path` points at the real package directories (Codex skips symlinks), then `codex plugin add`. |
+| Claude Code | Add a local marketplace whose plugin sources are the package directories, then install by name. Claude `plugin validate` expects `.claude-plugin/` only for Claude-native packages; Agent Plugins roots use `plugin.json`. |
+| OpenCode | OpenCode `plugin` is npm, not Agent Plugins. Add stdio MCP servers that run `"$ROOT/agent-plugins/<pkg>/bin/mcp"` with `PLUGIN_ROOT` set to that package, and add `"$ROOT/agent-plugins/<pkg>/skills"` to `skills.paths`. |
+| Gemini CLI | Add the `skills/` directories to Gemini skill paths. Gemini does not load Agent Plugins `plugin.json` in v1. |
+
+## MCP tools
+
+Both packages expose stdio tools **`help`** and **`run`** only. They do not generate one tool per Typer command.
+
+| Plugin | `run` filter |
+| --- | --- |
+| `openopps` | Refuses `discovery *` and `admin sources scout\|verify-scout\|preview-promotion` |
+| `openopps-dev` | Allows only `openopps discovery scout\|verify-scout\|preview-promotion` (prefers `--json`). Rejects `sync` and everything else |
+
+Fixture and eval scripts stay as `uv run python` commands documented by contributor skills. They are not MCP tools.
+
+## User plugin (`openopps`)
+
+Covers the full public CLI except quarantined discovery: URL-first `openopps <url>` pulls, `sync`, jobs/boards/sources/providers, status/doctor, cache/plugins/examples, and admin minus scout aliases. Skills also teach JSON/`--metrics-json`, `--apply` / cache-purge safety, `OPENOPPS_*` / local DB paths, Python-plugin vs Agent Plugin naming, and pointers to docs plus [`/llms.txt`](/llms.txt).
+
+`openopps-web` is read-only https://www.openopps.dev (`/`, `/explorer`, `/docs`, `/llms.txt`, `/llms-full.txt`, `/llms.mdx/docs/...`). It does not drive a browser, mutate the Next.js app, or call `/api/` or live Workers/Kaggle APIs.
+
+## Contributor plugin (`openopps-dev`)
+
+Checkout-only. Covers the source-scout skill, `openopps discovery scout|verify-scout|preview-promotion`, isolation via `launch_isolated_scout`, and contributor eval/frontmatter/projection gates. It is not a general contributing, OpenSpec, web, Kaggle, or Workers plugin.
+
+The contributor hub **skill** directory and plugin **name** are both kebab-case `openopps-dev`. The checkout path remains `agent-plugins/openopps.dev/`.
+
+Source-scout SSOT is `agent-plugins/openopps.dev/skills/openopps-source-scout/`. Keep it inert: no network, credentials, Git mutation, live install, harness projection, or `wagents --apply`. Skill output is untrusted. Acceptance is only `openopps.discovery.isolation.launch_isolated_scout`. Selected `.agents/skills/` and `.cursor/skills/` projections must stay absent.
+
+Discovery does not apply, activate, or share a run with `openopps sync`. Plugin skills do not perform live Cloudflare, Kaggle, Alembic `0005`, or source-policy 1780 publication.
+
+## Validation
+
+```bash
+just agent-plugins-check
+uv run python scripts/verify_agent_plugins.py
+uv run pytest tests/unit/openopps/test_agent_plugins.py tests/unit/openopps/discovery/test_source_scout_skill.py -q
+OPENOPPS_DISCOVERY_NETWORK=disabled uv run python scripts/source_discovery_gates.py skill-eval
+just ci-discovery
+```
+
+`just agent-plugins-check` is part of `just ci-python`. CI vendors Agent Plugins 1.0.0 schemas under `tests/fixtures/agent-plugins/schemas/1.0.0/` and does not fetch them at plugin load. Live Cursor/Codex/Grok loader e2e is out of v1.

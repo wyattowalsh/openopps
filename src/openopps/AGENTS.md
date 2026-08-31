@@ -16,7 +16,7 @@ Python package for the OpenOpps CLI.
 - Preserve raw upstream payloads on normalized records for auditability.
 - Keep persisted fields source-scoped where aggregate sources overlap; generated board keys should remain durable identifiers such as `source:slug` while upstream slugs remain available as `remote_slug`.
 - Keep cache behavior explicit: shared request caching uses the `http_cache` table via `cache.py`, `OPENOPPS_CACHE_*` settings, `--refresh-cache`, and `admin cache purge`; do not bypass it in source or job providers without a specific reason.
-- Keep plugin loading isolated through the `openopps.plugins` entry point group. Plugin load failures and capability conflicts should be visible through `plugins list` rather than crashing the CLI.
+- Keep plugin loading isolated through the `openopps.plugins` entry point group. Plugin load failures and capability conflicts should be visible through `plugins list` rather than crashing the CLI. Agent Plugins 1.0.0 packages under `agent-plugins/` are a different system; do not add a public `openopps mcp` Typer command.
 - YC support uses the public companies page to discover the current Algolia API key, then queries `YCCompany_By_Launch_Date_production` by batch; treat it as detect-only company-board metadata unless a reliable job route is present in another source.
 - Ashby support uses the public job posting API only; derive the job board name from `jobs.ashbyhq.com/{name}` or route-probe candidates, detect hosted board URLs rather than `api.ashbyhq.com` API URLs, and exclude `isListed: false` direct-link postings from normal job sync output.
 - Greenhouse support uses public board tokens and the public job board API.

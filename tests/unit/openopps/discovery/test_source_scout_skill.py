@@ -19,7 +19,7 @@ from openopps.discovery.models import BoundedReason
 
 
 ROOT = Path(__file__).resolve().parents[4]
-SKILL_ROOT = ROOT / "skills" / "openopps-source-scout"
+SKILL_ROOT = ROOT / "agent-plugins" / "openopps.dev" / "skills" / "openopps-source-scout"
 SKILL_FILE = SKILL_ROOT / "SKILL.md"
 CONTEXT_FILE = SKILL_ROOT / "references" / "context-contract.md"
 EVALS_FILE = SKILL_ROOT / "evals" / "evals.json"
@@ -511,7 +511,7 @@ def test_skill_states_selected_ssot_and_uninstalled_projections() -> None:
     _, body = _skill_parts()
 
     assert "S701 selection is read-only" in body
-    assert "`skills/openopps-source-scout/`" in body
+    assert "`agent-plugins/openopps.dev/skills/openopps-source-scout/`" in body
     assert "`.agents/skills/openopps-source-scout/`" in body
     assert "`.cursor/skills/openopps-source-scout/`" in body
     assert "no repository projection; read this SSOT" in body
@@ -583,7 +583,7 @@ def test_structural_validators_are_read_only_and_pass() -> None:
     assert dry_run_receipt["projectionsInstalled"] is False
     assert dry_run_receipt["reasonCode"] is None
     assert dry_run_receipt["selectedRepositoryProjectionsOnly"] is True
-    assert dry_run_receipt["ssot"] == "skills/openopps-source-scout/"
+    assert dry_run_receipt["ssot"] == "agent-plugins/openopps.dev/skills/openopps-source-scout/"
     assert dry_run_receipt["syncTool"] == "in-repo-dry-run-projection"
     assert dry_run_receipt["wagentsInvoked"] is False
     harnesses = {row["id"]: row for row in dry_run_receipt["harnesses"]}
@@ -592,6 +592,8 @@ def test_structural_validators_are_read_only_and_pass() -> None:
     assert harnesses["cursor"]["status"] == "planned-absent"
     assert harnesses["grok"]["status"] == "no-repository-projection"
     assert harnesses["grok"]["files"] == []
+    assert harnesses["codex"]["selectedPath"] == ".agents/skills/openopps-source-scout/"
+    assert harnesses["cursor"]["selectedPath"] == ".cursor/skills/openopps-source-scout/"
     assert harnesses["grok"]["selectedPath"] is None
     planned = [row["relative"] for row in harnesses["codex"]["files"]]
     assert planned == sorted(planned)
@@ -639,8 +641,8 @@ def test_structural_validators_are_read_only_and_pass() -> None:
         "ok": True,
         "projectionsInstalled": False,
         "reasonCode": None,
-        "ssot": "skills/openopps-source-scout/",
-        "validator": "skills/openopps-source-scout/scripts/validate_frontmatter.py",
+        "ssot": "agent-plugins/openopps.dev/skills/openopps-source-scout/",
+        "validator": "agent-plugins/openopps.dev/skills/openopps-source-scout/scripts/validate_frontmatter.py",
     }
 
     evals_source = evals_script.read_text(encoding="utf-8")

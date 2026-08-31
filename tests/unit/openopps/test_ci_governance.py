@@ -333,6 +333,12 @@ def test_just_uses_positional_transport_and_locked_kaggle_tooling() -> None:
     assert 'kaggle := "uv run --frozen --group ops kaggle"' in justfile
     assert "--with kaggle" not in justfile
     assert (
+        "ci-python: lock-check python-quality test-cov cli-help "
+        "wheel-catalog-smoke agent-plugins-check"
+    ) in justfile
+    assert "agent-plugins-check:" in justfile
+    assert "scripts/verify_agent_plugins.py" in justfile
+    assert (
         "ci-artifacts: source-policy-check kaggle-generated-diff-check "
         "kaggle-bundle-smoke diff-check"
     ) in justfile

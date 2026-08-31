@@ -41,6 +41,9 @@ test("robots and sitemap routes expose the public static surface", async ({
 	expect(sitemapText).toContain(
 		"https://www.openopps.dev/docs/public-data-releases",
 	);
+	expect(sitemapText).toContain(
+		"https://www.openopps.dev/docs/agent-plugins",
+	);
 	expect(sitemapText).toContain("https://www.openopps.dev/llms.txt");
 	expect(sitemapText).toContain("https://www.openopps.dev/llms-full.txt");
 	expect(sitemapText).toContain("https://www.openopps.dev/feed.xml");
