@@ -1525,7 +1525,7 @@ def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
     assert metadata["enable_internet"] is True
     assert metadata["is_private"] is False
     assert metadata["id"] == gen.STARTER_NB_ID
-    assert metadata["title"] == "OpenOppsDB — Starter"
+    assert metadata["title"] == "OpenOppsDB — Starter notebook"
     assert metadata["dataset_sources"] == [gen.DATASET_ID]
     assert metadata["code_file"] == gen.STARTER_NB_FILE
     assert metadata["code_file"].endswith(".ipynb")

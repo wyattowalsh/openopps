@@ -308,7 +308,7 @@ def kernel_metadata_for_spec(spec: PublicNotebookSpec) -> dict[str, Any]:
 def starter_kernel_metadata() -> dict[str, Any]:
     return public_notebook_kernel_metadata(
         notebook_id=STARTER_NB_ID,
-        title="OpenOppsDB — Starter",
+        title="OpenOppsDB — Starter notebook",
         code_file=STARTER_NB_FILE,
         enable_internet=True,
         keywords=PUBLIC_KERNEL_KEYWORDS,

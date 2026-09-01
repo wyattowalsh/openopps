@@ -174,7 +174,6 @@ def public_notebook_ids() -> tuple[str, ...]:
 def sibling_kernel_sources(notebook_id: str) -> tuple[str, ...]:
     # Kaggle rejects kernel_sources that do not already exist as public kernels.
     established = (
-        STARTER_NB_ID,
         ADVANCED_NB_ID,
         HIRING_MARKET_NB_ID,
         SKILLS_RADAR_NB_ID,

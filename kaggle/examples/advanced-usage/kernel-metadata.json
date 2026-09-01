@@ -11,7 +11,6 @@
   "id": "wyattowalsh/openoppsdb-advanced-usage",
   "is_private": false,
   "kernel_sources": [
-    "wyattowalsh/openoppsdb-starter-notebook",
     "wyattowalsh/openoppsdb-hiring-market-map",
     "wyattowalsh/openoppsdb-skills-radar"
   ],
