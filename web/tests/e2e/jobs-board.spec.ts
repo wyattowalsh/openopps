@@ -153,10 +153,13 @@ test("jobs board searches in a browser worker without server search requests", a
 	test.setTimeout(90_000);
 	let browserChunkRequests = 0;
 	let serverSearchRequests = 0;
-	await page.route("**/data/openopps-search/jobs/chunks/*.json", async (route) => {
-		browserChunkRequests += 1;
-		await route.continue();
-	});
+	await page.context().route(
+		/\/data\/openopps-search\/jobs\/(?:chunks|columnar)\/[^/?]+\.json(?:\?|$)/,
+		async (route) => {
+			browserChunkRequests += 1;
+			await route.continue();
+		},
+	);
 	await page.route("**/api/jobs/search**", async (route) => {
 		serverSearchRequests += 1;
 		await route.continue();
