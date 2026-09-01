@@ -9,6 +9,7 @@ export const PREVIEW_FILES = ["readme-light.png", "readme-dark.png"];
 export const PREVIEW_VIEWPORT = { width: 1280, height: 800 };
 export const RAW_ASSET_PREFIX =
   "https://raw.githubusercontent.com/wyattowalsh/openopps/main/assets/readme/";
+export const SHIELDCN_ORIGIN = "https://shieldcn.dev/";
 
 const THEMES = ["light", "dark"];
 const SHIELDS_ORIGIN = "https://img.shields.io/";
@@ -188,13 +189,9 @@ async function installLocalRoutes(context, assetsDir, stats) {
       });
       return;
     }
-    if (url.startsWith(SHIELDS_ORIGIN)) {
+    if (url.startsWith(SHIELDS_ORIGIN) || url.startsWith(SHIELDCN_ORIGIN)) {
       stats.shields += 1;
-      await route.fulfill({
-        status: 200,
-        contentType: "image/svg+xml; charset=utf-8",
-        body: shieldStubSvg(url),
-      });
+      await route.continue();
       return;
     }
     stats.blockedOther += 1;

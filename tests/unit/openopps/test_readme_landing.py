@@ -87,24 +87,50 @@ def test_readme_has_install_cli_providers_validation_headings() -> None:
         ), heading
 
 
-def test_readme_badges_use_markers_for_the_badge_and_dynamic_urls() -> None:
+def test_readme_badges_use_shieldcn_markers_and_dynamic_urls() -> None:
     block = _badge_block(_readme())
-    assert "style=for-the-badge" in block
-    urls = URL_RE.findall(block)
-    assert urls
-    for url in urls:
+    assert "https://shieldcn.dev/" in block
+    assert "img.shields.io" not in block
+    assert "style=for-the-badge" not in block
+    for needle in (
+        "github/ci/wyattowalsh/openopps",
+        "pypi/openopps",
+        "github/license/wyattowalsh/openopps",
+        "pypi/python/openopps",
+    ):
+        assert needle in block, needle
+    image_urls = re.findall(r'(?:src|srcset)="(https://[^"]+)"', block)
+    assert image_urls
+    for url in image_urls:
         assert "0.1.1" not in url
+        assert url.startswith("https://shieldcn.dev/")
 
 
 def test_readme_images_use_repo_relative_asset_urls() -> None:
     readme = _readme()
     assert "raw.githubusercontent.com" not in readme
     assert ASSET_URL_PREFIX in readme
-    for stem in (*RASTER_STEMS, *CHIP_STEMS):
+    for stem in RASTER_STEMS:
         assert f"{ASSET_URL_PREFIX}{stem}-light.png" in readme
         assert f"{ASSET_URL_PREFIX}{stem}-dark.png" in readme
         assert (REPO_ROOT / "assets" / "readme" / f"{stem}-light.png").is_file()
         assert (REPO_ROOT / "assets" / "readme" / f"{stem}-dark.png").is_file()
+    for stem in CHIP_STEMS:
+        assert (REPO_ROOT / "assets" / "readme" / f"{stem}-light.png").is_file()
+        assert (REPO_ROOT / "assets" / "readme" / f"{stem}-dark.png").is_file()
+
+
+def test_readme_stack_chips_use_shieldcn() -> None:
+    readme = _readme()
+    block = _badge_block(readme)
+    for label in ("CLI", "uv", "Typer", "Route Ledger"):
+        assert f'alt="{label}"' in readme
+    block = _badge_block(readme)
+    assert "https://shieldcn.dev/badge/CLI-Typer-green.svg" in block
+    assert "https://shieldcn.dev/badge/uv-Astral-green.svg" in block
+    assert "https://shieldcn.dev/badge/Typer-CLI-green.svg" in block
+    assert "https://shieldcn.dev/badge/Python-3.12%2B-green.svg" in block
+    assert "https://shieldcn.dev/badge/Route_Ledger-DESIGN.md-green.svg" in block
 
 
 def test_readme_takumi_rasters_use_picture_prefers_color_scheme_dark() -> None:
