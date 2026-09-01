@@ -5,16 +5,17 @@ import json
 from pathlib import Path
 import shutil
 import sys
+from typing import Any
 
 import pytest
 
-import openopps_kaggle._core as core
-from openopps_kaggle.constants import (
+import openopps_kaggle._core as core  # ty: ignore[unresolved-import]
+from openopps_kaggle.constants import (  # ty: ignore[unresolved-import]
     DEFAULT_DATASET_DIR,
     RUNTIME_GENERATOR_PACKAGE_DIR,
     RUNTIME_MANIFEST_FILE,
 )
-from openopps_kaggle.runtime_manifest import (
+from openopps_kaggle.runtime_manifest import (  # ty: ignore[unresolved-import]
     canonical_runtime_package_sha256,
     stage_runtime_package,
     verify_runtime_package,
@@ -42,11 +43,11 @@ def _notebook_setup_namespace(
     tmp_path: Path,
     *,
     runtime_input: Path | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     output_dir = tmp_path / "notebook-output"
     source = core._notebook_setup_source()
     setup_definitions = source.split("\nrequire_kaggle_credentials()\n", 1)[0]
-    namespace: dict[str, object] = {
+    namespace: dict[str, Any] = {
         "__name__": "openopps_kaggle_runtime_test",
     }
     old_output = core.os.environ.get("OPENOPPS_KAGGLE_OUTPUT_DIR")
@@ -327,10 +328,9 @@ def test_manager_install_accepts_exact_git_sha_and_pins_kaggle_client(
     tmp_path: Path,
 ) -> None:
     namespace = _notebook_setup_namespace(tmp_path)
-    package_spec = (
-        "git+https://github.com/wyattowalsh/openopps.git@"
-        "0123456789abcdef0123456789abcdef01234567"
-    )
+    revision = "0123456789abcdef0123456789abcdef01234567"
+    package_spec = f"git+https://github.com/wyattowalsh/openopps.git@{revision}"
+    src_dir = "/kaggle/working/openopps-src"
     namespace["PACKAGE_SPEC"] = package_spec
     seen: list[list[str]] = []
     namespace["run"] = lambda command: seen.append(command)
@@ -338,6 +338,18 @@ def test_manager_install_accepts_exact_git_sha_and_pins_kaggle_client(
     namespace["install_openopps"]()
 
     assert seen == [
+        ["git", "init", src_dir],
+        [
+            "git",
+            "-C",
+            src_dir,
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/wyattowalsh/openopps.git",
+        ],
+        ["git", "-C", src_dir, "fetch", "--depth", "1", "origin", revision],
+        ["git", "-C", src_dir, "checkout", "--force", "FETCH_HEAD"],
         [
             sys.executable,
             "-m",
@@ -345,7 +357,9 @@ def test_manager_install_accepts_exact_git_sha_and_pins_kaggle_client(
             "install",
             "--quiet",
             "--upgrade",
-            package_spec,
+            "-e",
+            src_dir,
             "kaggle==2.2.4",
-        ]
+        ],
     ]
+    assert package_spec not in {arg for command in seen for arg in command}

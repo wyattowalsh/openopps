@@ -3573,6 +3573,45 @@ def kaggle_dataset_status() -> dict:
 def install_openopps() -> None:
     load_openopps_package_spec_secret()
     package_spec = require_immutable_openopps_package_spec()
+    prefix = "git+https://github.com/wyattowalsh/openopps.git@"
+    revision = package_spec.removeprefix(prefix)
+    src_dir = Path("/kaggle/working/openopps-src")
+    if src_dir.exists():
+        shutil.rmtree(src_dir)
+    run(["git", "init", str(src_dir)])
+    run(
+        [
+            "git",
+            "-C",
+            str(src_dir),
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/wyattowalsh/openopps.git",
+        ]
+    )
+    run(
+        [
+            "git",
+            "-C",
+            str(src_dir),
+            "fetch",
+            "--depth",
+            "1",
+            "origin",
+            revision,
+        ]
+    )
+    run(
+        [
+            "git",
+            "-C",
+            str(src_dir),
+            "checkout",
+            "--force",
+            "FETCH_HEAD",
+        ]
+    )
     run(
         [
             sys.executable,
@@ -3581,7 +3620,8 @@ def install_openopps() -> None:
             "install",
             "--quiet",
             "--upgrade",
-            package_spec,
+            "-e",
+            str(src_dir),
             KAGGLE_CLIENT_SPEC,
         ]
     )

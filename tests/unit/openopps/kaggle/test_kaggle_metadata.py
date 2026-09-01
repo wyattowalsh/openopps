@@ -544,6 +544,54 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert publish_disk_call < publish_command
     assert gen.DATASET_IMAGE_SOURCE.as_posix() == "web/public/social/openoppsdb.png"
 
+    install_fn = source[
+        source.index("def install_openopps()") : source.index(
+            "\ndef load_openopps_package_spec_secret()"
+        )
+    ]
+    assert "/kaggle/working/openopps-src" in install_fn
+    assert '"fetch"' in install_fn
+    assert "revision" in install_fn
+    assert '"--depth"' in install_fn
+    assert '"-e"' in install_fn
+    assert '"pip"' in install_fn
+    assert '"install"' in install_fn
+    assert "package_spec," not in install_fn
+
+
+def test_manager_install_source_clones_pinned_sha_for_editable_install() -> None:
+    data = gen.notebook()
+    source = "\n".join(
+        line for cell in data["cells"] for line in cell.get("source", [])
+    )
+    for index, cell in enumerate(data["cells"]):
+        if cell.get("cell_type") == "code":
+            compile("".join(cell.get("source", [])), f"cell-{index}", "exec")
+
+    install_fn = source[
+        source.index("def install_openopps()") : source.index(
+            "\ndef load_openopps_package_spec_secret()"
+        )
+    ]
+    assert "/kaggle/working/openopps-src" in install_fn
+    assert '"git"' in install_fn
+    assert '"init"' in install_fn
+    assert '"fetch"' in install_fn
+    assert "revision" in install_fn
+    assert '"--depth"' in install_fn
+    assert '"1"' in install_fn
+    assert '"origin"' in install_fn
+    assert '"checkout"' in install_fn
+    assert '"--force"' in install_fn
+    assert '"FETCH_HEAD"' in install_fn
+    assert '"-e"' in install_fn
+    assert '"pip"' in install_fn
+    assert '"install"' in install_fn
+    assert '"--quiet"' in install_fn
+    assert '"--upgrade"' in install_fn
+    assert "package_spec," not in install_fn
+    assert "git+https://github.com/wyattowalsh/openopps.git@" in install_fn
+
 
 def test_manager_notebook_rehydrates_public_sqlite_snapshot(
     tmp_path: Path,

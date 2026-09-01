@@ -1,20 +1,18 @@
-"""Optional local checks against a v54-shaped public sqlite snapshot.
+"""Quality-gate checks against a deterministic v54-shaped SQLite snapshot.
 
-CI does not ship kaggle/openoppsdb.sqlite. Set OPENOPPS_V54_SQLITE or keep the
-ignored local snapshot to run these assertions.
+An explicit ``OPENOPPS_V54_SQLITE`` override may exercise a captured snapshot,
+but the default fixture must not select the mutable ignored current database.
 """
 
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 import openopps_kaggle.generator as gen  # ty: ignore[unresolved-import]
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-
 
 def _sync_metrics() -> dict[str, object]:
     return {
@@ -46,23 +44,36 @@ def _coverage() -> dict[str, object]:
     return {"routes": {"executable": 3}, "jobs": {"current": 6}}
 
 
-def _v54_sqlite() -> Path | None:
+def _v54_sqlite_override() -> Path | None:
     override = os.environ.get("OPENOPPS_V54_SQLITE", "").strip()
-    candidates = []
-    if override:
-        candidates.append(Path(override).expanduser())
-    candidates.append(REPO_ROOT / "kaggle" / "openoppsdb.sqlite")
-    for path in candidates:
-        if path.is_file():
-            return path
-    return None
+    if not override:
+        return None
+    path = Path(override).expanduser()
+    if not path.is_file():
+        pytest.fail(f"OPENOPPS_V54_SQLITE does not name a file: {path}")
+    return path
+
+
+def _write_v54_shaped_sqlite(path: Path) -> None:
+    """Write the public table shape with the pre-lifecycle run columns."""
+
+    with sqlite3.connect(path) as conn:
+        for table in gen.TABLES:
+            columns = [
+                name
+                for name in table.model.model_fields
+                if not (table.name == "job_sync_runs" and name == "started_at")
+            ]
+            column_sql = ", ".join(f'"{column}" TEXT' for column in columns)
+            conn.execute(f'CREATE TABLE "{table.name}" ({column_sql})')
 
 
 @pytest.fixture
-def v54_sqlite() -> Path:
-    path = _v54_sqlite()
+def v54_sqlite(tmp_path: Path) -> Path:
+    path = _v54_sqlite_override()
     if path is None:
-        pytest.skip("no local v54 openoppsdb.sqlite available")
+        path = tmp_path / "openoppsdb-v54.sqlite"
+        _write_v54_shaped_sqlite(path)
     return path
 
 
