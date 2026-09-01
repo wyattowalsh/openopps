@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-08-31
+goal: Bounded README landing asset layout, just recipes, artifacts-job Node, and BADGES/picture URL contract
+affected_areas:
+  - release-workflows
+  - docs-product-boundary

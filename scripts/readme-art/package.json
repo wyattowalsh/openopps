@@ -1,0 +1,30 @@
+{
+  "name": "openopps-readme-art",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": "24.20.0",
+    "pnpm": "11.24.0"
+  },
+  "bin": {
+    "readme-art": "./render.mjs"
+  },
+  "scripts": {
+    "render": "node ./render.mjs",
+    "list": "node ./render.mjs --list",
+    "check": "node ./render.mjs --check",
+    "preview": "node ./render.mjs preview"
+  },
+  "dependencies": {
+    "@fontsource/monaspace-argon": "5.3.0",
+    "@fontsource/monaspace-neon": "5.3.0",
+    "@fontsource/monaspace-xenon": "5.3.0",
+    "esbuild": "0.28.2",
+    "github-markdown-css": "5.9.0",
+    "marked": "18.0.11",
+    "playwright": "1.62.1",
+    "react": "19.2.8",
+    "takumi-js": "2.13.3"
+  }
+}
