@@ -14,16 +14,10 @@
     "wyattowalsh/openoppsdb-starter-notebook",
     "wyattowalsh/openoppsdb-advanced-usage",
     "wyattowalsh/openoppsdb-hiring-market-map",
-    "wyattowalsh/openoppsdb-skills-radar",
-    "wyattowalsh/openoppsdb-sql-playground",
-    "wyattowalsh/openoppsdb-explorer"
+    "wyattowalsh/openoppsdb-skills-radar"
   ],
   "kernel_type": "notebook",
-  "keywords": [
-    "jobs and career",
-    "data visualization",
-    "tabular"
-  ],
+  "keywords": [],
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],

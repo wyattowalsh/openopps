@@ -149,7 +149,7 @@ ROUTE_LEDGER_PAPER = "#f7f1df"
 ROUTE_LEDGER_BRASS = "#d99629"
 ROUTE_LEDGER_INK = "#1d281f"
 ROUTE_LEDGER_INFO = "#336d8f"
-PUBLIC_KERNEL_KEYWORDS = ("jobs and career", "data visualization", "tabular")
+PUBLIC_KERNEL_KEYWORDS: tuple[str, ...] = ()
 DATASET_MARKETPLACE_KEYWORDS = (
     "business",
     "internet",
@@ -172,7 +172,16 @@ def public_notebook_ids() -> tuple[str, ...]:
 
 
 def sibling_kernel_sources(notebook_id: str) -> tuple[str, ...]:
-    return tuple(item for item in public_notebook_ids() if item != notebook_id)
+    # Kaggle rejects kernel_sources that do not already exist as public kernels.
+    established = (
+        STARTER_NB_ID,
+        ADVANCED_NB_ID,
+        HIRING_MARKET_NB_ID,
+        SKILLS_RADAR_NB_ID,
+    )
+    return tuple(
+        item for item in established if item != notebook_id
+    )
 
 
 DATASET_IMAGE_FILE = "dataset-cover-image.png"

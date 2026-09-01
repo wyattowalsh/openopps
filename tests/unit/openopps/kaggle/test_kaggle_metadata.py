@@ -1529,7 +1529,7 @@ def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
     assert metadata["dataset_sources"] == [gen.DATASET_ID]
     assert metadata["code_file"] == gen.STARTER_NB_FILE
     assert metadata["code_file"].endswith(".ipynb")
-    assert "jobs and career" in metadata["keywords"]
+    assert metadata["keywords"] == []
     assert "/kaggle/input" in source
     assert "**/openoppsdb.sqlite" in source
     assert "mode=ro&immutable=1" in source
@@ -1631,7 +1631,7 @@ def test_public_example_notebooks_are_read_only_and_compile() -> None:
         assert metadata["dataset_sources"] == [gen.DATASET_ID]
         assert metadata["code_file"] == expected[spec.notebook_id]["code_file"]
         assert metadata["code_file"].endswith(".ipynb")
-        assert metadata["keywords"]
+        assert metadata["keywords"] == []
         assert "/kaggle/input" in source
         assert "**/openoppsdb.sqlite" in source
         assert "mode=ro&immutable=1" in source

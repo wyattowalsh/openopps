@@ -13,11 +13,7 @@
   "is_private": true,
   "kernel_sources": [],
   "kernel_type": "notebook",
-  "keywords": [
-    "jobs and career",
-    "data visualization",
-    "tabular"
-  ],
+  "keywords": [],
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
