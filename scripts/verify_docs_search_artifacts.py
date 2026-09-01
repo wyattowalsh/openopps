@@ -214,6 +214,7 @@ def validate_artifacts(
         facets = catalog.get("facets") if isinstance(catalog, dict) else None
         if not isinstance(facets, dict) or not isinstance(facets.get("sources"), list):
             errors.append("facet-catalog.json must keep facets.sources")
+    errors.extend(_columnar_jobs_errors(root, manifest))
     return errors
 
 
@@ -245,6 +246,13 @@ def _manifest_files(manifest: dict[str, Any]) -> set[Path]:
                 for chunk in chunks:
                     if isinstance(chunk, dict) and isinstance(chunk.get("file"), str):
                         files.add(Path(chunk["file"]))
+            columnar = details.get("columnar")
+            if isinstance(columnar, dict):
+                columnar_chunks = columnar.get("chunks")
+                if isinstance(columnar_chunks, list):
+                    for chunk in columnar_chunks:
+                        if isinstance(chunk, dict) and isinstance(chunk.get("file"), str):
+                            files.add(Path(chunk["file"]))
     lineage = manifest.get("lineageAggregate")
     if isinstance(lineage, dict) and isinstance(lineage.get("file"), str):
         files.add(Path(lineage["file"]))
@@ -277,6 +285,66 @@ def _validate_id_index_count(
         errors.append(
             f"{label} count {payload.get('count')!r} does not match manifest {expected!r}"
         )
+
+
+def _columnar_jobs_errors(root: Path, manifest: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    jobs = (manifest.get("entities") or {}).get("jobs") if isinstance(manifest, dict) else None
+    if not isinstance(jobs, dict):
+        return ["search manifest is missing entities.jobs"]
+    columnar = jobs.get("columnar")
+    if not isinstance(columnar, dict):
+        return ["search manifest is missing entities.jobs.columnar"]
+    if columnar.get("layout") != "columnar":
+        errors.append("jobs columnar layout must be 'columnar'")
+    columns = columnar.get("columns")
+    if not isinstance(columns, list) or "descriptionSnippet" not in columns or "skillTokens" not in columns:
+        errors.append("jobs columnar columns must include descriptionSnippet and skillTokens")
+    if "descriptionHtml" in (columns or []):
+        errors.append("jobs columnar columns must not include descriptionHtml")
+    chunks = columnar.get("chunks")
+    if not isinstance(chunks, list) or not chunks:
+        errors.append("jobs columnar chunks are missing")
+        return errors
+    expected_count = jobs.get("count")
+    observed = 0
+    saw_closed = False
+    status_index = columns.index("status") if isinstance(columns, list) and "status" in columns else None
+    for chunk in chunks:
+        if not isinstance(chunk, dict) or not isinstance(chunk.get("file"), str):
+            errors.append("jobs columnar chunk is missing a file")
+            continue
+        path = root / chunk["file"]
+        if not path.is_file():
+            errors.append(f"jobs columnar chunk missing: {chunk['file']}")
+            continue
+        payload = _read_json(path)
+        if payload.get("version") == 7:
+            errors.append(f"{chunk['file']} must not use search payload version 7")
+        elif payload.get("version") not in {None, manifest.get("version")}:
+            errors.append(f"{chunk['file']} version does not match manifest")
+        if payload.get("layout") != "columnar" or payload.get("entity") != "jobs":
+            errors.append(f"{chunk['file']} must be a jobs columnar layout")
+        values = payload.get("values")
+        count = payload.get("count")
+        if not isinstance(values, list) or not isinstance(count, int):
+            errors.append(f"{chunk['file']} must contain columnar values and count")
+            continue
+        if count != chunk.get("count"):
+            errors.append(f"{chunk['file']} count does not match manifest chunk count")
+        observed += count
+        if status_index is not None and status_index < len(values):
+            status_values = values[status_index]
+            if isinstance(status_values, list) and "closed" in status_values:
+                saw_closed = True
+    if expected_count is not None and observed != expected_count:
+        errors.append(
+            f"jobs columnar row count {observed} does not match manifest jobs.count {expected_count!r}"
+        )
+    if expected_count and expected_count > 1 and not saw_closed:
+        # Public snapshots include closed rows for includeAllIndexed; tiny fixtures may be open-only.
+        pass
+    return errors
 
 
 def _git_tracking_errors(root: Path, disk_files: set[Path]) -> list[str]:

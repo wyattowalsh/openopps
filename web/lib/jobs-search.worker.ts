@@ -11,6 +11,11 @@ import {
 	validateSearchManifest,
 } from "@/components/openopps-search/search-index-validation";
 import type { SearchChunk } from "@/components/openopps-search/search-types";
+import {
+	searchRowsFromColumnarChunk,
+	type ColumnarJobsChunk,
+	validateColumnarJobsChunk,
+} from "@/lib/jobs-search-columnar";
 
 type WorkerScope = {
 	addEventListener(
@@ -139,6 +144,19 @@ async function initializeEngine(
 			`Jobs search bootstrap count mismatch: chrome ${snapshot.bootstrapJobsCount}, manifest ${jobs.count}.`,
 		);
 	}
+	const columnarRefs = jobs.columnar?.chunks?.length
+		? [...jobs.columnar.chunks].sort((left, right) => left.index - right.index)
+		: [];
+	if (columnarRefs.length > 0) {
+		const chunks = await loadColumnarChunks(client, columnarRefs, signal);
+		const rows = chunks.flatMap((chunk) => searchRowsFromColumnarChunk(chunk));
+		if (rows.length !== jobs.count) {
+			throw new Error(
+				`Jobs search row count mismatch: expected ${jobs.count}, received ${rows.length}.`,
+			);
+		}
+		return new JobsSearchEngine({ manifest, rows });
+	}
 	const refs = jobs.chunks?.length
 		? [...jobs.chunks].sort((left, right) => left.index - right.index)
 		: jobs.path
@@ -180,6 +198,30 @@ async function loadChunks(
 	await Promise.all(
 		Array.from({ length: pool }, () => fetchNext()),
 	);
+	return chunks;
+}
+
+async function loadColumnarChunks(
+	client: OpenOppsSnapshotClient,
+	refs: Array<{ path: string }>,
+	signal: AbortSignal,
+) {
+	const chunks: ColumnarJobsChunk[] = new Array(refs.length);
+	let cursor = 0;
+	async function fetchNext() {
+		while (cursor < refs.length) {
+			if (signal.aborted) {
+				throw new DOMException("The operation was aborted.", "AbortError");
+			}
+			const index = cursor;
+			cursor += 1;
+			const chunk = await client.getColumnarJobsChunk(refs[index].path, signal);
+			validateColumnarJobsChunk(chunk);
+			chunks[index] = chunk;
+		}
+	}
+	const pool = Math.min(resolveBrowserChunkFetchConcurrency(), refs.length);
+	await Promise.all(Array.from({ length: pool }, () => fetchNext()));
 	return chunks;
 }
 

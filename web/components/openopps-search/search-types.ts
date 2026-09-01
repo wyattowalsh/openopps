@@ -75,6 +75,11 @@ export type SearchEntityManifest = {
 	count: number;
 	detailPath?: string;
 	chunks?: SearchChunkRef[];
+	columnar?: {
+		layout: "columnar";
+		columns: string[];
+		chunks: SearchChunkRef[];
+	};
 };
 
 export type SearchSuggestion = {

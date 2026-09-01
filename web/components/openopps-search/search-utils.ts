@@ -96,6 +96,15 @@ export const EXPECTED_JOB_COLUMNS = [
 	"daysOpen",
 ];
 
+/** List+filter projection: columns 0-14 and 17-21. Never payload version 7. */
+export const JOB_COLUMNAR_KEEP_INDICES = [
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 21,
+] as const;
+
+export const EXPECTED_JOB_COLUMNAR_COLUMNS = JOB_COLUMNAR_KEEP_INDICES.map(
+	(index) => EXPECTED_JOB_COLUMNS[index],
+);
+
 export const EXPECTED_COLUMNS = {
 	providers: EXPECTED_PROVIDER_COLUMNS,
 	boards: EXPECTED_BOARD_COLUMNS,

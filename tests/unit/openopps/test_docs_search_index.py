@@ -42,6 +42,7 @@ DETAIL_DESCRIPTION_TEXT_MAX_LEN = cast(
 PROVIDER_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["PROVIDER_COLUMNS"])
 BOARD_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["BOARD_COLUMNS"])
 JOB_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["JOB_COLUMNS"])
+JOB_COLUMNAR_COLUMNS = cast(list[str], _SEARCH_INDEX_NAMESPACE["JOB_COLUMNAR_COLUMNS"])
 LEGACY_JOB_COLUMNS = JOB_COLUMNS[:23]
 DETAIL_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["DETAIL_IDS_FILE"])
 INDEXABLE_IDS_FILE = cast(str, _SEARCH_INDEX_NAMESPACE["INDEXABLE_IDS_FILE"])
@@ -409,7 +410,23 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
         "/data/openopps-search/jobs/latest.json"
     )
     assert manifest["entities"]["jobs"]["chunks"]
+    columnar = manifest["entities"]["jobs"]["columnar"]
+    assert columnar["layout"] == "columnar"
+    assert columnar["columns"] == JOB_COLUMNAR_COLUMNS
+    assert "descriptionSnippet" in columnar["columns"]
+    assert "skillTokens" in columnar["columns"]
+    assert "contentHash" not in columnar["columns"]
+    assert "seniority" not in columnar["columns"]
     assert (output_dir / "jobs" / "latest.json").exists()
+    columnar_chunk = _read_json(output_dir / columnar["chunks"][0]["file"])
+    assert columnar_chunk["version"] == SEARCH_INDEX_VERSION
+    assert columnar_chunk["version"] != 7
+    assert columnar_chunk["layout"] == "columnar"
+    assert columnar_chunk["columns"] == JOB_COLUMNAR_COLUMNS
+    assert "descriptionHtml" not in json.dumps(columnar_chunk)
+    status_values = columnar_chunk["values"][JOB_COLUMNAR_COLUMNS.index("status")]
+    assert "open" in status_values
+    assert "closed" in status_values
     jobs = _read_json(output_dir / "jobs" / "latest.json")
     for column in (
         "latestObservedAt",
@@ -764,6 +781,25 @@ def test_committed_search_index_artifacts_have_runtime_schema() -> None:
     assert job_entity["initialPath"] == "/data/openopps-search/jobs/latest.json"
     assert (artifact_dir / job_entity["file"]).is_file()
     assert job_entity["chunks"]
+    if artifact_version == SEARCH_INDEX_VERSION:
+        columnar = job_entity["columnar"]
+        assert columnar["layout"] == "columnar"
+        assert columnar["columns"] == JOB_COLUMNAR_COLUMNS
+        assert "descriptionSnippet" in columnar["columns"]
+        assert "skillTokens" in columnar["columns"]
+        observed = 0
+        statuses: list[str] = []
+        for ref in columnar["chunks"]:
+            payload = _read_json(artifact_dir / ref["file"])
+            assert payload["version"] == artifact_version
+            assert payload["version"] != 7
+            assert payload["layout"] == "columnar"
+            assert payload["entity"] == "jobs"
+            observed += payload["count"]
+            statuses.extend(payload["values"][payload["columns"].index("status")])
+        assert observed == job_entity["count"]
+        assert "closed" in statuses
+        assert "open" in statuses
     if artifact_version == SEARCH_INDEX_VERSION:
         assert manifest["lineageAggregate"]["path"] == (
             "/data/openopps-search/lineage-aggregate.json"

@@ -144,6 +144,10 @@ JOB_COLUMNS = [
     "seniority",
     "daysOpen",
 ]
+# List+filter projection for the jobs worker: columns 0-14 and 17-21.
+# Drops currency/url chrome and preview-only timestamps/hashes. Never version 7.
+JOB_COLUMNAR_KEEP_INDICES = tuple(range(0, 15)) + tuple(range(17, 22))
+JOB_COLUMNAR_COLUMNS = [JOB_COLUMNS[index] for index in JOB_COLUMNAR_KEEP_INDICES]
 
 DETAIL_TIER1_KEYS = frozenset(
     {
@@ -882,6 +886,8 @@ def _build_search_index_unlocked(
 
     _progress("write job chunks")
     job_chunks = _write_job_chunks(jobs_root, jobs)
+    _progress("write columnar job chunks")
+    columnar_job_chunks = _write_columnar_job_chunks(jobs_root, jobs)
     initial_jobs = [row for row in jobs if row[JOB_COLUMNS.index("status")] == "open"][
         :INITIAL_JOB_LIMIT
     ]
@@ -903,6 +909,7 @@ def _build_search_index_unlocked(
         open_job_count=open_job_count,
         detail_shards=detail_shards,
         job_chunks=job_chunks,
+        columnar_job_chunks=columnar_job_chunks,
         source_tables=source_tables,
         sync_stats=sync_stats,
     )
@@ -1989,6 +1996,48 @@ def _write_job_chunks(
     return chunks
 
 
+def _columnar_values(rows: Sequence[Sequence[Any]]) -> list[list[Any]]:
+    values: list[list[Any]] = [[] for _ in JOB_COLUMNAR_KEEP_INDICES]
+    for row in rows:
+        for out_index, source_index in enumerate(JOB_COLUMNAR_KEEP_INDICES):
+            values[out_index].append(row[source_index] if source_index < len(row) else None)
+    return values
+
+
+def _write_columnar_job_chunks(
+    jobs_root: Path, jobs: Sequence[Sequence[Any]]
+) -> list[dict[str, Any]]:
+    if SEARCH_INDEX_VERSION == 7:
+        raise RuntimeError("search payload version 7 is forbidden for columnar jobs snapshots")
+    chunks: list[dict[str, Any]] = []
+    columnar_root = jobs_root / "columnar"
+    for index, start in enumerate(range(0, len(jobs), JOB_CHUNK_SIZE)):
+        rows = jobs[start : start + JOB_CHUNK_SIZE]
+        filename = f"{index:04d}.json"
+        path = columnar_root / filename
+        _write_json(
+            path,
+            {
+                "version": SEARCH_INDEX_VERSION,
+                "entity": "jobs",
+                "layout": "columnar",
+                "columns": JOB_COLUMNAR_COLUMNS,
+                "count": len(rows),
+                "values": _columnar_values(rows),
+            },
+            compact=True,
+        )
+        chunks.append(
+            {
+                "index": index,
+                "path": f"/data/openopps-search/jobs/columnar/{filename}",
+                "file": f"jobs/columnar/{filename}",
+                "count": len(rows),
+            }
+        )
+    return chunks
+
+
 def _build_manifest(
     *,
     db_path: Path,
@@ -2001,6 +2050,7 @@ def _build_manifest(
     open_job_count: int,
     detail_shards: dict[str, Any],
     job_chunks: Sequence[dict[str, Any]],
+    columnar_job_chunks: Sequence[dict[str, Any]],
     source_tables: Sequence[str],
     sync_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -2014,6 +2064,11 @@ def _build_manifest(
         "columns": JOB_COLUMNS,
         "count": len(jobs),
         "chunks": list(job_chunks),
+        "columnar": {
+            "layout": "columnar",
+            "columns": JOB_COLUMNAR_COLUMNS,
+            "chunks": list(columnar_job_chunks),
+        },
     }
     jobs_manifest["detailPath"] = "/data/openopps-search/jobs-details/{bucket}.json"
 

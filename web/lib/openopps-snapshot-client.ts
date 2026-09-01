@@ -14,6 +14,7 @@ import {
 	expectedColumnsFor,
 } from "@/components/openopps-search/search-utils";
 import { resolvePublicSearchUrl } from "@/lib/public-search-url";
+import type { ColumnarJobsChunk } from "@/lib/jobs-search-columnar";
 
 const LEGACY_SEARCH_ROOT = "/data/openopps-search";
 const LEGACY_SEARCH_MANIFEST_PATH = `${LEGACY_SEARCH_ROOT}/manifest.json`;
@@ -219,6 +220,10 @@ export class OpenOppsSnapshotClient {
 
 	async getSearchChunk(publicPath: string, signal?: AbortSignal) {
 		return this.getSearchAsset<SearchChunk>(publicPath, signal);
+	}
+
+	async getColumnarJobsChunk(publicPath: string, signal?: AbortSignal) {
+		return this.getSearchAsset<ColumnarJobsChunk>(publicPath, signal);
 	}
 
 	async getLineageAggregate(

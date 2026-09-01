@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-08-12
+- Updated: 2026-08-31 (published v6 columnar jobs snapshot)
 - Scope: OpenSpec `production-hardening-static-data-v7` tasks 0.6 and 4.4-4.6
 
 ## Context
@@ -118,14 +119,19 @@ ordering logic shared with the semantic oracle. Retire the production server
 scan: the stale-client route returns `410 browser_worker_required` and never
 loads the corpus. No implicit server fallback is allowed.
 
-The first worker load still transfers the complete current jobs projection
-because the current artifact does not yet publish the columnar index. Ordinary
+The worker prefers the published columnar jobs snapshot under
+`jobs/columnar/*.json` (search payload version 6, or 8 if a future bump is
+required — never 7). Each file stores columns 0–14 and 17–21 as parallel
+arrays (`layout: "columnar"`), including `descriptionSnippet` and
+`skillTokens`. Closed rows remain so `includeAllIndexed` stays correct. T2
+detail bodies are not a substitute for `descriptionSnippet`. The worker still
+builds in-memory posting lists and bitsets from those inflated rows;
+`jobs-search-engine-core.test.ts` remains the semantic oracle, including page-2.
+Row-oriented `jobs/chunks/*.json` stay for T0 `latest.json` and explorer. Ordinary
 HTTP content encoding can reduce wire bytes, but that is deployment-dependent;
 the 14.16 MB gzip figure above is a local proxy, not a delivery guarantee. Fetch,
 parse, filtering, and sort happen off the main thread; the release is pinned and
-integrity-checked and the materialized rows are cached for the session. A future artifact version may
-publish this deterministic columnar projection to reduce parse and heap costs;
-that must retain this parity suite and v7 exact-set verification.
+integrity-checked and the materialized rows are cached for the session.
 
 ## Consequences and safeguards
 
