@@ -14,11 +14,13 @@ import {
 
 const mocks = vi.hoisted(() => ({
 	loadJobsSearchResults: vi.fn(),
+	loadInitialJobsChunk: vi.fn(),
 	trackTelemetry: vi.fn(),
 }));
 
 vi.mock("@/components/openopps-search/search-index-loader", () => ({
 	loadJobsSearchResults: mocks.loadJobsSearchResults,
+	loadInitialJobsChunk: mocks.loadInitialJobsChunk,
 }));
 
 vi.mock("@/lib/telemetry", () => ({
@@ -31,6 +33,7 @@ const pageOneResult = {
 	rows: [["job-1"]],
 	totalMatches: 12,
 	truncated: false,
+	complete: true,
 	limit: JOBS_BOARD_PAGE_SIZE,
 	page: 1,
 	pageSize: JOBS_BOARD_PAGE_SIZE,
@@ -41,7 +44,15 @@ const pageOneResult = {
 
 beforeEach(() => {
 	mocks.loadJobsSearchResults.mockReset();
+	mocks.loadInitialJobsChunk.mockReset();
 	mocks.trackTelemetry.mockReset();
+	mocks.loadInitialJobsChunk.mockResolvedValue({
+		version: 6,
+		entity: "jobs",
+		columns: [],
+		count: 0,
+		rows: [],
+	});
 	mocks.loadJobsSearchResults.mockImplementation(
 		async (
 			_filters: unknown,

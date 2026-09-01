@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobBoardFilters, JobSortKey } from "@/components/jobs-board/jobs-board-filter-engine";
 import { JOBS_BOARD_PAGE_SIZE } from "@/components/jobs-board/jobs-board-constants";
-import { loadJobsSearchResults } from "@/components/openopps-search/search-index-loader";
+import {
+	isDefaultJobsHomeView,
+	t0SearchChunkPage,
+} from "@/components/jobs-board/jobs-board-t0";
+import {
+	loadInitialJobsChunk,
+	loadJobsSearchResults,
+} from "@/components/openopps-search/search-index-loader";
 import type { SearchManifest, SearchRow } from "@/components/openopps-search/search-types";
 import { formatLoadError } from "@/components/openopps-search/search-utils";
 import { trackTelemetry } from "@/lib/telemetry";
@@ -12,6 +19,7 @@ import { trackTelemetry } from "@/lib/telemetry";
 export type JobsBoardSearchMeta = {
 	totalMatches: number;
 	truncated: boolean;
+	complete: boolean;
 	limit: number;
 	page: number;
 	pageSize: number;
@@ -75,8 +83,44 @@ export function useJobsBoardSearch({
 		const controller = new AbortController();
 
 		async function loadSearchResults() {
-			setSearchLoading(true);
+			const defaultHome = isDefaultJobsHomeView(deferredFilters, sortKey, page);
+			if (!defaultHome) {
+				setSearchLoading(true);
+			}
+			let paintedT0 = false;
 			try {
+				if (defaultHome && manifest) {
+					try {
+						const chunk = await loadInitialJobsChunk(manifest);
+						if (mountedRef.current && searchRequestIdRef.current === requestId) {
+							const t0 = t0SearchChunkPage(
+								chunk,
+								manifest.openJobCount ?? chunk.count,
+							);
+							setSearchRows(t0.rows);
+							onIndexErrorClearRef.current?.();
+							setSearchError(null);
+							setSearchMeta(t0.meta);
+							setSearchLoading(false);
+							paintedT0 = true;
+							trackTelemetry("jobs.search_loaded", {
+								activeFilterCount,
+								page: 1,
+								pageSize: t0.meta.pageSize,
+								query: deferredFilters.query,
+								rows: t0.rows.length,
+								sortKey,
+								totalMatches: t0.meta.totalMatches,
+								totalPages: t0.meta.totalPages,
+								truncated: t0.meta.truncated,
+								complete: false,
+								t0: true,
+							});
+						}
+					} catch {
+						paintedT0 = false;
+					}
+				}
 				const result = await loadJobsSearchResults(deferredFilters, sortKey, {
 					page,
 					pageSize: JOBS_BOARD_PAGE_SIZE,
@@ -89,6 +133,7 @@ export function useJobsBoardSearch({
 					setSearchMeta({
 						totalMatches: result.totalMatches,
 						truncated: result.truncated,
+						complete: result.complete !== false,
 						limit: result.limit,
 						page: result.page,
 						pageSize: result.pageSize,
@@ -110,6 +155,7 @@ export function useJobsBoardSearch({
 						totalMatches: result.totalMatches,
 						totalPages: result.totalPages,
 						truncated: result.truncated,
+						complete: result.complete !== false,
 					});
 				}
 			} catch (caught) {
@@ -118,6 +164,9 @@ export function useJobsBoardSearch({
 					searchRequestIdRef.current === requestId &&
 					!controller.signal.aborted
 				) {
+					if (paintedT0) {
+						return;
+					}
 					const message = formatLoadError(caught);
 					setSearchError(message);
 					trackTelemetry("jobs.search_error", { message });

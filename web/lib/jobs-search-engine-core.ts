@@ -397,6 +397,7 @@ export class JobsSearchEngine {
 			hasNextPage: page < totalPages,
 			hasPreviousPage: page > 1,
 			truncated: totalMatches > pageRows.length,
+			complete: true,
 		};
 	}
 
