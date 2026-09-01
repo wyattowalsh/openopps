@@ -7,8 +7,6 @@
 
 # OpenOpps
 
-Discover boards, sync public jobs, export a local ledger.
-
 <div align="center">
 
 <!-- BADGES:START -->
@@ -90,7 +88,7 @@ Discover boards, sync public jobs, export a local ledger.
 | [Agent plugins](https://openopps.dev/docs/agent-plugins) | Skills and MCP |
 | [Data model](https://openopps.dev/docs/data-model) | Schema |
 
-OpenOppsDB on [Kaggle](https://www.kaggle.com/datasets/wyattowalsh/openoppsdb): start with [Starter](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook), then the featured [Explorer](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer). Also [Advanced](https://www.kaggle.com/code/wyattowalsh/openoppsdb-advanced-usage), [SQL playground](https://www.kaggle.com/code/wyattowalsh/openoppsdb-sql-playground), [Hiring market map](https://www.kaggle.com/code/wyattowalsh/openoppsdb-hiring-market-map), [Skills radar](https://www.kaggle.com/code/wyattowalsh/openoppsdb-skills-radar), and [Snapshot health](https://www.kaggle.com/code/wyattowalsh/openoppsdb-snapshot-health).
+[OpenOppsDB](https://www.kaggle.com/datasets/wyattowalsh/openoppsdb) · [Starter](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook) · [Explorer](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer) · [Advanced](https://www.kaggle.com/code/wyattowalsh/openoppsdb-advanced-usage) · [SQL](https://www.kaggle.com/code/wyattowalsh/openoppsdb-sql-playground) · [Market map](https://www.kaggle.com/code/wyattowalsh/openoppsdb-hiring-market-map) · [Skills](https://www.kaggle.com/code/wyattowalsh/openoppsdb-skills-radar) · [Snapshot](https://www.kaggle.com/code/wyattowalsh/openoppsdb-snapshot-health)
 
 Source policy is fail-closed: `just source-policy-check` is the structural CI gate and `just source-policy-audit` is the release-eligibility gate, where 0 are independently verified and 1780 are blocked.
 

@@ -5,24 +5,27 @@ const STEPS = [
   {
     index: "01",
     label: "install",
+    detail: "put the CLI on PATH",
     command: "uv tool install openopps",
   },
   {
     index: "02",
     label: "sync / pull",
+    detail: "boards become jobs",
     command: "openopps sync <source>",
     active: true,
   },
   {
     index: "03",
     label: "export",
+    detail: "jsonl csv parquet sqlite",
     command: "openopps jobs export",
   },
 ];
 
 export function PathToValue({ theme }) {
   return (
-    <Frame theme={theme} pad={28}>
+    <Frame theme={theme} pad={24}>
       <div
         style={{
           display: "flex",
@@ -36,7 +39,7 @@ export function PathToValue({ theme }) {
           style={{
             display: "flex",
             flexDirection: "row",
-            gap: 16,
+            gap: 14,
             flexGrow: 1,
           }}
         >
@@ -49,7 +52,8 @@ export function PathToValue({ theme }) {
               style={{
                 flexGrow: 1,
                 height: "100%",
-                justifyContent: "space-between",
+                justifyContent: "flex-start",
+                gap: 18,
               }}
             >
               <div
@@ -57,7 +61,7 @@ export function PathToValue({ theme }) {
                   display: "flex",
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 12,
+                  gap: 10,
                 }}
               >
                 <div
@@ -80,21 +84,38 @@ export function PathToValue({ theme }) {
                 <div
                   style={{
                     display: "flex",
-                    fontFamily: FONT_NEON,
-                    fontSize: 16,
-                    fontWeight: 600,
-                    color: theme.ink,
+                    flexDirection: "column",
+                    gap: 2,
                   }}
                 >
-                  {step.label}
+                  <div
+                    style={{
+                      display: "flex",
+                      fontFamily: FONT_NEON,
+                      fontSize: 16,
+                      fontWeight: 600,
+                      color: theme.ink,
+                    }}
+                  >
+                    {step.label}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      fontFamily: FONT_NEON,
+                      fontSize: 13,
+                      color: theme.muted,
+                    }}
+                  >
+                    {step.detail}
+                  </div>
                 </div>
               </div>
               <div
                 style={{
                   display: "flex",
                   fontFamily: FONT_XENON,
-                  fontSize: 18,
-                  fontWeight: 400,
+                  fontSize: 16,
                   color: theme.ink,
                 }}
               >

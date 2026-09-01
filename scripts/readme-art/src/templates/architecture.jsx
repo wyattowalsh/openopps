@@ -1,11 +1,35 @@
-import { FONT_NEON } from "../tokens.js";
+import { FONT_NEON, FONT_XENON } from "../tokens.js";
 import { Card, Display, Frame, Kicker } from "./frame.jsx";
 
 const NODES = [
-  { index: "01", label: "sources", note: "catalogs", hop: "pine" },
-  { index: "02", label: "boards", note: "firm sites", hop: "brass" },
-  { index: "03", label: "jobs", note: "postings", hop: "pine", active: true },
-  { index: "04", label: "export", note: "jsonl csv parquet" },
+  {
+    index: "01",
+    label: "sources",
+    note: "firm catalogs",
+    command: "sources list",
+    hop: "pine",
+  },
+  {
+    index: "02",
+    label: "boards",
+    note: "ATS routes",
+    command: "boards list",
+    hop: "brass",
+  },
+  {
+    index: "03",
+    label: "jobs",
+    note: "normalized listings",
+    command: "jobs list",
+    hop: "pine",
+    active: true,
+  },
+  {
+    index: "04",
+    label: "export",
+    note: "jsonl csv parquet",
+    command: "jobs export",
+  },
 ];
 
 function Node({ theme, node }) {
@@ -14,18 +38,19 @@ function Node({ theme, node }) {
     <Card
       theme={theme}
       active={active}
-      pad={22}
+      pad={18}
       style={{
         flexGrow: 1,
-        height: 300,
-        justifyContent: "space-between",
+        height: 240,
+        justifyContent: "flex-start",
+        gap: 28,
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div
           style={{
             display: "flex",
-            width: 44,
+            width: 40,
             height: 3,
             backgroundColor: active ? theme.brass : theme.pine,
           }}
@@ -43,18 +68,28 @@ function Node({ theme, node }) {
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <Display theme={theme} size={34}>
+        <Display theme={theme} size={30}>
           {node.label}
         </Display>
         <div
           style={{
             display: "flex",
             fontFamily: FONT_NEON,
+            fontSize: 15,
+            color: theme.ink,
+          }}
+        >
+          {node.note}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            fontFamily: FONT_XENON,
             fontSize: 14,
             color: theme.muted,
           }}
         >
-          {node.note}
+          openopps {node.command}
         </div>
       </div>
     </Card>
@@ -69,8 +104,8 @@ function Hop({ theme, color }) {
         position: "relative",
         display: "flex",
         flexShrink: 0,
-        width: 48,
-        height: 300,
+        width: 36,
+        height: 240,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -78,7 +113,7 @@ function Hop({ theme, color }) {
       <div
         style={{
           display: "flex",
-          width: 48,
+          width: 36,
           height: 2,
           backgroundColor: fill,
         }}
@@ -98,7 +133,7 @@ function Hop({ theme, color }) {
 
 export function Architecture({ theme }) {
   return (
-    <Frame theme={theme} pad={32}>
+    <Frame theme={theme} pad={28}>
       <div
         style={{
           display: "flex",
@@ -132,17 +167,6 @@ export function Architecture({ theme }) {
             }
             return items;
           })}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            marginTop: 8,
-            fontFamily: FONT_NEON,
-            fontSize: 14,
-            color: theme.muted,
-          }}
-        >
-          sources → boards → jobs → export
         </div>
       </div>
     </Frame>
