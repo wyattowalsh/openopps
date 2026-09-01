@@ -11,8 +11,12 @@
   "id": "wyattowalsh/openoppsdb-advanced-usage",
   "is_private": false,
   "kernel_sources": [
+    "wyattowalsh/openoppsdb-starter-notebook",
     "wyattowalsh/openoppsdb-hiring-market-map",
-    "wyattowalsh/openoppsdb-skills-radar"
+    "wyattowalsh/openoppsdb-skills-radar",
+    "wyattowalsh/openoppsdb-sql-playground",
+    "wyattowalsh/openoppsdb-explorer",
+    "wyattowalsh/openoppsdb-snapshot-health"
   ],
   "kernel_type": "notebook",
   "keywords": [],

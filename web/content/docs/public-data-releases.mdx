@@ -7,6 +7,20 @@ OpenOpps can build a version 7 public-data publication without changing the lega
 
 This is an operator and governance contract, not a deployment announcement. The repository contains local generation, verification, staging, rollout-plan, remote-readback, and recovery-archive tooling. A successful live Workers rollout, production-snapshot rights approval, and a GitHub Release attestation for the public-data archive have **not** been established by those local tools or by the current CI workflow.
 
+## Related Kaggle notebooks
+
+The public OpenOppsDB **dataset** and these notebooks are a separate ledger surface from v7 Workers delivery. Start with [Starter](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook), then the featured [Explorer](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer). Manager cron lives in [Operations](/docs/operations), not on the public dataset card.
+
+| Notebook | Kernel |
+| --- | --- |
+| Starter | [`wyattowalsh/openoppsdb-starter-notebook`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook) |
+| Explorer (featured) | [`wyattowalsh/openoppsdb-explorer`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer) |
+| Advanced usage | [`wyattowalsh/openoppsdb-advanced-usage`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-advanced-usage) |
+| SQL playground | [`wyattowalsh/openoppsdb-sql-playground`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-sql-playground) |
+| Hiring market map | [`wyattowalsh/openoppsdb-hiring-market-map`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-hiring-market-map) |
+| Skills radar | [`wyattowalsh/openoppsdb-skills-radar`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-skills-radar) |
+| Snapshot health | [`wyattowalsh/openoppsdb-snapshot-health`](https://www.kaggle.com/code/wyattowalsh/openoppsdb-snapshot-health) |
+
 ## Publication layout
 
 ```text
@@ -172,7 +186,7 @@ Cloudflare documents that Workers versions separate upload from traffic deployme
 
 `scripts/docs_search_delivery.py bundle` creates one deterministic `openopps-data-<archive-sha256>.tar.gz` containing the staged dual-release assets, `SHA256SUMS`, `bundle-manifest.json`, `sbom.spdx.json`, and `provenance.json`. The filename addresses the exact bytes, including provenance time and source revision; the release tag separately addresses the stage-root digest. `just public-data-archive-restore` requires the independently recorded archive SHA-256, stage-root digest, source revision, and current/prior release IDs. It enforces bounded regular members and a 4-GiB expanded-byte ceiling, streams through exclusive no-follow creates into a private sibling candidate, validates checksum plus bundle/provenance/SPDX semantics, reruns the complete stage verifier, and uses OS-native no-replace rename so a concurrent destination cannot be overwritten.
 
-The ordinary GitHub Actions `supply-chain` job remains wheel-only. Public-data recovery uses the separate manual `public-data-archive.yml` workflow. An authorized maintainer must first enable immutable releases and create a non-latest draft for `openopps-data-v7-<full-stage-root-digest>` whose only asset is the exact content-addressed archive and whose target is the current `main` source SHA. The workflow itself cannot create the draft or upload/replace/delete an asset.
+The ordinary GitHub Actions `supply-chain` job is main-ref-only, generates a separate semantic SPDX document for the Python wheel and sdist, and attests each package artifact separately. Those documents bind artifact/OpenOpps component identity and are not a resolved runtime dependency inventory. Public-data recovery uses the separate manual `public-data-archive.yml` workflow. An authorized maintainer must first enable immutable releases and create a non-latest draft for `openopps-data-v7-<full-stage-root-digest>` whose only asset is the exact content-addressed archive and whose target is the current `main` source SHA. The workflow itself cannot create the draft or upload/replace/delete an asset.
 
 The workflow first checks the repository immutable-release setting and draft identity with `contents: read`, freshly downloads and restores the asset, and creates an SPDX v2.3 attestation with only the additional `id-token: write` and `attestations: write` permissions. A separate `contents: write` job re-downloads and verifies that attestation before publishing with `latest=false`. A fresh read-only job then requires the immutable record and exact tag target, runs GitHub release and asset attestation verification, enforces the signer workflow/source SHA/source ref/SPDX predicate, and restores current plus prior again. Workflow presence or draft creation is not release evidence: keep task 5.7 open until an exact promoted-SHA run and immutable-release readback succeed and are recorded.
 
@@ -186,7 +200,7 @@ Do not remove `web/public/data/openopps-search/` or disable the v6 reader until 
 4. The web app uses one v7 release across search, details, metadata, sitemaps, and build checks; production build, routes, unit tests, and browser E2E pass with the full v6 tree absent.
 5. Production promotion, remote verification, rollback to the retained previous-good Worker version, verification of that version, re-promotion, and final verification all succeed with exact version/deployment IDs recorded.
 6. A content-addressed recovery archive is independently downloaded, checksum/attestation verified, and restore-tested for current and previous releases.
-7. Canonical local `just` gates and origin GitHub Actions are green for the exact SHA. Current CI wheel attestation alone is insufficient.
+7. Canonical local `just` gates and origin GitHub Actions are green for the exact SHA. Current CI wheel-plus-sdist attestation is package evidence only and remains insufficient for public-data recovery.
 8. Only then may an ordinary commit remove the v6 data tree. Any history rewrite remains a separate destructive project requiring new explicit approval.
 
 If any gate fails, keep v6 available, leave production unchanged or roll back to the recorded previous-good version, and report the missing evidence without claiming a live rollout.

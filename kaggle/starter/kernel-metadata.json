@@ -13,7 +13,10 @@
   "kernel_sources": [
     "wyattowalsh/openoppsdb-advanced-usage",
     "wyattowalsh/openoppsdb-hiring-market-map",
-    "wyattowalsh/openoppsdb-skills-radar"
+    "wyattowalsh/openoppsdb-skills-radar",
+    "wyattowalsh/openoppsdb-sql-playground",
+    "wyattowalsh/openoppsdb-explorer",
+    "wyattowalsh/openoppsdb-snapshot-health"
   ],
   "kernel_type": "notebook",
   "keywords": [],

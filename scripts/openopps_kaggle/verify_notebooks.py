@@ -73,12 +73,15 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         actual_metadata = _canonical_metadata(metadata, expected_code_file)
-        if actual_metadata != expected.metadata:
+        expected_metadata = _canonical_metadata(
+            expected.metadata, expected_code_file
+        )
+        if actual_metadata != expected_metadata:
             errors.append(
                 _diff_error(
                     expected.kernel_id,
                     "kernel-metadata.json does not match generated metadata",
-                    expected.metadata,
+                    expected_metadata,
                     actual_metadata,
                 )
             )
@@ -148,6 +151,16 @@ def _canonical_metadata(
         canonical["docker_image"] = ""
     if canonical.get("code_file") == STARTER_PULL_CODE_FILE_ALIAS:
         canonical["code_file"] = expected_code_file
+    for key in (
+        "competition_sources",
+        "dataset_sources",
+        "kernel_sources",
+        "keywords",
+        "model_sources",
+    ):
+        value = canonical.get(key)
+        if isinstance(value, list):
+            canonical[key] = sorted(value)
     return canonical
 
 

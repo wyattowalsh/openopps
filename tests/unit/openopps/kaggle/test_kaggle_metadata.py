@@ -1530,6 +1530,9 @@ def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
     assert metadata["code_file"] == gen.STARTER_NB_FILE
     assert metadata["code_file"].endswith(".ipynb")
     assert metadata["keywords"] == []
+    assert metadata["kernel_sources"] == list(gen.sibling_kernel_sources(gen.STARTER_NB_ID))
+    assert gen.STARTER_NB_ID not in metadata["kernel_sources"]
+    assert len(metadata["kernel_sources"]) == 6
     assert "/kaggle/input" in source
     assert "**/openoppsdb.sqlite" in source
     assert "mode=ro&immutable=1" in source
@@ -1586,7 +1589,13 @@ def test_public_example_notebooks_are_read_only_and_compile() -> None:
             "title": "OpenOppsDB — SQL playground",
             "code_file": gen.SQL_PLAYGROUND_NB_FILE,
             "enable_internet": True,
-            "required_terms": ("%%sql", "--save", "DuckDB", "read_parquet"),
+            "required_terms": (
+                "%%sql",
+                "--save",
+                "DuckDB",
+                "read_parquet",
+                "TYPE SQLITE, READ_ONLY",
+            ),
         },
         gen.EXPLORER_NB_ID: {
             "title": "OpenOppsDB — Explorer",
@@ -1599,6 +1608,7 @@ def test_public_example_notebooks_are_read_only_and_compile() -> None:
                 "skills",
                 "filters/plots",
                 "#2f6f50",
+                "openopps-explorer-summary.json",
             ),
         },
         gen.SNAPSHOT_HEALTH_NB_ID: {
@@ -1632,6 +1642,11 @@ def test_public_example_notebooks_are_read_only_and_compile() -> None:
         assert metadata["code_file"] == expected[spec.notebook_id]["code_file"]
         assert metadata["code_file"].endswith(".ipynb")
         assert metadata["keywords"] == []
+        assert metadata["kernel_sources"] == list(
+            gen.sibling_kernel_sources(spec.notebook_id)
+        )
+        assert spec.notebook_id not in metadata["kernel_sources"]
+        assert len(metadata["kernel_sources"]) == 6
         assert "/kaggle/input" in source
         assert "**/openoppsdb.sqlite" in source
         assert "mode=ro&immutable=1" in source
@@ -1654,6 +1669,19 @@ def test_kaggle_notebook_pullback_verifier_accepts_expected_bundles(
         starter_alias=True,
         kaggle_pull_metadata=True,
     )
+
+    assert pullback.main([str(tmp_path)]) == 0
+
+
+def test_kaggle_notebook_pullback_verifier_accepts_reordered_kernel_sources(
+    tmp_path: Path,
+) -> None:
+    def mutate(expected, metadata, notebook):
+        del notebook
+        sources = list(metadata.get("kernel_sources") or [])
+        metadata["kernel_sources"] = list(reversed(sources))
+
+    _write_pullback_expected_bundles(tmp_path, mutate=mutate)
 
     assert pullback.main([str(tmp_path)]) == 0
 

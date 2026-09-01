@@ -671,7 +671,8 @@ def explorer_notebook() -> dict[str, Any]:
             code("paths", _paths_setup_source()),
             code(
                 "explorer_app",
-                '''import gradio as gr
+                '''import json
+import gradio as gr
 
 with sqlite3.connect(DB_URI, uri=True) as conn:
     jobs_df = pd.read_sql_query(
@@ -778,6 +779,16 @@ with gr.Blocks(theme=theme, css=css, title="OpenOppsDB Explorer") as demo:
         c3.change(_jobs_plot, [c3, p3, r3], plot_out)
         p3.change(_jobs_plot, [c3, p3, r3], plot_out)
         r3.change(_jobs_plot, [c3, p3, r3], plot_out)
+
+summary = {
+    "jobs": int(len(jobs_df)),
+    "companies": int(len(companies)),
+    "skills": int(len(skills_df)),
+}
+Path("/kaggle/working/openopps-explorer-summary.json").write_text(
+    json.dumps(summary, indent=2, sort_keys=True) + "\\n",
+    encoding="utf-8",
+)
 
 demo.launch()
 ''',

@@ -172,15 +172,8 @@ def public_notebook_ids() -> tuple[str, ...]:
 
 
 def sibling_kernel_sources(notebook_id: str) -> tuple[str, ...]:
-    # Kaggle rejects kernel_sources that do not already exist as public kernels.
-    established = (
-        ADVANCED_NB_ID,
-        HIRING_MARKET_NB_ID,
-        SKILLS_RADAR_NB_ID,
-    )
-    return tuple(
-        item for item in established if item != notebook_id
-    )
+    # All seven public kernels now exist live; Kaggle still rejects unknown ids.
+    return tuple(item for item in public_notebook_ids() if item != notebook_id)
 
 
 DATASET_IMAGE_FILE = "dataset-cover-image.png"
