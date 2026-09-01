@@ -1598,7 +1598,7 @@ def test_public_example_notebooks_are_read_only_and_compile() -> None:
                 "companies",
                 "skills",
                 "filters/plots",
-                gen.ROUTE_LEDGER_PINE,
+                "#2f6f50",
             ),
         },
         gen.SNAPSHOT_HEALTH_NB_ID: {

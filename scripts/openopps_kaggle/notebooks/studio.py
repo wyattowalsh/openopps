@@ -136,10 +136,8 @@ def _jupysql_connect_source() -> str:
     return '''import duckdb
 
 con = duckdb.connect()
-con.execute(
-    "ATTACH ? AS oo (TYPE SQLITE, READ_ONLY)",
-    [f"file:{DB_PATH}?mode=ro&immutable=1"],
-)
+attach_path = str(DB_PATH).replace("'", "''")
+con.execute(f"ATTACH '{attach_path}' AS oo (TYPE SQLITE, READ_ONLY)")
 print("DuckDB attached the read-only SQLite snapshot as oo")
 '''
 
