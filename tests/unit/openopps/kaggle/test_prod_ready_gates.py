@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import openopps_kaggle.generator as gen
-from openopps_kaggle.constants import (
+import openopps_kaggle.generator as gen  # ty: ignore[unresolved-import]
+from openopps_kaggle.constants import (  # ty: ignore[unresolved-import]
     PUBLIC_EXPORTS_MAX_BYTES,
     PUBLIC_SQLITE_MAX_BYTES,
     NOTEBOOK_SYNC_TIMEOUT_SECONDS,
@@ -83,7 +83,7 @@ def test_manager_sync_contract_is_full_openopps_sync() -> None:
 
     assert "--metrics-json" in combined
     assert '["openopps","sync","--metrics-json",]' in compact_setup
-    assert "openopps sync --metrics-json" in gen._dataset_description()
+    assert "openopps sync --metrics-json" in notebook_source
     assert "bounded jobs sync" not in combined
     assert "OPENOPPS_KAGGLE_JOB_ROUTE_LIMIT" not in combined
     assert NOTEBOOK_SYNC_TIMEOUT_SECONDS == 6000
@@ -135,7 +135,7 @@ def test_public_upload_writer_clean_db_integrity_ok(tmp_path: Path) -> None:
 
 
 def test_snapshot_quality_blocks_oversize_sqlite(tmp_path: Path, monkeypatch) -> None:
-    import openopps_kaggle._core as core
+    import openopps_kaggle._core as core  # ty: ignore[unresolved-import]
 
     db_path = _write_quality_bundle(tmp_path)
     # Function resolves PUBLIC_SQLITE_MAX_BYTES from _core globals.
@@ -215,14 +215,17 @@ def test_ci_kaggle_bundle_smoke_uses_pinned_canonical_just_recipe() -> None:
         encoding="utf-8"
     )
     assert (
-        "uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d"
+        "uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf"
         in workflow
     )
-    assert "tool: just@1.56.0" in workflow
+    assert "tool: just@1.58.0" in workflow
     assert "run: just ci-artifacts" in workflow
 
 
-def test_dataset_description_documents_size_and_full_sync() -> None:
+def test_dataset_description_documents_size_and_notebook_index() -> None:
     description = gen._dataset_description()
-    assert "openopps sync --metrics-json" in description
-    assert "6000s budget" in description
+    assert "2 GiB" in description
+    assert "4 GiB" in description
+    assert gen.STARTER_NB_ID in description
+    assert gen.EXPLORER_NB_ID in description
+    assert "openoppsdb-manager" not in description

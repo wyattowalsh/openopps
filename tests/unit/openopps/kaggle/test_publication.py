@@ -536,7 +536,7 @@ def test_kernel_push_dry_run_uses_allowlisted_argv_and_rejects_injection(
     )
 
     assert result["dryRun"] is True
-    assert len(result["commands"]) == 4
+    assert len(result["commands"]) == 7
     assert all(
         command[:3] == ["kaggle", "kernels", "push"] for command in result["commands"]
     )

@@ -46,6 +46,9 @@ class PublicNotebookSpec:
     title: str
     code_file: str
     notebook_factory: Callable[[], dict[str, Any]]
+    enable_internet: bool = False
+    keywords: tuple[str, ...] = ()
+    kernel_sources: tuple[str, ...] = ()
 
 
 class OpenOppsTableRow(BaseModel):
@@ -130,6 +133,48 @@ HIRING_MARKET_NB_FILE = "openoppsdb-hiring-market-map.ipynb"
 HIRING_MARKET_NB_ID = "wyattowalsh/openoppsdb-hiring-market-map"
 SKILLS_RADAR_NB_FILE = "openoppsdb-skills-radar.ipynb"
 SKILLS_RADAR_NB_ID = "wyattowalsh/openoppsdb-skills-radar"
+SQL_PLAYGROUND_NB_FILE = "openoppsdb-sql-playground.ipynb"
+SQL_PLAYGROUND_NB_ID = "wyattowalsh/openoppsdb-sql-playground"
+EXPLORER_NB_FILE = "openoppsdb-explorer.ipynb"
+EXPLORER_NB_ID = "wyattowalsh/openoppsdb-explorer"
+SNAPSHOT_HEALTH_NB_FILE = "openoppsdb-snapshot-health.ipynb"
+SNAPSHOT_HEALTH_NB_ID = "wyattowalsh/openoppsdb-snapshot-health"
+NOTEBOOK_GRADIO_VERSION = "6.26.0"
+NOTEBOOK_JUPYSQL_VERSION = "0.11.1"
+NOTEBOOK_DUCKDB_VERSION = "1.5.5"
+NOTEBOOK_DUCKDB_ENGINE_VERSION = "0.17.0"
+NOTEBOOK_PLOTLY_VERSION = "7.0.0"
+ROUTE_LEDGER_PINE = "#2f6f50"
+ROUTE_LEDGER_PAPER = "#f7f1df"
+ROUTE_LEDGER_BRASS = "#d99629"
+ROUTE_LEDGER_INK = "#1d281f"
+ROUTE_LEDGER_INFO = "#336d8f"
+PUBLIC_KERNEL_KEYWORDS = ("jobs and career", "data visualization", "tabular")
+DATASET_MARKETPLACE_KEYWORDS = (
+    "business",
+    "internet",
+    "tabular",
+    "jobs and career",
+    "data visualization",
+)
+
+
+def public_notebook_ids() -> tuple[str, ...]:
+    return (
+        STARTER_NB_ID,
+        ADVANCED_NB_ID,
+        HIRING_MARKET_NB_ID,
+        SKILLS_RADAR_NB_ID,
+        SQL_PLAYGROUND_NB_ID,
+        EXPLORER_NB_ID,
+        SNAPSHOT_HEALTH_NB_ID,
+    )
+
+
+def sibling_kernel_sources(notebook_id: str) -> tuple[str, ...]:
+    return tuple(item for item in public_notebook_ids() if item != notebook_id)
+
+
 DATASET_IMAGE_FILE = "dataset-cover-image.png"
 DATASET_IMAGE_SOURCE = Path("web/public/social/openoppsdb.png")
 DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[2] / "kaggle"

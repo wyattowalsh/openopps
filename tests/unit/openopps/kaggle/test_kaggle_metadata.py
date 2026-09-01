@@ -11,7 +11,7 @@ import sqlite3
 import struct
 import sys
 import types
-from typing import Any
+from typing import Any, TypedDict
 
 import pytest
 
@@ -38,7 +38,7 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert metadata["description"]
     assert metadata["id"] == "wyattowalsh/openoppsdb"
     assert metadata["id"] == gen.DATASET_ID
-    assert metadata["title"] == "openoppsdb"
+    assert metadata["title"] == "OpenOppsDB"
     assert metadata["image"] == gen.DATASET_IMAGE_FILE
     assert metadata["expectedUpdateFrequency"] == "daily"
     assert metadata["userSpecifiedSources"]
@@ -46,9 +46,15 @@ def test_kaggle_dataset_metadata_has_required_kaggle_fields() -> None:
     assert "datapackage.json" not in metadata["description"]
     assert "snapshot-quality.json" not in metadata["description"]
     assert "public file surface is intentionally limited" in metadata["description"]
-    assert "openoppsdb-manager" in metadata["description"]
-    assert "`openopps sync --metrics-json`" in metadata["description"]
+    assert "openoppsdb-manager" not in metadata["description"]
+    assert gen.STARTER_NB_ID in metadata["description"]
+    assert gen.EXPLORER_NB_ID in metadata["description"]
+    assert gen.SQL_PLAYGROUND_NB_ID in metadata["description"]
+    assert gen.SNAPSHOT_HEALTH_NB_ID in metadata["description"]
     assert "Quick start" in metadata["description"]
+    assert metadata["subtitle"].startswith("Daily public hiring-board ledger")
+    assert "jobs and career" in metadata["keywords"]
+    assert "data visualization" in metadata["keywords"]
     assert gen.DB_FILE in metadata["description"]
     assert "Parquet" in metadata["description"]
     assert "Kaggle renders CSV and Parquet exports" in metadata["description"]
@@ -150,32 +156,23 @@ def test_kaggle_upload_resources_use_nbadb_style_subset() -> None:
 
 
 def test_kaggle_workflow_docs_align_runtime_and_sync_commands() -> None:
-    repo_root = Path(__file__).resolve().parents[4]
-    readme = (repo_root / "README.md").read_text(encoding="utf-8")
-    operations = (repo_root / "web/content/docs/operations.mdx").read_text(
+    operations = (REPO_ROOT / "web/content/docs/operations.mdx").read_text(
         encoding="utf-8"
     )
-    spec = (repo_root / "openspec/specs/release-workflows/spec.md").read_text(
+    spec = (REPO_ROOT / "openspec/specs/release-workflows/spec.md").read_text(
         encoding="utf-8"
     )
 
-    # The bounded command is documented only as the faster local seed path.
-    assert (
-        "openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120"
-        in readme
-    )
+    # Kaggle recipes live on operations.mdx; root README is not a required host.
     assert (
         "openopps jobs sync --metrics-json --freshness-seconds 86400 --limit 120"
         in operations
         or "openopps jobs sync --metrics-json --freshness-seconds --limit" in operations
     )
-    assert "db=" in readme and "allow_stale" in readme
+    assert "db=" in operations and "allow_stale" in operations
     assert "kaggle-dataset-version" in operations
-    assert "just kaggle-runtime-generator-version" in readme
     assert "just kaggle-runtime-generator-version" in operations
-    assert "kaggle-runtime-generator-create" in readme
     assert "kaggle-runtime-generator-create" in operations
-    assert "openopps sync --metrics-json" in readme
     assert "openopps sync --metrics-json" in operations
     assert "kaggle auth print-access-token" not in spec
     assert "kaggle auth login" in spec
@@ -298,7 +295,7 @@ def test_kaggle_notebook_metadata_runs_public_scheduled_snapshot() -> None:
     assert metadata["id"] == "wyattowalsh/openoppsdb-manager"
     assert metadata["id"] == gen.NB_ID
     assert "id_no" not in metadata
-    assert metadata["title"] == "openoppsdb manager"
+    assert metadata["title"] == "OpenOppsDB — Manager"
     assert metadata["dataset_sources"] == [
         gen.DATASET_ID,
         gen.RUNTIME_GENERATOR_DATASET_ID,
@@ -1488,59 +1485,130 @@ def test_manager_reraises_sync_timeout_without_non_example_jobs(
         )
 
 
+def _compile_notebook_python_cells(data: dict[str, Any], prefix: str) -> None:
+    for index, cell in enumerate(data["cells"]):
+        if cell.get("cell_type") != "code":
+            continue
+        source = "".join(cell.get("source", []))
+        stripped = source.lstrip()
+        if stripped.startswith("%") or stripped.startswith("!"):
+            continue
+        compile(source, f"{prefix}-{index}", "exec")
+
+
+def test_operations_docs_list_public_kaggle_notebooks() -> None:
+    operations = (REPO_ROOT / "web" / "content" / "docs" / "operations.mdx").read_text(
+        encoding="utf-8"
+    )
+    for kernel in (
+        gen.STARTER_NB_ID,
+        gen.EXPLORER_NB_ID,
+        gen.ADVANCED_NB_ID,
+        gen.SQL_PLAYGROUND_NB_ID,
+        gen.HIRING_MARKET_NB_ID,
+        gen.SKILLS_RADAR_NB_ID,
+        gen.SNAPSHOT_HEALTH_NB_ID,
+    ):
+        assert kernel in operations
+    assert "internet-disabled" not in operations
+
+
 def test_kaggle_starter_notebook_is_public_read_only_example() -> None:
     metadata = gen.starter_kernel_metadata()
     data = gen.starter_notebook()
     source = "\n".join(
         line for cell in data["cells"] for line in cell.get("source", [])
     )
+    _compile_notebook_python_cells(data, "starter")
 
     assert metadata["kernel_type"] == "notebook"
-    assert metadata["enable_internet"] is False
+    assert metadata["enable_internet"] is True
     assert metadata["is_private"] is False
     assert metadata["id"] == gen.STARTER_NB_ID
-    assert metadata["title"] == "OpenOppsDB starter notebook"
+    assert metadata["title"] == "OpenOppsDB — Starter"
     assert metadata["dataset_sources"] == [gen.DATASET_ID]
     assert metadata["code_file"] == gen.STARTER_NB_FILE
     assert metadata["code_file"].endswith(".ipynb")
+    assert "jobs and career" in metadata["keywords"]
     assert "/kaggle/input" in source
     assert "**/openoppsdb.sqlite" in source
     assert "mode=ro&immutable=1" in source
     assert gen.DB_FILE in source
     assert "openopps_tables" in source
     assert "job_versions" in source
+    assert "%%sql" in source
     assert "KAGGLE_KEY" not in source
     assert "KAGGLE_USERNAME" not in source
     assert "kaggle datasets version" not in source
 
 
+class _PublicExampleNotebookExpectation(TypedDict):
+    title: str
+    code_file: str
+    enable_internet: bool
+    required_terms: tuple[str, ...]
+
+
 def test_public_example_notebooks_are_read_only_and_compile() -> None:
-    expected = {
+    expected: dict[str, _PublicExampleNotebookExpectation] = {
         gen.ADVANCED_NB_ID: {
-            "title": "OpenOppsDB advanced usage",
+            "title": "OpenOppsDB — Advanced usage",
             "code_file": gen.ADVANCED_NB_FILE,
+            "enable_internet": True,
             "required_terms": (
                 "job_sync_observations",
-                "pd.read_parquet",
+                "%%sql",
                 "mode=ro&immutable=1",
+                "company",
             ),
         },
         gen.HIRING_MARKET_NB_ID: {
-            "title": "OpenOppsDB hiring market map",
+            "title": "OpenOppsDB — Hiring market map",
             "code_file": gen.HIRING_MARKET_NB_FILE,
+            "enable_internet": False,
             "required_terms": (
                 "job_version_locations",
                 "provider_mix",
-                "plt.subplots",
+                "plotly",
             ),
         },
         gen.SKILLS_RADAR_NB_ID: {
-            "title": "OpenOppsDB skills radar",
+            "title": "OpenOppsDB — Skills radar",
             "code_file": gen.SKILLS_RADAR_NB_FILE,
+            "enable_internet": False,
             "required_terms": (
                 "job_version_skills",
                 "job_version_skill_keywords",
                 "skill_pairs",
+            ),
+        },
+        gen.SQL_PLAYGROUND_NB_ID: {
+            "title": "OpenOppsDB — SQL playground",
+            "code_file": gen.SQL_PLAYGROUND_NB_FILE,
+            "enable_internet": True,
+            "required_terms": ("%%sql", "--save", "DuckDB", "read_parquet"),
+        },
+        gen.EXPLORER_NB_ID: {
+            "title": "OpenOppsDB — Explorer",
+            "code_file": gen.EXPLORER_NB_FILE,
+            "enable_internet": True,
+            "required_terms": (
+                "gr.Blocks",
+                "jobs",
+                "companies",
+                "skills",
+                "filters/plots",
+                gen.ROUTE_LEDGER_PINE,
+            ),
+        },
+        gen.SNAPSHOT_HEALTH_NB_ID: {
+            "title": "OpenOppsDB — Snapshot health",
+            "code_file": gen.SNAPSHOT_HEALTH_NB_FILE,
+            "enable_internet": False,
+            "required_terms": (
+                "job_sync_runs",
+                "job_sync_observations",
+                "observation_mix",
             ),
         },
     }
@@ -1548,36 +1616,34 @@ def test_public_example_notebooks_are_read_only_and_compile() -> None:
     assert {spec.notebook_id for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS} == set(expected)
 
     for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
-        metadata = gen.public_notebook_kernel_metadata(
-            notebook_id=spec.notebook_id,
-            title=spec.title,
-            code_file=spec.code_file,
-        )
+        metadata = gen.kernel_metadata_for_spec(spec)
         data = spec.notebook_factory()
         source = "\n".join(
             line for cell in data["cells"] for line in cell.get("source", [])
         )
-        for index, cell in enumerate(data["cells"]):
-            if cell.get("cell_type") == "code":
-                compile("".join(cell.get("source", [])), f"{spec.slug}-{index}", "exec")
+        _compile_notebook_python_cells(data, spec.slug)
 
         assert metadata["kernel_type"] == "notebook"
-        assert metadata["enable_internet"] is False
+        assert metadata["enable_internet"] is expected[spec.notebook_id]["enable_internet"]
         assert metadata["is_private"] is False
         assert metadata["id"] == spec.notebook_id
         assert metadata["title"] == expected[spec.notebook_id]["title"]
         assert metadata["dataset_sources"] == [gen.DATASET_ID]
         assert metadata["code_file"] == expected[spec.notebook_id]["code_file"]
         assert metadata["code_file"].endswith(".ipynb")
+        assert metadata["keywords"]
         assert "/kaggle/input" in source
         assert "**/openoppsdb.sqlite" in source
         assert "mode=ro&immutable=1" in source
         assert "KAGGLE_KEY" not in source
         assert "KAGGLE_USERNAME" not in source
         assert "kaggle datasets version" not in source
-        assert "pip install" not in source
+        if spec.enable_internet:
+            assert "pip install" in source
+        else:
+            assert "pip install" not in source
         for term in expected[spec.notebook_id]["required_terms"]:
-            assert term in source
+            assert term in source, (spec.slug, term)
 
 
 def test_kaggle_notebook_pullback_verifier_accepts_expected_bundles(
@@ -1684,7 +1750,7 @@ def _write_pullback_expected_bundles(
             )
             metadata["id_no"] = 123456
             if expected.kernel_id == gen.STARTER_NB_ID:
-                metadata["keywords"] = ["jobs and career"]
+                metadata["keywords"] = list(expected.metadata.get("keywords") or [])
         if mutate is not None:
             mutate(expected, metadata, notebook)
 
@@ -1749,11 +1815,7 @@ def test_generated_kaggle_metadata_artifacts_are_current() -> None:
     for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS:
         assert generated_examples[spec.slug][
             "kernel"
-        ] == gen.public_notebook_kernel_metadata(
-            notebook_id=spec.notebook_id,
-            title=spec.title,
-            code_file=spec.code_file,
-        )
+        ] == gen.kernel_metadata_for_spec(spec)
         assert generated_examples[spec.slug]["notebook"] == spec.notebook_factory()
     assert not (kaggle_dir / gen.DATAPACKAGE_FILE).exists()
     assert not (kaggle_dir / gen.EXPOSED_DATAPACKAGE_FILE).exists()
@@ -3023,7 +3085,7 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     assert '{{ kaggle-ops-gen }} "${args[@]}"' in justfile
     assert '"kagglehub[polars-datasets]==1.0.2"' in pyproject
     assert 'kaggle-notebook-push timeout="7200" execute="0":' in justfile
-    assert 'kaggle-example-notebooks-push timeout="3600" execute="0":' in justfile
+    assert 'kaggle-example-notebooks-push timeout="7200" execute="0":' in justfile
     assert "publication kernel-push --bundle examples" in justfile
     assert "kaggle-example-notebooks-status:" in justfile
     assert "kaggle-example-notebooks-pull-check:" in justfile
@@ -3032,14 +3094,15 @@ def test_live_kaggle_dataset_recipes_use_public_upload_stage() -> None:
     for kernel_dir in [
         kaggle_dir,
         kaggle_dir / "starter",
-        kaggle_dir / "examples" / "advanced-usage",
-        kaggle_dir / "examples" / "hiring-market-map",
-        kaggle_dir / "examples" / "skills-radar",
+        *(kaggle_dir / "examples" / spec.slug for spec in gen.PUBLIC_EXAMPLE_NOTEBOOKS),
     ]:
         assert (kernel_dir / "kernel-metadata.json").is_file()
     assert gen.ADVANCED_NB_ID in justfile
     assert gen.HIRING_MARKET_NB_ID in justfile
     assert gen.SKILLS_RADAR_NB_ID in justfile
+    assert gen.SQL_PLAYGROUND_NB_ID in justfile
+    assert gen.EXPLORER_NB_ID in justfile
+    assert gen.SNAPSHOT_HEALTH_NB_ID in justfile
     assert "${dataset#dataset=}" in justfile
     assert "${dataset#version=}" in justfile
     assert "${version#version=}" in justfile

@@ -59,16 +59,17 @@ _DATASET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,49}/[a-z0-9][a-z0-9_-]{0,49}
 _ALLOWED_KINDS = {"public", "runtime"}
 _ALLOWED_ACTIONS = {"create", "version"}
 _READY_STATUSES = {"active", "complete", "ready"}
-_KERNEL_PATHS = {
-    "manager": (Path("kaggle"),),
-    "starter": (Path("kaggle/starter"),),
-    "examples": (
-        Path("kaggle/starter"),
-        Path("kaggle/examples/advanced-usage"),
-        Path("kaggle/examples/hiring-market-map"),
-        Path("kaggle/examples/skills-radar"),
-    ),
-}
+def kernel_paths() -> dict[str, tuple[Path, ...]]:
+    from openopps_kaggle.generator import PUBLIC_EXAMPLE_NOTEBOOKS
+
+    return {
+        "manager": (Path("kaggle"),),
+        "starter": (Path("kaggle/starter"),),
+        "examples": (
+            Path("kaggle/starter"),
+            *(Path("kaggle/examples") / spec.slug for spec in PUBLIC_EXAMPLE_NOTEBOOKS),
+        ),
+    }
 _ENV_ALLOWLIST = {
     "ALL_PROXY",
     "CURL_CA_BUNDLE",
@@ -687,7 +688,8 @@ def run_kernel_push(
 ) -> dict[str, Any]:
     """Render or execute allowlisted kernel pushes without a shell."""
 
-    if bundle not in _KERNEL_PATHS:
+    paths = kernel_paths()
+    if bundle not in paths:
         raise PublicationError(f"unsupported Kaggle kernel bundle: {bundle!r}")
     if timeout_seconds < 30 or timeout_seconds > 7200:
         raise PublicationError("kernel timeout must be between 30 and 7200 seconds")
@@ -703,7 +705,7 @@ def run_kernel_push(
                 "--timeout",
                 str(timeout_seconds),
             ]
-            for path in _KERNEL_PATHS[bundle]
+            for path in paths[bundle]
         ]
         payload: dict[str, Any] = {
             "ok": True,
@@ -1572,7 +1574,7 @@ def _parser() -> argparse.ArgumentParser:
     publish.add_argument("--timeout-seconds", type=int, default=1800)
     publish.add_argument("--poll-seconds", type=int, default=15)
     kernel = subparsers.add_parser("kernel-push")
-    kernel.add_argument("--bundle", choices=sorted(_KERNEL_PATHS), required=True)
+    kernel.add_argument("--bundle", choices=sorted(kernel_paths()), required=True)
     kernel.add_argument("--timeout-seconds", type=int, default=3600)
     kernel.add_argument("--execute", action="store_true")
     return parser

@@ -132,11 +132,7 @@ def expected_kernels() -> list[ExpectedKernel]:
             ExpectedKernel(
                 kernel_id=spec.notebook_id,
                 slug=spec.notebook_id.split("/", 1)[1],
-                metadata=generator.public_notebook_kernel_metadata(
-                    notebook_id=spec.notebook_id,
-                    title=spec.title,
-                    code_file=spec.code_file,
-                ),
+                metadata=generator.kernel_metadata_for_spec(spec),
                 notebook=spec.notebook_factory(),
             )
         )
@@ -152,10 +148,6 @@ def _canonical_metadata(
         canonical["docker_image"] = ""
     if canonical.get("code_file") == STARTER_PULL_CODE_FILE_ALIAS:
         canonical["code_file"] = expected_code_file
-    if expected_code_file == "openoppsdb-starter.ipynb" and canonical.get(
-        "keywords"
-    ) == ["jobs and career"]:
-        canonical["keywords"] = []
     return canonical
 
 

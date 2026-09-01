@@ -13,9 +13,13 @@
   "is_private": true,
   "kernel_sources": [],
   "kernel_type": "notebook",
-  "keywords": [],
+  "keywords": [
+    "jobs and career",
+    "data visualization",
+    "tabular"
+  ],
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
-  "title": "openoppsdb manager"
+  "title": "OpenOppsDB \u2014 Manager"
 }

@@ -6,15 +6,26 @@
   ],
   "docker_image": "",
   "enable_gpu": false,
-  "enable_internet": false,
+  "enable_internet": true,
   "enable_tpu": false,
   "id": "wyattowalsh/openoppsdb-starter-notebook",
   "is_private": false,
-  "kernel_sources": [],
+  "kernel_sources": [
+    "wyattowalsh/openoppsdb-advanced-usage",
+    "wyattowalsh/openoppsdb-hiring-market-map",
+    "wyattowalsh/openoppsdb-skills-radar",
+    "wyattowalsh/openoppsdb-sql-playground",
+    "wyattowalsh/openoppsdb-explorer",
+    "wyattowalsh/openoppsdb-snapshot-health"
+  ],
   "kernel_type": "notebook",
-  "keywords": [],
+  "keywords": [
+    "jobs and career",
+    "data visualization",
+    "tabular"
+  ],
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
-  "title": "OpenOppsDB starter notebook"
+  "title": "OpenOppsDB \u2014 Starter"
 }

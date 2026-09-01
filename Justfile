@@ -9,10 +9,11 @@ kaggle-ops-gen := "PYTHONPATH=scripts uv run --frozen --group ops python -m open
 default:
     @just --list
 
-# Install Python dependencies for local development.
+# Install Python, web, and README-art dependencies for local development.
 setup:
     uv sync
     cd web && pnpm install
+    pnpm --dir scripts/readme-art install
 
 # Fast local confidence checks.
 quick: python-quality cli-help test-cli openspec-list openspec-validate-all
@@ -36,7 +37,7 @@ ci-discovery: source-discovery-ci
 ci-web: web-check web-build web-test web-playwright web-lint web-search-artifacts-check
 
 # Generated-artifact, source-policy, and repository-diff gate.
-ci-artifacts: source-policy-check kaggle-generated-diff-check kaggle-bundle-smoke diff-check
+ci-artifacts: source-policy-check kaggle-generated-diff-check kaggle-bundle-smoke readme-assets-check diff-check
 
 # CI plus network-dependent security audits (GHA Security job parity).
 ci-full: ci security-audit test-lowest-direct
@@ -55,22 +56,40 @@ security-audit-python:
 security-audit-docs:
     cd web && pnpm audit --audit-level high
 
-# Build the release wheel into the conventional artifact directory.
-build-wheel:
-    uv build --wheel --out-dir dist
+# Build a fresh wheel and sdist, then inspect both artifacts.
+build-release-artifacts:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ ! -e dist ]] || { echo "dist already exists; choose a clean checkout or remove it explicitly" >&2; exit 2; }
+    build_constraints="$(mktemp "${TMPDIR:-/tmp}/openopps-build-constraints.XXXXXX")"
+    trap 'rm -f "$build_constraints"' EXIT
+    uv export --quiet --frozen --only-group build --no-emit-project --output-file "$build_constraints"
+    uv build --build-constraints "$build_constraints" --require-hashes --out-dir dist
+    uv run --frozen python scripts/verify_release_artifacts.py --dist-dir dist
 
-# Build a wheel and confirm packaged portfolio catalog is importable.
+# Build one wheel in a unique directory and confirm its catalog is importable.
 wheel-catalog-smoke:
-    uv build --wheel --out-dir /tmp/openopps-wheels
-    uv run python scripts/smoke_wheel_catalog.py
+    #!/usr/bin/env bash
+    set -euo pipefail
+    artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/openopps-wheel-smoke.XXXXXX")"
+    build_constraints="$(mktemp "${TMPDIR:-/tmp}/openopps-build-constraints.XXXXXX")"
+    trap 'rm -rf "$artifact_dir"; rm -f "$build_constraints"' EXIT
+    uv export --quiet --frozen --only-group build --no-emit-project --output-file "$build_constraints"
+    uv build --build-constraints "$build_constraints" --require-hashes --wheel --out-dir "$artifact_dir"
+    uv run --frozen python scripts/smoke_wheel_catalog.py --wheel-dir "$artifact_dir"
 
 # Local B699 promotion wheel readback. Does not upload Workers or push Kaggle.
 promotion-wheel-readback:
-    uv run pytest tests/unit/openopps/discovery/test_promotion_apply.py tests/unit/openopps/discovery/test_promotion_shared_delivery.py -q
-    uv build --wheel --out-dir /tmp/openopps-wheels
-    uv run python scripts/smoke_wheel_catalog.py
-    uv run python scripts/smoke_promotion_wheel.py
-
+    #!/usr/bin/env bash
+    set -euo pipefail
+    artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/openopps-promotion-wheel.XXXXXX")"
+    build_constraints="$(mktemp "${TMPDIR:-/tmp}/openopps-build-constraints.XXXXXX")"
+    trap 'rm -rf "$artifact_dir"; rm -f "$build_constraints"' EXIT
+    uv run --frozen pytest tests/unit/openopps/discovery/test_promotion_apply.py tests/unit/openopps/discovery/test_promotion_shared_delivery.py -q
+    uv export --quiet --frozen --only-group build --no-emit-project --output-file "$build_constraints"
+    uv build --build-constraints "$build_constraints" --require-hashes --wheel --out-dir "$artifact_dir"
+    uv run --frozen python scripts/smoke_wheel_catalog.py --wheel-dir "$artifact_dir"
+    uv run --frozen python scripts/smoke_promotion_wheel.py --wheel-dir "$artifact_dir"
 
 # --- Source discovery (offline, no apply) ---
 
@@ -286,6 +305,25 @@ docs-seo-check: web-seo-check
 docs-lint: web-lint
 docs-rtk-lint: web-rtk-lint
 
+# --- README landing rasters (scripts/readme-art; isolated from web/) ---
+
+# Render Takumi rasters into assets/readme/.
+readme-assets:
+    node scripts/readme-art render
+
+# Local GFM HTML screenshots into assets/readme/previews/. Does not load github.com.
+readme-previews:
+    node scripts/readme-art preview
+
+# Regenerate Takumi rasters and fail on byte drift. Preview screenshots are
+# committed evidence (Playwright is not byte-stable); the check only requires
+# they exist. Refresh them with `just readme-previews`.
+readme-assets-check: readme-assets
+    git diff --exit-code -- ':assets/readme' ':!assets/readme/previews'
+    @test -f assets/readme/previews/readme-light.png
+    @test -f assets/readme/previews/readme-dark.png
+    @untracked="$(git ls-files --others --exclude-standard -- assets/readme)"; test -z "$untracked" || { echo "Untracked generated README assets:" >&2; printf '%s\n' "$untracked" >&2; exit 1; }
+
 # Generate deterministic Kaggle metadata without bundling local data files.
 kaggle-meta:
     {{ kaggle-gen }}
@@ -406,7 +444,7 @@ kaggle-starter-notebook-push timeout="3600" execute="0":
     @timeout="$1"; timeout="${timeout#timeout=}"; execute="$2"; execute="${execute#execute=}"; args=(publication kernel-push --bundle starter --timeout-seconds "$timeout"); case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac; {{ kaggle-ops-gen }} "${args[@]}"
 
 # Prepare or execute all public example notebook pushes through validated argv.
-kaggle-example-notebooks-push timeout="3600" execute="0":
+kaggle-example-notebooks-push timeout="7200" execute="0":
     @timeout="$1"; timeout="${timeout#timeout=}"; execute="$2"; execute="${execute#execute=}"; args=(publication kernel-push --bundle examples --timeout-seconds "$timeout"); case "$execute" in 1|true) args+=(--execute) ;; 0|false) ;; *) echo "execute must be 0/1/false/true" >&2; exit 2 ;; esac; {{ kaggle-ops-gen }} "${args[@]}"
 
 # Show live OpenOppsDB dataset status from Kaggle.
@@ -448,15 +486,15 @@ kaggle-starter-notebook-status:
 
 # Show live OpenOppsDB public example notebook statuses from Kaggle.
 kaggle-example-notebooks-status:
-    @for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do status="$({{ kaggle }} kernels status "$kernel")"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'; done
+    @for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar wyattowalsh/openoppsdb-sql-playground wyattowalsh/openoppsdb-explorer wyattowalsh/openoppsdb-snapshot-health; do status="$({{ kaggle }} kernels status "$kernel")"; echo "$status"; echo "$status" | grep -q 'KernelWorkerStatus.COMPLETE'; done
 
 # Pull and verify live OpenOppsDB public example notebook source bundles from Kaggle.
 kaggle-example-notebooks-pull-check:
-    @tmp_dir="$(mktemp -d)"; trap 'rm -rf "$tmp_dir"' EXIT; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do slug="${kernel#*/}"; mkdir -p "$tmp_dir/$slug"; {{ kaggle }} kernels pull "$kernel" -p "$tmp_dir/$slug" -m >/dev/null; done; PYTHONPATH=scripts uv run python -m openopps_kaggle verify-notebooks "$tmp_dir"
+    @tmp_dir="$(mktemp -d)"; trap 'rm -rf "$tmp_dir"' EXIT; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar wyattowalsh/openoppsdb-sql-playground wyattowalsh/openoppsdb-explorer wyattowalsh/openoppsdb-snapshot-health; do slug="${kernel#*/}"; mkdir -p "$tmp_dir/$slug"; {{ kaggle }} kernels pull "$kernel" -p "$tmp_dir/$slug" -m >/dev/null; done; PYTHONPATH=scripts uv run python -m openopps_kaggle verify-notebooks "$tmp_dir"
 
 # List output files emitted by live OpenOppsDB public example notebook runs.
 kaggle-example-notebooks-files page_size="200":
-    @page_size="$1"; page_size="${page_size#page_size=}"; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar; do echo "== $kernel =="; {{ kaggle }} kernels files "$kernel" --page-size "$page_size"; done
+    @page_size="$1"; page_size="${page_size#page_size=}"; for kernel in wyattowalsh/openoppsdb-starter-notebook wyattowalsh/openoppsdb-advanced-usage wyattowalsh/openoppsdb-hiring-market-map wyattowalsh/openoppsdb-skills-radar wyattowalsh/openoppsdb-sql-playground wyattowalsh/openoppsdb-explorer wyattowalsh/openoppsdb-snapshot-health; do echo "== $kernel =="; {{ kaggle }} kernels files "$kernel" --page-size "$page_size"; done
 
 # Run the live non-destructive Kaggle status/file verification commands.
 kaggle-live-verify: kaggle-live-status kaggle-live-files kagglehub-live-readback kaggle-live-metadata kaggle-notebook-status kaggle-notebook-files kaggle-starter-notebook-status kaggle-example-notebooks-status kaggle-example-notebooks-pull-check
@@ -507,7 +545,11 @@ openspec-validate-all:
 cli-help:
     uv run openopps --no-intro --help > /tmp/openopps-root-help.txt
     uv run openopps sync --help > /tmp/openopps-sync-help.txt
+    uv run openopps jobs pull --help > /tmp/openopps-jobs-pull-help.txt
     uv run openopps providers --help > /tmp/openopps-providers-help.txt
+    uv run openopps providers detect --help > /tmp/openopps-providers-detect-help.txt
+    uv run openopps providers inspect --help > /tmp/openopps-providers-inspect-help.txt
+    uv run openopps providers capabilities --help > /tmp/openopps-providers-capabilities-help.txt
     uv run openopps admin providers probe-routes --help > /tmp/openopps-probe-routes-help.txt
 
 # Check whitespace and patch formatting in the current diff.

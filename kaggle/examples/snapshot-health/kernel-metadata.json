@@ -1,5 +1,5 @@
 {
-  "code_file": "openoppsdb-hiring-market-map.ipynb",
+  "code_file": "openoppsdb-snapshot-health.ipynb",
   "competition_sources": [],
   "dataset_sources": [
     "wyattowalsh/openoppsdb"
@@ -8,15 +8,15 @@
   "enable_gpu": false,
   "enable_internet": false,
   "enable_tpu": false,
-  "id": "wyattowalsh/openoppsdb-hiring-market-map",
+  "id": "wyattowalsh/openoppsdb-snapshot-health",
   "is_private": false,
   "kernel_sources": [
     "wyattowalsh/openoppsdb-starter-notebook",
     "wyattowalsh/openoppsdb-advanced-usage",
+    "wyattowalsh/openoppsdb-hiring-market-map",
     "wyattowalsh/openoppsdb-skills-radar",
     "wyattowalsh/openoppsdb-sql-playground",
-    "wyattowalsh/openoppsdb-explorer",
-    "wyattowalsh/openoppsdb-snapshot-health"
+    "wyattowalsh/openoppsdb-explorer"
   ],
   "kernel_type": "notebook",
   "keywords": [
@@ -27,5 +27,5 @@
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
-  "title": "OpenOppsDB \u2014 Hiring market map"
+  "title": "OpenOppsDB \u2014 Snapshot health"
 }

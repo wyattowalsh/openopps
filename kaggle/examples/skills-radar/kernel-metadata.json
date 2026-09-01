@@ -10,11 +10,22 @@
   "enable_tpu": false,
   "id": "wyattowalsh/openoppsdb-skills-radar",
   "is_private": false,
-  "kernel_sources": [],
+  "kernel_sources": [
+    "wyattowalsh/openoppsdb-starter-notebook",
+    "wyattowalsh/openoppsdb-advanced-usage",
+    "wyattowalsh/openoppsdb-hiring-market-map",
+    "wyattowalsh/openoppsdb-sql-playground",
+    "wyattowalsh/openoppsdb-explorer",
+    "wyattowalsh/openoppsdb-snapshot-health"
+  ],
   "kernel_type": "notebook",
-  "keywords": [],
+  "keywords": [
+    "jobs and career",
+    "data visualization",
+    "tabular"
+  ],
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
-  "title": "OpenOppsDB skills radar"
+  "title": "OpenOppsDB \u2014 Skills radar"
 }

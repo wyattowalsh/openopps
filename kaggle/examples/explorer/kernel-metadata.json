@@ -1,21 +1,21 @@
 {
-  "code_file": "openoppsdb-hiring-market-map.ipynb",
+  "code_file": "openoppsdb-explorer.ipynb",
   "competition_sources": [],
   "dataset_sources": [
     "wyattowalsh/openoppsdb"
   ],
   "docker_image": "",
   "enable_gpu": false,
-  "enable_internet": false,
+  "enable_internet": true,
   "enable_tpu": false,
-  "id": "wyattowalsh/openoppsdb-hiring-market-map",
+  "id": "wyattowalsh/openoppsdb-explorer",
   "is_private": false,
   "kernel_sources": [
     "wyattowalsh/openoppsdb-starter-notebook",
     "wyattowalsh/openoppsdb-advanced-usage",
+    "wyattowalsh/openoppsdb-hiring-market-map",
     "wyattowalsh/openoppsdb-skills-radar",
     "wyattowalsh/openoppsdb-sql-playground",
-    "wyattowalsh/openoppsdb-explorer",
     "wyattowalsh/openoppsdb-snapshot-health"
   ],
   "kernel_type": "notebook",
@@ -27,5 +27,5 @@
   "language": "python",
   "machine_shape": "None",
   "model_sources": [],
-  "title": "OpenOppsDB \u2014 Hiring market map"
+  "title": "OpenOppsDB \u2014 Explorer"
 }
