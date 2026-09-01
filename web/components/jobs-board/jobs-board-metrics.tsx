@@ -3,8 +3,13 @@ import Link from "next/link";
 
 import type { SearchManifest } from "@/components/openopps-search/search-types";
 import { formatCount, formatDate } from "@/components/openopps-search/search-utils";
+import {
+	searchManifestFromChrome,
+	type SnapshotChrome,
+} from "@/lib/snapshot-chrome";
 
 type JobsBoardMetricsProps = {
+	chrome?: SnapshotChrome | null;
 	manifest: SearchManifest | null;
 	matchCount: number | null;
 	searchActive: boolean;
@@ -32,15 +37,17 @@ function Metric({
 }
 
 export function JobsBoardMetrics({
+	chrome,
 	manifest,
 	matchCount,
 	searchActive,
 }: JobsBoardMetricsProps) {
-	const totalJobs = manifest?.entities.jobs.count;
-	const openJobs = manifest?.openJobCount ?? totalJobs;
-	const boards = manifest?.counts?.snapshot?.boards ?? manifest?.entities.boards.count;
-	const providerRoutes = manifest?.counts?.snapshot?.providerRoutes;
-	const kaggleId = manifest?.kaggleDatasetId ?? "wyattowalsh/openoppsdb";
+	const source = manifest ?? (chrome ? searchManifestFromChrome(chrome) : null);
+	const totalJobs = source?.entities.jobs.count;
+	const openJobs = source?.openJobCount ?? totalJobs;
+	const boards = source?.counts?.snapshot?.boards ?? source?.entities.boards.count;
+	const providerRoutes = source?.counts?.snapshot?.providerRoutes;
+	const kaggleId = source?.kaggleDatasetId ?? "wyattowalsh/openoppsdb";
 	const kaggleUrl = `https://www.kaggle.com/datasets/${kaggleId}`;
 	const metrics = searchActive
 		? [
@@ -65,8 +72,8 @@ export function JobsBoardMetrics({
 				</h1>
 				<p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
 					Static snapshot from{" "}
-					<code>{manifest?.source.database ?? "kaggle/openoppsdb.sqlite"}</code>
-					{manifest?.snapshotAt ? ` at ${formatDate(manifest.snapshotAt)}` : ""}
+					<code>{source?.source.database ?? "kaggle/openoppsdb.sqlite"}</code>
+					{source?.snapshotAt ? ` at ${formatDate(source.snapshotAt)}` : ""}
 					. Open roles only — use the{" "}
 					<Link href="/explorer" prefetch={false} className="text-primary underline-offset-2 hover:underline">
 						dataset explorer

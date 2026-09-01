@@ -173,6 +173,38 @@ export class OpenOppsSnapshotClient {
 		return manifest;
 	}
 
+	async getSnapshotChrome(signal?: AbortSignal) {
+		const manifest = await this.getSearchManifest(signal);
+		if (manifest.version === 7) {
+			throw snapshotError(
+				"unsupported_version",
+				"snapshot-chrome.json must not use search payload version 7",
+				`${LEGACY_SEARCH_ROOT}/snapshot-chrome.json`,
+			);
+		}
+		const publicPath =
+			manifest.sidecars?.chrome?.path ?? `${LEGACY_SEARCH_ROOT}/snapshot-chrome.json`;
+		const chrome = await this.getSearchAsset<Record<string, unknown>>(
+			publicPath,
+			signal,
+		);
+		if (chrome.version === 7) {
+			throw snapshotError(
+				"unsupported_version",
+				"snapshot-chrome.json must not use search payload version 7",
+				publicPath,
+			);
+		}
+		if (chrome.version !== 6 && chrome.version !== 3) {
+			throw snapshotError(
+				"unsupported_version",
+				`Unsupported snapshot-chrome version: ${String(chrome.version)}`,
+				publicPath,
+			);
+		}
+		return chrome;
+	}
+
 	async getSearchAsset<T>(publicPath: string, signal?: AbortSignal): Promise<T> {
 		const resolved = await this.resolve(signal);
 		if (resolved.kind === "v6") {

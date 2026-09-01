@@ -167,7 +167,8 @@ export function validateJobsSearchResponse(response: JobsSearchResponse) {
 		typeof response.totalPages !== "number" ||
 		typeof response.hasNextPage !== "boolean" ||
 		typeof response.hasPreviousPage !== "boolean" ||
-		typeof response.truncated !== "boolean"
+		typeof response.truncated !== "boolean" ||
+		!(response.complete === undefined || typeof response.complete === "boolean")
 	) {
 		throw new SearchLoadError(
 			"invalid_chunk",
@@ -273,16 +274,30 @@ export async function getBrowserSearchSnapshotDescriptor() {
 	const client = getBrowserSnapshotClient();
 	if (client) {
 		const offline = getJobsOfflineSnapshotConfiguration(client.baseUrl);
+		let bootstrapJobsCount: number | null = null;
+		try {
+			const chrome = await client.getSnapshotChrome();
+			bootstrapJobsCount =
+				typeof chrome.entities === "object" &&
+				chrome.entities &&
+				typeof (chrome.entities as { jobs?: { count?: number } }).jobs?.count ===
+					"number"
+					? (chrome.entities as { jobs: { count: number } }).jobs.count
+					: null;
+		} catch {
+			bootstrapJobsCount = null;
+		}
 		return {
 			baseUrl: client.baseUrl.href,
 			channel: client.channel,
 			releaseId: await client.releaseId(),
 			offlineCacheName: offline?.cacheName ?? null,
+			bootstrapJobsCount,
 		};
 	}
 	const baseUrl =
 		typeof window !== "undefined" ? window.location.origin : "http://localhost";
-	return { baseUrl, channel: null, releaseId: null, offlineCacheName: null };
+	return { baseUrl, channel: null, releaseId: null, offlineCacheName: null, bootstrapJobsCount: null };
 }
 
 export async function loadJobsOfflineReleasePlan(signal?: AbortSignal) {

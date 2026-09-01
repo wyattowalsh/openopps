@@ -14,6 +14,7 @@ export type JobsSearchSnapshotDescriptor = {
 	channel: string | null;
 	releaseId: string | null;
 	offlineCacheName: string | null;
+	bootstrapJobsCount?: number | null;
 };
 
 export type JobsSearchWorkerRequest =

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { filterAndSortJobs } from "@/components/jobs-board/jobs-board-filter-engine";
 import { useJobBoardFilterState } from "@/components/jobs-board/jobs-board-filter-state";
@@ -58,9 +58,12 @@ import {
 } from "@/components/openopps-search/search-utils";
 import { Button } from "@/components/ui/button";
 import { trackTelemetry } from "@/lib/telemetry";
+import type { SnapshotChrome } from "@/lib/snapshot-chrome";
 
 type JobsBoardProps = {
 	initialJobId?: string;
+	chrome?: SnapshotChrome | null;
+	onPainted?: () => void;
 };
 
 const JobsBoardPreviewSheet = dynamic(
@@ -85,7 +88,7 @@ const JobsBoardConfirmDialog = dynamic(
 	{ ssr: false },
 );
 
-export function JobsBoard({ initialJobId }: JobsBoardProps) {
+export function JobsBoard({ initialJobId, chrome = null, onPainted }: JobsBoardProps) {
 	const [heavyIslandReady, setHeavyIslandReady] = useState(false);
 	const [localDataOpen, setLocalDataOpen] = useState(false);
 	const [pendingDeleteSavedSearch, setPendingDeleteSavedSearch] =
@@ -110,7 +113,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 		activeFilterCount,
 	} = useJobBoardFilterState();
 
-	const { manifest, loading, error, setError } = useJobsBoardManifest();
+	const { manifest, loading, error, setError } = useJobsBoardManifest(chrome);
 	const clearIndexError = useCallback(() => {
 		setError(null);
 	}, [setError]);
@@ -138,6 +141,10 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 
 	const { detail, detailLoading, detailError } = useJobDetail(selectedJobId);
 	const savedSearchFullCounts = useSavedSearchFullCounts(localState.savedSearches);
+
+	useLayoutEffect(() => {
+		onPainted?.();
+	}, [onPainted]);
 
 	useEffect(() => {
 		const frame = requestAnimationFrame(() => setHeavyIslandReady(true));
@@ -530,6 +537,7 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 			<div className={jobsBoardLedgerClassName(hasPreviewSelection)}>
 				<div className="shrink-0">
 					<JobsBoardMetrics
+						chrome={chrome}
 						manifest={manifest}
 						matchCount={matchDisplay.matchCount}
 						searchActive={matchDisplay.showAsMatches}
@@ -758,6 +766,7 @@ function SearchPageControls({
 		pageSize: number;
 		hasNextPage: boolean;
 		hasPreviousPage: boolean;
+		complete?: boolean;
 	} | null;
 	loading: boolean;
 	onPageChange: (page: number) => void;
@@ -787,7 +796,7 @@ function SearchPageControls({
 					type="button"
 					variant="outline"
 					size="sm"
-					disabled={loading || !meta.hasNextPage}
+					disabled={loading || !meta.hasNextPage || meta.complete === false}
 					onClick={() => onPageChange(meta.page + 1)}
 				>
 					Next

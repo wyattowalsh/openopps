@@ -35,6 +35,40 @@ describe("JobsBoardMetrics", () => {
 		});
 	});
 
+	it("puts the dated snapshot subtitle in chrome without the 1.16MB manifest", () => {
+		const { container } = render(
+			<JobsBoardMetrics
+				chrome={{
+					version: 6,
+					snapshotAt: "2026-08-26T21:52:25.592259Z",
+					openJobCount: 11160,
+					kaggleDatasetId: "wyattowalsh/openoppsdb",
+					source: { database: "kaggle/openoppsdb.sqlite" },
+					counts: {
+						snapshot: {
+							database: "kaggle/openoppsdb.sqlite",
+							providerRoutes: 1321,
+							boards: 25907,
+							jobs: 19310,
+							openJobs: 11160,
+						},
+					},
+					entities: {
+						jobs: { count: 19310, initialPath: "/data/openopps-search/jobs/latest.json" },
+						boards: { count: 25907 },
+						providers: { count: 1321 },
+					},
+				}}
+				manifest={null}
+				matchCount={null}
+				searchActive={false}
+			/>,
+		);
+		expect(container.textContent).toMatch(/Aug 26, 2026/);
+		expect(metricMap(container)["open jobs"]).toBe("11,160");
+		expect(metricMap(container)["indexed jobs"]).toBe("19,310");
+	});
+
 	it("shows the search total once matches arrive", () => {
 		const { container } = render(
 			<JobsBoardMetrics

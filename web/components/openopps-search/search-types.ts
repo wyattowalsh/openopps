@@ -294,6 +294,10 @@ export type SearchManifest = {
 	};
 	dashboard?: SearchDashboard;
 	lineageAggregate?: LineageAggregateRef;
+	sidecars?: {
+		chrome?: { file: string; path: string };
+		facetCatalog?: { file: string; path: string };
+	};
 };
 
 /** Loaded entity chunk: column order plus materialized row tuples. */
@@ -316,6 +320,7 @@ export type JobsSearchResponse = SearchChunk & {
 	hasNextPage: boolean;
 	hasPreviousPage: boolean;
 	truncated: boolean;
+	complete?: boolean;
 };
 
 export type JobsSearchSummaryResponse = {

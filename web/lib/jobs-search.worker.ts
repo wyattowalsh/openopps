@@ -131,6 +131,14 @@ async function initializeEngine(
 	const manifest = await client.getSearchManifest(signal);
 	validateSearchManifest(manifest);
 	const jobs = manifest.entities.jobs;
+	if (
+		typeof snapshot.bootstrapJobsCount === "number" &&
+		snapshot.bootstrapJobsCount !== jobs.count
+	) {
+		throw new Error(
+			`Jobs search bootstrap count mismatch: chrome ${snapshot.bootstrapJobsCount}, manifest ${jobs.count}.`,
+		);
+	}
 	const refs = jobs.chunks?.length
 		? [...jobs.chunks].sort((left, right) => left.index - right.index)
 		: jobs.path
