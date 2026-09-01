@@ -10,8 +10,12 @@ import {
 } from "@/lib/site-metadata";
 import type { Metadata } from "next";
 
-const heading700Woff2 = new URL(
-	"../node_modules/@fontsource/monaspace-argon/files/monaspace-argon-latin-700-normal.woff2",
+const body400Woff2 = new URL(
+	"../node_modules/@fontsource/monaspace-neon/files/monaspace-neon-latin-400-normal.woff2",
+	import.meta.url,
+);
+const heading600Woff2 = new URL(
+	"../node_modules/@fontsource/monaspace-argon/files/monaspace-argon-latin-600-normal.woff2",
 	import.meta.url,
 );
 
@@ -77,7 +81,15 @@ export default function Layout({ children }: LayoutProps<"/">) {
 		<html lang="en" suppressHydrationWarning>
 			<link
 				rel="preload"
-				href={heading700Woff2.href}
+				href={body400Woff2.href}
+				as="font"
+				type="font/woff2"
+				crossOrigin="anonymous"
+				fetchPriority="high"
+			/>
+			<link
+				rel="preload"
+				href={heading600Woff2.href}
 				as="font"
 				type="font/woff2"
 				crossOrigin="anonymous"
@@ -91,7 +103,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
 				href={jobsFeedUrl()}
 			/>
 			<body className="flex min-h-screen flex-col">
-				<RootProvider>
+				<RootProvider search={{ preload: false }}>
 					<TelemetryProvider>{children}</TelemetryProvider>
 				</RootProvider>
 			</body>

@@ -189,6 +189,31 @@ def validate_artifacts(
 
     if require_git_tracked:
         errors.extend(_git_tracking_errors(root, disk_files))
+    chrome_path = root / "snapshot-chrome.json"
+    if chrome_path.is_file():
+        chrome = _read_json(chrome_path)
+        if chrome.get("version") == 7:
+            errors.append("snapshot-chrome.json must not use search payload version 7")
+        elif chrome.get("version") not in {None, manifest.get("version")}:
+            errors.append(
+                "snapshot-chrome.json version does not match manifest "
+                f"{manifest.get('version')!r}"
+            )
+        buckets = (chrome.get("detailShards") or {}).get("buckets") if isinstance(chrome, dict) else None
+        if buckets is None:
+            # Chrome omits detailShards.buckets; the verifier already mapped
+            # buckets from manifest.json above.
+            pass
+        if "facets" in chrome and "sources" not in (chrome.get("facets") or {}):
+            errors.append("snapshot-chrome.json facets must keep sources when present")
+    catalog_path = root / "facet-catalog.json"
+    if catalog_path.is_file():
+        catalog = _read_json(catalog_path)
+        if catalog.get("version") == 7:
+            errors.append("facet-catalog.json must not use search payload version 7")
+        facets = catalog.get("facets") if isinstance(catalog, dict) else None
+        if not isinstance(facets, dict) or not isinstance(facets.get("sources"), list):
+            errors.append("facet-catalog.json must keep facets.sources")
     return errors
 
 
@@ -223,6 +248,11 @@ def _manifest_files(manifest: dict[str, Any]) -> set[Path]:
     lineage = manifest.get("lineageAggregate")
     if isinstance(lineage, dict) and isinstance(lineage.get("file"), str):
         files.add(Path(lineage["file"]))
+    sidecars = manifest.get("sidecars")
+    if isinstance(sidecars, dict):
+        for details in sidecars.values():
+            if isinstance(details, dict) and isinstance(details.get("file"), str):
+                files.add(Path(details["file"]))
     return files
 
 

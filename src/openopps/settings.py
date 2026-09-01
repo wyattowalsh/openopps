@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -12,6 +13,7 @@ from pydantic import (
     ValidationError,
     computed_field,
     field_validator,
+    model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -174,6 +176,17 @@ class OpenOppsSettings(BaseSettings):
         ),
         examples=[2],
     )
+    concurrency_profile: Literal["explicit", "auto", "ci", "constrained"] = Field(
+        default="explicit",
+        description=(
+            "Place-aware ingest concurrency profile. explicit keeps today's integer "
+            "defaults. auto may raise JSON-board source, board, and provider pools "
+            "from available CPUs with a documented ceiling. ci and constrained never "
+            "raise Workday or discovery per-host caps. Explicit OPENOPPS_* integers "
+            "always win over the profile."
+        ),
+        examples=["explicit", "auto", "ci", "constrained"],
+    )
     db_batch_size: PositiveIntSetting = Field(
         default=500,
         description=(
@@ -318,9 +331,99 @@ class OpenOppsSettings(BaseSettings):
     def plugin_allowed_names(self) -> tuple[str, ...]:
         return _comma_separated(self.plugin_allowed)
 
+    @model_validator(mode="after")
+    def apply_concurrency_profile(self) -> OpenOppsSettings:
+        resolved = resolve_concurrency_profile(self.concurrency_profile)
+        object.__setattr__(self, "concurrency_profile", resolved)
+        if resolved == "explicit":
+            self._ensure_http_pool_covers_semaphores()
+            return self
+        cpus = available_cpu_count()
+        if resolved == "auto":
+            self._maybe_set_concurrency(
+                "source_concurrency",
+                min(8, max(4, cpus)),
+            )
+            self._maybe_set_concurrency(
+                "board_concurrency",
+                min(32, max(16, cpus * 2)),
+            )
+            self._maybe_set_concurrency(
+                "provider_concurrency",
+                min(16, max(12, cpus)),
+            )
+        elif resolved == "constrained":
+            self._maybe_set_concurrency("source_concurrency", 2)
+            self._maybe_set_concurrency("board_concurrency", 4)
+            self._maybe_set_concurrency("provider_concurrency", 4)
+            self._maybe_set_concurrency("max_connections", 10)
+        self._ensure_http_pool_covers_semaphores()
+        return self
+
+    def _maybe_set_concurrency(self, field_name: str, value: int) -> None:
+        if field_name in self.model_fields_set:
+            return
+        object.__setattr__(self, field_name, value)
+
+    def _ensure_http_pool_covers_semaphores(self) -> None:
+        minimum_pool = self.source_concurrency + self.board_concurrency
+        if self.max_connections < minimum_pool:
+            object.__setattr__(self, "max_connections", minimum_pool)
+
+    def concurrency_snapshot(self) -> dict[str, int | str]:
+        return {
+            "source": self.source_concurrency,
+            "board": self.board_concurrency,
+            "provider": self.provider_concurrency,
+            "workday": self.workday_concurrency,
+            "max_connections": self.max_connections,
+            "profile": self.concurrency_profile,
+            "availableCpus": available_cpu_count(),
+        }
+
 
 def _comma_separated(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def available_cpu_count() -> int:
+    """Return cgroup-aware CPUs; never use a host-wide count on 3.12+ Linux."""
+
+    process_cpu_count = getattr(os, "process_cpu_count", None)
+    if callable(process_cpu_count):
+        count = process_cpu_count()
+        if count:
+            return max(1, int(count))
+    affinity = getattr(os, "sched_getaffinity", None)
+    if callable(affinity):
+        try:
+            cpus = affinity(0)
+        except OSError:
+            cpus = None
+        if cpus:
+            return max(1, len(cpus))
+    return max(1, int(os.cpu_count() or 1))
+
+
+def resolve_concurrency_profile(
+    requested: str,
+    *,
+    ci: bool | None = None,
+) -> Literal["explicit", "auto", "ci", "constrained"]:
+    if requested not in {"explicit", "auto", "ci", "constrained"}:
+        return "explicit"
+    if requested == "auto":
+        in_ci = (
+            ci
+            if ci is not None
+            else (
+                os.environ.get("CI") == "true"
+                or os.environ.get("GITHUB_ACTIONS") == "true"
+            )
+        )
+        if in_ci:
+            return "ci"
+    return requested  # type: ignore[return-value]
 
 
 def format_settings_validation_error(error: ValidationError) -> str:

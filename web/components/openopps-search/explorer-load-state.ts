@@ -13,6 +13,14 @@ type ExplorerFullJobsDecision = {
 	defaultJobsSort: ExplorerSortKey;
 };
 
+export function shouldLoadLineageAggregate({
+	inspectOpen,
+}: {
+	inspectOpen: boolean;
+}) {
+	return inspectOpen;
+}
+
 export function shouldLoadFullJobsIndexForExplorer({
 	entity,
 	hasJobsChunk,

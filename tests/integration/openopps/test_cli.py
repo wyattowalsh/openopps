@@ -152,6 +152,16 @@ def test_root_help_groups_commands_by_user_journey():
     assert "Quarantined source discovery" in result.output
     assert "local-first route ledger" in result.output
     assert "Automation" in result.output
+    assert "--install-completion" in result.output
+
+
+
+def test_root_help_documents_typer_install_completion():
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "--install-completion" in result.output
+    assert "--show-completion" in result.output
 
 
 def test_filter_help_describes_actual_scope_semantics():
@@ -209,7 +219,8 @@ def test_status_json_reports_empty_local_state(tmp_path: Path):
     assert payload["plugins"]["failed"] == 0
     assert payload["coverage"]["boards"]["total"] == 0
     assert payload["issues"] == ["no_sources", "no_boards"]
-    assert "sources" in payload["nextAction"]
+    assert "sync a16z" in payload["nextAction"]
+    assert "discovery" not in payload["nextAction"].lower()
 
 
 def test_cli_settings_validation_error_is_redacted_for_json_command():
@@ -689,7 +700,11 @@ def test_doctor_human_output_includes_setup_checklist(tmp_path: Path):
 
     assert result.exit_code == 0
     assert "Setup checklist:" in result.output
-    assert "openopps sources sync" in result.output
+    assert "OPENOPPS_DB_URL" in result.output
+    assert "admin db init" in result.output
+    assert "openopps https://" in result.output or "https://…" in result.output
+    assert "sync a16z" in result.output
+    assert "discovery scout" not in result.output.lower()
 
 
 def test_cli_reports_stale_stamped_database_without_traceback(tmp_path: Path):

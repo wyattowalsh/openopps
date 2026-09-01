@@ -24,6 +24,7 @@ import {
 } from "./search-index-validation";
 import { OpenOppsSnapshotClient } from "@/lib/openopps-snapshot-client";
 import { getJobsOfflineSnapshotConfiguration } from "@/lib/jobs-offline-cache";
+import { resolveBrowserChunkFetchConcurrency } from "@/lib/chunk-fetch-concurrency";
 
 export { validateSearchChunk, validateSearchManifest } from "./search-index-validation";
 
@@ -31,7 +32,6 @@ export const SEARCH_MANIFEST_PATH = "/data/openopps-search/manifest.json";
 export const SAVED_SEARCH_COUNT_BATCH_SIZE = 25;
 export const LINEAGE_AGGREGATE_PATH = "/data/openopps-search/lineage-aggregate.json";
 const SUPPORTED_SEARCH_INDEX_VERSIONS = new Set([3, SEARCH_VERSION]);
-const MAX_CHUNK_FETCHES = 6;
 
 const jsonCache = new Map<string, Promise<unknown>>();
 let snapshotClientForTests: OpenOppsSnapshotClient | null | undefined;
@@ -308,7 +308,7 @@ async function loadChunkRefs(entity: Entity, refs: SearchChunkRef[]) {
 	}
 
 	const workers = Array.from(
-		{ length: Math.min(MAX_CHUNK_FETCHES, orderedRefs.length) },
+		{ length: Math.min(resolveBrowserChunkFetchConcurrency(), orderedRefs.length) },
 		() => worker(),
 	);
 	await Promise.all(workers);

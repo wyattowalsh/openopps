@@ -152,13 +152,24 @@ export function useJobsLocalState() {
 				}
 			}
 		};
-		const pendingLoad = mutationTailRef.current.then(load, load);
-		mutationTailRef.current = pendingLoad.then(
-			() => undefined,
-			() => undefined,
-		);
+		const startLoad = () => {
+			const pendingLoad = mutationTailRef.current.then(load, load);
+			mutationTailRef.current = pendingLoad.then(
+				() => undefined,
+				() => undefined,
+			);
+		};
+		let cancelScheduled: (() => void) | undefined;
+		if (typeof requestIdleCallback === "function") {
+			const idleId = requestIdleCallback(startLoad, { timeout: 1200 });
+			cancelScheduled = () => cancelIdleCallback(idleId);
+		} else {
+			const timeoutId = window.setTimeout(startLoad, 0);
+			cancelScheduled = () => window.clearTimeout(timeoutId);
+		}
 		return () => {
 			mounted = false;
+			cancelScheduled?.();
 		};
 	}, [applyVisibleSnapshot]);
 

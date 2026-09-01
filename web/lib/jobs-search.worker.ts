@@ -5,13 +5,12 @@ import type {
 } from "@/lib/jobs-search-worker-protocol";
 import { OpenOppsSnapshotClient } from "@/lib/openopps-snapshot-client";
 import { createJobsOfflineCacheReader } from "@/lib/jobs-offline-cache";
+import { resolveBrowserChunkFetchConcurrency } from "@/lib/chunk-fetch-concurrency";
 import {
 	validateSearchChunk,
 	validateSearchManifest,
 } from "@/components/openopps-search/search-index-validation";
 import type { SearchChunk } from "@/components/openopps-search/search-types";
-
-const MAX_CHUNK_FETCHES = 6;
 
 type WorkerScope = {
 	addEventListener(
@@ -169,8 +168,9 @@ async function loadChunks(
 			chunks[index] = chunk;
 		}
 	}
+	const pool = Math.min(resolveBrowserChunkFetchConcurrency(), refs.length);
 	await Promise.all(
-		Array.from({ length: Math.min(MAX_CHUNK_FETCHES, refs.length) }, () => fetchNext()),
+		Array.from({ length: pool }, () => fetchNext()),
 	);
 	return chunks;
 }

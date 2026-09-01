@@ -42,7 +42,7 @@ describe("ExplorerDashboard", () => {
 			/>,
 		);
 
-		expect(await screen.findByText("Full lineage map")).not.toBeNull();
+		expect(await screen.findByText("Full lineage map", {}, { timeout: 5000 })).not.toBeNull();
 		expect(screen.getByText("Source-provider routes")).not.toBeNull();
 		expect(screen.getByText("Source-board reach")).not.toBeNull();
 		expect(screen.getByText("Board job paths")).not.toBeNull();
@@ -81,10 +81,25 @@ describe("ExplorerDashboard", () => {
 				[{ isIntersecting: true } as IntersectionObserverEntry],
 				{} as IntersectionObserver,
 			);
-			expect(await screen.findByText("Full lineage map")).not.toBeNull();
+			expect(await screen.findByText("Full lineage map", {}, { timeout: 5000 })).not.toBeNull();
 		} finally {
 			vi.unstubAllGlobals();
 		}
+	});
+
+	it("keeps the 13MB lineage aggregate off dashboard first paint", () => {
+		renderDashboard(
+			<ExplorerDashboard
+				manifest={null}
+				lineage={null}
+				lineageDeferred
+				loading={false}
+				onInspectRows={() => {}}
+			/>,
+		);
+		expect(screen.getByText("Lineage waits for inspect")).not.toBeNull();
+		expect(screen.queryByText("Full lineage map")).toBeNull();
+		expect(screen.queryByText("Lineage not in this snapshot")).toBeNull();
 	});
 
 	it("uses a ruled stage strip instead of nested lineage cards", async () => {
@@ -96,7 +111,7 @@ describe("ExplorerDashboard", () => {
 				onInspectRows={() => {}}
 			/>,
 		);
-		expect(await screen.findByText("Source rows")).not.toBeNull();
+		expect(await screen.findByText("Source rows", {}, { timeout: 5000 })).not.toBeNull();
 		const stage = screen.getByText("Source rows").parentElement;
 		expect(stage?.className).not.toContain("bg-card");
 		expect(screen.getByText("Provider routes")).not.toBeNull();
@@ -200,9 +215,11 @@ describe("ExplorerDashboard", () => {
 			/>,
 		);
 		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Inspect lineage path a16z -> greenhouse -> a16z:acme",
-			}),
+			await screen.findByRole(
+				"button",
+				{ name: "Inspect lineage path a16z -> greenhouse -> a16z:acme" },
+				{ timeout: 5000 },
+			),
 		);
 		expect(onInspectFacet).toHaveBeenCalledWith({
 			entity: "jobs",
@@ -325,7 +342,7 @@ describe("ExplorerDashboard", () => {
 				onInspectRows={() => {}}
 			/>,
 		);
-		expect(await screen.findByText("Full lineage map")).not.toBeNull();
+		expect(await screen.findByText("Full lineage map", {}, { timeout: 5000 })).not.toBeNull();
 		const kickers = [...container.querySelectorAll(".opps-kicker")].map(
 			(node) => node.textContent,
 		);

@@ -17,6 +17,13 @@ let postHogInitPromise: Promise<void> | undefined;
 type PageEngagementReason = "route_change" | "unmount" | "visibility_hidden";
 
 export function TelemetryProvider({ children }: { children: ReactNode }) {
+	if (!isTelemetryUiEnabled()) {
+		return children;
+	}
+	return <EnabledTelemetryProvider>{children}</EnabledTelemetryProvider>;
+}
+
+function EnabledTelemetryProvider({ children }: { children: ReactNode }) {
 	const pathname = usePathname();
 	const currentPathRef = useRef<string | undefined>(undefined);
 	const startedAtRef = useRef(0);
@@ -195,6 +202,14 @@ async function initializePostHogBrowserClientOnce() {
 	if (recordingEnabled) {
 		posthog.startSessionRecording();
 	}
+}
+
+function isTelemetryUiEnabled() {
+	return (
+		isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED) &&
+		!isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_ANALYTICS_DISABLED) &&
+		!isPublicBoolean(process.env.NEXT_PUBLIC_OPENOPPS_TELEMETRY_DISABLED)
+	);
 }
 
 function isPublicBoolean(value: string | undefined) {

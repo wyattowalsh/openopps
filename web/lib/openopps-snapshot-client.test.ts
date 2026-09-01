@@ -466,6 +466,26 @@ describe("OpenOppsSnapshotClient v7", () => {
 	});
 });
 
+describe("OpenOppsSnapshotClient v6", () => {
+	it("uses force-cache for v6 snapshot assets instead of no-store", async () => {
+		const fetchMock = vi.fn(async () => jsonResponse(searchManifest()));
+		const client = new OpenOppsSnapshotClient({
+			baseUrl: origin,
+			fetchImpl: fetchMock as typeof fetch,
+		});
+
+		await expect(client.getSearchManifest()).resolves.toMatchObject({ version: 6 });
+		expect(fetchMock).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ cache: "force-cache", priority: "low" }),
+		);
+		expect(fetchMock).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ cache: "no-store" }),
+		);
+	});
+});
+
 type Fixture = {
 	pointer: SnapshotChannelPointer;
 	manifest: SnapshotReleaseManifest;

@@ -733,7 +733,8 @@ def _plugin_registry(settings: OpenOppsSettings | None = None):
 def _next_action(counts: dict[str, int], readiness: dict[str, Any]) -> str:
     if counts["sources"] == 0:
         return (
-            "Run `openopps sources list` to inspect the source catalog, then sync one."
+            "Pull an HTTPS careers URL (`openopps https://…`) or run "
+            "`openopps sync a16z --metrics-json`."
         )
     if counts["boards"] == 0:
         return "Run `openopps sources sync <source>` to discover boards."
@@ -1046,7 +1047,7 @@ def _render_status_human(data: dict[str, Any]) -> None:
 @app.command(
     "status",
     help="Show local OpenOpps database, cache, plugin, and next-action status.",
-    rich_help_panel=PANEL_OPERATIONS,
+    rich_help_panel=PANEL_WORKFLOW,
 )
 def status(
     json_output: Annotated[
@@ -1067,7 +1068,7 @@ def status(
         "Show the same local status view as `openopps status` plus a short "
         "first-time setup checklist."
     ),
-    rich_help_panel=PANEL_OPERATIONS,
+    rich_help_panel=PANEL_WORKFLOW,
 )
 def doctor(
     json_output: Annotated[
@@ -1081,8 +1082,9 @@ def doctor(
         return
     _render_status_human(data)
     console.print(
-        "Setup checklist: set OPENOPPS_DB_URL, run `openopps sources sync <source>`, "
-        "then `openopps boards sync` and `openopps jobs sync`."
+        "Setup checklist: set OPENOPPS_DB_URL, run `openopps admin db init` "
+        "(idempotent), then either `openopps https://…` or "
+        "`openopps sync a16z --metrics-json`."
     )
 
 

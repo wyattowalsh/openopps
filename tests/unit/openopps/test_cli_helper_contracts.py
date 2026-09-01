@@ -146,7 +146,7 @@ def test_status_provider_gaps_filters_groups_sorts_and_bounds_examples() -> None
         (
             {"sources": 0, "boards": 0, "boardProviders": 0, "jobs": 0},
             {"missingRouteMetadata": 0, "executableRoutes": 0},
-            "sources list",
+            "sync a16z",
         ),
         (
             {"sources": 1, "boards": 0, "boardProviders": 0, "jobs": 0},

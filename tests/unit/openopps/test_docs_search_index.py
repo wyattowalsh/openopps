@@ -361,6 +361,23 @@ def test_build_search_index_writes_manifest_and_chunks(tmp_path: Path) -> None:
     }
     assert "suggestions" in manifest
     assert "dashboard" in manifest
+    assert manifest["sidecars"]["chrome"]["file"] == "snapshot-chrome.json"
+    chrome = _read_json(output_dir / "snapshot-chrome.json")
+    assert chrome["version"] == SEARCH_INDEX_VERSION
+    assert chrome["version"] != 7
+    assert chrome["snapshotAt"] == manifest["snapshotAt"]
+    assert chrome["openJobCount"] == manifest["openJobCount"]
+    assert chrome["counts"]["snapshot"]["jobs"] == manifest["counts"]["snapshot"]["jobs"]
+    assert "detailShards" not in chrome
+    assert "suggestions" not in chrome
+    assert (output_dir / "snapshot-chrome.json").stat().st_size < 10 * 1024
+    catalog = _read_json(output_dir / "facet-catalog.json")
+    assert catalog["version"] == SEARCH_INDEX_VERSION
+    assert catalog["version"] != 7
+    assert "sources" in catalog["facets"]
+    assert catalog["facets"]["sources"] == manifest["facets"]["sources"]
+    manifest_text = (output_dir / "manifest.json").read_text(encoding="utf-8")
+    assert "\n  " not in manifest_text
     assert manifest["lineageAggregate"]["path"] == (
         "/data/openopps-search/lineage-aggregate.json"
     )

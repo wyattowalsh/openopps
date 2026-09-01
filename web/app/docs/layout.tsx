@@ -1,3 +1,5 @@
+import './mermaid.css';
+import '../deferred-fonts.css';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';

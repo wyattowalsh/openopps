@@ -16,7 +16,7 @@ import {
 	type ExplorerFilters,
 } from "@/components/openopps-search/explorer-filter-engine";
 import { useExplorerFilterState } from "@/components/openopps-search/explorer-filter-state";
-import { shouldLoadFullJobsIndexForExplorer } from "@/components/openopps-search/explorer-load-state";
+import { shouldLoadFullJobsIndexForExplorer, shouldLoadLineageAggregate } from "@/components/openopps-search/explorer-load-state";
 import { ExplorerResultsPanel } from "@/components/openopps-search/explorer-results-panel";
 import { ExplorerStatusBar } from "@/components/openopps-search/explorer-status-bar";
 import { ExplorerToolbar } from "@/components/openopps-search/explorer-toolbar";
@@ -127,6 +127,9 @@ function OpenOppsSearchExplorerInner() {
 	}, [manifestRetryKey]);
 
 	useEffect(() => {
+		if (!shouldLoadLineageAggregate({ inspectOpen: showInspector })) {
+			return;
+		}
 		if (!manifest?.lineageAggregate) {
 			let cancelled = false;
 			window.queueMicrotask(() => {
@@ -165,7 +168,7 @@ function OpenOppsSearchExplorerInner() {
 		return () => {
 			mounted = false;
 		};
-	}, [manifest]);
+	}, [manifest, showInspector]);
 
 	const activeChunk = chunks[entity];
 	const activeFilters = activeFilterCount(entity, filters);
@@ -370,6 +373,7 @@ function OpenOppsSearchExplorerInner() {
 					<ExplorerDashboard
 						manifest={manifest}
 						lineage={lineage}
+						lineageDeferred={!showInspector && lineage === null}
 						loading={loadingManifest}
 						warning={error && !manifest ? error : null}
 						onInspectRows={openInspector}

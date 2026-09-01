@@ -72,6 +72,9 @@ DETAIL_BUCKET_COUNT = 1024
 DETAIL_IDS_FILE = "jobs-detail-ids.json"
 INDEXABLE_IDS_FILE = "jobs-indexable-ids.json"
 LINEAGE_AGGREGATE_FILE = "lineage-aggregate.json"
+CHROME_FILE = "snapshot-chrome.json"
+FACET_CATALOG_FILE = "facet-catalog.json"
+SUGGESTION_MANIFEST_LIMIT = 50
 PUBLICATION_POLICY_FILE = "publication-policy.json"
 SOURCE_POLICY_CORPUS_FILE = "deployment/openopps-data/source-corpus-v6.json"
 PUBLICATION_ALLOWED_RIGHTS = frozenset(
@@ -921,8 +924,24 @@ def _build_search_index_unlocked(
         "file": LINEAGE_AGGREGATE_FILE,
         "count": lineage["counts"],
     }
+    chrome, catalog = _build_search_sidecars(manifest)
+    manifest["sidecars"] = {
+        "chrome": {
+            "file": CHROME_FILE,
+            "path": f"/data/openopps-search/{CHROME_FILE}",
+        },
+        "facetCatalog": {
+            "file": FACET_CATALOG_FILE,
+            "path": f"/data/openopps-search/{FACET_CATALOG_FILE}",
+        },
+    }
+    manifest["suggestions"] = _capped_suggestions(manifest.get("suggestions") or {})
+    _progress("write chrome sidecar")
+    _write_json(output_dir / CHROME_FILE, chrome, compact=True)
+    _progress("write facet catalog")
+    _write_json(output_dir / FACET_CATALOG_FILE, catalog, compact=True)
     _progress("write manifest")
-    _write_json(output_dir / "manifest.json", manifest, compact=False)
+    _write_json(output_dir / "manifest.json", manifest, compact=True)
     return manifest
 
 
@@ -2784,6 +2803,50 @@ def _suggestion_values(counter: Counter[str]) -> list[dict[str, Any]]:
             counter.items(), key=lambda item: (-item[1], item[0].casefold())
         )
     ]
+
+
+def _capped_suggestions(
+    suggestions: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    return {
+        key: values[:SUGGESTION_MANIFEST_LIMIT]
+        for key, values in suggestions.items()
+        if isinstance(values, list)
+    }
+
+
+def _build_search_sidecars(
+    manifest: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    snapshot = manifest["counts"]["snapshot"]
+    jobs = manifest["entities"]["jobs"]
+    sources = list((manifest.get("facets") or {}).get("sources") or [])
+    chrome = {
+        "version": SEARCH_INDEX_VERSION,
+        "snapshotAt": manifest.get("snapshotAt"),
+        "openJobCount": manifest.get("openJobCount"),
+        "kaggleDatasetId": manifest.get("kaggleDatasetId"),
+        "source": {"database": (manifest.get("source") or {}).get("database")},
+        "counts": {"snapshot": snapshot},
+        "entities": {
+            "jobs": {
+                "initialPath": jobs.get("initialPath"),
+                "file": jobs.get("file"),
+                "count": jobs.get("count"),
+                "chunkSize": jobs.get("chunkSize"),
+                "chunkCount": len(jobs.get("chunks") or []),
+            },
+            "boards": {"count": manifest["entities"]["boards"]["count"]},
+            "providers": {"count": manifest["entities"]["providers"]["count"]},
+        },
+        "facetSourceCount": len(sources),
+    }
+    catalog = {
+        "version": SEARCH_INDEX_VERSION,
+        "facets": manifest.get("facets") or {},
+        "suggestions": manifest.get("suggestions") or {},
+    }
+    return chrome, catalog
 
 
 def _top_values(

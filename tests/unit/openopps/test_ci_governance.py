@@ -211,7 +211,9 @@ def test_web_gate_installs_and_runs_all_supported_browser_engines() -> None:
     justfile = (REPO_ROOT / "Justfile").read_text(encoding="utf-8")
 
     assert "playwright install --with-deps chromium firefox webkit" in workflow
-    assert "--project=chromium --project=firefox --project=webkit" in justfile
+    assert "web-playwright:" in justfile
+    assert justfile.count("pnpm exec playwright test") >= 3
+    assert "--project=chromium --project=firefox --project=webkit --project=mobile-chromium" in justfile
 
 
 def test_attestation_is_non_pr_least_privilege_and_post_gate() -> None:

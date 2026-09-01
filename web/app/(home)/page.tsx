@@ -36,6 +36,7 @@ function JobsBoardFirstPaint() {
 								. Open roles only — use the{" "}
 								<Link
 									href="/explorer"
+									prefetch={false}
 									className="text-primary underline-offset-2 hover:underline"
 								>
 									dataset explorer

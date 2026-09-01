@@ -38,6 +38,7 @@ vi.mock("posthog-js", () => ({
 let currentNow = 10;
 
 beforeEach(() => {
+	vi.stubEnv("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED", "true");
 	navigationMock.pathname = "/jobs";
 	currentNow = 10;
 	setVisibilityState("visible");
@@ -177,6 +178,17 @@ describe("TelemetryProvider", () => {
 			expect.objectContaining({ disable_session_recording: false }),
 		);
 		expect(posthogMock.startSessionRecording).toHaveBeenCalledWith();
+	});
+
+	it("does not mount listeners unless telemetry is explicitly enabled", async () => {
+		vi.stubEnv("NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED", "false");
+		const { TelemetryProvider } = await import("./telemetry-provider");
+
+		renderProvider(TelemetryProvider);
+		window.dispatchEvent(new Event("click"));
+
+		expect(telemetryMock.installTelemetryLifecycleHandlers).not.toHaveBeenCalled();
+		expect(telemetryMock.trackTelemetry).not.toHaveBeenCalled();
 	});
 });
 

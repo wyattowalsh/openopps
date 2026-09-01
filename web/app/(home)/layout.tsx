@@ -5,7 +5,7 @@ import { baseOptions } from "@/lib/layout.shared";
 
 export default function Layout({ children }: LayoutProps<"/">) {
 	return (
-		<HomeLayout {...baseOptions()}>
+		<HomeLayout {...baseOptions()} searchToggle={{ enabled: false }}>
 			<NuqsAdapter>{children}</NuqsAdapter>
 		</HomeLayout>
 	);

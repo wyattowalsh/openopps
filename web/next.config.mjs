@@ -30,6 +30,19 @@ const config = {
   async headers() {
     return [
       {
+        source: '/data/openopps-search/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=300, stale-while-revalidate=86400',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+        ],
+      },
+      {
         source: '/_next/static/:path*',
         headers: [
           {

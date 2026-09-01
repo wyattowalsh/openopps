@@ -85,6 +85,7 @@ const INDEX_RESERVE_PX = 360;
 type ExplorerDashboardProps = {
 	manifest: SearchManifest | null;
 	lineage: LineageAggregate | null;
+	lineageDeferred?: boolean;
 	loading: boolean;
 	warning?: string | null;
 	onInspectRows: () => void;
@@ -104,6 +105,7 @@ type DashboardModel = SearchDashboard & {
 export function ExplorerDashboard({
 	manifest,
 	lineage,
+	lineageDeferred = false,
 	loading,
 	warning,
 	onInspectRows,
@@ -376,6 +378,7 @@ export function ExplorerDashboard({
 			<p className="opps-kicker">Lineage</p>
 			<LineageSection
 				lineage={lineage}
+				lineageDeferred={lineageDeferred}
 				loading={loading}
 				onInspectRows={onInspectRows}
 				inspect={inspect}
@@ -777,16 +780,36 @@ function buildDashboardModel(manifest: SearchManifest | null): DashboardModel | 
 
 function LineageSection({
 	lineage,
+	lineageDeferred,
 	loading,
 	onInspectRows,
 	inspect,
 }: {
 	lineage: LineageAggregate | null;
+	lineageDeferred: boolean;
 	loading: boolean;
 	onInspectRows: () => void;
 	inspect: (entity: Entity, patch?: Partial<ExplorerFilters>) => void;
 }) {
 	if (!lineage) {
+		if (lineageDeferred) {
+			return (
+				<ExplorerEmptyPanel
+					heading="Lineage waits for inspect"
+					action={
+						<Button type="button" variant="outline" size="sm" onClick={onInspectRows}>
+							<FileSearch className="mr-2 size-4" width={16} height={16} aria-hidden="true" />
+							Inspect rows
+						</Button>
+					}
+				>
+					<p>
+						The 13MB lineage aggregate stays off first paint. Open inspect to
+						load source, provider, and board edges.
+					</p>
+				</ExplorerEmptyPanel>
+			);
+		}
 		if (loading) {
 			return (
 				<div

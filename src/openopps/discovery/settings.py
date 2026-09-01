@@ -107,7 +107,8 @@ class DiscoverySettings(BaseSettings):
         le=16,
         description=(
             "Maximum number of simultaneous discovery connections admitted for "
-            "one validated public origin."
+            "one validated public origin. This isolation budget is never derived "
+            "from OPENOPPS_CONCURRENCY_PROFILE or available CPU count."
         ),
     )
     overall_concurrency: PositiveInt = Field(

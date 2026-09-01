@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -15,9 +16,7 @@ import {
 	type JobLifecycleIndicator,
 	type SavedSearchRecord,
 } from "@/components/jobs-board/jobs-board-local-state";
-import { JobsBoardLocalDataPanel } from "@/components/jobs-board/jobs-board-local-data-panel";
 import { resolveSelectedJobRow } from "@/components/jobs-board/jobs-board-load-state";
-import { JobsBoardConfirmDialog } from "@/components/jobs-board/jobs-board-confirm-dialog";
 import { JobsBoardEmpty } from "@/components/jobs-board/jobs-board-empty";
 import {
 	buildJobsBoardLiveStatus,
@@ -34,7 +33,6 @@ import {
 import { JobsBoardList } from "@/components/jobs-board/jobs-board-list";
 import { JobsBoardMetrics } from "@/components/jobs-board/jobs-board-metrics";
 import { JobsBoardPreview } from "@/components/jobs-board/jobs-board-preview";
-import { JobsBoardPreviewSheet } from "@/components/jobs-board/jobs-board-preview-sheet";
 import {
 	detailRowSnapshot,
 	retainedRowSnapshot,
@@ -65,7 +63,30 @@ type JobsBoardProps = {
 	initialJobId?: string;
 };
 
+const JobsBoardPreviewSheet = dynamic(
+	() =>
+		import("@/components/jobs-board/jobs-board-preview-sheet").then((module) => ({
+			default: module.JobsBoardPreviewSheet,
+		})),
+	{ ssr: false },
+);
+const JobsBoardLocalDataPanel = dynamic(
+	() =>
+		import("@/components/jobs-board/jobs-board-local-data-panel").then((module) => ({
+			default: module.JobsBoardLocalDataPanel,
+		})),
+	{ ssr: false },
+);
+const JobsBoardConfirmDialog = dynamic(
+	() =>
+		import("@/components/jobs-board/jobs-board-confirm-dialog").then((module) => ({
+			default: module.JobsBoardConfirmDialog,
+		})),
+	{ ssr: false },
+);
+
 export function JobsBoard({ initialJobId }: JobsBoardProps) {
+	const [heavyIslandReady, setHeavyIslandReady] = useState(false);
 	const [localDataOpen, setLocalDataOpen] = useState(false);
 	const [pendingDeleteSavedSearch, setPendingDeleteSavedSearch] =
 		useState<SavedSearchRecord | null>(null);
@@ -117,6 +138,11 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 
 	const { detail, detailLoading, detailError } = useJobDetail(selectedJobId);
 	const savedSearchFullCounts = useSavedSearchFullCounts(localState.savedSearches);
+
+	useEffect(() => {
+		const frame = requestAnimationFrame(() => setHeavyIslandReady(true));
+		return () => cancelAnimationFrame(frame);
+	}, []);
 
 	useEffect(() => {
 		if (initialJobId && !selectedJobId) {
@@ -670,6 +696,8 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				) : null}
 			</div>
 
+			{heavyIslandReady ? (
+				<>
 			<JobsBoardPreviewSheet
 				open={hasPreviewSelection}
 				row={selectedRow}
@@ -712,6 +740,8 @@ export function JobsBoard({ initialJobId }: JobsBoardProps) {
 				onConfirm={confirmDeleteSavedSearch}
 				onCancel={() => setPendingDeleteSavedSearch(null)}
 			/>
+				</>
+			) : null}
 		</section>
 	);
 }

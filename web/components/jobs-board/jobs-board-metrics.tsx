@@ -68,7 +68,7 @@ export function JobsBoardMetrics({
 					<code>{manifest?.source.database ?? "kaggle/openoppsdb.sqlite"}</code>
 					{manifest?.snapshotAt ? ` at ${formatDate(manifest.snapshotAt)}` : ""}
 					. Open roles only — use the{" "}
-					<Link href="/explorer" className="text-primary underline-offset-2 hover:underline">
+					<Link href="/explorer" prefetch={false} className="text-primary underline-offset-2 hover:underline">
 						dataset explorer
 					</Link>{" "}
 					for closed postings and provider routes.

@@ -32,8 +32,8 @@ ci-openspec: openspec-list openspec-validate-all
 # Offline source-discovery contract gate. No live network, upload, or apply.
 ci-discovery: source-discovery-ci
 
-# Web product gate.
-ci-web: web-check web-build web-test web-e2e web-a11y web-lint web-search-artifacts-check
+# Web product gate. just 1.58 runs web-build once even when named by dependents.
+ci-web: web-check web-build web-test web-playwright web-lint web-search-artifacts-check
 
 # Generated-artifact, source-policy, and repository-diff gate.
 ci-artifacts: source-policy-check kaggle-generated-diff-check kaggle-bundle-smoke diff-check
@@ -244,12 +244,20 @@ web-test:
     cd web && pnpm test
 
 # Run browser E2E checks for the production-built public surface and jobs board.
-web-e2e: web-build
+web-e2e: web-build web-e2e-playwright
+
+web-e2e-playwright:
     cd web && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium --project=firefox --project=webkit
 
 # Run focused browser accessibility checks against the production build.
-web-a11y: web-build
+web-a11y: web-build web-a11y-playwright
+
+web-a11y-playwright:
     cd web && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=mobile-chromium accessibility.spec.ts
+
+# One Playwright process and one next start for ci-web (chromium/firefox/webkit + a11y).
+web-playwright:
+    cd web && OPENOPPS_E2E_WEB_SERVER_COMMAND="pnpm exec next start -p 3211" pnpm exec playwright test --project=chromium --project=firefox --project=webkit --project=mobile-chromium
 
 # Run focused SEO/static-route browser checks against the production build.
 web-seo-check: web-build

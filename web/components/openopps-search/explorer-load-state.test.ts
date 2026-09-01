@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_EXPLORER_SORT } from "./explorer-filter-engine";
-import { shouldLoadFullJobsIndexForExplorer } from "./explorer-load-state";
+import {
+	shouldLoadFullJobsIndexForExplorer,
+	shouldLoadLineageAggregate,
+} from "./explorer-load-state";
 
 describe("explorer full jobs load state", () => {
 	const baseDecision = {
@@ -96,5 +99,15 @@ describe("explorer full jobs load state", () => {
 				fullJobsRequested: true,
 			}),
 		).toBe(true);
+	});
+});
+
+describe("explorer lineage load state", () => {
+	it("defers lineage-aggregate off dashboard first paint", () => {
+		expect(shouldLoadLineageAggregate({ inspectOpen: false })).toBe(false);
+	});
+
+	it("loads lineage after inspect is requested", () => {
+		expect(shouldLoadLineageAggregate({ inspectOpen: true })).toBe(true);
 	});
 });

@@ -1,3 +1,4 @@
+import '../deferred-fonts.css';
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
@@ -7,7 +8,7 @@ export default function ExplorerLayout({
 	children,
 }: LayoutProps<"/explorer">) {
 	return (
-		<HomeLayout {...baseOptions()}>
+		<HomeLayout {...baseOptions()} searchToggle={{ enabled: false }}>
 			<NuqsAdapter>{children}</NuqsAdapter>
 		</HomeLayout>
 	);

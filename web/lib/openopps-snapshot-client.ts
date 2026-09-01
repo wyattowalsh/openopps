@@ -382,8 +382,9 @@ export class OpenOppsSnapshotClient {
 			}
 			const url = resolvePublicSearchUrl(this.baseUrl, path);
 			return (await this.fetchUnverifiedJson(url, path, {
-				cache: "no-store",
+				cache: "force-cache",
 				signal,
+				priority: "low",
 			}, MAX_RELEASE_FILE_BYTES)) as T;
 		});
 	}
