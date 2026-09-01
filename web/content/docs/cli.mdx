@@ -38,11 +38,20 @@ openopps status
 
 The editable tool uses the same runtime settings as `uv run`, including `OPENOPPS_DB_URL`, plugin allow lists, cache settings, and current working-directory-relative SQLite paths.
 
+Typer already ships shell completion. Enable it with the built-in flags; this project does not add a custom completer:
+
+```bash
+uv run openopps --install-completion
+uv run openopps --show-completion
+```
+
 ## Workflow
+
+`status` and `doctor` sit on the Everyday workflow panel. `doctor` prints the same JSON-shaped status payload as `status`, then a first-time checklist: set `OPENOPPS_DB_URL`, run `openopps admin db init` (idempotent), then either `openopps https://…` or `openopps sync a16z --metrics-json`. Successful `doctor` does not claim the schema is missing. `nextAction` never names `discovery scout`.
 
 The normal sequence is:
 
-1. Run `sync` for source discovery, board route resolution, and job sync in order.
+1. Pull an HTTPS careers URL (`openopps https://…`) or run `openopps sync a16z --metrics-json`.
 2. Use `sources sync`, `boards sync`, or `jobs sync` when rerunning one stage.
 3. Inspect `providers coverage`, `providers audit`, or `admin providers registry` when route metadata is incomplete.
 4. Use `jobs list`, `boards export`, or `jobs export` for analysis.
@@ -68,8 +77,8 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | Surface | Commands | Purpose |
 | ------- | -------- | ------- |
 | `sync` | top-level | Run source discovery, board route resolution, and job sync in order. |
-| `status` | top-level | Report database, cache, plugin, route readiness, and next action. |
-| `doctor` | top-level | Same status payload with setup-oriented framing. |
+| `status` | top-level (Everyday) | Report database, cache, plugin, route readiness, and next action. |
+| `doctor` | top-level (Everyday) | Same status payload plus the URL-first setup checklist. Not a discovery wizard. |
 | `sources` | `list`, `show`, `sync` | Inspect aggregate discovery catalogs and import board records. |
 | `boards` | `sync`, `list`, `show`, `export` | Resolve, inspect, and export firm or company hiring board records. |
 | `jobs` | `sync`, `list`, `show`, `history`, `export` | Fetch, inspect, version, and export normalized public postings. |

@@ -21,7 +21,9 @@ uv sync
 just --list
 uv run openopps admin db init
 uv run openopps status
+uv run openopps doctor
 uv run openopps --help
+uv run openopps --install-completion
 ```
 
 Initialize the SQLite schema once per `OPENOPPS_DB_URL` before live syncs. For an isolated database, set `OPENOPPS_DB_URL=sqlite:///./path/to/openopps.sqlite` (or copy `.env.example` to `.env`) before `admin db init`.
@@ -56,7 +58,7 @@ uv run openopps cache status --json
 uv run openopps plugins list --json
 ```
 
-For first-run discovery, start with `uv run openopps --help` and `uv run openopps status`. The root help groups stable workflow commands separately from advanced admin diagnostics, and automation-oriented commands use `--json` or `--metrics-json` for parseable stdout.
+`status` and `doctor` sit on the Everyday workflow panel. `doctor` is URL-first: set `OPENOPPS_DB_URL`, run `openopps admin db init`, then pull an HTTPS careers URL (`openopps https://…`) or `openopps sync a16z --metrics-json`. `nextAction` never names discovery scout. Typer already ships `--install-completion`; this project does not add a custom completer. The root help groups stable workflow commands separately from advanced admin diagnostics, and automation-oriented commands use `--json` or `--metrics-json` for parseable stdout.
 
 Unscoped commands use superset behavior. For example, `jobs sync` targets every known board with a job-capable provider unless narrowed with `--source`, `--board`, or `--provider`. Provider filters accept `any` and `all` as aliases for removing the provider filter, which is useful in scripts that always pass a provider argument.
 

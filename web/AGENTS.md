@@ -42,6 +42,7 @@ just web-rtk-lint
 ```
 
 Prefer `just web-*` from the repository root. Transitional `just docs-*` recipes are aliases that invoke the corresponding `web-*` recipes.
+`just ci-web` runs one Playwright process (`just web-playwright`) and one `next start`. Standalone `just web-e2e` and `just web-a11y` still depend on `web-build`.
 
 Use `pnpm types:check` after MDX/content graph edits because it runs `fumadocs-mdx`, `next typegen`, and `tsc --noEmit`.
 Use `just web-function-trace-check` after production web builds when verifying API route bundles; `just web-build` already runs it.

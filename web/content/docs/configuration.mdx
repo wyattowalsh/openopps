@@ -31,7 +31,8 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 | `OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS` | `0.0`                                            | Skip recently synced provider routes during job sync when above `0`; `0` refreshes every selected route. |
 | `OPENOPPS_JOB_ROUTE_LIMIT`      | unset                                                     | Cap stale or never-synced routes processed in one job sync; unset processes every selected route. |
 | `OPENOPPS_PROVIDER_CONCURRENCY` | `12`                                                      | Concurrent provider route probes when OpenOpps detects executable job-board routes (for example during `admin providers probe-routes`). Not job-fetch parallelism. |
-| `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests.   |
+| `OPENOPPS_CONCURRENCY_PROFILE` | `explicit` | `explicit` keeps the integer knobs on this page. `auto` / `ci` / `constrained` may size JSON-board source, board, and provider pools from available CPUs, but they never raise Workday or discovery per-host caps. Explicit `OPENOPPS_*` integers always win. |
+| `OPENOPPS_WORKDAY_CONCURRENCY`  | `2`                                                       | Conservative limit for public Workday CXS careers-site requests. Profiles never raise this value. |
 | `OPENOPPS_DB_BATCH_SIZE`        | `500`                                                     | Batch size for SQLite writes.                                      |
 | `OPENOPPS_HTTP_TIMEOUT`         | `30.0`                                                    | HTTP timeout in seconds.                                           |
 | `OPENOPPS_RETRY_ATTEMPTS`       | `3`                                                       | Number of retry attempts for retriable upstream requests.          |
@@ -47,7 +48,7 @@ The editable `uv tool install -e .` path makes the `openopps` command available 
 
 ### Isolated discovery scout
 
-The isolated scout uses a separate settings model (`DiscoverySettings` in `src/openopps/discovery/settings.py`). `OPENOPPS_DISCOVERY_*` budget fields are not part of `OpenOppsSettings`, do not load `.env`, and do not change `openopps sync`. Values must be canonical positive decimals. Invalid values fail closed without echoing the input.
+The isolated scout uses a separate settings model (`DiscoverySettings` in `src/openopps/discovery/settings.py`). `OPENOPPS_DISCOVERY_*` budget fields are not part of `OpenOppsSettings`, do not load `.env`, and do not change `openopps sync`. `OPENOPPS_CONCURRENCY_PROFILE` never derives `OPENOPPS_DISCOVERY_PER_HOST_CONCURRENCY`. Values must be canonical positive decimals. Invalid values fail closed without echoing the input.
 
 Scout output is an explicit directory, not the operational database. `openopps discovery scout --output /absolute/quarantine-root --json` (also `openopps admin sources scout`) writes one evaluation quarantine bundle under that required `--output` path. There is no scout-output environment variable. `OPENOPPS_DB_URL` still names the CLI SQLite ledger for sync, cache, and `admin db` commands; the scout does not open or mutate that file, catalogs, Git, Kaggle, or Cloudflare.
 
@@ -119,6 +120,7 @@ For repeated local use from the repository checkout, place values in `.env` at t
 
 ```dotenv
 OPENOPPS_DB_URL=sqlite:///openoppsdb.sqlite
+OPENOPPS_CONCURRENCY_PROFILE=explicit
 OPENOPPS_SOURCE_CONCURRENCY=4
 OPENOPPS_SOURCE_TIMEOUT_SECONDS=900
 OPENOPPS_SOURCE_FRESHNESS_SECONDS=0
@@ -146,6 +148,7 @@ Prefer flags for one run and environment variables for durable local policy:
 | Refresh one upstream read                    | `--refresh-cache`                       |
 | Always bypass cache reads in a shell/session | `OPENOPPS_CACHE_REFRESH=true`           |
 | Narrow one job sync                          | `--source`, `--board`, or `--provider`  |
+| Opt into place-aware JSON-board pools        | `OPENOPPS_CONCURRENCY_PROFILE=auto` (Workday stays 2) |
 | Lower Workday pressure across all runs       | `OPENOPPS_WORKDAY_CONCURRENCY=1` or `2` |
 | Cap one unscoped job sync batch              | `OPENOPPS_JOB_ROUTE_LIMIT=500`          |
 | Skip recently synced routes in job sync      | `OPENOPPS_JOB_ROUTE_FRESHNESS_SECONDS=86400` |
