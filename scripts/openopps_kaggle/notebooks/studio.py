@@ -832,11 +832,10 @@ def snapshot_health_notebook() -> dict[str, Any]:
     )
     coverage = pd.read_sql_query(
         """
-        select count(distinct source_id) as sources,
-               count(distinct board_key) as boards,
-               count(*) as open_jobs
-        from jobs
-        where status = 'open'
+        select
+            (select count(*) from sources) as sources,
+            (select count(*) from boards) as boards,
+            (select count(*) from jobs where status = 'open') as open_jobs
         """,
         conn,
     )
