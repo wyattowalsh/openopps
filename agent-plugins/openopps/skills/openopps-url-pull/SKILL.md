@@ -31,7 +31,7 @@ May shell `openopps` / MCP `run` for URL pulls. Do not scout, mutate catalogs, o
 1. Always use the same workflow for `openopps <URL>` and `openopps jobs pull <URL>`.
 2. Never treat this operational pull as quarantined discovery.
 3. Do not invent tokens or claim completeness the CLI did not report.
-4. Must prefer `--json`; `--no-save` leaves operational tables unchanged.
+4. Must prefer `--json`; `--no-save` leaves operational tables unchanged. Use `--metrics-file` or `--raw` for pull observability, never `--metrics-json`.
 5. Always fail closed on ambiguity, unsupported ATS, or incomplete board scans.
 
 ## Canonical vocabulary

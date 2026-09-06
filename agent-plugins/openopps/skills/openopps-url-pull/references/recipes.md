@@ -2,8 +2,8 @@
 
 ```bash
 openopps jobs pull https://boards.greenhouse.io/example --json
-openopps https://jobs.ashbyhq.com/example --json
-openopps jobs pull https://example.invalid/jobs --no-save --json
+openopps https://jobs.ashbyhq.com/example --json --metrics-file /tmp/pull-metrics.json
+openopps jobs pull https://example.invalid/jobs --no-save --raw
 ```
 
 Same workflow for `openopps <url>` and `openopps jobs pull <url>`.
@@ -14,7 +14,8 @@ Fail closed on ambiguity. This is operational pull, not quarantined discovery.
 - Prefer `--json` so stdout stays machine-readable.
 - `--help` is always safe.
 - `--apply` is an explicit persist; dry-run first.
-- `--metrics-json` is for sync/status metrics where the CLI supports it.
+- `--metrics-json` is catalog sync stdout only. Do not pass it to `jobs pull`.
+- For URL pull observability, use `--metrics-file PATH` and/or `--raw`.
 - Do not mix human diagnostics onto JSON stdout.
 - Relative SQLite URLs follow process cwd.
 - `OPENOPPS_BIN` overrides PATH when set.

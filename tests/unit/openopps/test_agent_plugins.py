@@ -85,7 +85,9 @@ def test_schema_validator_rejects_unknown_plugin_fields_and_reserved_env() -> No
 def test_packages_are_schema_valid_without_extension_dirs() -> None:
     payload = verify()
     assert payload["ok"] is True
-    names = {row["name"] for row in payload["packages"]}
+    packages = payload["packages"]
+    assert isinstance(packages, list)
+    names = {row["name"] for row in packages}
     assert names == {"openopps", "openopps-dev"}
     for root in (USER_ROOT, DEV_ROOT):
         plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
@@ -330,3 +332,19 @@ def test_dev_skills_stay_on_discovery_isolation_and_evals() -> None:
         REPO_ROOT / ".grok" / "skills" / "openopps-source-scout",
     ):
         assert not projection.exists()
+
+
+def test_url_pull_recipes_use_metrics_file_not_metrics_json() -> None:
+    recipes = (
+        USER_ROOT / "skills" / "openopps-url-pull" / "references" / "recipes.md"
+    ).read_text(encoding="utf-8")
+    skill = (USER_ROOT / "skills" / "openopps-url-pull" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "--metrics-file" in recipes
+    assert "--raw" in recipes
+    assert "Do not pass it to `jobs pull`" in recipes
+    assert "--metrics-json" in recipes
+    assert "jobs pull" in recipes
+    assert "--metrics-file" in skill
+    assert "never `--metrics-json`" in skill
