@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 import shutil
+import subprocess
 
 import pytest
 
@@ -14,8 +16,9 @@ from openopps.discovery.promotion import (
 from openopps.discovery.promotion_closure import (
     CLOSURE_VALIDATED_AT,
     DECISION_ID,
-    apply_shared_delivery_closure,
+    apply_reserved_shared_delivery_closure,
     build_shared_delivery_closure,
+    reserve_shared_delivery_closure,
 )
 from openopps.discovery.promotion_runtime import (
     CATALOG_RELATIVE_PATH,
@@ -35,6 +38,8 @@ from openopps.discovery.promotion_runtime import (
 
 ROOT = Path(__file__).resolve().parents[4]
 HEAD = "fd7bab3b4ddfad59dc4138e05905f891bcb1f44a"
+NEW_DECISION_ID = "b699-identity-closure-20260906"
+NEW_VALIDATED_AT = datetime(2026, 9, 6, tzinfo=UTC)
 CLOSURE_SURFACES = (
     CATALOG_RELATIVE_PATH,
     GENERATED_RELATIVE_PATH,
@@ -90,15 +95,29 @@ def test_shared_delivery_reserve_apply_wheel_readback_and_stale_retry(
     outsider = root / "README.md"
     outsider.write_text("keep\n", encoding="utf-8")
 
-    closure, reserved, journal = apply_shared_delivery_closure(
+    historical: tuple = ()
+    closure, reserved = reserve_shared_delivery_closure(
         root,
         head_sha=HEAD,
+        decision_id=NEW_DECISION_ID,
+        invocation_mode="maintainer",
+        committed_events=historical,
+        validated_at=NEW_VALIDATED_AT,
+    )
+    journal = apply_reserved_shared_delivery_closure(
+        root,
+        head_sha=HEAD,
+        decision_id=NEW_DECISION_ID,
         invocation_mode="maintainer",
         lock_nonce="b699-nonce",
+        committed_events=(*historical, reserved),
+        closure=closure,
     )
-    events = load_promotion_ledger(root / layout.ledger, committed_events=(reserved,))
+    events = load_promotion_ledger(
+        root / layout.ledger, committed_events=(*historical, reserved)
+    )
     assert [event.state for event in events] == ["reserved", "applied"]
-    assert events[0].decision_id == DECISION_ID
+    assert events[0].decision_id == NEW_DECISION_ID
     assert (root / CATALOG_RELATIVE_PATH).read_bytes() == before_catalog
     assert (root / GENERATED_RELATIVE_PATH).read_bytes() == before_generated
     assert (root / ENVELOPE_RELATIVE_PATH).read_bytes() == closure.after_bytes[
@@ -117,7 +136,7 @@ def test_shared_delivery_reserve_apply_wheel_readback_and_stale_retry(
     with pytest.raises(Exception, match="reserved|applied|state"):
         apply_promotion(
             root,
-            decision_id=DECISION_ID,
+            decision_id=NEW_DECISION_ID,
             intent=closure.preview.intent,
             invocation_mode="maintainer",
             head_sha=HEAD,
@@ -145,24 +164,46 @@ def test_shared_delivery_reserve_apply_wheel_readback_and_stale_retry(
 
 def test_scout_cannot_apply_shared_delivery_closure(tmp_path: Path) -> None:
     root = _seed(tmp_path)
+    closure = build_shared_delivery_closure(
+        root,
+        head_sha=HEAD,
+        decision_id=NEW_DECISION_ID,
+        validated_at=NEW_VALIDATED_AT,
+    )
     with pytest.raises(PromotionDecisionError, match="maintainer"):
-        apply_shared_delivery_closure(
+        apply_reserved_shared_delivery_closure(
             root,
             head_sha=HEAD,
+            decision_id=NEW_DECISION_ID,
             invocation_mode="scout",
             lock_nonce="scout-nonce",
+            committed_events=(),
+            closure=closure,
         )
 
 
-def test_repo_shared_delivery_artifacts_match_identity_closure() -> None:
-    closure = build_shared_delivery_closure(ROOT, head_sha=HEAD)
+def test_repo_shared_delivery_artifacts_match_identity_closure(
+    tmp_path: Path,
+) -> None:
+    # Bind against committed generated. Workspace generated may be dirty from
+    # another lane; do not rewrite identity data files to chase that drift.
+    root = tmp_path / "identity-repo"
+    committed_generated = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", f"HEAD:{GENERATED_RELATIVE_PATH}"]
+    )
+    for relative in CLOSURE_SURFACES:
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if relative == GENERATED_RELATIVE_PATH:
+            destination.write_bytes(committed_generated)
+        else:
+            shutil.copyfile(ROOT / relative, destination)
+    closure = build_shared_delivery_closure(root, head_sha=HEAD)
     layout = PromotionLayout()
     assert (ROOT / CATALOG_RELATIVE_PATH).read_bytes() == closure.after_bytes[
         CATALOG_RELATIVE_PATH
     ]
-    assert (ROOT / GENERATED_RELATIVE_PATH).read_bytes() == closure.after_bytes[
-        GENERATED_RELATIVE_PATH
-    ]
+    assert committed_generated == closure.after_bytes[GENERATED_RELATIVE_PATH]
     assert (ROOT / ENVELOPE_RELATIVE_PATH).read_bytes() == closure.after_bytes[
         ENVELOPE_RELATIVE_PATH
     ]

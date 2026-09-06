@@ -33,16 +33,14 @@ from openopps.discovery.promotion import (
 from openopps.discovery.promotion_runtime import (
     CATALOG_RELATIVE_PATH,
     GENERATED_RELATIVE_PATH,
-    LEDGER_RELATIVE_PATH,
     READONLY_WHEEL_PATHS,
     SHARED_DELIVERY_OWNED_PATHS,
     SHARED_DELIVERY_WHEEL_MEMBERS,
     PromotionLayout,
+    PromotionLedgerError,
     apply_promotion,
-    assert_zero_drift,
-    encode_promotion_ledger,
-    load_promotion_ledger,
     observe_cas_state,
+    require_maintainer_mutation,
     reserve_promotion,
 )
 
@@ -208,78 +206,98 @@ def build_shared_delivery_closure(
     )
 
 
-def apply_shared_delivery_closure(
+def apply_shared_delivery_closure(*args: object, **kwargs: object) -> ApplyJournal:
+    raise PromotionLedgerError(
+        "refusing combined reserve+apply Git delivery; "
+        "use reserve_shared_delivery_closure then "
+        "apply_reserved_shared_delivery_closure with the full committed prefix"
+    )
+
+
+def reserve_shared_delivery_closure(
     repository_root: Path,
     *,
     head_sha: str,
+    decision_id: str,
     invocation_mode: str,
-    lock_nonce: str,
-    committed_events: Sequence[PromotionLedgerEvent] | None = None,
-    closure: SharedDeliveryClosure | None = None,
+    committed_events: Sequence[PromotionLedgerEvent],
+    validated_at: datetime | None = None,
     layout: PromotionLayout = PromotionLayout(),
-) -> tuple[SharedDeliveryClosure, PromotionLedgerEvent, ApplyJournal]:
-    """Reserve, then apply the identity closure under the promotion lock."""
-
-    root = Path(repository_root)
-    built = closure or build_shared_delivery_closure(root, head_sha=head_sha)
+) -> tuple[SharedDeliveryClosure, PromotionLedgerEvent]:
+    require_maintainer_mutation(invocation_mode)
+    if decision_id == DECISION_ID:
+        raise PromotionLedgerError("refusing replay of b699-identity-closure-20260822")
+    built = build_shared_delivery_closure(
+        repository_root,
+        head_sha=head_sha,
+        decision_id=decision_id,
+        validated_at=validated_at or datetime.now(UTC),
+    )
     catalog_fp = built.preview.catalog_before_digest
-    expected = observe_cas_state(
-        root,
-        head_sha=head_sha,
-        catalog_fingerprint=catalog_fp,
-        layout=layout,
-        owned_paths=SHARED_DELIVERY_OWNED_PATHS,
-    )
     reserved = reserve_promotion(
-        root,
-        decision_id=built.decision_id,
-        intent=built.preview.intent,
-        invocation_mode=invocation_mode,
-        head_sha=head_sha,
-        catalog_fingerprint=catalog_fp,
-        expected_cas=expected,
-        committed_events=() if committed_events is None else committed_events,
-        layout=layout,
-        owned_paths=SHARED_DELIVERY_OWNED_PATHS,
-    )
-    generated_bytes = built.generated_bytes
-
-    def generation_runner(_staged: Path) -> Mapping[str, bytes]:
-        return {GENERATED_RELATIVE_PATH: generated_bytes}
-
-    journal = apply_promotion(
-        root,
+        repository_root,
         decision_id=built.decision_id,
         intent=built.preview.intent,
         invocation_mode=invocation_mode,
         head_sha=head_sha,
         catalog_fingerprint=catalog_fp,
         expected_cas=observe_cas_state(
-            root,
+            repository_root,
             head_sha=head_sha,
             catalog_fingerprint=catalog_fp,
             layout=layout,
             owned_paths=SHARED_DELIVERY_OWNED_PATHS,
         ),
-        after_bytes=built.after_bytes,
-        committed_events=(reserved,),
+        committed_events=committed_events,  # prefix BEFORE this reservation
+        layout=layout,
+        owned_paths=SHARED_DELIVERY_OWNED_PATHS,
+    )
+    return built, reserved
+
+
+def apply_reserved_shared_delivery_closure(
+    repository_root: Path,
+    *,
+    head_sha: str,
+    decision_id: str,
+    invocation_mode: str,
+    lock_nonce: str,
+    committed_events: Sequence[PromotionLedgerEvent],
+    closure: SharedDeliveryClosure,
+    layout: PromotionLayout = PromotionLayout(),
+) -> ApplyJournal:
+    require_maintainer_mutation(invocation_mode)
+    if not committed_events:
+        raise PromotionLedgerError("apply requires a committed reserved event")
+    latest = committed_events[-1]
+    if latest.decision_id != decision_id or latest.state != "reserved":
+        raise PromotionLedgerError("apply requires a committed reserved event")
+    catalog_fp = closure.preview.catalog_before_digest
+    generated_bytes = closure.generated_bytes
+
+    def generation_runner(_staged: Path) -> Mapping[str, bytes]:
+        return {GENERATED_RELATIVE_PATH: generated_bytes}
+
+    return apply_promotion(
+        repository_root,
+        decision_id=decision_id,
+        intent=closure.preview.intent,
+        invocation_mode=invocation_mode,
+        head_sha=head_sha,
+        catalog_fingerprint=catalog_fp,
+        expected_cas=observe_cas_state(
+            repository_root,
+            head_sha=head_sha,
+            catalog_fingerprint=catalog_fp,
+            layout=layout,
+            owned_paths=SHARED_DELIVERY_OWNED_PATHS,
+        ),
+        after_bytes=closure.after_bytes,
+        committed_events=committed_events,  # FULL prefix including reserved
         lock_nonce=lock_nonce,
         allowlist=SHARED_DELIVERY_OWNED_PATHS,
         layout=layout,
         generation_runner=generation_runner,
         wheel_members=SHARED_DELIVERY_WHEEL_MEMBERS,
-        readonly_wheel_bytes=built.readonly_wheel_bytes,
+        readonly_wheel_bytes=closure.readonly_wheel_bytes,
     )
-    applied_ledger = encode_promotion_ledger(
-        load_promotion_ledger(root / layout.ledger, committed_events=(reserved,))
-    )
-    assert_zero_drift(
-        root,
-        {
-            **built.after_bytes,
-            LEDGER_RELATIVE_PATH: applied_ledger,
-        },
-        generation_runner=generation_runner,
-        wheel_members=SHARED_DELIVERY_WHEEL_MEMBERS,
-    )
-    return built, reserved, journal
