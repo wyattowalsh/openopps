@@ -47,7 +47,7 @@ describe("server snapshot-client precedence", () => {
 		).resolves.toEqual(searchManifest);
 		expect(fetchMock).toHaveBeenCalledWith(
 			new URL("https://data.openopps.test/data/openopps-search/manifest.json"),
-			expect.objectContaining({ cache: "no-store" }),
+			expect.objectContaining({ cache: "force-cache", priority: "low" }),
 		);
 	});
 
@@ -67,7 +67,7 @@ describe("server snapshot-client precedence", () => {
 		).resolves.toEqual(searchManifest);
 		expect(fetchMock).toHaveBeenCalledWith(
 			new URL(`${siteUrl}/data/openopps-search/manifest.json`),
-			expect.objectContaining({ cache: "no-store" }),
+			expect.objectContaining({ cache: "force-cache", priority: "low" }),
 		);
 	});
 });
