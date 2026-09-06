@@ -326,26 +326,27 @@ def test_offline_cli_scout_verify_and_preview_then_delete_private_output(
     catalog_before = CATALOG.read_bytes()
     envelope_before = ENVELOPE.read_bytes()
 
-    # Freeze-before-apply: envelope v7PolicyCorpusDigest is still 1cf42938… while
-    # the rebound corpus file is 48493785…. Selector-bound scout must fail closed
-    # (evidence_incomplete) and must not write a quarantine bundle. Do not restore
-    # the old pin or rewrite the 20260822 envelope to fake a success path.
-    scout_completed = _run_documented_process(
-        commands[0],
-        private_output=private_output,
-    )
-    scout_combined = f"{scout_completed.stdout}\n{scout_completed.stderr}"
-    assert scout_completed.returncode == 1, scout_combined
-    scout = _payload_from_stdout(scout_completed.stdout)
+    # The 20260906 apply rewrote the envelope: v7PolicyCorpusDigest now equals
+    # the rebound corpus file (48493785…), so the selector-bound scout succeeds
+    # and writes a quarantine manifest. verify-scout confirms it without
+    # granting authority; no promotion or activation happens offline.
+    scout = _run_documented(commands[0], private_output=private_output)
     assert scout["command"] == "scout"
     assert scout["promoted"] is False
     assert scout["activated"] is False
-    assert scout["status"] == "invalid"
-    diagnostic = scout["diagnostic"]
-    assert isinstance(diagnostic, dict)
-    assert diagnostic.get("reasonCode") == "evidence_incomplete"
-    assert scout.get("manifestPath") in (None, "")
-    assert not any(private_output.rglob("manifest.json"))
+    manifest = Path(str(scout["manifestPath"]))
+    assert manifest.is_file()
+    assert manifest.resolve().is_relative_to(private_output)
+
+    verify = _run_documented(
+        commands[1],
+        private_output=private_output,
+        scout_manifest=manifest,
+    )
+    assert verify["command"] == "verify-scout"
+    assert verify["status"] == "verified"
+    assert verify["promoted"] is False
+    assert verify["activated"] is False
 
     preview = _run_documented(commands[2], private_output=private_output)
     assert preview["command"] == "preview-promotion"
