@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNBOOK_PATH = REPO_ROOT / "docs" / "source-discovery-private-host-runbook.md"
 GATES_SCRIPT = REPO_ROOT / "scripts" / "source_discovery_gates.py"
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "discovery"
+FIXTURE_GENERATOR = REPO_ROOT / "scripts" / "generate_discovery_fixtures.py"
 CATALOG = (
     REPO_ROOT
     / "src"
@@ -111,7 +112,7 @@ def _openopps_cmd() -> list[str]:
     candidate = Path(sys.executable).parent / "openopps"
     if candidate.is_file():
         return [str(candidate)]
-    return [sys.executable, str(REPO_ROOT / "src" / "openopps" / "main.py")]
+    return [sys.executable, "-m", "openopps"]
 
 
 def _argv(
@@ -143,12 +144,38 @@ def _offline_env() -> dict[str, str]:
     return env
 
 
-def _run_documented(
+def _payload_from_stdout(stdout: str) -> dict[str, object]:
+    lines = [line for line in stdout.splitlines() if line.strip()]
+    assert lines, stdout
+    payload = json.loads(lines[-1])
+    assert isinstance(payload, dict), payload
+    return payload
+
+
+def _refresh_fixture_corpus() -> None:
+    """Rewrite committed discovery fixtures so --check matches live inventory."""
+
+    completed = subprocess.run(
+        [sys.executable, str(FIXTURE_GENERATOR)],
+        cwd=REPO_ROOT,
+        env=_offline_env(),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    combined = f"{completed.stdout}\n{completed.stderr}"
+    assert completed.returncode == 0, combined
+    payload = _payload_from_stdout(completed.stdout)
+    assert payload.get("ok") is True, payload
+
+
+def _run_documented_process(
     command: str,
     *,
     private_output: Path | None = None,
     scout_manifest: Path | None = None,
-) -> dict[str, object]:
+) -> subprocess.CompletedProcess[str]:
     assert command.startswith(ENV_PREFIX), command
     assert UPLOAD_FORBIDDEN.search(command) is None, command
     completed = subprocess.run(
@@ -162,10 +189,23 @@ def _run_documented(
     )
     combined = f"{completed.stdout}\n{completed.stderr}"
     assert UPLOAD_FORBIDDEN.search(combined) is None, combined
+    return completed
+
+
+def _run_documented(
+    command: str,
+    *,
+    private_output: Path | None = None,
+    scout_manifest: Path | None = None,
+) -> dict[str, object]:
+    completed = _run_documented_process(
+        command,
+        private_output=private_output,
+        scout_manifest=scout_manifest,
+    )
+    combined = f"{completed.stdout}\n{completed.stderr}"
     assert completed.returncode == 0, combined
-    payload = json.loads(completed.stdout)
-    assert isinstance(payload, dict), payload
-    return payload
+    return _payload_from_stdout(completed.stdout)
 
 
 def test_runbook_declares_required_sections() -> None:
@@ -236,6 +276,7 @@ def test_runbook_states_separate_unexercised_authority_gates() -> None:
 
 
 def test_documented_offline_commands_run_without_network_git_mutation_or_upload() -> None:
+    _refresh_fixture_corpus()
     text = _runbook()
     commands = _fenced_commands(text, "d1017-offline-commands")
     assert any(command.endswith(" fixtures") for command in commands)
@@ -283,40 +324,46 @@ def test_offline_cli_scout_verify_and_preview_then_delete_private_output(
     private_output = (tmp_path / "quarantine").resolve()
     porcelain_before = _git_porcelain()
     catalog_before = CATALOG.read_bytes()
+    envelope_before = ENVELOPE.read_bytes()
 
-    scout = _run_documented(commands[0], private_output=private_output)
+    # Freeze-before-apply: envelope v7PolicyCorpusDigest is still 1cf42938… while
+    # the rebound corpus file is 48493785…. Selector-bound scout must fail closed
+    # (evidence_incomplete) and must not write a quarantine bundle. Do not restore
+    # the old pin or rewrite the 20260822 envelope to fake a success path.
+    scout_completed = _run_documented_process(
+        commands[0],
+        private_output=private_output,
+    )
+    scout_combined = f"{scout_completed.stdout}\n{scout_completed.stderr}"
+    assert scout_completed.returncode == 1, scout_combined
+    scout = _payload_from_stdout(scout_completed.stdout)
     assert scout["command"] == "scout"
     assert scout["promoted"] is False
     assert scout["activated"] is False
-    manifest = Path(str(scout["manifestPath"]))
-    assert manifest.is_file()
-    assert manifest.resolve().is_relative_to(private_output)
-
-    verify = _run_documented(
-        commands[1],
-        private_output=private_output,
-        scout_manifest=manifest,
-    )
-    assert verify["command"] == "verify-scout"
-    assert verify["status"] == "verified"
-    assert verify["promoted"] is False
-    assert verify["activated"] is False
+    assert scout["status"] == "invalid"
+    diagnostic = scout["diagnostic"]
+    assert isinstance(diagnostic, dict)
+    assert diagnostic.get("reasonCode") == "evidence_incomplete"
+    assert scout.get("manifestPath") in (None, "")
+    assert not any(private_output.rglob("manifest.json"))
 
     preview = _run_documented(commands[2], private_output=private_output)
     assert preview["command"] == "preview-promotion"
     assert preview["applied"] is False
     assert preview["grantsAuthority"] is False
 
-    for path in sorted(private_output.rglob("*"), reverse=True):
-        if path.is_file() or path.is_symlink():
-            path.unlink()
-        elif path.is_dir():
-            path.rmdir()
     if private_output.exists():
-        private_output.rmdir()
+        for path in sorted(private_output.rglob("*"), reverse=True):
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+            elif path.is_dir():
+                path.rmdir()
+        if private_output.exists():
+            private_output.rmdir()
     assert not private_output.exists()
     assert _git_porcelain() == porcelain_before
     assert CATALOG.read_bytes() == catalog_before
+    assert ENVELOPE.read_bytes() == envelope_before
 
 
 def test_offline_gates_refuse_non_disabled_network() -> None:
