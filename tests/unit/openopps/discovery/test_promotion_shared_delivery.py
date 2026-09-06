@@ -40,6 +40,8 @@ ROOT = Path(__file__).resolve().parents[4]
 HEAD = "fd7bab3b4ddfad59dc4138e05905f891bcb1f44a"
 NEW_DECISION_ID = "b699-identity-closure-20260906"
 NEW_VALIDATED_AT = datetime(2026, 9, 6, tzinfo=UTC)
+# HEAD the 20260906 reservation was bound to (freeze HEAD at reserve time).
+RESERVE_HEAD = "2afe307cc769b640a981e7497cc2673c073d0903"
 CLOSURE_SURFACES = (
     CATALOG_RELATIVE_PATH,
     GENERATED_RELATIVE_PATH,
@@ -198,7 +200,12 @@ def test_repo_shared_delivery_artifacts_match_identity_closure(
             destination.write_bytes(committed_generated)
         else:
             shutil.copyfile(ROOT / relative, destination)
-    closure = build_shared_delivery_closure(root, head_sha=HEAD)
+    closure = build_shared_delivery_closure(
+        root,
+        head_sha=RESERVE_HEAD,
+        decision_id=NEW_DECISION_ID,
+        validated_at=NEW_VALIDATED_AT,
+    )
     layout = PromotionLayout()
     assert (ROOT / CATALOG_RELATIVE_PATH).read_bytes() == closure.after_bytes[
         CATALOG_RELATIVE_PATH
@@ -214,8 +221,22 @@ def test_repo_shared_delivery_artifacts_match_identity_closure(
         DECISION_RELATIVE_PATH
     ]
     events = load_promotion_ledger(ROOT / layout.ledger)
-    assert [event.state for event in events] == ["reserved", "applied"]
-    assert events[0].decision_id == DECISION_ID
-    assert events[0].promotion_intent_digest == events[1].promotion_intent_digest
-    assert events[0].catalog_before_digest == closure.preview.catalog_before_digest
-    assert events[1].catalog_after_digest == closure.preview.catalog_after_digest
+    # 20260822 shipped reserved+applied in single commits; 20260906 landed as
+    # the split Git delivery (reservation commit 2e659c1 then apply commit).
+    assert [event.state for event in events] == [
+        "reserved",
+        "applied",
+        "reserved",
+        "applied",
+    ]
+    assert [event.decision_id for event in events] == [
+        DECISION_ID,
+        DECISION_ID,
+        NEW_DECISION_ID,
+        NEW_DECISION_ID,
+    ]
+    assert events[2].promotion_intent_digest == events[3].promotion_intent_digest
+    assert events[2].event_digest == events[3].predecessor_digest
+    assert events[2].head_sha == RESERVE_HEAD
+    assert events[2].catalog_before_digest == closure.preview.catalog_before_digest
+    assert events[3].catalog_after_digest == closure.preview.catalog_after_digest

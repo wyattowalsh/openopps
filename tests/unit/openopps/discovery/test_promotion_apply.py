@@ -180,9 +180,15 @@ def _repo(tmp_path: Path) -> Path:
 def test_committed_ledger_is_reserved_then_applied() -> None:
     assert LEDGER_PATH.is_file()
     events = load_promotion_ledger(LEDGER_PATH)
-    assert [event.state for event in events] == ["reserved", "applied"]
+    # 20260822 shipped both events in single commits; 20260906 landed as the
+    # split Git delivery (reservation commit 2e659c1, then apply commit).
+    # Every landed closure ends with its reserved→applied pair and the whole
+    # chain is hash-linked end to end.
     assert events[0].decision_id == "b699-identity-closure-20260822"
-    assert events[0].event_digest == events[1].predecessor_digest
+    assert [event.state for event in events[-2:]] == ["reserved", "applied"]
+    assert events[-2].decision_id == events[-1].decision_id
+    for earlier, later in zip(events, events[1:]):
+        assert later.predecessor_digest == earlier.event_digest
 
 
 def test_selection_requires_sorted_unique_candidate_ids() -> None:

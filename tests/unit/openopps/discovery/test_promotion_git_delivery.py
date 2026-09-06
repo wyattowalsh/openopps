@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import json
 import shutil
 
 import pytest
@@ -58,6 +59,19 @@ def _seed(tmp_path: Path) -> Path:
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
+    # The repository ledger now carries later landed closures (20260906); the
+    # Git-delivery fixture is the immutable 20260822 reserved+applied prefix.
+    lines = (ROOT / LEDGER_RELATIVE_PATH).read_text(encoding="utf-8").splitlines(
+        keepends=True
+    )
+    historical = [
+        line for line in lines if json.loads(line)["decisionId"] == DECISION_ID
+    ]
+    assert [json.loads(line)["state"] for line in historical] == [
+        "reserved",
+        "applied",
+    ]
+    (root / LEDGER_RELATIVE_PATH).write_text("".join(historical), encoding="utf-8")
     return root
 
 
