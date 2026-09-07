@@ -68,28 +68,80 @@ build-release-artifacts:
     uv run --frozen python scripts/verify_release_artifacts.py --dist-dir dist
 
 # Build one wheel in a unique directory and confirm its catalog is importable.
-wheel-catalog-smoke:
+wheel-catalog-smoke: lock-check
     #!/usr/bin/env bash
     set -euo pipefail
-    artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/openopps-wheel-smoke.XXXXXX")"
-    build_constraints="$(mktemp "${TMPDIR:-/tmp}/openopps-build-constraints.XXXXXX")"
-    trap 'rm -rf "$artifact_dir"; rm -f "$build_constraints"' EXIT
-    uv export --quiet --frozen --only-group build --no-emit-project --output-file "$build_constraints"
-    uv build --build-constraints "$build_constraints" --require-hashes --wheel --out-dir "$artifact_dir"
-    uv run --frozen python scripts/smoke_wheel_catalog.py --wheel-dir "$artifact_dir"
+    umask 077
+    work="$(mktemp -d "/tmp/openopps-wheel-smoke.XXXXXX")"
+    trap 'rm -rf -- "$work"' EXIT
+    artifact_dir="$work/artifacts"
+    build_constraints="$work/build-constraints.txt"
+    uv_bin="$(command -v uv)"
+    [[ "$uv_bin" == /* && -f "$uv_bin" && -x "$uv_bin" ]] || { echo "absolute uv executable is required" >&2; exit 2; }
+    tool_path="${uv_bin%/*}:/usr/bin:/bin"
+    mkdir -p "$artifact_dir" "$work/home" "$work/tmp" "$work/xdg-cache" "$work/xdg-config" "$work/xdg-data" "$work/uv-cache"
+    clean_env=(
+        /usr/bin/env -i
+        "HOME=$work/home"
+        "PATH=$tool_path"
+        "TMPDIR=$work/tmp"
+        "XDG_CACHE_HOME=$work/xdg-cache"
+        "XDG_CONFIG_HOME=$work/xdg-config"
+        "XDG_DATA_HOME=$work/xdg-data"
+        "UV_CACHE_DIR=$work/uv-cache"
+        "UV_NO_PROGRESS=1"
+    )
+    python_bin="$("${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads python find 3.12 --system)"
+    [[ "$python_bin" == /* && -f "$python_bin" && -x "$python_bin" ]] || { echo "uv did not resolve an absolute Python 3.12 executable" >&2; exit 2; }
+    python_version="$("${clean_env[@]}" "$python_bin" -I -S -B -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    [[ "$python_version" == "3.12" ]] || { echo "Python 3.12 interpreter is required, got: $python_version" >&2; exit 2; }
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads export --quiet --locked --no-sources --only-group build --no-emit-project --no-emit-local --no-emit-index-url --default-index https://pypi.org/simple --index-strategy first-index --keyring-provider disabled --output-file "$build_constraints"
+    "${clean_env[@]}" "$python_bin" -I -S -B scripts/smoke_wheel_catalog.py --validate-requirements "$build_constraints"
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads build --no-sources --default-index https://pypi.org/simple --index-strategy first-index --keyring-provider disabled --build-constraints "$build_constraints" --require-hashes --wheel --out-dir "$artifact_dir"
+    "${clean_env[@]}" "$python_bin" -I -S -B scripts/smoke_wheel_catalog.py --wheel-dir "$artifact_dir" --uv-bin "$uv_bin"
 
 # Local B699 promotion wheel readback. Does not upload Workers or push Kaggle.
-promotion-wheel-readback:
+promotion-wheel-readback: lock-check
     #!/usr/bin/env bash
     set -euo pipefail
-    artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/openopps-promotion-wheel.XXXXXX")"
-    build_constraints="$(mktemp "${TMPDIR:-/tmp}/openopps-build-constraints.XXXXXX")"
-    trap 'rm -rf "$artifact_dir"; rm -f "$build_constraints"' EXIT
-    uv run --frozen pytest tests/unit/openopps/discovery/test_promotion_apply.py tests/unit/openopps/discovery/test_promotion_shared_delivery.py -q
-    uv export --quiet --frozen --only-group build --no-emit-project --output-file "$build_constraints"
-    uv build --build-constraints "$build_constraints" --require-hashes --wheel --out-dir "$artifact_dir"
-    uv run --frozen python scripts/smoke_wheel_catalog.py --wheel-dir "$artifact_dir"
-    uv run --frozen python scripts/smoke_promotion_wheel.py --wheel-dir "$artifact_dir"
+    umask 077
+    work="$(mktemp -d "/tmp/openopps-promotion-wheel.XXXXXX")"
+    trap 'rm -rf -- "$work"' EXIT
+    artifact_dir="$work/artifacts"
+    build_constraints="$work/build-constraints.txt"
+    test_requirements="$work/test-requirements.txt"
+    test_venv="$work/test-venv"
+    uv_bin="$(command -v uv)"
+    [[ "$uv_bin" == /* && -f "$uv_bin" && -x "$uv_bin" ]] || { echo "absolute uv executable is required" >&2; exit 2; }
+    tool_path="${uv_bin%/*}:/usr/bin:/bin"
+    mkdir -p "$artifact_dir" "$work/home" "$work/tmp" "$work/xdg-cache" "$work/xdg-config" "$work/xdg-data" "$work/uv-cache"
+    clean_env=(
+        /usr/bin/env -i
+        "HOME=$work/home"
+        "PATH=$tool_path"
+        "TMPDIR=$work/tmp"
+        "XDG_CACHE_HOME=$work/xdg-cache"
+        "XDG_CONFIG_HOME=$work/xdg-config"
+        "XDG_DATA_HOME=$work/xdg-data"
+        "UV_CACHE_DIR=$work/uv-cache"
+        "UV_NO_PROGRESS=1"
+    )
+    python_bin="$("${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads python find 3.12 --system)"
+    [[ "$python_bin" == /* && -f "$python_bin" && -x "$python_bin" ]] || { echo "uv did not resolve an absolute Python 3.12 executable" >&2; exit 2; }
+    python_version="$("${clean_env[@]}" "$python_bin" -I -S -B -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    [[ "$python_version" == "3.12" ]] || { echo "Python 3.12 interpreter is required, got: $python_version" >&2; exit 2; }
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads export --quiet --locked --no-sources --group dev --no-emit-project --no-emit-local --no-emit-index-url --default-index https://pypi.org/simple --index-strategy first-index --keyring-provider disabled --output-file "$test_requirements"
+    "${clean_env[@]}" "$python_bin" -I -S -B scripts/smoke_wheel_catalog.py --validate-requirements "$test_requirements"
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads venv --no-project --python "$python_bin" "$test_venv"
+    test_python="$test_venv/bin/python"
+    [[ "$test_python" == /* && -f "$test_python" && -x "$test_python" ]] || { echo "private test environment did not provide an absolute Python executable" >&2; exit 2; }
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads pip install --python "$test_python" --require-hashes --no-deps --no-build --no-sources --default-index https://pypi.org/simple --index-strategy first-index --keyring-provider disabled --requirements "$test_requirements"
+    "${clean_env[@]}" "$test_python" -I -B -m pytest tests/unit/openopps/discovery/test_promotion_apply.py tests/unit/openopps/discovery/test_promotion_shared_delivery.py -q
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads export --quiet --locked --no-sources --only-group build --no-emit-project --no-emit-local --no-emit-index-url --default-index https://pypi.org/simple --index-strategy first-index --keyring-provider disabled --output-file "$build_constraints"
+    "${clean_env[@]}" "$python_bin" -I -S -B scripts/smoke_wheel_catalog.py --validate-requirements "$build_constraints"
+    "${clean_env[@]}" "$uv_bin" --no-config --no-python-downloads build --no-sources --default-index https://pypi.org/simple --index-strategy first-index --keyring-provider disabled --build-constraints "$build_constraints" --require-hashes --wheel --out-dir "$artifact_dir"
+    "${clean_env[@]}" "$python_bin" -I -S -B scripts/smoke_wheel_catalog.py --wheel-dir "$artifact_dir" --uv-bin "$uv_bin"
+    "${clean_env[@]}" "$python_bin" -I -S -B scripts/smoke_promotion_wheel.py --wheel-dir "$artifact_dir" --uv-bin "$uv_bin"
 
 # --- Source discovery (offline, no apply) ---
 
