@@ -1,7 +1,8 @@
 """Naïve update-snapshot ledger helpers.
 
 L.0/L.1 schema: header `update_snapshots` plus twelve `update_snapshot_*`
-copies. Live operational tables do not gain `snapshot_id`. Payload CAS
+copies. URL-pull adds `url_pull_runs` and its naïve copy as the thirteenth
+operational copy. Live operational tables do not gain `snapshot_id`. Payload CAS
 (`JobPayloadSnapshotRow` / `job_payload_snapshots`) is copied, never reused
 as the update-snapshot identity.
 
@@ -33,15 +34,16 @@ from openopps.models import (
     UpdateSnapshotJobVersionSkillRow,
     UpdateSnapshotRow,
     UpdateSnapshotSourceRow,
+    UpdateSnapshotUrlPullRunRow,
 )
 from openopps.utils import stable_id
 
 UPDATE_SNAPSHOT_HEADER_TABLE = "update_snapshots"
-UPDATE_SNAPSHOT_SCHEMA_REVISION = "0005_update_snapshot_ledger"
+UPDATE_SNAPSHOT_SCHEMA_REVISION = "0006_url_pull_runs"
 _CALENDAR_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _SNAPSHOT_ID_PREFIX = "update-snapshot"
 
-# Twelve operational tables copied per update. Do not add http_cache,
+# Thirteen operational tables copied per update. Do not add http_cache,
 # alembic_version, or Kaggle bookkeeping tables to this tuple.
 OPERATIONAL_COPY_TABLES: tuple[str, ...] = (
     "sources",
@@ -56,6 +58,7 @@ OPERATIONAL_COPY_TABLES: tuple[str, ...] = (
     "job_payload_snapshots",
     "job_sync_runs",
     "job_sync_observations",
+    "url_pull_runs",
 )
 
 EXCLUDED_FROM_LEDGER_COPY: frozenset[str] = frozenset(
@@ -93,6 +96,7 @@ _COPY_MODELS_BY_OPERATIONAL_TABLE: dict[str, type[SQLModel]] = {
     "job_payload_snapshots": UpdateSnapshotJobPayloadSnapshotRow,
     "job_sync_runs": UpdateSnapshotJobSyncRunRow,
     "job_sync_observations": UpdateSnapshotJobSyncObservationRow,
+    "url_pull_runs": UpdateSnapshotUrlPullRunRow,
 }
 
 LEDGER_SQLITE_TABLES: frozenset[str] = frozenset(
@@ -194,7 +198,7 @@ def empty_row_counts() -> dict[str, int]:
 
 
 def create_update_snapshot_ledger_tables(bind: Engine | Connection) -> None:
-    """Create the header plus twelve naïve ledger copies."""
+    """Create the header plus thirteen naïve ledger copies."""
 
     _header_table().create(bind, checkfirst=False)
     for model in UPDATE_SNAPSHOT_COPY_MODELS:
@@ -202,7 +206,7 @@ def create_update_snapshot_ledger_tables(bind: Engine | Connection) -> None:
 
 
 def drop_update_snapshot_ledger_tables(bind: Engine | Connection) -> None:
-    """Drop the twelve naïve ledger copies, then the header."""
+    """Drop the thirteen naïve ledger copies, then the header."""
 
     for model in reversed(UPDATE_SNAPSHOT_COPY_MODELS):
         sqlmodel_table(model).drop(bind, checkfirst=False)
@@ -220,5 +224,5 @@ def _require_operational_copy_table(operational_table: str) -> None:
         )
     if operational_table not in _COPY_MODELS_BY_OPERATIONAL_TABLE:
         raise ValueError(
-            f"{operational_table} is not one of the twelve operational copy tables"
+            f"{operational_table} is not one of the operational copy tables"
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from openopps.models import SourceRecord
+from openopps.url_pull_identity import is_url_pull_reserved_source_key
 
 
 def resolve_effective_source(
@@ -49,4 +50,8 @@ def resolve_effective_sources(
     resolved.extend(
         source for source in stored_sources if source.key not in catalog_keys
     )
-    return resolved
+    return [
+        source
+        for source in resolved
+        if not is_url_pull_reserved_source_key(source.key)
+    ]

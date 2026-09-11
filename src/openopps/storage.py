@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Any, Protocol, TypedDict, runtime_checkable
+from uuid import uuid4
 
 from sqlalchemy import SQLColumnExpression, func, or_, text
 from sqlalchemy.sql.elements import ColumnElement
@@ -30,6 +31,7 @@ from openopps.models import (
     ProviderSupport,
     SourceRecord,
     SourceRow,
+    UrlPullRunRow,
     board_from_row,
     board_provider_from_row,
     board_provider_to_row,
@@ -47,7 +49,25 @@ from openopps.migrations import (
     sqlite_database_lock,
     upgrade_sqlite_database,
 )
+from openopps.pull_models import PullOperation, PullResult
 from openopps.settings import OpenOppsSettings
+from openopps.url_pull_identity import (
+    JOB_MEMBERSHIP_DIRECT_ONLY,
+    JOB_MEMBERSHIP_LISTED,
+    LIST_MEMBERSHIP_SCOPE_ALL_PUBLIC,
+    LIST_MEMBERSHIP_SCOPE_LISTED,
+    URL_PULL_OWNED_BY,
+    URL_PULL_OWNED_PROVIDER_ID,
+    URL_PULL_RESERVED_SOURCE_KEY,
+    URL_PULL_SOURCE_URL,
+    canonical_board_material,
+    job_membership_for_posting,
+    rebound_job_record,
+    url_pull_board_digest,
+    url_pull_board_key,
+    url_pull_board_remote_id,
+    url_pull_route_id,
+)
 from openopps.utils import stable_id
 
 _ROUTE_METADATA_FIELDS = ("board_url", "token", "host", "tenant", "site")
@@ -61,6 +81,15 @@ _ROUTE_DISABLED_STATUSES = frozenset(
         "job_sync_unavailable_410",
     }
 )
+
+
+@dataclass(frozen=True)
+class _UrlPullIdentity:
+    provider_id: str
+    native_board_identity: str
+    board_key: str
+    remote_id: str
+    route_id: str
 
 
 @dataclass(frozen=True)
@@ -117,6 +146,15 @@ class CoverageJobSummary(TypedDict):
 @runtime_checkable
 class JsonDumpable(Protocol):
     def model_dump_json(self) -> str: ...
+
+
+class UrlPullPersistenceError(RuntimeError):
+    """Fail-closed URL-pull persistence error with a sanitized error kind."""
+
+    def __init__(self, error_kind: str, message: str) -> None:
+        super().__init__(message)
+        self.error_kind = error_kind
+        self.message = message
 
 
 class OpenOppsStore:
@@ -406,6 +444,8 @@ class OpenOppsStore:
                         run.provider_id,
                         seen_job_ids,
                         observed_at,
+                        membership_scope=run.membership_scope
+                        or LIST_MEMBERSHIP_SCOPE_LISTED,
                     )
                 run.status = "succeeded"
                 run.success = True
@@ -433,6 +473,249 @@ class OpenOppsStore:
                 # Do not obscure the triggering exception if a commit became terminal.
                 pass
             raise
+
+    def begin_url_pull_run(self, result: PullResult) -> UrlPullRunRow:
+        """Create a pending URL-pull audit without synthesizing a board route."""
+
+        self.init_db()
+        provenance = result.provenance
+        membership = result.execution.membership
+        detail = result.execution.detail_coverage
+        observed_at = utc_now()
+        run = UrlPullRunRow(
+            id=f"url-pull-run:{uuid4().hex}",
+            started_at=observed_at,
+            status="pending",
+            requested_operation=provenance.requested_operation.value,
+            resolved_operation=provenance.resolved_operation.value,
+            provider_id=provenance.provider_id,
+            native_board_identity=provenance.board_identity,
+            posting_identity=provenance.posting_identity,
+            membership_scope=None if membership is None else membership.scope.value,
+            membership_authoritative=(
+                None if membership is None else membership.authoritative
+            ),
+            membership_complete=None if membership is None else membership.complete,
+            membership_observed_count=(
+                None if membership is None else membership.observed_count
+            ),
+            detail_status=None if detail is None else detail.status.value,
+            job_count=0,
+            discovery_method=provenance.discovery_method.value,
+            requested_url=provenance.requested_url,
+            resolved_url=provenance.resolved_url,
+            provenance=provenance.model_dump(mode="json"),
+        )
+        with Session(self.engine) as session:
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+            return run
+
+    def fail_url_pull_run(
+        self,
+        run_id: str,
+        *,
+        error_kind: str,
+        error: str,
+    ) -> UrlPullRunRow:
+        """Finish a pending URL-pull audit as a sanitized terminal failure."""
+
+        self.init_db()
+        finished_at = utc_now()
+        with Session(self.engine) as session:
+            run = session.get(UrlPullRunRow, run_id)
+            if run is None:
+                raise ValueError(f"Unknown URL-pull run: {run_id}")
+            if run.status != "pending":
+                raise ValueError(
+                    f"URL-pull run {run_id} is already terminal with status {run.status}."
+                )
+            run.status = "failed"
+            run.finished_at = finished_at
+            run.error_kind = error_kind[:128]
+            run.error = error[:2048]
+            run.board_key = None
+            run.job_sync_run_id = None
+            run.job_id = None
+            run.job_version_id = None
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+            return run
+
+    def apply_url_pull_list(self, result: PullResult) -> UrlPullRunRow:
+        """Atomically apply a validated full-board list into the reserved namespace."""
+
+        self.init_db()
+        result.assert_valid()
+        if result.provenance.resolved_operation != PullOperation.LIST:
+            raise ValueError("apply_url_pull_list requires a resolved list result")
+        identity = _url_pull_identity_parts(result)
+        with Session(self.engine) as session:
+            _assert_url_pull_namespace_writable(session, identity)
+        run = self.begin_url_pull_run(result)
+        try:
+            return self._apply_url_pull_list_atomic(result, run, identity)
+        except Exception as exc:
+            error_kind, message = _sanitized_url_pull_error(exc)
+            try:
+                self.fail_url_pull_run(run.id, error_kind=error_kind, error=message)
+            except ValueError:
+                pass
+            raise
+
+    def apply_url_pull_get(self, result: PullResult) -> UrlPullRunRow:
+        """Persist exactly one posting without a job-sync run or route close."""
+
+        self.init_db()
+        result.assert_valid()
+        if result.provenance.resolved_operation != PullOperation.GET:
+            raise ValueError("apply_url_pull_get requires a resolved get result")
+        identity = _url_pull_identity_parts(result)
+        with Session(self.engine) as session:
+            _assert_url_pull_namespace_writable(session, identity)
+        run = self.begin_url_pull_run(result)
+        try:
+            return self._apply_url_pull_get_atomic(result, run, identity)
+        except Exception as exc:
+            error_kind, message = _sanitized_url_pull_error(exc)
+            try:
+                self.fail_url_pull_run(run.id, error_kind=error_kind, error=message)
+            except ValueError:
+                pass
+            raise
+
+    def get_url_pull_run(self, run_id: str) -> UrlPullRunRow | None:
+        """Return one URL-pull audit row, if present."""
+
+        self.init_db()
+        with Session(self.engine) as session:
+            return session.get(UrlPullRunRow, run_id)
+
+    def _apply_url_pull_list_atomic(
+        self,
+        result: PullResult,
+        run: UrlPullRunRow,
+        identity: _UrlPullIdentity,
+    ) -> UrlPullRunRow:
+        observed_at = utc_now()
+        membership_scope = _list_membership_scope(result)
+        rebound_jobs = [
+            rebound_job_record(
+                job,
+                board_key=identity.board_key,
+                membership=job_membership_for_posting(job),
+            )
+            for job in _unique_jobs_by_id(result.jobs)
+        ]
+        seen_job_ids = {job.id for job in rebound_jobs}
+        with Session(self.engine) as session:
+            audit = session.get(UrlPullRunRow, run.id)
+            if audit is None or audit.status != "pending":
+                raise ValueError(f"Unknown pending URL-pull run: {run.id}")
+            _ensure_url_pull_namespace(
+                session,
+                identity,
+                observed_at=observed_at,
+                board_url=result.provenance.resolved_url,
+            )
+            sync_run = JobSyncRunRow(
+                id=f"url-pull-sync:{uuid4().hex}",
+                board_key=identity.board_key,
+                provider_id=identity.provider_id,
+                synced_at=observed_at,
+                started_at=observed_at,
+                status="pending",
+                success=False,
+                membership_scope=membership_scope,
+            )
+            session.add(sync_run)
+            session.flush()
+            for job in rebound_jobs:
+                observation_kind, version_row = _sync_job_record(
+                    session, job, observed_at
+                )
+                _increment_sync_count(sync_run, observation_kind)
+                _add_job_observation(
+                    session,
+                    sync_run.id,
+                    job.id,
+                    version_row.id,
+                    observation_kind,
+                    job_content_hash(job),
+                    job_payload_hash(job),
+                    observed_at,
+                )
+            sync_run.job_count = len(rebound_jobs)
+            sync_run.closed_count += _close_missing_jobs(
+                session,
+                sync_run.id,
+                identity.board_key,
+                identity.provider_id,
+                seen_job_ids,
+                observed_at,
+                membership_scope=membership_scope,
+            )
+            sync_run.status = "succeeded"
+            sync_run.success = True
+            sync_run.authoritative = True
+            sync_run.synced_at = observed_at
+            sync_run.finished_at = observed_at
+            sync_run.error = None
+            sync_run.error_kind = None
+            session.add(sync_run)
+            audit.status = "succeeded"
+            audit.finished_at = observed_at
+            audit.board_key = identity.board_key
+            audit.job_sync_run_id = sync_run.id
+            audit.job_count = len(rebound_jobs)
+            audit.membership_scope = membership_scope
+            audit.error = None
+            audit.error_kind = None
+            session.add(audit)
+            session.commit()
+            session.refresh(audit)
+            return audit
+
+    def _apply_url_pull_get_atomic(
+        self,
+        result: PullResult,
+        run: UrlPullRunRow,
+        identity: _UrlPullIdentity,
+    ) -> UrlPullRunRow:
+        observed_at = utc_now()
+        job = rebound_job_record(
+            result.jobs[0],
+            board_key=identity.board_key,
+            membership=job_membership_for_posting(result.jobs[0]),
+        )
+        with Session(self.engine) as session:
+            audit = session.get(UrlPullRunRow, run.id)
+            if audit is None or audit.status != "pending":
+                raise ValueError(f"Unknown pending URL-pull run: {run.id}")
+            _ensure_url_pull_namespace(
+                session,
+                identity,
+                observed_at=observed_at,
+                board_url=result.provenance.resolved_url,
+            )
+            _observation_kind, version_row = _sync_job_record(
+                session, job, observed_at
+            )
+            audit.status = "succeeded"
+            audit.finished_at = observed_at
+            audit.board_key = identity.board_key
+            audit.job_id = job.id
+            audit.job_version_id = version_row.id
+            audit.job_count = 1
+            audit.job_sync_run_id = None
+            audit.error = None
+            audit.error_kind = None
+            session.add(audit)
+            session.commit()
+            session.refresh(audit)
+            return audit
 
     def _merge_batches(self, rows: Sequence[SQLModel]) -> None:
         if not rows:
@@ -1169,6 +1452,7 @@ def _sync_job_record(
     existing = session.get(JobRow, job.id)
     observation_kind = _job_observation_kind(existing, content_hash)
 
+    incoming_membership = _job_membership_value(job.membership)
     if existing is None:
         existing = JobRow(
             id=job.id,
@@ -1176,6 +1460,7 @@ def _sync_job_record(
             provider_id=job.provider_id,
             remote_id=job.remote_id,
             status="open",
+            membership=incoming_membership,
             first_seen_at=observed_at,
             last_seen_at=observed_at,
             synced_at=observed_at,
@@ -1199,6 +1484,9 @@ def _sync_job_record(
     existing.current_version_id = version.id
     existing.current_content_hash = content_hash
     existing.current_payload_hash = payload_hash
+    existing.membership = _promoted_job_membership(
+        existing.membership, incoming_membership
+    )
     existing.last_seen_at = observed_at
     existing.closed_at = None
     existing.synced_at = observed_at
@@ -1275,6 +1563,7 @@ def _job_version_row_data(
             "provider_id",
             "remote_id",
             "status",
+            "membership",
             "version",
             "content_hash",
             "payload_hash",
@@ -1468,14 +1757,28 @@ def _close_missing_jobs(
     provider_id: str,
     seen_job_ids: set[str],
     observed_at: datetime,
+    *,
+    membership_scope: str = LIST_MEMBERSHIP_SCOPE_LISTED,
 ) -> int:
-    rows = session.exec(
-        select(JobRow).where(
-            JobRow.board_key == board_key,
-            JobRow.provider_id == provider_id,
-            JobRow.status == "open",
+    statement = select(JobRow).where(
+        JobRow.board_key == board_key,
+        JobRow.provider_id == provider_id,
+        JobRow.status == "open",
+    )
+    if membership_scope == LIST_MEMBERSHIP_SCOPE_LISTED:
+        statement = statement.where(JobRow.membership == JOB_MEMBERSHIP_LISTED)
+    elif membership_scope == LIST_MEMBERSHIP_SCOPE_ALL_PUBLIC:
+        statement = statement.where(
+            col(JobRow.membership).in_(
+                (JOB_MEMBERSHIP_LISTED, JOB_MEMBERSHIP_DIRECT_ONLY)
+            )
         )
-    ).all()
+    else:
+        raise ValueError(
+            "membership_scope must be listed or all_public, "
+            f"not {membership_scope!r}"
+        )
+    rows = session.exec(statement).all()
     closed_count = 0
     for row in rows:
         if row.id in seen_job_ids:
@@ -1496,6 +1799,191 @@ def _close_missing_jobs(
             observed_at,
         )
     return closed_count
+
+
+def _job_membership_value(value: str | None) -> str:
+    if value == JOB_MEMBERSHIP_DIRECT_ONLY:
+        return JOB_MEMBERSHIP_DIRECT_ONLY
+    return JOB_MEMBERSHIP_LISTED
+
+
+def _promoted_job_membership(existing: str | None, incoming: str) -> str:
+    current = _job_membership_value(existing)
+    incoming_membership = _job_membership_value(incoming)
+    if current == JOB_MEMBERSHIP_LISTED:
+        return JOB_MEMBERSHIP_LISTED
+    return incoming_membership
+
+
+def _url_pull_identity_parts(result: PullResult) -> _UrlPullIdentity:
+    provider_id = result.provenance.provider_id
+    native_board_identity = result.provenance.board_identity
+    digest = url_pull_board_digest(
+        provider_id=provider_id,
+        native_board_identity=native_board_identity,
+        canonical_board_material=canonical_board_material(
+            provider_id=provider_id,
+            native_board_identity=native_board_identity,
+        ),
+    )
+    board_key = url_pull_board_key(digest)
+    return _UrlPullIdentity(
+        provider_id=provider_id,
+        native_board_identity=native_board_identity,
+        board_key=board_key,
+        remote_id=url_pull_board_remote_id(
+            provider_id=provider_id,
+            native_board_identity=native_board_identity,
+        ),
+        route_id=url_pull_route_id(board_key=board_key, provider_id=provider_id),
+    )
+
+
+def _list_membership_scope(result: PullResult) -> str:
+    membership = result.execution.membership
+    if membership is None:
+        return LIST_MEMBERSHIP_SCOPE_LISTED
+    scope = membership.scope.value
+    if scope not in {LIST_MEMBERSHIP_SCOPE_LISTED, LIST_MEMBERSHIP_SCOPE_ALL_PUBLIC}:
+        raise ValueError("list membership scope must be listed or all_public")
+    return scope
+
+
+def _sanitized_url_pull_error(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, UrlPullPersistenceError):
+        return exc.error_kind, exc.message
+    return "persistence", f"URL-pull persistence failed: {type(exc).__name__}."
+
+
+def _source_is_url_pull_owned(source: SourceRow) -> bool:
+    metadata = source.raw_metadata if isinstance(source.raw_metadata, dict) else {}
+    return (
+        source.key == URL_PULL_RESERVED_SOURCE_KEY
+        and source.provider_id == URL_PULL_OWNED_PROVIDER_ID
+        and metadata.get("owned_by") == URL_PULL_OWNED_BY
+    )
+
+
+def _board_is_url_pull_owned(board: BoardRow, identity: _UrlPullIdentity) -> bool:
+    return (
+        board.key == identity.board_key
+        and board.source_key == URL_PULL_RESERVED_SOURCE_KEY
+        and board.domain is None
+        and board.remote_id == identity.remote_id
+    )
+
+
+def _assert_url_pull_namespace_writable(
+    session: Session, identity: _UrlPullIdentity
+) -> None:
+    source = session.get(SourceRow, URL_PULL_RESERVED_SOURCE_KEY)
+    if source is not None and not _source_is_url_pull_owned(source):
+        raise UrlPullPersistenceError(
+            "namespace_collision",
+            "Reserved URL-pull source is not owned by url-pull.",
+        )
+    board = session.get(BoardRow, identity.board_key)
+    if board is not None and not _board_is_url_pull_owned(board, identity):
+        raise UrlPullPersistenceError(
+            "namespace_collision",
+            "Reserved URL-pull board key collides with an unowned board.",
+        )
+    remote_board = session.exec(
+        select(BoardRow).where(
+            BoardRow.source_key == URL_PULL_RESERVED_SOURCE_KEY,
+            BoardRow.remote_id == identity.remote_id,
+        )
+    ).first()
+    if remote_board is not None and remote_board.key != identity.board_key:
+        raise UrlPullPersistenceError(
+            "namespace_collision",
+            "Reserved URL-pull remote board identity collides with another key.",
+        )
+
+
+def _ensure_url_pull_namespace(
+    session: Session,
+    identity: _UrlPullIdentity,
+    *,
+    observed_at: datetime,
+    board_url: str | None = None,
+) -> None:
+    _assert_url_pull_namespace_writable(session, identity)
+    source = session.get(SourceRow, URL_PULL_RESERVED_SOURCE_KEY)
+    if source is None:
+        source = SourceRow(
+            key=URL_PULL_RESERVED_SOURCE_KEY,
+            url=URL_PULL_SOURCE_URL,
+            provider_id=URL_PULL_OWNED_PROVIDER_ID,
+            raw_metadata={"owned_by": URL_PULL_OWNED_BY},
+            synced_at=observed_at,
+        )
+    else:
+        metadata = dict(source.raw_metadata or {})
+        metadata["owned_by"] = URL_PULL_OWNED_BY
+        source.url = URL_PULL_SOURCE_URL
+        source.provider_id = URL_PULL_OWNED_PROVIDER_ID
+        source.raw_metadata = metadata
+        source.synced_at = observed_at
+    session.add(source)
+    session.flush()
+
+    board = session.get(BoardRow, identity.board_key)
+    if board is None:
+        board = BoardRow(
+            key=identity.board_key,
+            source_key=URL_PULL_RESERVED_SOURCE_KEY,
+            source_keys=[URL_PULL_RESERVED_SOURCE_KEY],
+            source_board_keys={URL_PULL_RESERVED_SOURCE_KEY: identity.board_key},
+            remote_id=identity.remote_id,
+            name=identity.native_board_identity,
+            domain=None,
+            synced_at=observed_at,
+        )
+    else:
+        board.source_key = URL_PULL_RESERVED_SOURCE_KEY
+        board.remote_id = identity.remote_id
+        board.domain = None
+        board.synced_at = observed_at
+        source_keys = list(board.source_keys or [])
+        if URL_PULL_RESERVED_SOURCE_KEY not in source_keys:
+            source_keys.append(URL_PULL_RESERVED_SOURCE_KEY)
+        board.source_keys = source_keys
+        board.source_board_keys = {
+            **(board.source_board_keys or {}),
+            URL_PULL_RESERVED_SOURCE_KEY: identity.board_key,
+        }
+    session.add(board)
+    session.flush()
+
+    route = session.get(BoardProviderRow, identity.route_id)
+    if route is None:
+        route = session.exec(
+            select(BoardProviderRow).where(
+                BoardProviderRow.source_key == URL_PULL_RESERVED_SOURCE_KEY,
+                BoardProviderRow.board_key == identity.board_key,
+                BoardProviderRow.provider_id == identity.provider_id,
+            )
+        ).first()
+    if route is None:
+        route = BoardProviderRow(
+            id=identity.route_id,
+            source_key=URL_PULL_RESERVED_SOURCE_KEY,
+            board_key=identity.board_key,
+            provider_id=identity.provider_id,
+            support_level=ProviderSupport.JOBS.value,
+            token=identity.native_board_identity,
+            board_url=board_url,
+            detected_at=observed_at,
+        )
+    else:
+        route.token = identity.native_board_identity
+        if board_url:
+            route.board_url = board_url
+        route.support_level = ProviderSupport.JOBS.value
+        route.detected_at = observed_at
+    session.add(route)
+    session.flush()
 
 
 def _load_job_hydration(
@@ -1609,6 +2097,7 @@ def _job_from_identity_and_version(
     data.update(extra_payload if isinstance(extra_payload, dict) else {})
     data.pop("created_at", None)
     data.pop("job_id", None)
+    data.pop("membership", None)
     data.update(
         {
             "id": row.id,
@@ -1616,6 +2105,7 @@ def _job_from_identity_and_version(
             "provider_id": row.provider_id,
             "remote_id": row.remote_id,
             "status": row.status,
+            "membership": _job_membership_value(row.membership),
             "version": version.version,
             "content_hash": version.content_hash,
             "payload_hash": (

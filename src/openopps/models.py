@@ -36,6 +36,8 @@ NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 OptionalNonEmptyStr = NonEmptyStr | None
 RemoteWorkLevel = Literal["Full", "Hybrid", "None"]
 PostingKind = Literal["standard", "prospect", "unlisted"]
+JobMembership = Literal["listed", "direct_only"]
+JobSyncMembershipScope = Literal["listed", "all_public"]
 _PublicHttpsUrl = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"])]
 _PublicHttpsUrlAdapter = TypeAdapter(_PublicHttpsUrl)
 
@@ -1177,6 +1179,14 @@ class JobRecord(OpenOppsRecord):
         description="Normalized posting lifecycle status.",
         examples=["open", "closed"],
     )
+    membership: JobMembership = Field(
+        default="listed",
+        description=(
+            "Posting membership class: ordinary listed board membership or a "
+            "direct-link-only posting that listed snapshots must not close."
+        ),
+        examples=["listed", "direct_only"],
+    )
     version: NonNegativeInt | None = Field(
         default=None,
         description="Current or historical normalized content version number.",
@@ -2268,6 +2278,12 @@ class JobRow(SQLModel, table=True):
         sa_column=Column(JSON),
         description="Unknown top-level identity fields preserved across storage round trips.",
     )
+    membership: str = SQLField(
+        default="listed",
+        index=True,
+        min_length=1,
+        description="Posting membership class: listed or direct_only.",
+    )
 
 
 class JobVersionRow(SQLModel, table=True):
@@ -2626,6 +2642,12 @@ class JobSyncRunRow(SQLModel, table=True):
     closed_count: int = SQLField(
         default=0, ge=0, description="Previously open jobs closed by the route sync."
     )
+    membership_scope: str = SQLField(
+        default="listed",
+        index=True,
+        min_length=1,
+        description="Authoritative list-run membership scope: listed or all_public.",
+    )
 
 
 class JobSyncObservationRow(SQLModel, table=True):
@@ -2671,6 +2693,137 @@ class JobSyncObservationRow(SQLModel, table=True):
         default_factory=utc_now,
         index=True,
         description="UTC timestamp when the observation was recorded.",
+    )
+
+
+class UrlPullRunRow(SQLModel, table=True):
+    """Dedicated URL-pull audit row, distinct from job_sync_runs."""
+
+    __tablename__ = "url_pull_runs"
+
+    id: str = SQLField(
+        primary_key=True,
+        min_length=1,
+        description="Stable URL-pull audit id.",
+    )
+    started_at: datetime = SQLField(
+        default_factory=utc_now,
+        index=True,
+        description="UTC timestamp when the saved pull entered the audit path.",
+    )
+    finished_at: datetime | None = SQLField(
+        default=None,
+        index=True,
+        description="UTC timestamp when this pull audit reached a terminal state.",
+    )
+    status: str = SQLField(
+        default="pending",
+        index=True,
+        min_length=1,
+        description="Durable audit state: pending, succeeded, or failed.",
+    )
+    error_kind: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Bounded machine-readable failure category.",
+    )
+    error: str | None = SQLField(
+        default=None,
+        description="Sanitized failure message without raw exception text.",
+    )
+    requested_operation: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Requested pull operation: auto, list, or get.",
+    )
+    resolved_operation: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Resolved pull operation: list or get.",
+    )
+    provider_id: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Provider adapter that executed the pull.",
+    )
+    native_board_identity: str = SQLField(
+        index=True,
+        min_length=1,
+        description="Punctuation-preserving provider-native board identity.",
+    )
+    posting_identity: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Exact posting identity for get operations.",
+    )
+    board_key: str | None = SQLField(
+        default=None,
+        foreign_key="boards.key",
+        index=True,
+        description="Reserved digest board key after a successful apply.",
+    )
+    job_sync_run_id: str | None = SQLField(
+        default=None,
+        foreign_key="job_sync_runs.id",
+        index=True,
+        description="Linked list lifecycle run; unset for get and failures.",
+    )
+    job_id: str | None = SQLField(
+        default=None,
+        foreign_key="jobs.id",
+        index=True,
+        description="Exact persisted job identity for a successful get.",
+    )
+    job_version_id: str | None = SQLField(
+        default=None,
+        foreign_key="job_versions.id",
+        index=True,
+        description="Exact persisted job version for a successful get.",
+    )
+    membership_scope: str | None = SQLField(
+        default=None,
+        index=True,
+        description="List-run membership scope: listed or all_public.",
+    )
+    membership_authoritative: bool | None = SQLField(
+        default=None,
+        description="Whether membership evidence was authoritative.",
+    )
+    membership_complete: bool | None = SQLField(
+        default=None,
+        description="Whether membership evidence was complete.",
+    )
+    membership_observed_count: int | None = SQLField(
+        default=None,
+        ge=0,
+        description="Observed membership cardinality.",
+    )
+    detail_status: str | None = SQLField(
+        default=None,
+        description="Bounded detail-coverage status when present.",
+    )
+    job_count: int = SQLField(
+        default=0,
+        ge=0,
+        description="Normalized jobs linked to a successful apply.",
+    )
+    discovery_method: str | None = SQLField(
+        default=None,
+        index=True,
+        description="Bounded discovery method from sanitized provenance.",
+    )
+    requested_url: str | None = SQLField(
+        default=None,
+        description="Sanitized requested public HTTPS URL.",
+    )
+    resolved_url: str | None = SQLField(
+        default=None,
+        description="Sanitized resolved public HTTPS URL.",
+    )
+    provenance: JsonDict = SQLField(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Sanitized bounded pull provenance for audit.",
     )
 
 
@@ -2911,6 +3064,11 @@ UpdateSnapshotJobSyncObservationRow = _naive_update_snapshot_copy(
     name="UpdateSnapshotJobSyncObservationRow",
     tablename="update_snapshot_job_sync_observations",
 )
+UpdateSnapshotUrlPullRunRow = _naive_update_snapshot_copy(
+    UrlPullRunRow,
+    name="UpdateSnapshotUrlPullRunRow",
+    tablename="update_snapshot_url_pull_runs",
+)
 
 UPDATE_SNAPSHOT_COPY_MODELS: tuple[type[SQLModel], ...] = (
     UpdateSnapshotSourceRow,
@@ -2925,6 +3083,7 @@ UPDATE_SNAPSHOT_COPY_MODELS: tuple[type[SQLModel], ...] = (
     UpdateSnapshotJobPayloadSnapshotRow,
     UpdateSnapshotJobSyncRunRow,
     UpdateSnapshotJobSyncObservationRow,
+    UpdateSnapshotUrlPullRunRow,
 )
 
 

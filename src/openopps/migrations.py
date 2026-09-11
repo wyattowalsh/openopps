@@ -42,8 +42,18 @@ _JOB_SYNC_RUN_LIFECYCLE_COLUMNS = {
     "committed_batch_count",
 }
 _UPDATE_SNAPSHOT_LEDGER_REVISION = "0005_update_snapshot_ledger"
+_URL_PULL_REVISION = "0006_url_pull_runs"
 _UPDATE_SNAPSHOT_HEADER_TABLE = "update_snapshots"
 _UPDATE_SNAPSHOT_COPY_PREFIX = "update_snapshot_"
+_URL_PULL_RUN_REQUIRED_COLUMNS = {
+    "id",
+    "started_at",
+    "status",
+    "requested_operation",
+    "resolved_operation",
+    "provider_id",
+    "native_board_identity",
+}
 _EXPECTED_UPDATE_SNAPSHOT_HEADER_COLUMNS = (
     ("snapshot_id", "VARCHAR", False),
     ("captured_at", "DATETIME", False),
@@ -68,15 +78,22 @@ _SQLITE_UPGRADE_LOCKS_GUARD = threading.Lock()
 _SQLITE_UPGRADE_LOCKS: dict[str, threading.Lock] = {}
 REQUIRED_SQLITE_COLUMNS: dict[str, set[str]] = {
     "boards": {"source_keys", "source_board_keys"},
-    "jobs": {"current_version_id", "current_content_hash", "last_seen_at"},
+    "jobs": {
+        "current_version_id",
+        "current_content_hash",
+        "last_seen_at",
+        "membership",
+    },
     "job_versions": {"job_id", "content_hash", "version"},
     "job_payload_snapshots": {"job_id", "payload_kind", "payload_hash"},
     "job_sync_runs": {
         "board_key",
         "provider_id",
         "synced_at",
+        "membership_scope",
     }
     | _JOB_SYNC_RUN_LIFECYCLE_COLUMNS,
+    "url_pull_runs": set(_URL_PULL_RUN_REQUIRED_COLUMNS),
     "job_sync_observations": {"sync_run_id", "job_id", "observation_kind"},
 }
 UNSUPPORTED_LEGACY_SQLITE_COLUMNS: dict[str, set[str]] = {
@@ -99,6 +116,12 @@ EXPECTED_SQLITE_FOREIGN_KEYS: dict[str, set[tuple[str, str, str]]] = {
     "job_version_bullets": {("job_version_id", "job_versions", "id")},
     "job_payload_snapshots": {("job_id", "jobs", "id")},
     "job_sync_runs": {("board_key", "boards", "key")},
+    "url_pull_runs": {
+        ("board_key", "boards", "key"),
+        ("job_sync_run_id", "job_sync_runs", "id"),
+        ("job_id", "jobs", "id"),
+        ("job_version_id", "job_versions", "id"),
+    },
     "job_sync_observations": {
         ("sync_run_id", "job_sync_runs", "id"),
         ("job_id", "jobs", "id"),
@@ -133,10 +156,9 @@ UPDATE_SNAPSHOT_LEDGER_TABLES: frozenset[str] = frozenset(
         "update_snapshot_job_sync_observations",
     }
 )
-_UPDATE_SNAPSHOT_COPY_TABLES_BY_LIVE_TABLE: dict[str, str] = {
-    table_name.removeprefix(_UPDATE_SNAPSHOT_COPY_PREFIX): table_name
-    for table_name in UPDATE_SNAPSHOT_LEDGER_TABLES
-    if table_name != _UPDATE_SNAPSHOT_HEADER_TABLE
+_UPDATE_SNAPSHOT_LEDGER_TABLES_L1: frozenset[str] = UPDATE_SNAPSHOT_LEDGER_TABLES
+UPDATE_SNAPSHOT_LEDGER_TABLES = _UPDATE_SNAPSHOT_LEDGER_TABLES_L1 | {
+    "update_snapshot_url_pull_runs",
 }
 MANAGED_SQLITE_TABLES: set[str] = {
     "sources",
@@ -151,6 +173,7 @@ MANAGED_SQLITE_TABLES: set[str] = {
     "job_payload_snapshots",
     "job_sync_runs",
     "job_sync_observations",
+    "url_pull_runs",
     "openopps_tables",
     "openopps_columns",
     *UPDATE_SNAPSHOT_LEDGER_TABLES,
@@ -347,7 +370,13 @@ def _validate_existing_update_snapshot_ledger(
             )
         return
 
-    issues = _update_snapshot_ledger_schema_issues(inspector, table_names)
+    issues = _update_snapshot_ledger_schema_issues(
+        inspector,
+        table_names,
+        expected_tables=_expected_update_snapshot_ledger_tables(
+            settings, current_revision
+        ),
+    )
     if issues:
         _raise_update_snapshot_ledger_error(settings, issues)
 
@@ -372,6 +401,14 @@ def _current_alembic_revision(settings: OpenOppsSettings, inspector) -> str:
 def _revision_includes_update_snapshot_ledger(
     settings: OpenOppsSettings, current_revision: str
 ) -> bool:
+    return _revision_contains(
+        settings, current_revision, _UPDATE_SNAPSHOT_LEDGER_REVISION
+    )
+
+
+def _revision_contains(
+    settings: OpenOppsSettings, current_revision: str, target_revision: str
+) -> bool:
     script = ScriptDirectory.from_config(_alembic_config(settings))
     pending = [current_revision]
     visited: set[str] = set()
@@ -380,7 +417,7 @@ def _revision_includes_update_snapshot_ledger(
         if revision_id in visited:
             continue
         visited.add(revision_id)
-        if revision_id == _UPDATE_SNAPSHOT_LEDGER_REVISION:
+        if revision_id == target_revision:
             return True
         revision = script.get_revision(revision_id)
         if revision is None:
@@ -393,6 +430,14 @@ def _revision_includes_update_snapshot_ledger(
     return False
 
 
+def _expected_update_snapshot_ledger_tables(
+    settings: OpenOppsSettings, current_revision: str
+) -> frozenset[str]:
+    if _revision_contains(settings, current_revision, _URL_PULL_REVISION):
+        return UPDATE_SNAPSHOT_LEDGER_TABLES
+    return _UPDATE_SNAPSHOT_LEDGER_TABLES_L1
+
+
 def _observed_update_snapshot_tables(table_names: set[str]) -> set[str]:
     return {
         table_name
@@ -403,17 +448,26 @@ def _observed_update_snapshot_tables(table_names: set[str]) -> set[str]:
 
 
 def _update_snapshot_ledger_schema_issues(
-    inspector, table_names: set[str]
+    inspector,
+    table_names: set[str],
+    *,
+    expected_tables: frozenset[str] | None = None,
 ) -> list[str]:
     issues: list[str] = []
+    expected_ledger_tables = expected_tables or UPDATE_SNAPSHOT_LEDGER_TABLES
+    copy_tables_by_live = {
+        table_name.removeprefix(_UPDATE_SNAPSHOT_COPY_PREFIX): table_name
+        for table_name in expected_ledger_tables
+        if table_name != _UPDATE_SNAPSHOT_HEADER_TABLE
+    }
     observed_tables = _observed_update_snapshot_tables(table_names)
     issues.extend(
         f"missing table {table_name}"
-        for table_name in sorted(UPDATE_SNAPSHOT_LEDGER_TABLES - observed_tables)
+        for table_name in sorted(expected_ledger_tables - observed_tables)
     )
     issues.extend(
         f"unexpected table {table_name}"
-        for table_name in sorted(observed_tables - UPDATE_SNAPSHOT_LEDGER_TABLES)
+        for table_name in sorted(observed_tables - expected_ledger_tables)
     )
 
     if _UPDATE_SNAPSHOT_HEADER_TABLE in table_names:
@@ -440,9 +494,7 @@ def _update_snapshot_ledger_schema_issues(
     expected_copy_foreign_keys = {
         (("snapshot_id",), _UPDATE_SNAPSHOT_HEADER_TABLE, ("snapshot_id",))
     }
-    for live_table, copy_table in sorted(
-        _UPDATE_SNAPSHOT_COPY_TABLES_BY_LIVE_TABLE.items()
-    ):
+    for live_table, copy_table in sorted(copy_tables_by_live.items()):
         if live_table not in table_names:
             issues.append(f"missing live table {live_table}")
             continue
@@ -579,7 +631,9 @@ def _validate_required_sqlite_columns(
             f"{table_name}.{column}"
             for column in sorted(column_names - existing_columns)
         )
-    if missing and _is_expected_pre_lifecycle_schema(inspector, missing):
+    if missing and set(missing) == _expected_absent_required_columns(
+        settings, inspector
+    ):
         return
     if missing:
         location = str(settings.sqlite_path or settings.db_url)
@@ -593,23 +647,27 @@ def _validate_required_sqlite_columns(
         )
 
 
-def _is_expected_pre_lifecycle_schema(inspector, missing: list[str]) -> bool:
-    expected_missing = {
-        f"job_sync_runs.{column}" for column in _JOB_SYNC_RUN_LIFECYCLE_COLUMNS
-    }
-    # A genuine pre-0004 schema is missing the entire lifecycle column set.
-    # A partial subset indicates a malformed/manual schema and must fail closed
-    # before Alembic encounters duplicate or incompatible columns.
-    if set(missing) != expected_missing:
-        return False
-    with inspector.bind.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        current = revision.scalar()
-    return current in {
+def _expected_absent_required_columns(
+    settings: OpenOppsSettings, inspector
+) -> set[str]:
+    current_revision = _current_alembic_revision(settings, inspector)
+    absent: set[str] = set()
+    if current_revision in {
         "0001_initial_app_sqlite",
         "0002_data_model_integrity",
         "0003_jobs_current_version_fk",
-    }
+    }:
+        absent.update(
+            f"job_sync_runs.{column}" for column in _JOB_SYNC_RUN_LIFECYCLE_COLUMNS
+        )
+    if not _revision_contains(settings, current_revision, _URL_PULL_REVISION):
+        absent.add("jobs.membership")
+        absent.add("job_sync_runs.membership_scope")
+        absent.update(
+            f"url_pull_runs.{column}"
+            for column in sorted(REQUIRED_SQLITE_COLUMNS["url_pull_runs"])
+        )
+    return absent
 
 
 def _validate_unsupported_legacy_sqlite_columns(

@@ -27,6 +27,7 @@ from openopps.models import (
     JobVersionSkillKeywordRow,
     JobVersionSkillRow,
     SourceRow,
+    UrlPullRunRow,
     UpdateSnapshotAttestation,
     UpdateSnapshotJobPayloadSnapshotRow,
     UpdateSnapshotRow,
@@ -64,9 +65,11 @@ LIVE_ROW_MODELS: tuple[type[SQLModel], ...] = (
     JobPayloadSnapshotRow,
     JobSyncRunRow,
     JobSyncObservationRow,
+    UrlPullRunRow,
 )
 
 _LEDGER_REVISION = "0005_update_snapshot_ledger.py"
+_URL_PULL_REVISION = "0006_url_pull_runs.py"
 _EXPECTED_LEDGER_SQLITE_TABLES = frozenset(
     {
         "update_snapshots",
@@ -82,6 +85,7 @@ _EXPECTED_LEDGER_SQLITE_TABLES = frozenset(
         "update_snapshot_job_payload_snapshots",
         "update_snapshot_job_sync_runs",
         "update_snapshot_job_sync_observations",
+        "update_snapshot_url_pull_runs",
     }
 )
 
@@ -121,10 +125,10 @@ def test_calendar_day_identity_detects_iso_dates_only() -> None:
     assert not is_calendar_day_identity("2026-08-22T00:00:00Z")
 
 
-def test_twelve_naive_copies_and_header_are_named_distinctly() -> None:
-    assert len(OPERATIONAL_COPY_TABLES) == 12
-    assert len(UPDATE_SNAPSHOT_COPY_MODELS) == 12
-    assert len(LEDGER_SQLITE_TABLES) == 13
+def test_thirteen_naive_copies_and_header_are_named_distinctly() -> None:
+    assert len(OPERATIONAL_COPY_TABLES) == 13
+    assert len(UPDATE_SNAPSHOT_COPY_MODELS) == 13
+    assert len(LEDGER_SQLITE_TABLES) == 14
     assert UPDATE_SNAPSHOT_HEADER_TABLE == "update_snapshots"
     assert UpdateSnapshotRow.__tablename__ == "update_snapshots"
     assert LEDGER_SQLITE_TABLES == _EXPECTED_LEDGER_SQLITE_TABLES
@@ -224,7 +228,7 @@ def test_header_has_no_retention_or_calendar_key() -> None:
     assert UpdateSnapshotAttestation.COMPLETE == "complete"
     assert UpdateSnapshotAttestation.DEGRADED == "degraded"
     assert UpdateSnapshotAttestation.FAILED == "failed"
-    assert UPDATE_SNAPSHOT_SCHEMA_REVISION == "0005_update_snapshot_ledger"
+    assert UPDATE_SNAPSHOT_SCHEMA_REVISION == "0006_url_pull_runs"
     assert set(empty_row_counts()) == set(OPERATIONAL_COPY_TABLES)
 
 
@@ -259,16 +263,20 @@ def test_naive_copy_insert_sql_lists_original_columns_and_bind_snapshot_id() -> 
         assert "SELECT *" not in sql
 
 
-def test_alembic_head_is_0005_with_frozen_ddl() -> None:
+def test_alembic_head_is_0006_and_0005_stays_frozen() -> None:
     config = Config()
     config.set_main_option("script_location", str(migration_script_location()))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "0005_update_snapshot_ledger"
-    assert script.get_heads() == ["0005_update_snapshot_ledger"]
+    assert script.get_current_head() == "0006_url_pull_runs"
+    assert script.get_heads() == ["0006_url_pull_runs"]
     ledger_revision = script.get_revision("0005_update_snapshot_ledger")
     assert ledger_revision is not None
     assert ledger_revision.down_revision == "0004_job_sync_run_lifecycle"
+    url_pull_revision = script.get_revision("0006_url_pull_runs")
+    assert url_pull_revision is not None
+    assert url_pull_revision.down_revision == "0005_update_snapshot_ledger"
     assert [item.revision for item in script.walk_revisions()] == [
+        "0006_url_pull_runs",
         "0005_update_snapshot_ledger",
         "0004_job_sync_run_lifecycle",
         "0003_jobs_current_version_fk",
@@ -278,16 +286,26 @@ def test_alembic_head_is_0005_with_frozen_ddl() -> None:
     versions = files("openopps").joinpath("alembic/versions")
     revision = Path(str(versions)) / _LEDGER_REVISION
     draft = Path(str(versions)) / f"{_LEDGER_REVISION}.draft"
+    url_pull = Path(str(versions)) / _URL_PULL_REVISION
+    url_pull_draft = Path(str(versions)) / f"{_URL_PULL_REVISION}.draft"
     assert revision.is_file()
+    assert url_pull.is_file()
     assert draft.exists() is False
+    assert url_pull_draft.exists() is False
     text = revision.read_text(encoding="utf-8")
     assert "from openopps" not in text
     assert "import openopps" not in text
     assert 'down_revision: str | None = "0004_job_sync_run_lifecycle"' in text
     assert "http_cache" not in text
+    url_pull_text = url_pull.read_text(encoding="utf-8")
+    assert "from openopps" not in url_pull_text
+    assert "import openopps" not in url_pull_text
+    assert 'down_revision: str | None = "0005_update_snapshot_ledger"' in url_pull_text
+    assert "http_cache" not in url_pull_text
+    assert ".draft" not in url_pull_text
 
 
-def test_runtime_ledger_helper_creates_header_and_twelve_copies_only() -> None:
+def test_runtime_ledger_helper_creates_header_and_thirteen_copies_only() -> None:
     engine = create_engine("sqlite://")
     try:
         create_update_snapshot_ledger_tables(engine)
