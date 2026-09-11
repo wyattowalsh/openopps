@@ -826,7 +826,28 @@ class OpenOppsStore:
         boards = self.list_boards(board_key=board_key, limit=1)
         return boards[0] if boards else None
 
-    def list_board_providers(
+    def catalog_schema_ready(self) -> bool:
+        """Return True when catalog tables already exist; never migrates."""
+
+        path = self.settings.sqlite_path
+        if path is None or not path.exists():
+            return False
+        try:
+            with self.engine.connect() as connection:
+                names = {
+                    str(row[0])
+                    for row in connection.execute(
+                        text(
+                            "SELECT name FROM sqlite_master WHERE type = 'table' "
+                            "AND name IN ('alembic_version', 'board_providers')"
+                        )
+                    )
+                }
+        except Exception:
+            return False
+        return "alembic_version" in names and "board_providers" in names
+
+    def list_existing_board_providers(
         self,
         *,
         source_key: str | None = None,
@@ -834,7 +855,29 @@ class OpenOppsStore:
         provider_id: str | None = None,
         job_capable_only: bool = False,
     ) -> list[BoardProviderRecord]:
-        self.init_db()
+        """Read catalog routes without Alembic bootstrap or schema creation."""
+
+        return self.list_board_providers(
+            source_key=source_key,
+            board_key=board_key,
+            provider_id=provider_id,
+            job_capable_only=job_capable_only,
+            migrate=False,
+        )
+
+    def list_board_providers(
+        self,
+        *,
+        source_key: str | None = None,
+        board_key: str | None = None,
+        provider_id: str | None = None,
+        job_capable_only: bool = False,
+        migrate: bool = True,
+    ) -> list[BoardProviderRecord]:
+        if migrate:
+            self.init_db()
+        elif not self.catalog_schema_ready():
+            return []
         with Session(self.engine) as session:
             statement = select(BoardProviderRow)
             if source_key:

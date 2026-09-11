@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
+import sqlite3
 
 import httpx
 import pytest
@@ -16,7 +18,13 @@ from openopps.http import (
     PublicFetchSafetyError,
     http_operation_budget,
 )
-from openopps.models import JobRecord
+from openopps.models import (
+    BoardProviderRecord,
+    BoardRecord,
+    JobRecord,
+    ProviderSupport,
+    SourceRecord,
+)
 from openopps.plugins import PluginRegistry
 from openopps.pull_models import (
     DiscoveryMethod,
@@ -56,6 +64,8 @@ from openopps.providers.pull import (
     ProviderUrlTarget,
 )
 from openopps.settings import OpenOppsSettings
+from openopps.storage import OpenOppsStore
+from openopps.utils import stable_id
 
 
 @dataclass
@@ -679,8 +689,14 @@ async def test_mismatched_resolution_requested_url_fails_before_provider() -> No
 
 
 @pytest.mark.asyncio
-async def test_from_settings_joins_real_registry_resolver_and_native_provider() -> None:
-    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+async def test_from_settings_joins_real_registry_resolver_and_native_provider(
+    tmp_path: Path,
+) -> None:
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
     service = PullService.from_settings(
         settings,
         plugin_registry=PluginRegistry(
@@ -2405,8 +2421,14 @@ async def test_null_port_never_calls_store_apply() -> None:
     assert store.gets == []
 
 
-def test_from_settings_wires_null_or_store_port_from_persist_flag() -> None:
-    settings = OpenOppsSettings(cache_enabled=False, retry_attempts=1)
+def test_from_settings_wires_null_or_store_port_from_persist_flag(
+    tmp_path: Path,
+) -> None:
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{tmp_path / 'openopps.db'}",
+        cache_enabled=False,
+        retry_attempts=1,
+    )
     plugins = PluginRegistry(
         contributions=(),
         load_results=(),
@@ -2425,6 +2447,178 @@ def test_from_settings_wires_null_or_store_port_from_persist_flag() -> None:
 
     assert isinstance(ephemeral._persistence, NullPullPersistence)
     assert isinstance(saved._persistence, OpenOppsStorePullPersistence)
+
+
+_CACHE_ONLY_TABLES = frozenset({"http_cache", "http_cache_metadata"})
+
+
+def _sqlite_user_tables(db_path: Path) -> set[str]:
+    if not db_path.exists():
+        return set()
+    with sqlite3.connect(db_path) as connection:
+        return {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+
+
+def _count_table(db_path: Path, table: str) -> int:
+    with sqlite3.connect(db_path) as connection:
+        return int(
+            connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        )
+
+
+def _empty_plugins() -> PluginRegistry:
+    return PluginRegistry(
+        contributions=(),
+        load_results=(),
+        conflicts=(),
+    )
+
+
+def _seed_catalog_route(settings: OpenOppsSettings, token: str) -> None:
+    store = OpenOppsStore(settings)
+    store.init_db()
+    store.upsert_source(
+        SourceRecord(
+            key="manual",
+            url="https://careers.example.test/catalog",
+            provider_id="manual",
+        )
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key=token,
+                source_key="manual",
+                remote_id=token,
+                name=token,
+            )
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id=stable_id("manual", token, "greenhouse"),
+                source_key="manual",
+                board_key=token,
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token=token,
+            )
+        ]
+    )
+
+
+def _reject_store_init_db(_self: OpenOppsStore) -> None:
+    raise AssertionError("persist=False must not Alembic-bootstrap the ledger")
+
+
+@pytest.mark.asyncio
+async def test_from_settings_persist_false_does_not_migrate_fresh_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{db_path}",
+        retry_attempts=1,
+    )
+    monkeypatch.setattr(
+        "openopps.storage.OpenOppsStore.init_db",
+        _reject_store_init_db,
+    )
+    service = PullService.from_settings(
+        settings,
+        plugin_registry=_empty_plugins(),
+        persist=False,
+    )
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": 123,
+                "title": "Engineer",
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/123",
+                "content": "<p>Build reliable systems.</p>",
+            },
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await service.pull(
+            client,
+            "https://boards.greenhouse.io/acme/jobs/123",
+            no_save=True,
+        )
+
+    tables = _sqlite_user_tables(db_path)
+    assert result.persisted is False
+    assert result.observability is not None
+    assert result.observability.coverage_class is not PullCoverageClass.CATALOG_ROUTE
+    assert [request.url.path for request in requests] == ["/v1/boards/acme/jobs/123"]
+    assert tables <= _CACHE_ONLY_TABLES
+    assert "alembic_version" not in tables
+    assert "jobs" not in tables
+    assert "url_pull_runs" not in tables
+    assert not any(name.startswith("update_snapshot") for name in tables)
+
+
+@pytest.mark.asyncio
+async def test_from_settings_no_save_classifies_catalog_route_without_url_pull_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(
+        db_url=f"sqlite:///{db_path}",
+        retry_attempts=1,
+    )
+    token = "w7catalog"
+    _seed_catalog_route(settings, token)
+    jobs_before = _count_table(db_path, "jobs")
+    url_pull_before = _count_table(db_path, "url_pull_runs")
+    monkeypatch.setattr(
+        "openopps.storage.OpenOppsStore.init_db",
+        _reject_store_init_db,
+    )
+    service = PullService.from_settings(
+        settings,
+        plugin_registry=_empty_plugins(),
+        persist=False,
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": 123,
+                "title": "Engineer",
+                "absolute_url": f"https://boards.greenhouse.io/{token}/jobs/123",
+                "content": "<p>Build reliable systems.</p>",
+            },
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await service.pull(
+            client,
+            f"https://boards.greenhouse.io/{token}/jobs/123",
+            no_save=True,
+        )
+
+    assert result.observability is not None
+    assert result.observability.coverage_class is PullCoverageClass.CATALOG_ROUTE
+    assert result.persisted is False
+    assert _count_table(db_path, "url_pull_runs") == url_pull_before == 0
+    assert _count_table(db_path, "jobs") == jobs_before
 
 
 @pytest.mark.asyncio

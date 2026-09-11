@@ -6,12 +6,15 @@ from pathlib import Path
 
 from openopps.models import ProviderSupport
 from openopps.pull_coverage import (
+    catalog_lookup_from_store,
     catalog_store_has_route,
     classify_pull_coverage,
     overlay_route_is_packaged,
     url_pull_reserved_enabled,
 )
 from openopps.pull_models import PullCoverageClass, PullTerminalState
+from openopps.settings import OpenOppsSettings
+from openopps.storage import OpenOppsStore
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -154,6 +157,36 @@ def test_catalog_store_ignores_detect_only_routes() -> None:
     )
 
     assert catalog_store_has_route(store, "greenhouse", _UNKNOWN_TOKEN) is False
+
+
+class _MigratingStore:
+    def list_board_providers(self, **kwargs: object) -> tuple[_Route, ...]:
+        del kwargs
+        raise AssertionError("migrating list_board_providers must not run")
+
+    def list_existing_board_providers(self, **kwargs: object) -> tuple[_Route, ...]:
+        del kwargs
+        return (_Route(provider_id="greenhouse", token="acme"),)
+
+
+def test_catalog_store_prefers_existing_provider_list() -> None:
+    store = _MigratingStore()
+    lookup = catalog_lookup_from_store(store)
+
+    assert catalog_store_has_route(store, "greenhouse", "acme") is True
+    assert lookup is not None
+    assert lookup("greenhouse", "acme") is True
+
+
+def test_missing_sqlite_catalog_lookup_fail_opens_without_creating_db(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+
+    assert store.catalog_schema_ready() is False
+    assert catalog_store_has_route(store, "greenhouse", "acme") is False
+    assert not db_path.exists()
 
 
 def test_pull_coverage_and_service_do_not_import_discovery() -> None:

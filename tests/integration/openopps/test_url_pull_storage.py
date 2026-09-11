@@ -720,3 +720,49 @@ async def test_sync_jobs_fail_closes_reserved_url_pull_source_pin(
             store=store,
             source_key=URL_PULL_SOURCE_KEY,
         )
+
+
+def test_list_existing_board_providers_does_not_create_missing_sqlite(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    store = OpenOppsStore(OpenOppsSettings(db_url=f"sqlite:///{db_path}"))
+
+    assert store.catalog_schema_ready() is False
+    assert store.list_existing_board_providers(job_capable_only=True) == []
+    assert not db_path.exists()
+
+
+def test_list_existing_board_providers_reads_initialized_catalog(
+    tmp_path: Path,
+) -> None:
+    store, db_path = _store(tmp_path)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:greenhouse",
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+            )
+        ]
+    )
+    alembic_before = _count(db_path, "alembic_version")
+    url_pull_before = _count(db_path, "url_pull_runs")
+
+    routes = store.list_existing_board_providers(
+        provider_id="greenhouse",
+        job_capable_only=True,
+    )
+
+    assert [route.token for route in routes] == ["acme"]
+    assert _count(db_path, "alembic_version") == alembic_before
+    assert _count(db_path, "url_pull_runs") == url_pull_before == 0

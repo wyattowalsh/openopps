@@ -238,7 +238,11 @@ class PullService:
         persist: bool = False,
         catalog_has_route: CatalogRoutePredicate | None = None,
     ) -> PullService:
-        """Build the production resolver/registry/provider seams once per service."""
+        """Build the production resolver/registry/provider seams once per service.
+
+        ``persist=False`` may construct a store for catalog coverage class, but
+        that lookup reads an already-initialized sqlite only and never migrates.
+        """
 
         from openopps.plugins import PluginContext, load_plugins
         from openopps.providers.boards import build_url_pull_provider
@@ -264,14 +268,14 @@ class PullService:
                 plugin_registry=plugins,
             )
 
-        store = OpenOppsStore(settings)
         lookup = catalog_has_route
+        store = OpenOppsStore(settings) if persist or lookup is None else None
         if lookup is None:
             lookup = catalog_lookup_from_store(store)
         if persistence is None:
             persistence = (
                 OpenOppsStorePullPersistence(store)
-                if persist
+                if persist and store is not None
                 else NullPullPersistence()
             )
 

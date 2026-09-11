@@ -1101,6 +1101,142 @@ def test_jobs_pull_save_applies_get_through_store_port(
         ] == 0
 
 
+_CACHE_ONLY_TABLES = frozenset({"http_cache", "http_cache_metadata"})
+
+
+def _sqlite_user_tables(db_path: Path) -> set[str]:
+    if not db_path.exists():
+        return set()
+    with sqlite3.connect(db_path) as connection:
+        return {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+
+
+@pytest.mark.parametrize("extra_args", [(), ("--no-save",)])
+@respx.mock
+def test_unmocked_default_pull_does_not_migrate_fresh_sqlite(
+    tmp_path: Path,
+    extra_args: tuple[str, ...],
+) -> None:
+    respx.get("https://boards-api.greenhouse.io/v1/boards/acme/jobs/101").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": 101,
+                "title": "Platform Engineer",
+                "absolute_url": PULL_URL,
+                "content": "<p>Build reliable systems.</p>",
+            },
+        )
+    )
+    metrics_path = tmp_path / "pull-metrics.json"
+    invocation = _invoke(
+        tmp_path,
+        "jobs",
+        "pull",
+        PULL_URL,
+        *extra_args,
+        "--format",
+        "json",
+        "--metrics-file",
+        str(metrics_path),
+    )
+    db_path = tmp_path / "openopps.db"
+    tables = _sqlite_user_tables(db_path)
+
+    assert invocation.exit_code == 0, invocation.output
+    payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert payload["coverageClass"] != "catalog_route"
+    assert tables <= _CACHE_ONLY_TABLES
+    assert "alembic_version" not in tables
+    assert "jobs" not in tables
+    assert "url_pull_runs" not in tables
+    assert not any(name.startswith("update_snapshot") for name in tables)
+
+
+@respx.mock
+def test_unmocked_no_save_classifies_existing_catalog_without_url_pull_rows(
+    tmp_path: Path,
+) -> None:
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.init_db()
+    store.upsert_source(
+        SourceRecord(
+            key="manual",
+            url="https://careers.example.test/acme",
+            provider_id="manual",
+        )
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="acme",
+                source_key="manual",
+                remote_id="acme",
+                name="Acme",
+            )
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id=stable_id("manual", "acme", "greenhouse"),
+                source_key="manual",
+                board_key="acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+            )
+        ]
+    )
+    db_path = tmp_path / "openopps.db"
+    with sqlite3.connect(db_path) as connection:
+        jobs_before = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        url_pull_before = connection.execute(
+            "SELECT COUNT(*) FROM url_pull_runs"
+        ).fetchone()[0]
+    respx.get("https://boards-api.greenhouse.io/v1/boards/acme/jobs/101").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": 101,
+                "title": "Platform Engineer",
+                "absolute_url": PULL_URL,
+                "content": "<p>Build reliable systems.</p>",
+            },
+        )
+    )
+    metrics_path = tmp_path / "pull-metrics.json"
+    invocation = _invoke(
+        tmp_path,
+        "jobs",
+        "pull",
+        PULL_URL,
+        "--no-save",
+        "--format",
+        "json",
+        "--metrics-file",
+        str(metrics_path),
+    )
+
+    assert invocation.exit_code == 0, invocation.output
+    payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert payload["coverageClass"] == "catalog_route"
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM url_pull_runs").fetchone()[
+            0
+        ] == url_pull_before
+        assert connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == (
+            jobs_before
+        )
+
+
 def test_admin_sources_help_omits_overlay_outcomes() -> None:
     result = runner.invoke(
         cli_module.app,

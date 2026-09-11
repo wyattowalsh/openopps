@@ -76,7 +76,12 @@ def catalog_store_has_route(
     if not provider or not identity:
         return False
     try:
-        routes = store.list_board_providers(
+        list_routes = getattr(
+            store,
+            "list_existing_board_providers",
+            store.list_board_providers,
+        )
+        routes = list_routes(
             provider_id=provider_id,
             job_capable_only=True,
         )
@@ -99,7 +104,11 @@ def catalog_store_has_route(
 def catalog_lookup_from_store(
     store: CatalogRouteStore | None,
 ) -> CatalogRoutePredicate | None:
-    """Bind an optional store into the classify predicate used by PullService."""
+    """Bind an optional store into the classify predicate used by PullService.
+
+    Prefers ``list_existing_board_providers`` so coverage class never Alembic
+    bootstraps a missing or cache-only sqlite file.
+    """
 
     if store is None:
         return None
