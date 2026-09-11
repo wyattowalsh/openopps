@@ -18,8 +18,9 @@ Resolve `openopps <URL>` and `openopps jobs pull <URL>` to the same pull service
 | --- | --- |
 | A public HTTPS URL | Run `openopps <URL>` (or `jobs pull`) with `--json` for machines. |
 | `list` / `get` / `auto` | Pass `--operation auto|list|get`. |
-| `no-save` / ephemeral | Add `--no-save` until persistence is enabled. |
-| Empty | Explain both spellings, operations, and that this is not discovery. |
+| `save` | Add `--save` only when the user asked to persist a complete validated result. |
+| `no-save` / ephemeral | Default. `--no-save` is the explicit alias. |
+| Empty | Explain both spellings, operations, opt-in `--save`, and that this is not discovery. |
 | `sync` / `discovery` / `scout` | Refuse and hand off. |
 
 ## Permission posture
@@ -29,10 +30,12 @@ May shell `openopps` / MCP `run` for URL pulls. Do not scout, mutate catalogs, o
 ## Critical Rules
 
 1. Always use the same workflow for `openopps <URL>` and `openopps jobs pull <URL>`.
-2. Never treat this operational pull as quarantined discovery.
-3. Do not invent tokens or claim completeness the CLI did not report.
-4. Must prefer `--json`; `--no-save` leaves operational tables unchanged. Use `--metrics-file` or `--raw` for pull observability, never `--metrics-json`.
-5. Always fail closed on ambiguity, unsupported ATS, or incomplete board scans.
+2. Never treat this operational pull as quarantined discovery or catalog fill.
+3. Identity is reserved `url-pull` plus a punctuation-preserving digest. Unscoped `jobs sync` excludes those routes.
+4. `--save` is opt-in (default False). `--no-save` is ephemeral. HTTP cache is independent. Persist failure exits 9.
+5. Complete-before-apply: membership and authority must validate before any ledger write.
+6. Must prefer `--json`; use `--metrics-file` or `--raw` for pull observability, never `--metrics-json`.
+7. Always fail closed on ambiguity, unsupported ATS, or incomplete board scans.
 
 ## Canonical vocabulary
 
@@ -42,6 +45,7 @@ Use these exactly. Canonical vocabulary for this skill:
 | --- | --- |
 | `jobs pull` | URL ingest of one board or posting. |
 | `openopps <url>` | URL-first alias for jobs pull. |
+| `--save` | Opt-in reserved `url-pull` ledger persist. |
 | `catalog sync` | Staged sync; hand off, do not pull. |
 
 ## Loading

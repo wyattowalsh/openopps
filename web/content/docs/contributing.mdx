@@ -13,8 +13,12 @@ OpenOpps changes should keep the CLI, web app, generated artifacts, OpenSpec, an
 uv sync
 just --list
 uv run openopps --help
-cd web && pnpm install
+mise x node@24.20.0 pnpm@11.24.0 -- pnpm --dir web install --frozen-lockfile
 ```
+
+The web toolchain is pinned to Node 24.20.0 by `.node-version` and pnpm 11.24.0 by `web/package.json`. An equivalent version manager plus Corepack is fine; use those exact versions for install, generation, validation, and dependency updates.
+
+`inspect-shots/`, `.playwright-mcp/`, and `.grok/` are gitignored local scratch and must not be committed.
 
 Use `uv run openopps ...` inside the repository checkout. Install the editable tool only when you want the `openopps` command available directly:
 
@@ -25,18 +29,19 @@ openopps status
 
 ## Validation
 
-Use `just` from the repository root for local parity with GitHub Actions. Prefer the canonical **`web-*`** recipes; transitional **`docs-*`** aliases invoke the same `web-*` recipes.
+Use `just` from the repository root for local parity with GitHub Actions. Prefer the canonical **`web-*`** recipes.
 
 ```bash
 just quick
 just ci
 just ci-discovery
-just agent-plugins-check
 just lock-check
 just openspec-validate-all
 just web-check
 just web-test
 just cli-help
+just agent-plugins-check
+just build-release-artifacts
 ```
 
 The underlying commands remain direct and scriptable:
@@ -53,7 +58,9 @@ cd web && pnpm test
 just web-search-index-check
 ```
 
-`just ci` composes the `ci-python`, `ci-openspec`, `ci-discovery`, `ci-web`, and `ci-artifacts` lanes; `just ci-full` adds network-dependent security audits and lowest-direct dependency testing. The discovery lane is offline only (`OPENOPPS_DISCOVERY_NETWORK=disabled`); see [Quarantined discovery and the source-scout skill](#quarantined-discovery-and-the-source-scout-skill). `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe. GitHub Actions adds the supported Python matrix, dependency review, and a non-PR wheel/SBOM attestation job. The current supply-chain job attests the Python wheel only, not a v7 public-data recovery archive.
+`just ci` composes the `ci-python`, `ci-openspec`, `ci-discovery`, `ci-web`, and `ci-artifacts` lanes; `just ci-full` adds network-dependent security audits and lowest-direct dependency testing. The discovery lane is offline only (`OPENOPPS_DISCOVERY_NETWORK=disabled`); see [Quarantined discovery and the source-scout skill](#quarantined-discovery-and-the-source-scout-skill). `just web-rtk-lint` is the explicit optional maintainer lint for `rtk` and is not part of the default CI recipe. GitHub Actions adds the supported Python matrix, dependency review, and a main-ref, non-PR release-artifact/SBOM attestation job. That job builds and verifies one fresh wheel plus one fresh sdist, semantically verifies a separate SPDX document for each artifact, attests both subjects separately, and remains distinct from the v7 public-data recovery archive.
+
+Alembic `0005_update_snapshot_ledger` then `0006_url_pull_runs` have landed (live head `0006_url_pull_runs`). URL-pull persistence is opt-in `--save` (default False; `--no-save` ephemeral; persist failure exit 9; reserved `url-pull` digest identity is not catalog). Unscoped `jobs sync` excludes `url-pull`. Package `release.yml` publishes from an exact SHA and must not create tags. Live stops: no Workers upload, no Kaggle mutation, source-policy 1780 blocked pending written grants, no hosted-alpha, no v7 7.6. Do not run `wagents skills sync --apply`.
 
 ## Web App Workflow
 

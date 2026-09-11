@@ -9,6 +9,7 @@ openopps jobs export --output jobs.jsonl --json
 ```
 
 List/show/history/export do not fetch live ATS data.
+URL ingest is `openopps-url-pull` (`jobs pull` / `openopps <url>`); this skill does not persist URL pulls.
 
 ## Shared flags
 
@@ -30,7 +31,7 @@ List/show/history/export do not fetch live ATS data.
 - `wagents --apply` and live harness install
 - live Cloudflare Workers upload
 - Kaggle mutation
-- Alembic `0005`
+- new Alembic revisions (live head is `0006_url_pull_runs`; `0005` already landed)
 - source-policy 1780 publication
 - browser automation of the public site
 - `/api/` including `/api/jobs/search`

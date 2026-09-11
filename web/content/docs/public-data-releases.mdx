@@ -9,7 +9,9 @@ This is an operator and governance contract, not a deployment announcement. The 
 
 ## Related Kaggle notebooks
 
-The public OpenOppsDB **dataset** and these notebooks are a separate ledger surface from v7 Workers delivery. Start with [Starter](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook), then the featured [Explorer](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer). Manager cron lives in [Operations](/docs/operations), not on the public dataset card.
+The public OpenOppsDB **dataset** and these notebooks are a separate ledger surface from v7 Workers delivery. Live dataset identity is **v76** (not v33/v34). This page does not authorize Kaggle mutation. Start with [Starter](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook), then the featured [Explorer](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer). Manager cron lives in [Operations](/docs/operations), not on the public dataset card.
+
+Package publication uses `.github/workflows/release.yml`: `workflow_dispatch` with an exact source SHA, an existing annotated tag, and prebuilt artifact hashes. The workflow must not create or move the tag. GitHub Release and PyPI remain independently gated and are not proven by this checkout. Hosted-alpha and v7 task 7.6 stay unchecked.
 
 | Notebook | Kernel |
 | --- | --- |

@@ -30,7 +30,7 @@ Drive the public OpenOpps CLI for an installed user. Prefer `openopps` on PATH o
 
 ## Permission posture
 
-May shell `openopps` and MCP `help`/`run` for public commands. Do not call discovery, live Workers, Kaggle, or Alembic `0005`. Do not commit `.env`.
+May shell `openopps` and MCP `help`/`run` for public commands. Do not call discovery, live Workers, Kaggle, or new Alembic revisions (live head `0006_url_pull_runs`; `0005` already landed). URL pull uses opt-in `--save`, not `--apply`. Do not commit `.env`.
 
 ## Critical Rules
 

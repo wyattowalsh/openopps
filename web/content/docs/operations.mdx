@@ -63,7 +63,9 @@ The default database path is controlled by `OPENOPPS_DB_URL` and resolves to `op
 
 All sync commands in this section write local SQLite records unless they explicitly use `--no-db` or are documented as dry-run diagnostics.
 
-`admin db init` applies the current v0.1 Alembic schema head for the durable app file-backed SQLite database. HTTP response cache rows live in that same SQLite database and are managed by `cache.py`, not by the Alembic schema history. Unsupported or partial pre-release schemas fail closed; reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file instead of relying on silent repair.
+`admin db init` applies the current v0.1 Alembic schema. Live `uv run alembic heads` is `0006_url_pull_runs` only. `0005_update_snapshot_ledger` is the landed update-snapshot ledger; `0006` adds `url_pull_runs` and membership-scoped URL-pull persistence. `0005` is no longer blocked. HTTP response cache rows live in that same SQLite database and are managed by `cache.py`, not by the Alembic schema history. Unsupported or partial pre-release schemas fail closed; reset that local database or point `OPENOPPS_DB_URL` at a new SQLite file instead of relying on silent repair.
+
+URL pull is opt-in persist: `jobs pull <URL>` defaults to `--save` False; `--no-save` is the ephemeral alias; HTTP cache is independent; persist failure exits 9. Saved rows use reserved `url-pull` digest identity and are not catalog sources. Unscoped `jobs sync` excludes those routes. This page does not authorize Workers upload, Kaggle mutation, hosted-alpha, v7 7.6, or source-policy 1780 grants.
 
 Job storage separates stable posting identity from changing content. The `jobs` table tracks lifecycle fields such as `status`, `first_seen_at`, `last_seen_at`, `closed_at`, and current hashes. `job_versions` stores one normalized content state per posting, with child tables for locations, skills, skill keywords, and responsibility or qualification bullets. `job_payload_snapshots` stores distinct raw listing/detail payloads so raw upstream JSON is never discarded.
 
@@ -129,7 +131,7 @@ Use `jsonl` for auditability, `csv` for spreadsheet inspection, `parquet` for an
 
 `boards export` accepts the same board filters as `boards list`, including `--source`, `--provider`, `--market`, `--location`, `--domain`, `--has-jobs`, `--min-staff`, `--max-staff`, and `--limit`.
 
-`jobs export` accepts the same job filters as `jobs list`, including `--source`, `--board`, `--provider`, `--location`, `--department`, `--team`, `--workplace-type`, `--remote`, `--employment-type`/`--type`, `--salary-min`, `--salary-max`, `--skill`, `--query`, `--posted-after`, `--posted-before`, `--status`, and `--limit`. These filters use normalized current-version job fields; raw upstream payloads remain exported for auditability but are not part of primary filtering semantics. Job list and export commands default to `--status open`; pass `--status all` when you intentionally need closed jobs in an audit extract.
+`jobs export` accepts the same job filters as `jobs list`, including `--source`, `--board`, `--provider`, `--location`, `--department`, `--team`, `--workplace-type`, `--remote`, `--employment-type`/`--type`, `--salary-min`, `--salary-max`, `--skill`, `--query`, `--posted-after`, `--posted-before`, `--status`, and `--limit`. JSON/JSONL also accepts `--profile core|search|full|raw` (default `full`). These filters use normalized current-version job fields; raw upstream payloads remain exported for auditability but are not part of primary filtering semantics. Job list and export commands default to `--status open`; pass `--status all` when you intentionally need closed jobs in an audit extract.
 
 ## Route Probing
 

@@ -47,12 +47,12 @@ uv run openopps --show-completion
 
 ## Workflow
 
-`status` and `doctor` sit on the Everyday workflow panel. `doctor` prints the same JSON-shaped status payload as `status`, then a first-time checklist: set `OPENOPPS_DB_URL`, run `openopps admin db init` (idempotent), then either `openopps https://…` or `openopps sync a16z --metrics-json`. Successful `doctor` does not claim the schema is missing. `nextAction` never names `discovery scout`.
+`status` and `doctor` sit on the Everyday workflow panel. `doctor` prints the same JSON-shaped status payload as `status`, then a first-time checklist: set `OPENOPPS_DB_URL`, run `openopps admin db init` (idempotent), then fill the catalog with `openopps sync a16z --metrics-json` or `examples seed`. `openopps https://…` / `jobs pull` is an ephemeral jobs fetch unless `--save` is passed; it does not populate catalog sources. Successful `doctor` does not claim the schema is missing. `nextAction` never names `discovery scout`.
 
 The normal sequence is:
 
-1. Pull an HTTPS careers URL (`openopps https://…`) or run `openopps sync a16z --metrics-json`.
-2. Use `sources sync`, `boards sync`, or `jobs sync` when rerunning one stage.
+1. Fill the catalog with `openopps sync a16z --metrics-json` or `examples seed`. Optionally pull a public URL with `openopps https://…` (ephemeral unless `--save`).
+2. Use `sources sync`, `boards sync`, or `jobs sync` when rerunning one stage. Unscoped `jobs sync` excludes reserved `url-pull` routes.
 3. Inspect `providers coverage`, `providers audit`, or `admin providers registry` when route metadata is incomplete.
 4. Use `jobs list`, `boards export`, or `jobs export` for analysis.
 
@@ -65,12 +65,12 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | Class | Examples | What changes |
 | ----- | -------- | ------------ |
 | Read-only local inspection | `status`, `doctor`, `sources list`, `providers coverage`, `plugins list`, `cache status` | Reads local SQLite/catalog state only. |
-| Writes local SQLite state | `examples seed`, `sources sync`, `boards sync`, `jobs sync`, `admin boards add`, `admin db init` | Creates or updates records under `OPENOPPS_DB_URL` and cache settings. |
+| Writes local SQLite state | `examples seed`, `sources sync`, `boards sync`, `jobs sync`, `jobs pull --save`, `admin boards add`, `admin db init` | Creates or updates records under `OPENOPPS_DB_URL` and cache settings. Default `jobs pull` is ephemeral. |
 | Live upstream diagnostics | `admin sources test`, `providers health`, `admin providers probe-routes` | Calls public source or provider endpoints; dry-run unless the command documents `--apply`. |
 | Quarantined discovery | `discovery scout`, `discovery verify-scout`, `discovery preview-promotion` (also `admin sources` aliases) | Scout writes only an explicit quarantine directory. Verify is offline and read-only. Preview is a read-only on-disk B699 identity-closure dry-run. No `--apply`. Not same-run with `sync`. |
 | Destructive local maintenance | `admin cache purge` | Deletes local cache records; scope with `--namespace` when possible. |
 
-`--apply` is intentionally absent from most everyday commands. When it appears on diagnostics such as route probing or health checks, treat it as the boundary between inspection and persistence. Quarantined discovery commands never expose `--apply`.
+`--apply` is intentionally absent from most everyday commands. When it appears on diagnostics such as route probing or health checks, treat it as the boundary between inspection and persistence. URL pull uses `--save` / `--no-save` (default False), not `--apply`. Quarantined discovery commands never expose `--apply`.
 
 ## Command Groups
 
@@ -81,7 +81,7 @@ Use `status` or `doctor` between steps to see counts, route readiness, cache sta
 | `doctor` | top-level (Everyday) | Same status payload plus the URL-first setup checklist. Not a discovery wizard. |
 | `sources` | `list`, `show`, `sync` | Inspect aggregate discovery catalogs and import board records. |
 | `boards` | `sync`, `list`, `show`, `export` | Resolve, inspect, and export firm or company hiring board records. |
-| `jobs` | `sync`, `list`, `show`, `history`, `export` | Fetch, inspect, version, and export normalized public postings. |
+| `jobs` | `pull`, `sync`, `list`, `show`, `history`, `export` | URL-first pull (opt-in `--save`), plus catalog sync, inspect, version, and export. |
 | `providers` | `health`, `coverage`, `audit` | Inspect live health, persisted coverage gaps, and adoption evidence. |
 | `cache` | `status` | Inspect the SQLite request cache. |
 | `plugins` | `list` | Inspect installed plugin entry points, capabilities, and failures. |
@@ -230,6 +230,7 @@ Use the exact persisted board key shown by `boards list`; provider requests are 
 | `--status` | Lifecycle filter: `open`, `closed`, or `all`. Defaults to `open`. |
 | `--limit` | Apply a final limit after filters. |
 | `--json` | JSON output mode for `jobs list`. |
+| `--profile` | `jobs export` and `jobs pull` only: `core`, `search`, `full`, or `raw`. Default `full`. Does not change `jobs sync`, `jobs list`, `jobs show`, or `jobs history`. |
 
 Date filters intentionally only match jobs whose normalized `posted_at` starts with `YYYY-MM-DD`, such as ISO timestamps. Relative provider text such as `Posted Yesterday` is not used for public filtering semantics.
 
@@ -238,7 +239,10 @@ Date filters intentionally only match jobs whose normalized `posted_at` starts w
 ```bash
 uv run openopps boards export --provider ashbyhq --has-jobs --format csv --output /tmp/openopps-boards.csv
 uv run openopps jobs export --source a16z --type full --format parquet --output /tmp/openopps-jobs.parquet
+uv run openopps jobs export --profile search --format jsonl --output /tmp/openopps-jobs.jsonl
 ```
+
+JSON/JSONL job objects identify `profile` and `schemaVersion`. CLI export and pull default to `full`. Docs Jobs/Explorer search artifacts use the `search` profile. `core`/`search`/`full`/`raw` do not authorize Workers upload, Kaggle mutation, or a live hosted database.
 
 `boards export` and `jobs export` support:
 
@@ -252,6 +256,29 @@ uv run openopps jobs export --source a16z --type full --format parquet --output 
 JSONL exports stream line-delimited records and empty JSONL/CSV exports produce empty files. Empty Parquet exports produce a readable empty Parquet table. CSV exports neutralize spreadsheet formula-leading strings by prefixing a single quote. SQLite exports should keep the same flattened field contract as CSV/Parquet and store nested values as stable JSON strings.
 
 For schema, SQLite, and search-index details, see [Data Model](/docs/data-model).
+
+## URL pull
+
+`openopps <URL>` and `openopps jobs pull <URL>` share one service. They do not populate the source catalog.
+
+```bash
+uv run openopps jobs pull https://jobs.ashbyhq.com/example --json
+uv run openopps https://jobs.ashbyhq.com/example --no-save --metrics-file /tmp/pull-metrics.json
+uv run openopps jobs pull https://jobs.ashbyhq.com/example --save
+```
+
+| Rule | Meaning |
+| ---- | ------- |
+| Identity | Reserved source key `url-pull` plus a punctuation-preserving digest. Not a catalog source. |
+| `--save` | Opt-in. CLI default is False. Writes a complete validated result only. |
+| `--no-save` | Explicit ephemeral alias for the default. Operational tables stay unchanged. |
+| HTTP cache | Independent of save/no-save. `--refresh-cache` controls freshness only. |
+| Complete-before-apply | Membership and authority must validate before any ledger write. |
+| Persist failure | Exit 9 (`PERSISTENCE_FAILED`). Does not claim a saved success. |
+| Unscoped `jobs sync` | Excludes reserved `url-pull` routes. |
+| Observability | `--metrics-file` or `--raw`. Never `--metrics-json` (catalog sync stdout only). |
+
+`--profile core|search|full|raw` (default `full`) applies to pull JSON the same way it does to `jobs export`.
 
 ## Agent Plugins
 

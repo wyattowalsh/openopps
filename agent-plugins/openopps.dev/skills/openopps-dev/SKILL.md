@@ -26,7 +26,7 @@ Checkout contributors only. Inverse of the user plugin: discovery is in scope; e
 
 ## Permission posture
 
-Credential-free discovery only. No `wagents --apply`, no harness projection, no live Workers/Kaggle, no Alembic `0005`.
+Credential-free discovery only. No `wagents --apply`, no harness projection, no live Workers/Kaggle, no new Alembic revisions (live head `0006_url_pull_runs`; `0005` already landed).
 
 ## Critical Rules
 

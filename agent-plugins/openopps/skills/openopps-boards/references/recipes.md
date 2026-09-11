@@ -29,7 +29,7 @@ Board keys are `source:slug`. Public `boards` is not `admin boards add`.
 - `wagents --apply` and live harness install
 - live Cloudflare Workers upload
 - Kaggle mutation
-- Alembic `0005`
+- new Alembic revisions (live head is `0006_url_pull_runs`; `0005` already landed)
 - source-policy 1780 publication
 - browser automation of the public site
 - `/api/` including `/api/jobs/search`

@@ -10,8 +10,9 @@ Fumadocs/Next.js web app (docs + jobs/explorer) with a Tailwind CSS v4 and shadc
 - Keep version 7 public-data access behind `lib/openopps-snapshot-client.ts`: server and browser consumers must resolve one channel and pin one immutable release. Production search stays in `lib/jobs-search.worker.ts`; `/api/jobs/search` must remain a fail-closed stale-client boundary with no full-corpus server fallback. V7 generation/delivery/bootstrap/restore lives in root `scripts/`, `deployment/openopps-data/`, and the manual draft-first `.github/workflows/public-data-archive.yml`; see `content/docs/public-data-releases.mdx` before changing schema, environment, rights, retention, rollback, archive, or v6 cutover behavior.
 - Keep Fumadocs MDX collection settings in `source.config.ts`; `includeProcessedMarkdown` supports the site-level `/llms.txt` index, `app/llms-full.txt/`, and per-page markdown routes under `app/llms.mdx/`. `/llms.txt` is an llmstxt.org v2 **site** index (jobs, explorer, docs, markdown, feed), not the docs-only Fumadocs tree.
 - Read `../DESIGN.md` before changing theme tokens, typography, colors, spacing, or shadcn/ui component variants.
-- Keep docs synchronized with the CLI, `Justfile`, GitHub Actions, and OpenSpec changes. When commands change, update the MDX page, README, and just recipe references together.
+- Keep docs synchronized with the CLI, `Justfile`, GitHub Actions, and OpenSpec changes. When commands change, update the MDX page, README, and just recipe references together. Document URL-pull as reserved `url-pull` digest identity (not catalog), opt-in `--save` (default False, `--no-save` ephemeral, persist failure exit 9), Alembic `0005` then `0006_url_pull_runs`, and unscoped `jobs sync` excluding `url-pull`. Do not claim Workers upload, Kaggle mutation, hosted-alpha, v7 7.6, or source-policy 1780 grants from local docs work.
 - Keep CLI examples runnable from the repository root and prefer `just` recipes for contributor validation summaries, with raw `uv`/`pnpm` commands still visible where users need exact execution.
+- Use the repository-pinned web toolchain: Node 24.20.0 from `../.node-version` and pnpm 11.24.0 from `package.json`. Do not validate web dependency or generated-artifact changes under an unpinned host runtime.
 - Add shadcn/ui components with `pnpm dlx shadcn@latest add <component>` from this package directory (or `cd web` from the repository root), then import or expose them through MDX as needed.
 - Prefer Fumadocs-native MDX components for callouts, cards, tables, code blocks, and tabs.
 - Keep custom MDX component wiring in `components/mdx.tsx`; expose project-specific components there instead of importing ad hoc implementations from content pages.
@@ -41,7 +42,7 @@ just web-lint
 just web-rtk-lint
 ```
 
-Prefer `just web-*` from the repository root. Transitional `just docs-*` recipes are aliases that invoke the corresponding `web-*` recipes.
+Prefer `just web-*` from the repository root.
 `just ci-web` runs one Playwright process (`just web-playwright`) and one `next start`. Standalone `just web-e2e` and `just web-a11y` still depend on `web-build`.
 
 Use `pnpm types:check` after MDX/content graph edits because it runs `fumadocs-mdx`, `next typegen`, and `tsc --noEmit`.

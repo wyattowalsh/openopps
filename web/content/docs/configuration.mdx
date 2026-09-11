@@ -133,7 +133,7 @@ OPENOPPS_PLUGIN_ALLOWED=trusted-plugin
 OPENOPPS_PLUGIN_DISABLED=broken-plugin
 ```
 
-`DiscoverySettings` ignores `.env`; do not put `OPENOPPS_DISCOVERY_*` or `OPENOPPS_DISCOVERY_NETWORK` in that file. Unscoped `jobs sync` targets all persisted ready routes. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs.
+`DiscoverySettings` ignores `.env`; do not put `OPENOPPS_DISCOVERY_*` or `OPENOPPS_DISCOVERY_NETWORK` in that file. Unscoped `jobs sync` targets persisted ready catalog routes and excludes reserved `url-pull` identity. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs. Do not pin `--source url-pull`.
 
 The [Jobs](/) and [Explorer](/explorer) surfaces use the committed v6 snapshot only while no v7 channel is configured. Refresh that transition artifact with `just web-search-index` after updating the local `kaggle/openoppsdb.sqlite` export. See [Public Data Releases](/docs/public-data-releases) for v7 configuration, governance, delivery, and cutover gates.
 

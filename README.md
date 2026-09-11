@@ -83,7 +83,7 @@
 
 [OpenOppsDB](https://www.kaggle.com/datasets/wyattowalsh/openoppsdb) · [Starter](https://www.kaggle.com/code/wyattowalsh/openoppsdb-starter-notebook) · [Explorer](https://www.kaggle.com/code/wyattowalsh/openoppsdb-explorer) · [Advanced](https://www.kaggle.com/code/wyattowalsh/openoppsdb-advanced-usage) · [SQL](https://www.kaggle.com/code/wyattowalsh/openoppsdb-sql-playground) · [Market map](https://www.kaggle.com/code/wyattowalsh/openoppsdb-hiring-market-map) · [Skills](https://www.kaggle.com/code/wyattowalsh/openoppsdb-skills-radar) · [Snapshot](https://www.kaggle.com/code/wyattowalsh/openoppsdb-snapshot-health)
 
-Source policy is fail-closed: `just source-policy-check` is the structural CI gate and `just source-policy-audit` is the release-eligibility gate, where 0 are independently verified and 1780 are blocked.
+Source policy is fail-closed: `just source-policy-check` is the structural CI gate and `just source-policy-audit` is the release-eligibility gate, where 0 are independently verified and 1780 are blocked. Live OpenOppsDB dataset identity is **v76** (not v33/v34). This README does not authorize Workers upload, Kaggle mutation, GitHub Release, PyPI, hosted-alpha, or v7 7.6.
 
 ## Install
 
@@ -99,11 +99,12 @@ openopps doctor
 uv sync
 uv run openopps admin db init
 uv run openopps https://jobs.ashbyhq.com/example
+# ephemeral by default; add --save to write reserved url-pull ledger rows
 # or: uv run openopps sync a16z --metrics-json
 uv run openopps status
 ```
 
-`OPENOPPS_DB_URL` defaults to `sqlite:///openoppsdb.sqlite`. See [configuration](https://openopps.dev/docs/configuration).
+`OPENOPPS_DB_URL` defaults to `sqlite:///openoppsdb.sqlite`. `admin db init` applies Alembic `0005_update_snapshot_ledger` then `0006_url_pull_runs` (live head `0006_url_pull_runs`). See [configuration](https://openopps.dev/docs/configuration).
 
 ## CLI
 
@@ -111,16 +112,21 @@ uv run openopps status
 uv run openopps --help
 uv run openopps sources list
 uv run openopps sync a16z --metrics-json
+uv run openopps jobs pull https://jobs.ashbyhq.com/example --json
+uv run openopps jobs pull https://jobs.ashbyhq.com/example --save
 uv run openopps boards list --source a16z --limit 10
 uv run openopps jobs list --json
 uv run openopps jobs export --format parquet --output /tmp/openopps-jobs.parquet
 uv run openopps discovery scout --output /absolute/quarantine-root --json
 ```
 
+`jobs pull` / `openopps <URL>` is not catalog fill. Identity is reserved `url-pull` plus a punctuation-preserving digest. Default `--save` is False; `--no-save` is the ephemeral alias; HTTP cache is independent; complete-before-apply; persist failure exits 9. Unscoped `jobs sync` excludes `url-pull` routes. Package publication is exact-SHA `release.yml` and must not create tags.
+
 | Group | Job |
 | --- | --- |
-| `status` / `doctor` | Everyday local inspection; doctor is URL-first, never discovery |
-| `sync` | sources → boards → jobs |
+| `status` / `doctor` | Everyday local inspection; URL pull does not populate an empty catalog |
+| `sync` | sources → boards → jobs (unscoped jobs sync excludes `url-pull`) |
+| `jobs pull` | URL-first board or posting; opt-in `--save` |
 | `sources` / `boards` / `jobs` | inspect, sync, export |
 | `providers` | coverage, audit, health |
 | `discovery` | quarantined scout; not same-run with `sync` |

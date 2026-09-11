@@ -35,6 +35,7 @@ May shell sync commands that write local SQLite. Confirm `OPENOPPS_DB_URL` first
 3. Do not apply quarantined scout output here.
 4. Must prefer `--json` / `--metrics-json` for automation.
 5. Never run `openopps discovery *` from this skill.
+6. Unscoped `jobs sync` excludes reserved `url-pull` routes. URL ingest is `jobs pull`, not catalog fill.
 
 ## Canonical vocabulary
 

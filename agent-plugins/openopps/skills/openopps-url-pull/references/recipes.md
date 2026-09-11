@@ -4,16 +4,20 @@
 openopps jobs pull https://boards.greenhouse.io/example --json
 openopps https://jobs.ashbyhq.com/example --json --metrics-file /tmp/pull-metrics.json
 openopps jobs pull https://example.invalid/jobs --no-save --raw
+openopps jobs pull https://jobs.ashbyhq.com/example --save
 ```
 
 Same workflow for `openopps <url>` and `openopps jobs pull <url>`.
-Fail closed on ambiguity. This is operational pull, not quarantined discovery.
+Fail closed on ambiguity. This is operational pull, not quarantined discovery or catalog fill.
+Identity is reserved `url-pull` plus a digest. Unscoped `jobs sync` excludes those routes.
 
 ## Shared flags
 
 - Prefer `--json` so stdout stays machine-readable.
 - `--help` is always safe.
-- `--apply` is an explicit persist; dry-run first.
+- `--save` is opt-in ledger persist (default False). `--no-save` is the ephemeral alias.
+- HTTP cache is independent of save/no-save. `--refresh-cache` controls freshness only.
+- Persist failure exits 9. Complete-before-apply; membership and authority must validate first.
 - `--metrics-json` is catalog sync stdout only. Do not pass it to `jobs pull`.
 - For URL pull observability, use `--metrics-file PATH` and/or `--raw`.
 - Do not mix human diagnostics onto JSON stdout.
@@ -30,8 +34,10 @@ Fail closed on ambiguity. This is operational pull, not quarantined discovery.
 - `wagents --apply` and live harness install
 - live Cloudflare Workers upload
 - Kaggle mutation
-- Alembic `0005`
+- new Alembic revisions (live head is `0006_url_pull_runs`; `0005` already landed)
 - source-policy 1780 publication
+- hosted-alpha / v7 7.6
+- package `release.yml` exact-SHA publication (must not create tags)
 - browser automation of the public site
 - `/api/` including `/api/jobs/search`
 - sharing discovery with `openopps sync` in the same run

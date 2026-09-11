@@ -32,7 +32,7 @@ These commands can write SQLite or delete cache. Confirm `--apply` and purge sco
 
 1. Always refuse `admin sources scout|verify-scout|preview-promotion`.
 2. Never persist probe-routes or health without `--apply`.
-3. Do not run Alembic `0005`, Workers, or Kaggle from this skill.
+3. Do not run new Alembic revisions, Workers, or Kaggle from this skill. Live head is `0006_url_pull_runs`; `0005` already landed.
 4. Must target `OPENOPPS_DB_URL` for `admin db init`.
 5. Never treat cache purge as a default; require an explicit delete request.
 
