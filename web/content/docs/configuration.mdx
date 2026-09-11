@@ -135,6 +135,8 @@ OPENOPPS_PLUGIN_DISABLED=broken-plugin
 
 `DiscoverySettings` ignores `.env`; do not put `OPENOPPS_DISCOVERY_*` or `OPENOPPS_DISCOVERY_NETWORK` in that file. Unscoped `jobs sync` targets persisted ready catalog routes and excludes reserved `url-pull` identity. Use explicit CLI filters such as `--source`, `--board`, or `--provider` for one-off scoped syncs. Do not pin `--source url-pull`.
 
+URL pull does not use an environment persist switch. `jobs pull` and `openopps <URL>` stay ephemeral unless you pass `--save`; `--no-save` is the explicit alias for that default. HTTP cache writes remain independently governed. Persist failure exits `9` (`PERSISTENCE_FAILED`) and does not claim a saved success. See [CLI](/docs/cli#url-pull) and [Operations](/docs/operations).
+
 The [Jobs](/) and [Explorer](/explorer) surfaces use the committed v6 snapshot only while no v7 channel is configured. Refresh that transition artifact with `just web-search-index` after updating the local `kaggle/openoppsdb.sqlite` export. See [Public Data Releases](/docs/public-data-releases) for v7 configuration, governance, delivery, and cutover gates.
 
 Docs-app telemetry is configured separately from CLI runtime settings. When instrumentation is enabled, keep collection env-gated: default to a no-op sink in local development, use `local-event-lake` for canonical raw events on persistent disk, and set `OPENOPPS_POSTHOG_PROJECT_API_KEY` only when a sanitized hosted product-analytics mirror is desired. Browser PostHog replay is a separate opt-in through `NEXT_PUBLIC_OPENOPPS_POSTHOG_PROJECT_API_KEY`; it remains gated by `NEXT_PUBLIC_OPENOPPS_TELEMETRY_ENABLED=true`, disables automatic PostHog pageview/autocapture events, masks text and inputs, disables network body/header capture, and leaves replay sampling plus trigger controls to the PostHog project. See [Data Model](/docs/data-model#telemetry-event-lake) for the event shape and [Operations](/docs/operations#telemetry-operations) for operating guidance.
@@ -146,6 +148,8 @@ Prefer flags for one run and environment variables for durable local policy:
 | Need                                         | Prefer                                  |
 | -------------------------------------------- | --------------------------------------- |
 | Refresh one upstream read                    | `--refresh-cache`                       |
+| Persist one URL pull                         | `--save` (opt-in; default False)        |
+| Keep one URL pull ephemeral                   | `--no-save` (default; persist failure exits 9) |
 | Always bypass cache reads in a shell/session | `OPENOPPS_CACHE_REFRESH=true`           |
 | Narrow one job sync                          | `--source`, `--board`, or `--provider`  |
 | Opt into place-aware JSON-board pools        | `OPENOPPS_CONCURRENCY_PROFILE=auto` (Workday stays 2) |

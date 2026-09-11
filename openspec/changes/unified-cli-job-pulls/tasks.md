@@ -188,8 +188,9 @@ W6.1 persist-join receipt (2026-09-11):
   `0005_update_snapshot_ledger.py` and `0006_url_pull_runs.py`; no `*.draft`.
 - Package overlay-outcomes CLI and overlay 1813 remain HOLD; do not check them.
 - W5.R2 persist-join independent review **PASS**ed on `d464e84` (2026-09-11).
-- Docs `W801`/`W802`/`W804`/`W805`/`B899` stay open until the documentation commit.
-  `W803` is an explicit Justfile no-change (mixed dirty HOLD unstaged).
+- Docs `W801`/`W802` landed on `1a0e6e84` (`docs: sync AGENTS, docs, and plugin recipes after D712`).
+  `W804`/`W805`/`B899` stay open until W8 command evidence. `W803` is an explicit
+  Justfile no-change (mixed dirty HOLD unstaged).
 
 ## 7. External G3/L.1 -> B799 storage and migration join
 
@@ -219,10 +220,10 @@ uv run pytest tests/integration/openopps/test_ingest.py tests/integration/openop
 
 ## 8. B699 + B799 -> B899 docs, agent guidance, and workflow parity
 
-Docs-after-join stay open in this OpenSpec commit except the Justfile no-change receipt. `W801`/`W802` land in the separate documentation commit. Overlay-outcomes CLI and overlay 1813 remain HOLD.
+Docs-after-join: `W801`/`W802` closed on `1a0e6e84`. `W803` remains the Justfile no-change receipt. Overlay-outcomes CLI and overlay 1813 remain HOLD.
 
-- [ ] 8.1 `W801` Update README and CLI/provider/operations/configuration/data-model/contributor docs with commands, support tiers, evidence, persistence/no-save/cache semantics, identity, raw/machine output, and failures. `[depends: B699,B799] [writer: W-DOCS]`
-- [ ] 8.2 `W802` Update root, package, and web `AGENTS.md` files where module ownership, public surfaces, migrations, or validation commands changed. `[depends: W801] [writer: W-DOCS]`
+- [x] 8.1 `W801` Update README and CLI/provider/operations/configuration/data-model/contributor docs with commands, support tiers, evidence, persistence/no-save/cache semantics, identity, raw/machine output, and failures. `[depends: B699,B799] [writer: W-DOCS]` Evidence: `git log -1 --format='%H %s' 1a0e6e84ea03b843eecc7f41af8eb6b7422abea1` → `docs: sync AGENTS, docs, and plugin recipes after D712`. Files: `README.md`, `CONTRIBUTING.md`, `web/content/docs/{cli,configuration,contributing,data-model,operations,public-data-releases,agent-plugins}.mdx`, `agent-plugins/openopps/skills/{openopps,openopps-admin,openopps-sync,openopps-url-pull}/SKILL.md`, and matching `references/recipes.md` under admin/boards/jobs/operations/providers/sources/status/sync/url-pull/web. CLI/ops/data-model pages document opt-in `--save` (default False), `--no-save` ephemeral, persist failure exit 9, reserved `url-pull` identity, and independent HTTP cache.
+- [x] 8.2 `W802` Update root, package, and web `AGENTS.md` files where module ownership, public surfaces, migrations, or validation commands changed. `[depends: W801] [writer: W-DOCS]` Evidence: same `1a0e6e84` commit includes `AGENTS.md`, `src/openopps/AGENTS.md`, `web/AGENTS.md`, and contributor plugin recipes under `agent-plugins/openopps.dev/skills/`.
 - [x] 8.3 `W803` Update the Justfile and matching GitHub Actions job together only if the canonical validation surface changes; otherwise record an explicit no-change parity check. `[depends: B699,B799] [writer: W-DELIVERY]` Evidence: W6.1 does not stage `Justfile`. `git diff -- Justfile` is mixed HOLD (`security-audit-web` and leftover recipe hunks), integrator-queued. Canonical URL-pull validation already lives in committed pytest/OpenSpec; publication workflow landed in `32a26bb3bbd83b420eff61c86690122b6cd56119` (`ci(release): add exact-SHA publication workflow and artifact gates`). No new just recipe is required for D712.
 - [ ] 8.4 `W804` Invoke `/docs-steward` after public API/file/schema/agent-guidance edits and record the skill's validation or explicit supported skip result without installing missing tooling. `[depends: W801-W803]`
 - [ ] 8.5 `W805` Regenerate only package-derived docs data proven affected; do not regenerate Kaggle or committed search artifacts without a direct generator-contract change. `[depends: W804] [writer: W-GENERATED]`
@@ -272,7 +273,7 @@ git diff --check
 | --- | --- | --- | --- |
 | Storage gate | G3 reservation `2e659c1` + apply `7483972`; L.1 `414d5828` | `D701` | landed |
 | L.1 / URL-pull schema | Live `uv run alembic heads` = `0006_url_pull_runs`; `0005` is the ledger, not `.draft` | `D702`-`D712`, `B799` | landed |
-| Unified persistence | D712 `d464e84` opt-in `--save` (default False, exit 9) | docs `W801`+ | landed for storage/CLI; docs still open |
+| Unified persistence | D712 `d464e84` opt-in `--save` (default False, exit 9) | docs `W801`/`W802` | landed; docs SHA `1a0e6e84`; `W804`+ still open |
 | Justfile | Mixed dirty HOLD (`security-audit-web`) | W6.1 staging | no-change / integrator-queued |
 | Live authority | Workers upload/deploy, GitHub Release, PyPI, `github-release`/`pypi` environments, hosted-alpha/H0, v7 7.6, source-policy 1780 grants, exact-SHA CI on a pushed SHA | W11 / `F1207` | **NO-GO** (unchecked) |
 
