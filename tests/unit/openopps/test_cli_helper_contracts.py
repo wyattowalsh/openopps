@@ -209,6 +209,7 @@ def test_cache_helpers_fail_closed_without_a_local_sqlite_database() -> None:
         "expired": 0,
         "staleOnErrorEligible": 0,
         "byNamespace": {},
+        "duration": {"present": 0, "minMs": 0, "maxMs": 0, "sumMs": 0},
     }
     with pytest.raises(typer.BadParameter, match="local sqlite"):
         cli_module._cache(settings)
