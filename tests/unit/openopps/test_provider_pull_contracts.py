@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -24,6 +25,7 @@ from openopps.providers.pull import (
     bounded_async_map,
     decode_url_identity_segment,
     ensure_detail_fanout_within_budget,
+    _bounded_pull_http_identity,
 )
 
 
@@ -692,3 +694,26 @@ def test_url_identity_decoder_rejects_control_and_overlong_values() -> None:
     assert decode_url_identity_segment("job\x00id") is None
     assert decode_url_identity_segment("job id") is None
     assert decode_url_identity_segment("%C3%28") is None
+
+
+def test_pull_http_identity_requires_a_string() -> None:
+    with pytest.raises(TypeError, match="provider_id must be a string"):
+        _bounded_pull_http_identity(cast("object", 12), label="provider_id")
+
+
+def test_board_scan_get_rejects_a_different_posting_object() -> None:
+    source_list = _source_list(_posting())
+    other_job = _job().model_copy(update={"title": "Different title"})
+    other = ProviderPosting(
+        job=other_job,
+        listing=other_job.raw_listing,
+        detail=other_job.raw_detail,
+    )
+
+    with pytest.raises(ValidationError, match="authoritative source list"):
+        ProviderGetResult(
+            posting=other,
+            method=ProviderGetMethod.BOARD_SCAN,
+            matched_identity="123",
+            source_list=source_list,
+        )

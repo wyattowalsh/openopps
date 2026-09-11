@@ -731,3 +731,82 @@ def test_emit_pull_domain_error_prints_hint_and_optional_diagnostics(
         "Error [unsafe_url]: Unsafe target.",
         "Hint: Use a public HTTPS URL.",
     ]
+
+
+def test_emit_discovery_helpers_cover_human_and_json_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printed: list[str] = []
+    json_payloads: list[object] = []
+    monkeypatch.setattr(
+        cli_module.console,
+        "print",
+        lambda message: printed.append(str(message)),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_discovery_json",
+        lambda payload: json_payloads.append(payload),
+    )
+
+    cli_module._emit_discovery_result(
+        {
+            "command": "scout",
+            "status": "complete",
+            "manifestPath": "/tmp/manifest.json",
+        },
+        json_output=False,
+    )
+    cli_module._emit_discovery_result({"command": "scout"}, json_output=True)
+    cli_module._emit_promotion_preview_result(
+        {
+            "command": "preview-promotion",
+            "status": "preview",
+            "identityClosure": {"ok": True},
+            "decisionId": "dec-1",
+            "catalogUnchanged": True,
+        },
+        json_output=False,
+    )
+    cli_module._emit_promotion_preview_result(
+        {"command": "preview-promotion"},
+        json_output=True,
+    )
+
+    assert any("manifest /tmp/manifest.json" in item for item in printed)
+    assert any("identity-closure" in item for item in printed)
+    assert any("decision dec-1" in item for item in printed)
+    assert any("catalog unchanged" in item for item in printed)
+    assert json_payloads
+
+
+def test_plugins_list_json_and_admin_provider_explain(tmp_path: Path) -> None:
+    plugins = _invoke(tmp_path, "plugins", "list", "--json")
+    listed = _invoke(tmp_path, "admin", "providers", "list", "--json")
+    unknown = _invoke(tmp_path, "admin", "providers", "explain", "missing-provider")
+    known = _invoke(tmp_path, "admin", "providers", "explain", "greenhouse")
+    status = _invoke(tmp_path, "admin", "db", "status")
+
+    assert plugins.exit_code == 0, plugins.output
+    assert "plugins" in json.loads(plugins.output)
+    assert listed.exit_code == 0, listed.output
+    assert any(item["id"] == "greenhouse" for item in json.loads(listed.output))
+    assert json.loads(unknown.output)["supportLevel"] == "unsupported"
+    assert json.loads(known.output)["id"] == "greenhouse"
+    assert status.exit_code == 0, status.output
+
+
+def test_providers_detect_human_ambiguous_table(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    registry = ProviderRegistry(
+        [_legacy_definition("zeta"), _legacy_definition("alpha")]
+    )
+    monkeypatch.setattr(cli_module, "_pull_registry", lambda _settings: registry)
+
+    result = _invoke(tmp_path, "providers", "detect", BOARD_URL)
+
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.output
+    assert "zeta" in result.output

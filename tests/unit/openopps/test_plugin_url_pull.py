@@ -1257,3 +1257,219 @@ def test_entry_point_package_falls_back_to_distribution_metadata() -> None:
 
     assert registry.as_dict()["plugins"][0]["metadata"]["package"] == "from-meta"
     assert registry.active_url_pull_state("meta") is not None
+
+
+@pytest.mark.parametrize(
+    ("contribution", "message"),
+    [
+        (
+            PluginContribution(metadata=PluginMetadata(name="", version="1.0.0")),
+            "plugin metadata name is required",
+        ),
+        (
+            PluginContribution(metadata=PluginMetadata(name="invalid", version="")),
+            "plugin metadata version is required",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(
+                    name="invalid",
+                    version="1.0.0",
+                    api_version="9.9",
+                )
+            ),
+            "unsupported plugin api version",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                capabilities=(PluginCapability("job_provider", ""),),
+            ),
+            "plugin capability name is required",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                capabilities=(
+                    PluginCapability("job_provider", "same"),
+                    PluginCapability("job_provider", "same"),
+                ),
+            ),
+            "duplicate plugin capability",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                job_providers={"": lambda _settings: object()},
+            ),
+            "contains an empty name",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                job_providers={"invalid": cast(Any, "not-callable")},
+            ),
+            "must be callable",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                job_providers={"invalid": lambda _settings: object()},
+                url_pull_providers={
+                    "invalid": PluginUrlPullRegistration(
+                        target_parser=_parse("invalid"),
+                        capabilities=cast(Any, object()),
+                        list_hook_factory=lambda _provider: _contract_list_hook,
+                    )
+                },
+            ),
+            "must be ProviderPullCapabilities",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                job_providers={"invalid": lambda _settings: object()},
+                url_pull_providers={
+                    "invalid": PluginUrlPullRegistration(
+                        target_parser=_parse("invalid"),
+                        capabilities=_list_capabilities(),
+                        list_hook_factory=cast(Any, "not-callable"),
+                    )
+                },
+            ),
+            "list_hook_factory must be callable",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                job_providers={"invalid": lambda _settings: object()},
+                url_pull_providers={
+                    "invalid": PluginUrlPullRegistration(
+                        target_parser=_parse("invalid"),
+                        capabilities=_native_capabilities(),
+                        native_get_hook_factory=cast(Any, "not-callable"),
+                    )
+                },
+            ),
+            "native_get_hook_factory must be callable",
+        ),
+        (
+            PluginContribution(
+                metadata=PluginMetadata(name="invalid", version="1.0.0"),
+                job_providers=cast(Any, ["not-a-mapping"]),
+            ),
+            "must be a mapping",
+        ),
+    ],
+)
+def test_load_plugins_reports_remaining_contribution_validation_errors(
+    contribution: PluginContribution,
+    message: str,
+) -> None:
+    registry = load_plugins(
+        entry_points=[FakeEntryPoint("invalid", lambda _context: contribution)],
+        allowed={"invalid"},
+    )
+
+    assert registry.as_dict()["failed"] == 1
+    assert message in (registry.as_dict()["plugins"][0]["error"] or "")
+
+
+def test_native_only_bound_provider_does_not_expose_list_hook() -> None:
+    registry = load_plugins(
+        entry_points=[
+            FakeEntryPoint(
+                "native-only",
+                lambda _context: PluginContribution(
+                    metadata=PluginMetadata(name="native-only", version="1.0.0"),
+                    job_providers={"native_only": lambda _settings: object()},
+                    url_pull_providers={
+                        "native_only": PluginUrlPullRegistration(
+                            target_parser=_parse("native_only"),
+                            capabilities=_native_capabilities(),
+                            native_get_hook_factory=lambda _provider: (
+                                _contract_native_get_hook
+                            ),
+                        )
+                    },
+                ),
+            )
+        ],
+        allowed={"native-only"},
+        builtin_provider_ids=(),
+    )
+    bound = build_url_pull_provider(
+        "native_only",
+        OpenOppsSettings(),
+        plugin_registry=registry,
+    )
+
+    assert bound is not None
+    assert not hasattr(bound, "pull_list")
+    assert callable(bound.pull_get)
+
+
+def test_bind_rejects_non_callable_factory_and_raising_native_hook() -> None:
+    list_registration = PluginUrlPullRegistration(
+        target_parser=_parse("broken"),
+        capabilities=_list_capabilities(),
+        list_hook_factory=lambda _provider: _contract_list_hook,
+    )
+    with pytest.raises(PluginUrlPullBindingError) as factory_type:
+        bind_plugin_url_pull_provider(
+            "broken",
+            list_registration,
+            cast(Any, "not-callable"),
+            OpenOppsSettings(),
+        )
+    with pytest.raises(PluginUrlPullBindingError) as native_error:
+        bind_plugin_url_pull_provider(
+            "broken",
+            PluginUrlPullRegistration(
+                target_parser=_parse("broken"),
+                capabilities=_native_capabilities(),
+                native_get_hook_factory=lambda _provider: (_ for _ in ()).throw(
+                    RuntimeError("native hook")
+                ),
+            ),
+            lambda _settings: object(),
+            OpenOppsSettings(),
+        )
+
+    assert factory_type.value.code == "invalid_registration"
+    assert native_error.value.code == "invalid_native_get_hook"
+
+
+def test_resolve_skips_non_registration_url_pull_mapping_values() -> None:
+    registry = PluginRegistry(
+        contributions=(
+            PluginContribution(
+                metadata=PluginMetadata(name="skip", version="1.0.0"),
+                job_providers={"skip": lambda _settings: object()},
+                url_pull_providers={"skip": cast(Any, object())},
+            ),
+        ),
+        load_results=(),
+        conflicts=(),
+    ).resolve_url_pulls(builtin_provider_ids=())
+
+    assert registry.url_pull_registrations == ()
+
+
+def test_entry_point_package_returns_none_without_distribution_identity() -> None:
+    registry = load_plugins(
+        entry_points=[
+            FakeEntryPoint(
+                "anon",
+                lambda _context: PluginContribution(
+                    metadata=PluginMetadata(name="anon", version="1.0.0"),
+                    job_providers={"anon": lambda _settings: object()},
+                ),
+                dist=FakeDistribution(name=None, metadata=None),
+            )
+        ],
+        allowed={"anon"},
+        builtin_provider_ids=(),
+    )
+
+    assert registry.as_dict()["plugins"][0]["metadata"]["package"] is None
