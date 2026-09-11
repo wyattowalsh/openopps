@@ -14,6 +14,7 @@ from openopps.models import (
     ProviderSupport,
     SourceRecord,
 )
+from openopps.providers.pull import ProviderPullCapabilities, ProviderTargetParser
 
 
 class ProviderKind(StrEnum):
@@ -64,6 +65,8 @@ class ProviderDefinition:
     support_level: ProviderSupport
     description: str
     route_detector: ProviderRouteDetector | None = None
+    target_parser: ProviderTargetParser | None = None
+    pull_capabilities: ProviderPullCapabilities | None = None
 
     @property
     def job_capable(self) -> bool:
@@ -75,6 +78,17 @@ class ProviderDefinition:
     @property
     def source_capable(self) -> bool:
         return self.kind == ProviderKind.BOARD_SOURCE
+
+    @property
+    def pull_capable(self) -> bool:
+        capabilities = self.pull_capabilities
+        return capabilities is not None and any(
+            (
+                capabilities.list_supported,
+                capabilities.native_get_supported,
+                capabilities.board_scan_get_supported,
+            )
+        )
 
 
 class BoardSourceAdapter(Protocol):

@@ -204,6 +204,110 @@ class OpenOppsSettings(BaseSettings):
         ),
         examples=[30.0],
     )
+    http_max_encoded_response_bytes: PositiveIntSetting = Field(
+        default=16 * 1024 * 1024,
+        description=(
+            "Maximum encoded wire bytes admitted for one shared HTTP JSON or text "
+            "response before OpenOpps stops reading and reports a bounded failure."
+        ),
+        examples=[16_777_216],
+    )
+    http_max_decoded_response_bytes: PositiveIntSetting = Field(
+        default=64 * 1024 * 1024,
+        description=(
+            "Maximum decompressed response bytes admitted for one shared HTTP JSON "
+            "or text response, independently of the encoded wire-byte ceiling."
+        ),
+        examples=[67_108_864],
+    )
+    pull_resolver_max_candidates: PositiveIntSetting = Field(
+        default=32,
+        description=(
+            "Maximum distinct ATS URL candidates retained during one bounded careers "
+            "page resolution pass before the resolver reports budget exhaustion."
+        ),
+        examples=[32],
+    )
+    pull_resolver_max_probes: PositiveIntSetting = Field(
+        default=12,
+        description=(
+            "Maximum capability-declared provider probes attempted during one URL "
+            "resolution operation after deterministic link inspection is exhausted."
+        ),
+        examples=[12],
+    )
+    pull_resolver_max_probes_per_provider: PositiveIntSetting = Field(
+        default=4,
+        description=(
+            "Maximum probes attributed to one provider during a single URL "
+            "resolution operation, independently of the global probe ceiling."
+        ),
+        examples=[4],
+    )
+    pull_resolver_max_origins: PositiveIntSetting = Field(
+        default=8,
+        description=(
+            "Maximum distinct public origins admitted across redirects, discovered "
+            "candidates, and provider probes during one URL resolution operation."
+        ),
+        examples=[8],
+    )
+    pull_resolver_max_redirects: PositiveIntSetting = Field(
+        default=5,
+        description=(
+            "Maximum validated redirect hops followed while resolving one careers or "
+            "native ATS URL before the operation terminates with a bounded failure."
+        ),
+        examples=[5],
+    )
+    pull_resolver_max_requests: PositiveIntSetting = Field(
+        default=24,
+        description=(
+            "Maximum shared HTTP requests consumed by careers-page discovery and "
+            "capability-declared probes during one URL resolution operation."
+        ),
+        examples=[24],
+    )
+    pull_resolver_timeout_seconds: PositiveFloatSetting = Field(
+        default=60.0,
+        description=(
+            "Maximum wall-clock duration, in seconds, for deterministic URL matching, "
+            "one careers-page read, redirect handling, and bounded provider probes."
+        ),
+        examples=[60.0],
+    )
+    pull_provider_max_requests: PositiveIntSetting = Field(
+        default=20_000,
+        description=(
+            "Maximum logical provider HTTP reads, retries, and redirect hops admitted "
+            "during one URL-pull provider operation before the pull fails closed."
+        ),
+        examples=[20_000],
+    )
+    pull_provider_max_details: PositiveIntSetting = Field(
+        default=10_000,
+        description=(
+            "Maximum independent posting-detail reads that one URL-pull list operation "
+            "may schedule after authoritative membership traversal completes."
+        ),
+        examples=[10_000],
+    )
+    pull_provider_max_response_bytes: PositiveIntSetting = Field(
+        default=512 * 1024 * 1024,
+        description=(
+            "Maximum aggregate decoded response bytes admitted across listing, "
+            "pagination, and detail reads for one provider URL-pull operation."
+        ),
+        examples=[536_870_912],
+    )
+    pull_provider_timeout_seconds: PositiveFloatSetting = Field(
+        default=900.0,
+        description=(
+            "Maximum whole-operation wall-clock duration, in seconds, for one provider "
+            "URL pull including pagination, required details, retries, and redirects."
+        ),
+        examples=[900.0],
+    )
     retry_attempts: PositiveIntSetting = Field(
         default=3,
         description=(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from openopps.pull_models import (
     PullResult,
     PullRetrievalMechanism,
 )
+from openopps.pull_service import NullPullPersistence
 from openopps.route_registry import BoardRouteRegistry
 from openopps.route_select import route_ready
 from openopps.settings import OpenOppsSettings
@@ -594,7 +596,22 @@ def test_url_pull_get_persists_one_posting_without_sync_run(tmp_path: Path) -> N
 def test_no_save_port_does_not_call_store_apply(tmp_path: Path) -> None:
     store, db_path = _store(tmp_path)
     result = _list_result((_job("1"),))
-    del result
+    called: list[str] = []
+
+    def _list(payload: PullResult) -> object:
+        called.append("list")
+        return OpenOppsStore.apply_url_pull_list(store, payload)
+
+    def _get(payload: PullResult) -> object:
+        called.append("get")
+        return OpenOppsStore.apply_url_pull_get(store, payload)
+
+    store.apply_url_pull_list = _list  # type: ignore[method-assign]
+    store.apply_url_pull_get = _get  # type: ignore[method-assign]
+
+    asyncio.run(NullPullPersistence().persist(result))
+
+    assert called == []
     assert _count(db_path, "url_pull_runs") == 0
     assert _count(db_path, "jobs") == 0
     assert _count(db_path, "boards") == 0

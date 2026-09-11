@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -149,6 +149,7 @@ class HttpCache:
         stale_on_error: bool = False,
         request_duration_ms: int | None = None,
         now: datetime | None = None,
+        commit_guard: Callable[[], None] | None = None,
     ) -> str:
         current_time = now or _utc_now()
         expires_at = current_time + timedelta(seconds=ttl_seconds)
@@ -217,6 +218,8 @@ class HttpCache:
                     payload,
                 ),
             )
+            if commit_guard is not None:
+                commit_guard()
         return key
 
     def refresh_json(
@@ -225,6 +228,7 @@ class HttpCache:
         *,
         ttl_seconds: int = 3600,
         now: datetime | None = None,
+        commit_guard: Callable[[], None] | None = None,
     ) -> None:
         current_time = now or _utc_now()
         expires_at = current_time + timedelta(seconds=ttl_seconds)
@@ -242,6 +246,8 @@ class HttpCache:
                     CACHE_SCHEMA_VERSION,
                 ),
             )
+            if commit_guard is not None:
+                commit_guard()
 
     def purge(self, *, namespace: str | None = None) -> int:
         with sqlite_database_lock(self.path):
@@ -277,6 +283,17 @@ class HttpCache:
             rows = conn.execute(
                 "select namespace, count(*) from http_cache group by namespace"
             ).fetchall()
+            duration_row = conn.execute(
+                """
+                select count(request_duration_ms),
+                       min(request_duration_ms),
+                       max(request_duration_ms),
+                       coalesce(sum(request_duration_ms), 0)
+                from http_cache
+                where request_duration_ms is not null
+                """
+            ).fetchone()
+        present = int((duration_row[0] if duration_row is not None else 0) or 0)
         return {
             "path": str(self.path),
             "total": int(total or 0),
@@ -284,6 +301,12 @@ class HttpCache:
             "expired": max(0, int(total or 0) - int(fresh or 0)),
             "staleOnErrorEligible": int(stale_on_error or 0),
             "byNamespace": {namespace: int(count) for namespace, count in rows},
+            "duration": {
+                "present": present,
+                "minMs": int(duration_row[1] or 0) if present else 0,
+                "maxMs": int(duration_row[2] or 0) if present else 0,
+                "sumMs": int(duration_row[3] or 0) if duration_row is not None else 0,
+            },
         }
 
     def _read(self, key: str) -> CacheHit | None:
@@ -357,6 +380,10 @@ class HttpCache:
                     conn.execute(
                         "alter table http_cache add column schema_version "
                         "text not null default 'v1'"
+                    )
+                if "request_duration_ms" not in columns:
+                    conn.execute(
+                        "alter table http_cache add column request_duration_ms integer"
                     )
                 purged = conn.execute(
                     "delete from http_cache where schema_version != ? or url != ?",

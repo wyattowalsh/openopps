@@ -25,6 +25,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.text import Text
 from typer.core import TyperGroup
 
 from openopps import __version__
@@ -52,6 +53,7 @@ from openopps.metrics import (
     combine_sync_metrics,
 )
 from openopps.intro import play_intro, render_intro_frame
+from openopps.job_profiles import DEFAULT_CLI_PROFILE, JobProfileName
 from openopps.migrations import DatabaseSchemaError
 from openopps.models import (
     BoardProviderRecord,
@@ -64,8 +66,25 @@ from openopps.models import (
     utc_now,
 )
 from openopps.plugins import PluginContext, load_plugins
+from openopps.pull_metrics import write_pull_metrics_file
+from openopps.pull_models import (
+    PullDomainError,
+    PullOperation,
+    PullOutputFormat,
+    PullResult,
+    PullTerminalObservability,
+    sanitize_public_pull_url,
+)
+from openopps.pull_output import (
+    pull_observability_diagnostics,
+    pull_result_diagnostics,
+    write_pull_output,
+)
+from openopps.pull_resolver import PullResolution, PullResolver
+from openopps.pull_service import NullPullPersistence, PullService
 from openopps.providers.base import ProviderDefinition
-from openopps.providers.registry import provider_registry
+from openopps.providers.pull import ProviderUrlTarget
+from openopps.providers.registry import ProviderRegistry, provider_registry
 from openopps.providers.sources import build_source_adapter
 from openopps.route_registry import BoardRouteRegistry
 from openopps.route_probe import probe_routes
@@ -101,6 +120,10 @@ BOARD_FILTER_HELP = "Limit results to one board key."
 LIMIT_HELP = "Maximum records to return after filters are applied."
 EXPORT_FORMAT_HELP = "Export file format: jsonl, csv, parquet, or sqlite."
 EXPORT_OUTPUT_FILE_HELP = "Destination file path to create or replace."
+JOB_PROFILE_HELP = (
+    "Job JSON profile: core, search, full, or raw. Default is full. "
+    "Does not change jobs sync, list, show, or history."
+)
 SYNC_OUTPUT_FILE_HELP = "Append synced JSONL records to this file path."
 BOARD_HAS_JOBS_HELP = (
     "Only include boards with a source job hint, provider job hint, or synced job."
@@ -146,7 +169,6 @@ _ACTIVE_CLI_CONTEXT: ContextVar[Any | None] = ContextVar(
     "openopps_active_cli_context",
     default=None,
 )
-
 
 
 def _example_data_script_path() -> Path:
@@ -198,6 +220,22 @@ class OpenOppsRootGroup(TyperGroup):
             ).print(render_intro_frame(0, "opening opportunity portal"))
         return super().get_help(ctx)
 
+    def resolve_command(
+        self, ctx: Any, args: list[str]
+    ) -> tuple[str | None, Any, list[str]]:
+        """Route a command-position public HTTPS URL through ``jobs pull``."""
+
+        if args and self.get_command(ctx, args[0]) is None:
+            try:
+                validate_public_https_url(args[0])
+            except ValueError:
+                pass
+            else:
+                jobs_command = self.get_command(ctx, "jobs")
+                if jobs_command is not None:
+                    return "jobs", jobs_command, ["pull", *args]
+        return super().resolve_command(ctx, args)
+
     def invoke(self, ctx: Any) -> Any:
         context_token = _ACTIVE_CLI_CONTEXT.set(ctx)
         try:
@@ -222,6 +260,8 @@ app = typer.Typer(
     ),
     epilog=(
         "[dim]Start here:[/dim] "
+        "[bold]openopps https://provider.example/jobs[/bold] to pull a public "
+        "board or posting URL, "
         "[bold]openopps status[/bold] to inspect local state, "
         "[bold]openopps sync a16z --metrics-json[/bold] to populate one source, "
         "[bold]openopps providers coverage --source a16z --provider any --json[/bold] "
@@ -239,10 +279,13 @@ boards_app = typer.Typer(
     help="Inspect discovered company boards, enrich metadata, resolve routes, and export board records."
 )
 jobs_app = typer.Typer(
-    help="Sync, filter, inspect history for, and export normalized public job postings."
+    help="Pull URLs, sync boards, filter jobs, inspect history, and export normalized postings."
 )
 providers_app = typer.Typer(
-    help="Inspect persisted route readiness, live health samples, coverage gaps, and adoption evidence."
+    help=(
+        "Inspect persisted route readiness, detect and inspect URL targets, report "
+        "pull capabilities, live health, coverage gaps, and adoption evidence."
+    )
 )
 plugins_app = typer.Typer(
     help="Inspect trusted plugin entry points, loaded capabilities, conflicts, and failures."
@@ -357,6 +400,14 @@ def _cache(settings: OpenOppsSettings | None = None) -> HttpCache:
     return HttpCache(settings.sqlite_path)
 
 
+_EMPTY_CACHE_DURATION = {
+    "present": 0,
+    "minMs": 0,
+    "maxMs": 0,
+    "sumMs": 0,
+}
+
+
 def _cache_status(settings: OpenOppsSettings) -> dict[str, Any]:
     if settings.sqlite_path is None:
         return {
@@ -366,6 +417,7 @@ def _cache_status(settings: OpenOppsSettings) -> dict[str, Any]:
             "expired": 0,
             "staleOnErrorEligible": 0,
             "byNamespace": {},
+            "duration": dict(_EMPTY_CACHE_DURATION),
         }
     return HttpCache(settings.sqlite_path).status()
 
@@ -386,7 +438,10 @@ def _effective_source(store: OpenOppsStore, key: str) -> SourceRecord | None:
 
 
 def _json(data: object) -> None:
-    console.print_json(json.dumps(data, default=str))
+    # Explicit JSON is an automation contract even when stdout is a TTY. Rich's
+    # JSON renderer injects ANSI styling on terminals, which makes the bytes
+    # invalid JSON for callers that capture an interactive process.
+    typer.echo(json.dumps(data, default=str, ensure_ascii=False, indent=2))
 
 
 def _discovery_repository_root() -> Path:
@@ -575,7 +630,7 @@ def _table(title: str, columns: list[str], rows: list[list[object]]) -> None:
     for column in columns:
         table.add_column(column)
     for row in rows:
-        table.add_row(*(str(value) if value is not None else "" for value in row))
+        table.add_row(*(Text(str(value) if value is not None else "") for value in row))
     console.print(table)
 
 
@@ -730,11 +785,169 @@ def _plugin_registry(settings: OpenOppsSettings | None = None):
     return load_plugins(context=PluginContext(settings=settings))
 
 
+def _pull_registry(settings: OpenOppsSettings) -> ProviderRegistry:
+    plugins = _plugin_registry(settings)
+    return provider_registry(plugins, settings)
+
+
+def _write_pull_metrics_file(
+    path: Path | None,
+    observability: PullTerminalObservability | None,
+) -> None:
+    if path is None:
+        return
+    try:
+        write_pull_metrics_file(observability, path)
+    except OSError as exc:
+        raise ClickException(f"Unable to write pull metrics file: {exc}") from exc
+
+
+def _emit_pull_domain_error(
+    exc: PullDomainError,
+    *,
+    quiet: bool = False,
+    verbosity: int = 0,
+) -> None:
+    typer.echo(f"Error [{exc.code.value}]: {exc}", err=True)
+    typer.echo(f"Hint: {exc.hint}", err=True)
+    if not quiet and exc.observability is not None:
+        for diagnostic in pull_observability_diagnostics(exc.observability):
+            if diagnostic.verbosity <= verbosity:
+                typer.echo(diagnostic.message, err=True)
+    raise typer.Exit(code=exc.exit_code)
+
+
+def _provider_pull_capability_payload(
+    registry: ProviderRegistry,
+    provider: ProviderDefinition,
+) -> dict[str, object]:
+    capabilities = provider.pull_capabilities
+    builtin = registry.is_builtin(provider.id)
+    detects = (
+        bool(capabilities is not None and capabilities.detect_supported)
+        or provider.route_detector is not None
+    )
+    pull_capable = provider.pull_capable
+    return {
+        "providerId": provider.id,
+        "label": provider.label,
+        "supportLevel": provider.support_level.value,
+        "origin": "builtin" if builtin else "plugin",
+        "builtin": builtin,
+        "plugin": not builtin,
+        "pullStatus": (
+            "pull" if pull_capable else "detect_only" if detects else "unsupported"
+        ),
+        "pullCapable": pull_capable,
+        "detectSupported": detects,
+        "listSupported": bool(capabilities and capabilities.list_supported),
+        "nativeGetSupported": bool(capabilities and capabilities.native_get_supported),
+        "boardScanGetSupported": bool(
+            capabilities and capabilities.board_scan_get_supported
+        ),
+        "exactUnlistedGetSupported": bool(
+            capabilities and capabilities.exact_unlisted_get_supported
+        ),
+        "enumerateUnlistedSupported": bool(
+            capabilities and capabilities.enumerate_unlisted_supported
+        ),
+        "interfaceStability": (
+            capabilities.interface_stability.value if capabilities else None
+        ),
+    }
+
+
+def _typed_provider_target_payload(
+    registry: ProviderRegistry,
+    target: ProviderUrlTarget,
+) -> dict[str, object]:
+    provider = registry.get(target.provider_id)
+    if provider is None:
+        raise RuntimeError("detected provider target is missing its definition")
+    return {
+        **_provider_pull_capability_payload(registry, provider),
+        "detection": "typed",
+        "targetPullCapable": provider.pull_capable,
+        "targetKind": target.target_kind.value,
+        "url": str(target.url),
+        "boardIdentity": target.board_identity,
+        "postingIdentity": target.posting_identity,
+        "route": target.route.model_dump(mode="json", exclude_none=True),
+    }
+
+
+def _legacy_provider_detection_payload(
+    registry: ProviderRegistry,
+    detected: BoardProviderRecord,
+) -> dict[str, object]:
+    provider = registry.get(detected.provider_id)
+    if provider is None:
+        raise RuntimeError("detected provider route is missing its definition")
+    if detected.board_url is None:
+        raise RuntimeError("detected provider route is missing its source URL")
+    return {
+        **_provider_pull_capability_payload(registry, provider),
+        "detection": "legacy",
+        "targetPullCapable": False,
+        "targetKind": None,
+        "url": sanitize_public_pull_url(detected.board_url),
+        "boardIdentity": None,
+        "postingIdentity": None,
+        "route": {
+            key: value
+            for key, value in {
+                "token": detected.token,
+                "host": detected.host,
+                "tenant": detected.tenant,
+                "site": detected.site,
+            }.items()
+            if value is not None
+        },
+    }
+
+
+def _provider_detection_human_rows(
+    targets: list[dict[str, object]],
+) -> list[list[object]]:
+    rows: list[list[object]] = []
+    multiple = len(targets) > 1
+    for index, target in enumerate(targets, start=1):
+        prefix = f"match {index} " if multiple else ""
+        rows.extend(
+            [
+                [f"{prefix}provider", target["providerId"]],
+                [f"{prefix}detection", target["detection"]],
+                [f"{prefix}target", target["targetKind"] or "detect-only"],
+                [f"{prefix}board", target["boardIdentity"] or "-"],
+                [f"{prefix}posting", target["postingIdentity"] or "-"],
+                [f"{prefix}origin", target["origin"]],
+                [f"{prefix}status", target["pullStatus"]],
+            ]
+        )
+        route = target["route"]
+        if isinstance(route, dict) and route:
+            rows.extend([f"{prefix}route {key}", route[key]] for key in sorted(route))
+        else:
+            rows.append([f"{prefix}route", "-"])
+    return rows
+
+
+def _pull_resolution_payload(
+    registry: ProviderRegistry,
+    resolution: PullResolution,
+) -> dict[str, object]:
+    return {
+        "target": _typed_provider_target_payload(registry, resolution.target),
+        "provenance": resolution.provenance.model_dump(mode="json"),
+    }
+
+
 def _next_action(counts: dict[str, int], readiness: dict[str, Any]) -> str:
     if counts["sources"] == 0:
         return (
-            "Pull an HTTPS careers URL (`openopps https://…`) or run "
-            "`openopps sync a16z --metrics-json`."
+            "The catalog is empty. `openopps jobs pull <URL>` is ephemeral and "
+            "does not populate catalog SQLite. Run `openopps sources sync a16z` "
+            "or `openopps examples seed` to fill the catalog."
         )
     if counts["boards"] == 0:
         return "Run `openopps sources sync <source>` to discover boards."
@@ -1464,7 +1677,11 @@ def discovery_scout(
 
     # Lowest-direct Typer can bind a missing Path option to Path("--output")
     # instead of failing closed. Treat that placeholder as omitted.
-    if output is None or output.name in OUTPUT_OPTION_FLAGS or str(output) in OUTPUT_OPTION_FLAGS:
+    if (
+        output is None
+        or output.name in OUTPUT_OPTION_FLAGS
+        or str(output) in OUTPUT_OPTION_FLAGS
+    ):
         raise typer.BadParameter("--output is required")
 
     repository_root = _discovery_repository_root()
@@ -2278,6 +2495,194 @@ def boards_export(
     console.print(f"Exported {count} boards to {output}")
 
 
+@jobs_app.command(
+    "pull",
+    help="Resolve a public HTTPS URL and pull one posting or a complete board.",
+    epilog=(
+        "Pass the URL directly as `openopps <URL>` for the same workflow. "
+        "Pulls stay ephemeral by default; pass --save to write a complete "
+        "validated result to the local ledger. Operational save/no-save is "
+        "independent of HTTP cache reads and writes; "
+        "--refresh-cache controls only cache freshness. Use --metrics-file for "
+        "camelCase pull observability JSON; --metrics-json is catalog sync only. "
+        "Domain failures write an actionable hint to stderr and exit with status 3-9."
+    ),
+)
+def jobs_pull(
+    url: Annotated[
+        str,
+        typer.Argument(
+            help="Public HTTPS careers page, provider board, or job-posting URL."
+        ),
+    ],
+    operation: Annotated[
+        PullOperation,
+        typer.Option(
+            "--operation",
+            help="Resolve automatically, list a board, or get one exact posting.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = PullOperation.AUTO,
+    direct: Annotated[
+        bool,
+        typer.Option(
+            "--direct",
+            help="Require the URL itself to be a recognized provider-native target.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = False,
+    probe: Annotated[
+        bool,
+        typer.Option(
+            "--probe/--no-probe",
+            help="Allow bounded provider slug probes after the careers-page pass.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = True,
+    board_scan: Annotated[
+        bool,
+        typer.Option(
+            "--board-scan/--no-board-scan",
+            help="Allow complete-board scanning when exact native get is unavailable.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = True,
+    include_unlisted: Annotated[
+        bool,
+        typer.Option(
+            "--include-unlisted",
+            help="Include unlisted postings only when the provider proves that scope.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = False,
+    save: Annotated[
+        bool,
+        typer.Option(
+            "--save/--no-save",
+            help="Require persistence of a complete validated result to the ledger.",
+            rich_help_panel=PANEL_STORAGE,
+        ),
+    ] = False,
+    raw: Annotated[
+        bool,
+        typer.Option(
+            "--raw",
+            help="Emit the stable provider-evidence envelope instead of normalized jobs.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    format_: Annotated[
+        PullOutputFormat,
+        typer.Option(
+            *FORMAT_OPTION_FLAGS,
+            help="Output format: auto, pretty, json, jsonl, or table.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = PullOutputFormat.AUTO,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            *OUTPUT_OPTION_FLAGS,
+            help="Write result bytes atomically to this path instead of stdout.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = None,
+    pager: Annotated[
+        bool,
+        typer.Option(
+            "--pager",
+            help="Page interactive pretty output through the configured pager.",
+            rich_help_panel=PANEL_OUTPUT,
+        ),
+    ] = False,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            *REFRESH_CACHE_OPTION_FLAGS,
+            help="Bypass cache reads and replace cache records with fresh responses.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option(
+            "--quiet",
+            "-q",
+            help="Suppress non-fatal diagnostics; result bytes remain unchanged.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "--verbose",
+            "-v",
+            count=True,
+            help="Increase stderr diagnostics; repeat for bounded resolution detail.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = 0,
+    metrics_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--metrics-file",
+            help=(
+                "Write camelCase pull observability JSON atomically to this path. "
+                "Stdout jobs stay unchanged; --quiet still writes the file."
+            ),
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = None,
+) -> None:
+    if raw and format_ in {PullOutputFormat.PRETTY, PullOutputFormat.TABLE}:
+        raise typer.BadParameter(
+            "--raw requires auto, json, or jsonl output.",
+            param_hint="--format",
+        )
+
+    settings = _settings_with_cache_refresh(refresh_cache)
+    service = PullService.from_settings(
+        settings,
+        persist=save,
+        persistence=None if save else NullPullPersistence(),
+    )
+
+    async def run() -> PullResult:
+        async with build_async_client(settings) as client:
+            return await service.pull(
+                client,
+                url,
+                operation=operation,
+                direct=direct,
+                probe=probe,
+                no_board_scan=not board_scan,
+                include_unlisted=include_unlisted,
+                no_save=not save,
+            )
+
+    try:
+        result = asyncio.run(run())
+    except PullDomainError as exc:
+        _write_pull_metrics_file(metrics_file, exc.observability)
+        _emit_pull_domain_error(exc, quiet=quiet, verbosity=verbose)
+        return
+
+    try:
+        _write_pull_metrics_file(metrics_file, result.observability)
+        write_pull_output(
+            result,
+            format_=format_,
+            raw=raw,
+            output=output,
+            pager=pager,
+            quiet=quiet,
+            verbosity=verbose,
+            diagnostics=pull_result_diagnostics(result),
+        )
+    except (OSError, ValueError) as exc:
+        raise ClickException(f"Unable to render or write pull output: {exc}") from exc
+
+
 @jobs_app.command("sync", help="Fetch normalized jobs from ready provider routes.")
 def jobs_sync(
     source: Annotated[
@@ -2631,6 +3036,15 @@ def jobs_export(
             *FORMAT_OPTION_FLAGS, help=EXPORT_FORMAT_HELP, rich_help_panel=PANEL_OUTPUT
         ),
     ] = ExportFormat.JSONL,
+    profile: Annotated[
+        JobProfileName,
+        typer.Option(
+            "--profile",
+            help=JOB_PROFILE_HELP,
+            rich_help_panel=PANEL_OUTPUT,
+            show_default=True,
+        ),
+    ] = DEFAULT_CLI_PROFILE,
     source: Annotated[
         str | None,
         typer.Option(
@@ -2796,6 +3210,7 @@ def jobs_export(
         output,
         format_,
         sqlite_table="jobs",
+        profile=profile,
         metadata=_export_metadata(
             "jobs",
             {
@@ -3104,6 +3519,244 @@ def providers_registry(
                 ]
             ],
         )
+
+
+@providers_app.command(
+    "detect",
+    help="Detect typed pull targets with a legacy route-detection fallback.",
+)
+def providers_detect_public(
+    url: Annotated[
+        str,
+        typer.Argument(help="Public HTTPS provider board or job-posting URL."),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    try:
+        validate_public_https_url(url)
+    except ValueError as exc:
+        raise typer.BadParameter("URL must be a public HTTPS URL.") from exc
+
+    registry = _pull_registry(_settings())
+    targets = registry.detect_targets(url)
+    if targets:
+        target_payloads = [
+            _typed_provider_target_payload(registry, target) for target in targets
+        ]
+        payload: dict[str, object] = {
+            "recognized": True,
+            "ambiguous": len(target_payloads) > 1,
+        }
+        if len(target_payloads) == 1:
+            payload.update(target_payloads[0])
+        else:
+            payload["targets"] = target_payloads
+    else:
+        legacy_matches = registry.detect_url_matches(url)
+        if not legacy_matches:
+            payload = {
+                "recognized": False,
+                "ambiguous": False,
+                "url": sanitize_public_pull_url(url),
+            }
+        elif len(legacy_matches) == 1:
+            payload = {
+                "recognized": True,
+                "ambiguous": False,
+                **_legacy_provider_detection_payload(registry, legacy_matches[0]),
+            }
+        else:
+            payload = {
+                "recognized": True,
+                "ambiguous": True,
+                "targets": [
+                    _legacy_provider_detection_payload(registry, match)
+                    for match in legacy_matches
+                ],
+            }
+
+    if json_output:
+        _json(payload)
+        return
+    if not payload["recognized"]:
+        _table(
+            "Provider detection",
+            ["recognized", "url"],
+            [[False, payload["url"]]],
+        )
+        return
+    if payload.get("ambiguous"):
+        _table(
+            "Provider detection",
+            ["field", "value"],
+            _provider_detection_human_rows(
+                cast(list[dict[str, object]], payload["targets"])
+            ),
+        )
+        return
+    _table(
+        "Provider detection",
+        ["field", "value"],
+        _provider_detection_human_rows([cast(dict[str, object], payload)]),
+    )
+
+
+@providers_app.command(
+    "inspect",
+    help="Resolve a URL and report provenance without fetching jobs or persisting.",
+)
+def providers_inspect(
+    url: Annotated[
+        str,
+        typer.Argument(
+            help="Public HTTPS careers page, provider board, or job-posting URL."
+        ),
+    ],
+    operation: Annotated[
+        PullOperation,
+        typer.Option(
+            "--operation",
+            help="Resolution intent: auto, list, or get.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = PullOperation.AUTO,
+    direct: Annotated[
+        bool,
+        typer.Option(
+            "--direct",
+            help="Require the supplied URL itself to be provider-native.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = False,
+    probe: Annotated[
+        bool,
+        typer.Option(
+            "--probe/--no-probe",
+            help="Allow bounded provider slug probes after page inspection.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = True,
+    refresh_cache: Annotated[
+        bool,
+        typer.Option(
+            *REFRESH_CACHE_OPTION_FLAGS,
+            help="Bypass cache reads and replace cache records with fresh responses.",
+            rich_help_panel=PANEL_DIAGNOSTICS,
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    settings = _settings_with_cache_refresh(refresh_cache)
+    registry = _pull_registry(settings)
+    # PullResolver's private structural protocol declares writable probe
+    # attributes, while the concrete frozen candidate is intentionally
+    # read-only. Runtime behavior is structurally compatible.
+    resolver = PullResolver.from_settings(cast(Any, registry), settings)
+
+    async def run() -> PullResolution:
+        async with build_async_client(settings) as client:
+            return await resolver.resolve(
+                client,
+                url,
+                operation=operation,
+                direct=direct,
+                probe=probe,
+            )
+
+    try:
+        resolution = asyncio.run(run())
+    except PullDomainError as exc:
+        _emit_pull_domain_error(exc)
+        return
+
+    payload = _pull_resolution_payload(registry, resolution)
+    if json_output:
+        _json(payload)
+        return
+    target = payload["target"]
+    provenance = payload["provenance"]
+    assert isinstance(target, dict)
+    assert isinstance(provenance, dict)
+    _table(
+        "Provider inspection",
+        ["field", "value"],
+        [
+            ["requested URL", provenance["requested_url"]],
+            ["resolved URL", provenance["resolved_url"]],
+            ["discovery method", provenance["discovery_method"]],
+            ["provider", target["providerId"]],
+            ["resolved operation", provenance["resolved_operation"]],
+            ["target", target["targetKind"]],
+            ["board", target["boardIdentity"]],
+            ["posting", target["postingIdentity"] or "-"],
+            ["route", json.dumps(target["route"], sort_keys=True)],
+            ["visited URLs", json.dumps(provenance["visited_urls"])],
+            ["probed slugs", json.dumps(provenance["probed_slugs"])],
+            ["origin", target["origin"]],
+            ["status", target["pullStatus"]],
+        ],
+    )
+
+
+@providers_app.command(
+    "capabilities",
+    help="Report exact URL-pull capability and origin flags for job providers.",
+)
+def providers_capabilities(
+    provider_id: Annotated[
+        str | None,
+        typer.Option(
+            *PROVIDER_OPTION_FLAGS,
+            help="Optional exact provider id to inspect.",
+            rich_help_panel=PANEL_SCOPE,
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(*JSON_OPTION_FLAGS, help=JSON_HELP, rich_help_panel=PANEL_OUTPUT),
+    ] = False,
+) -> None:
+    registry = _pull_registry(_settings())
+    providers = registry.list_board_providers()
+    if provider_id is not None:
+        providers = [provider for provider in providers if provider.id == provider_id]
+        if not providers:
+            raise typer.BadParameter(f"Unknown job provider: {provider_id}")
+    payload = [
+        _provider_pull_capability_payload(registry, provider) for provider in providers
+    ]
+    if json_output:
+        _json(payload)
+        return
+    _table(
+        "Provider URL-pull capabilities",
+        ["provider", "field", "value"],
+        [
+            [
+                item["providerId"],
+                label,
+                item[key] if item[key] is not None else "-",
+            ]
+            for item in payload
+            for label, key in (
+                ("origin", "origin"),
+                ("status", "pullStatus"),
+                ("interface stability", "interfaceStability"),
+                ("detect supported", "detectSupported"),
+                ("full-board list", "listSupported"),
+                ("native single-post get", "nativeGetSupported"),
+                ("board-scan get", "boardScanGetSupported"),
+                ("exact unlisted get", "exactUnlistedGetSupported"),
+                ("enumerate unlisted", "enumerateUnlistedSupported"),
+            )
+        ],
+    )
 
 
 @providers_app.command(
