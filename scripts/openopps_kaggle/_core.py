@@ -3259,6 +3259,7 @@ PUBLIC_SNAPSHOT_COLUMN_BACKFILLS = {
         ),
         "authoritative": "success",
         "committed_batch_count": "0",
+        "membership_scope": "'listed'",
     }
 }
 PUBLIC_SNAPSHOT_JSON_DEFAULTS = {

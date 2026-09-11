@@ -315,6 +315,11 @@
             "description": "Unknown top-level identity fields preserved across storage round trips.",
             "name": "extra_payload",
             "type": "string"
+          },
+          {
+            "description": "Posting membership class: listed or direct_only.",
+            "name": "membership",
+            "type": "string"
           }
         ]
       }
@@ -746,6 +751,11 @@
             "description": "Previously open jobs closed by the route sync.",
             "name": "closed_count",
             "type": "integer"
+          },
+          {
+            "description": "Authoritative list-run membership scope: listed or all_public.",
+            "name": "membership_scope",
+            "type": "string"
           }
         ]
       }
@@ -1212,6 +1222,11 @@
             "description": "Unknown top-level identity fields preserved across storage round trips.",
             "name": "extra_payload",
             "type": "string"
+          },
+          {
+            "description": "Posting membership class: listed or direct_only.",
+            "name": "membership",
+            "type": "string"
           }
         ]
       }
@@ -1643,6 +1658,11 @@
             "description": "Previously open jobs closed by the route sync.",
             "name": "closed_count",
             "type": "integer"
+          },
+          {
+            "description": "Authoritative list-run membership scope: listed or all_public.",
+            "name": "membership_scope",
+            "type": "string"
           }
         ]
       }
