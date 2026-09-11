@@ -14,6 +14,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 ARCHIVE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "public-data-archive.yml"
+RELEASE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release.yml"
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 JUSTFILE_PATH = REPO_ROOT / "Justfile"
 GATES_SCRIPT_PATH = REPO_ROOT / "scripts" / "source_discovery_gates.py"
@@ -639,3 +640,98 @@ def test_discovery_governance_detector_rejects_d1015_examples() -> None:
             assert WORKFLOW_SCHEDULE_TRIGGER.search(sample) is not None, name
             continue
         assert DISCOVERY_FORBIDDEN.search(sample) is not None, name
+
+
+def test_release_workflow_is_dispatch_only_exact_sha_and_does_not_tag() -> None:
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    header = workflow.split("jobs:", maxsplit=1)[0]
+    actions = ANY_ACTION.findall(workflow)
+
+    assert "workflow_dispatch:" in header
+    assert "pull_request:" not in header
+    assert "push:" not in header
+    assert WORKFLOW_SCHEDULE_TRIGGER.search(workflow) is None
+    for name in ("source_sha", "release_tag", "wheel_sha256", "sdist_sha256"):
+        assert f"      {name}:" in header
+    assert actions
+    assert len(ACTION_REF.findall(workflow)) == len(actions)
+    assert workflow.count("persist-credentials: false") == workflow.count(
+        "uses: actions/checkout@"
+    )
+    assert "group: package-release-${{ inputs.release_tag }}" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "openopps-data-v7-" not in header
+    assert "openopps-release-supply-chain-${{ inputs.source_sha }}" in workflow
+    assert "gh run download" in workflow
+    assert "--verify-tag" in workflow
+    assert "gh release create" in workflow
+    assert "git tag" not in workflow
+    assert "git push" not in workflow
+    assert "uv build" not in workflow
+    assert "python -m build" not in workflow
+    assert "hatchling.build" not in workflow
+    assert "--clobber" not in workflow
+    assert "TWINE_PASSWORD" not in workflow
+    assert "PYPI_API_TOKEN" not in workflow
+    assert workflow.count("uses: pypa/gh-action-pypi-publish@") == 1
+    assert (
+        "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
+        in workflow
+    )
+    assert (
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
+        in workflow
+    )
+
+
+def test_release_workflow_splits_github_and_pypi_environments() -> None:
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    github_release = _workflow_job(workflow, "github-release")
+    verify_github = _workflow_job(workflow, "verify-github")
+    pypi = _workflow_job(workflow, "pypi")
+
+    assert "permissions:\n  contents: read" in workflow
+    assert "environment: github-release" in github_release
+    assert "environment: pypi" not in github_release
+    assert "id-token: write" not in github_release
+    assert "contents: write" in github_release
+    assert "actions: read" in github_release
+    assert "id-token: write" not in verify_github
+    assert "contents: write" not in verify_github
+    assert "needs: github-release" in verify_github
+    assert "needs: verify-github" in pypi
+    assert "environment:\n      name: pypi" in pypi
+    assert "id-token: write" in pypi
+    assert "contents: read" in pypi
+    assert "contents: write" not in pypi
+    assert workflow.count("id-token: write") == 1
+    assert "gh attestation verify" in verify_github
+    assert "--source-digest" in verify_github
+    assert pypi.index("Download GitHub Release") < pypi.index(
+        "pypa/gh-action-pypi-publish@"
+    )
+
+
+def test_ci_and_archive_workflows_do_not_publish_the_python_package() -> None:
+    ci = WORKFLOW_PATH.read_text(encoding="utf-8")
+    archive = ARCHIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    justfile = JUSTFILE_PATH.read_text(encoding="utf-8")
+    recipes = _parse_just_recipes(justfile)
+    _, ci_deps, _ = recipes["ci"]
+
+    for document in (ci, archive):
+        assert "gh release create" not in document
+        assert "twine upload" not in document
+        assert "pypa/gh-action-pypi-publish" not in document
+        assert "python -m build" not in document
+    assert "package-release-preflight" not in ci_deps.split()
+    assert "package-release-readback" not in ci_deps.split()
+    for name in ("package-release-preflight", "package-release-readback"):
+        if name not in recipes:
+            continue
+        _params, _deps, body = recipes[name]
+        assert "gh release create" not in body
+        assert "twine upload" not in body
+        assert "git tag" not in body
+        assert "git push" not in body
+        assert "pypa/gh-action-pypi-publish" not in body

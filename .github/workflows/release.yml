@@ -1,0 +1,342 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-character Git SHA whose CI supply-chain artifacts will be published
+        required: true
+        type: string
+      release_tag:
+        description: Existing annotated tag that already points at source_sha (this workflow must not create or move it)
+        required: true
+        type: string
+      wheel_sha256:
+        description: SHA-256 of the exact CI wheel (openopps-<version>-py3-none-any.whl)
+        required: true
+        type: string
+      sdist_sha256:
+        description: SHA-256 of the exact CI sdist (openopps-<version>.tar.gz)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  GH_VERSION: 2.98.0
+  GH_LINUX_AMD64_SHA256: 3b8ac6b30336802fc1a858d7c084e11cdf24ac1a761ca90b68022d7d729208de
+  SIGNER_WORKFLOW: github.com/${{ github.repository }}/.github/workflows/ci.yml
+  SUPPLY_CHAIN_ARTIFACT: openopps-release-supply-chain-${{ inputs.source_sha }}
+
+jobs:
+  github-release:
+    name: GitHub Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: github-release
+    permissions:
+      actions: read
+      contents: write
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      WHEEL_SHA256: ${{ inputs.wheel_sha256 }}
+      SDIST_SHA256: ${{ inputs.sdist_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Install checksum-pinned GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d "$RUNNER_TEMP/gh.XXXXXX")"
+          archive="$install_root/gh.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$GH_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$install_root"
+          install -m 0755 "$install_root/gh_${GH_VERSION}_linux_amd64/bin/gh" "$RUNNER_TEMP/gh"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Validate identities and refuse to create or move the tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='^[0-9a-f]{64}$'
+          revision='^[0-9a-f]{40}$'
+          tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SOURCE_SHA" == "$GITHUB_SHA" && "$SOURCE_SHA" =~ $revision ]]
+          [[ "$WHEEL_SHA256" =~ $digest && "$SDIST_SHA256" =~ $digest ]]
+          [[ "$RELEASE_TAG" =~ $tag_pattern ]]
+          [[ "$RELEASE_TAG" != openopps-data-v7-* ]]
+          [[ "$SUPPLY_CHAIN_ARTIFACT" == "openopps-release-supply-chain-$SOURCE_SHA" ]]
+          version="$(python3 -c 'import tomllib; print(tomllib.loads(open("pyproject.toml","rb").read())["project"]["version"])')"
+          [[ "$RELEASE_TAG" == "v$version" ]]
+          printf 'PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          printf 'WHEEL_NAME=openopps-%s-py3-none-any.whl\n' "$version" >> "$GITHUB_ENV"
+          printf 'SDIST_NAME=openopps-%s.tar.gz\n' "$version" >> "$GITHUB_ENV"
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          object_type="$(jq -r .object.type <<<"$tag")"
+          object_sha="$(jq -r .object.sha <<<"$tag")"
+          for _ in {1..8}; do
+            if [[ "$object_type" == commit ]]; then
+              [[ "$object_sha" == "$SOURCE_SHA" ]]
+              break
+            fi
+            [[ "$object_type" == tag ]]
+            tag="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+            object_type="$(jq -r .object.type <<<"$tag")"
+            object_sha="$(jq -r .object.sha <<<"$tag")"
+          done
+          [[ "$object_type" == commit && "$object_sha" == "$SOURCE_SHA" ]]
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists; refuse to replace assets" >&2
+            exit 1
+          fi
+
+      - name: Download exact-SHA CI supply-chain artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$(mktemp -d "$RUNNER_TEMP/openopps-ci-artifacts.XXXXXX")"
+          chmod 700 "$artifact_dir"
+          run_id=""
+          while read -r candidate; do
+            [[ -n "$candidate" ]] || continue
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/${candidate}/artifacts" \
+              --jq '.artifacts[] | select(.name == env.SUPPLY_CHAIN_ARTIFACT and .expired == false) | .name' \
+              | grep -qx "$SUPPLY_CHAIN_ARTIFACT"; then
+              run_id="$candidate"
+              break
+            fi
+          done < <(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=${SOURCE_SHA}&status=completed" \
+              --jq '.workflow_runs[] | select(.conclusion == "success" and .head_sha == env.SOURCE_SHA) | .id'
+          )
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          gh run download "$run_id" --name "$SUPPLY_CHAIN_ARTIFACT" --dir "$artifact_dir"
+          mapfile -t wheels < <(find "$artifact_dir" -type f -name "$WHEEL_NAME" | sort)
+          mapfile -t sdists < <(find "$artifact_dir" -type f -name "$SDIST_NAME" | sort)
+          mapfile -t wheel_sboms < <(find "$artifact_dir" -type f -name 'wheel.spdx.json' | sort)
+          mapfile -t sdist_sboms < <(find "$artifact_dir" -type f -name 'sdist.spdx.json' | sort)
+          mapfile -t wheel_attestations < <(find "$artifact_dir" -type f -name 'wheel.attestation.json' | sort)
+          mapfile -t sdist_attestations < <(find "$artifact_dir" -type f -name 'sdist.attestation.json' | sort)
+          [[ "${#wheels[@]}" -eq 1 && "${#sdists[@]}" -eq 1 ]]
+          [[ "${#wheel_sboms[@]}" -eq 1 && "${#sdist_sboms[@]}" -eq 1 ]]
+          [[ "${#wheel_attestations[@]}" -eq 1 && "${#sdist_attestations[@]}" -eq 1 ]]
+          wheel="${wheels[0]}"
+          sdist="${sdists[0]}"
+          wheel_sbom="${wheel_sboms[0]}"
+          sdist_sbom="${sdist_sboms[0]}"
+          wheel_attestation="${wheel_attestations[0]}"
+          sdist_attestation="${sdist_attestations[0]}"
+          printf '%s  %s\n' "$WHEEL_SHA256" "$wheel" | sha256sum --check --strict
+          printf '%s  %s\n' "$SDIST_SHA256" "$sdist" | sha256sum --check --strict
+          staging="$RUNNER_TEMP/openopps-release-assets"
+          mkdir -m 700 "$staging"
+          install -m 0644 "$wheel" "$staging/$WHEEL_NAME"
+          install -m 0644 "$sdist" "$staging/$SDIST_NAME"
+          install -m 0644 "$wheel_sbom" "$staging/wheel.spdx.json"
+          install -m 0644 "$sdist_sbom" "$staging/sdist.spdx.json"
+          install -m 0644 "$wheel_attestation" "$staging/wheel.attestation.json"
+          install -m 0644 "$sdist_attestation" "$staging/sdist.attestation.json"
+          {
+            printf '%s  %s\n' "$WHEEL_SHA256" "$WHEEL_NAME"
+            printf '%s  %s\n' "$SDIST_SHA256" "$SDIST_NAME"
+          } > "$staging/SHA256SUMS"
+          printf '%s\n' \
+            "OpenOpps ${PACKAGE_VERSION}" \
+            "" \
+            "Published from exact SHA ${SOURCE_SHA}." \
+            "Wheel SHA-256: ${WHEEL_SHA256}" \
+            "Sdist SHA-256: ${SDIST_SHA256}" \
+            > "$staging/RELEASE_NOTES.md"
+          printf 'ASSET_DIR=%s\n' "$staging" >> "$GITHUB_ENV"
+
+      - name: Create ordinary GitHub Release from the existing tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$ASSET_DIR"
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --notes-file RELEASE_NOTES.md \
+            "$WHEEL_NAME" \
+            "$SDIST_NAME" \
+            SHA256SUMS \
+            RELEASE_NOTES.md \
+            wheel.spdx.json \
+            sdist.spdx.json \
+            wheel.attestation.json \
+            sdist.attestation.json
+
+  verify-github:
+    name: Verify GitHub Release
+    needs: github-release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      WHEEL_SHA256: ${{ inputs.wheel_sha256 }}
+      SDIST_SHA256: ${{ inputs.sdist_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Install checksum-pinned GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d "$RUNNER_TEMP/gh.XXXXXX")"
+          archive="$install_root/gh.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$GH_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$install_root"
+          install -m 0755 "$install_root/gh_${GH_VERSION}_linux_amd64/bin/gh" "$RUNNER_TEMP/gh"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Read back tag target, asset hashes, and CI attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='^[0-9a-f]{64}$'
+          revision='^[0-9a-f]{40}$'
+          tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SOURCE_SHA" == "$GITHUB_SHA" && "$SOURCE_SHA" =~ $revision ]]
+          [[ "$WHEEL_SHA256" =~ $digest && "$SDIST_SHA256" =~ $digest ]]
+          [[ "$RELEASE_TAG" =~ $tag_pattern ]]
+          [[ "$RELEASE_TAG" != openopps-data-v7-* ]]
+          version="$(python3 -c 'import tomllib; print(tomllib.loads(open("pyproject.toml","rb").read())["project"]["version"])')"
+          wheel_name="openopps-${version}-py3-none-any.whl"
+          sdist_name="openopps-${version}.tar.gz"
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+          object_type="$(jq -r .object.type <<<"$tag")"
+          object_sha="$(jq -r .object.sha <<<"$tag")"
+          for _ in {1..8}; do
+            if [[ "$object_type" == commit ]]; then
+              [[ "$object_sha" == "$SOURCE_SHA" ]]
+              break
+            fi
+            [[ "$object_type" == tag ]]
+            tag="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+            object_type="$(jq -r .object.type <<<"$tag")"
+            object_sha="$(jq -r .object.sha <<<"$tag")"
+          done
+          [[ "$object_type" == commit && "$object_sha" == "$SOURCE_SHA" ]]
+          release="$(gh release view "$RELEASE_TAG" \
+            --json assets,isDraft,isPrerelease,tagName,targetCommitish)"
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --arg source "$SOURCE_SHA" \
+            '.tagName == $tag and .isDraft == false and .isPrerelease == false and
+             (.assets | length) >= 6' <<<"$release"
+          readback="$(mktemp -d "$RUNNER_TEMP/openopps-github-readback.XXXXXX")"
+          chmod 700 "$readback"
+          gh release download "$RELEASE_TAG" --dir "$readback"
+          printf '%s  %s\n' "$WHEEL_SHA256" "$readback/$wheel_name" | sha256sum --check --strict
+          printf '%s  %s\n' "$SDIST_SHA256" "$readback/$sdist_name" | sha256sum --check --strict
+          gh attestation verify "$readback/$wheel_name" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-digest "$SOURCE_SHA" \
+            --source-ref refs/heads/main \
+            --predicate-type https://spdx.dev/Document/v2.3
+          gh attestation verify "$readback/$sdist_name" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-digest "$SOURCE_SHA" \
+            --source-ref refs/heads/main \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+  pypi:
+    name: Publish to PyPI
+    needs: verify-github
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: pypi
+      url: https://pypi.org/p/openopps
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      WHEEL_SHA256: ${{ inputs.wheel_sha256 }}
+      SDIST_SHA256: ${{ inputs.sdist_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Install checksum-pinned GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$(mktemp -d "$RUNNER_TEMP/gh.XXXXXX")"
+          archive="$install_root/gh.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "$archive" \
+            "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$GH_LINUX_AMD64_SHA256" "$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$install_root"
+          install -m 0755 "$install_root/gh_${GH_VERSION}_linux_amd64/bin/gh" "$RUNNER_TEMP/gh"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Download GitHub Release distributions and re-check hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest='^[0-9a-f]{64}$'
+          revision='^[0-9a-f]{40}$'
+          tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SOURCE_SHA" == "$GITHUB_SHA" && "$SOURCE_SHA" =~ $revision ]]
+          [[ "$WHEEL_SHA256" =~ $digest && "$SDIST_SHA256" =~ $digest ]]
+          [[ "$RELEASE_TAG" =~ $tag_pattern ]]
+          [[ "$RELEASE_TAG" != openopps-data-v7-* ]]
+          version="$(python3 -c 'import tomllib; print(tomllib.loads(open("pyproject.toml","rb").read())["project"]["version"])')"
+          wheel_name="openopps-${version}-py3-none-any.whl"
+          sdist_name="openopps-${version}.tar.gz"
+          mkdir dist
+          gh release download "$RELEASE_TAG" \
+            --pattern "$wheel_name" \
+            --pattern "$sdist_name" \
+            --dir dist
+          printf '%s  %s\n' "$WHEEL_SHA256" "dist/$wheel_name" | sha256sum --check --strict
+          printf '%s  %s\n' "$SDIST_SHA256" "dist/$sdist_name" | sha256sum --check --strict
+
+      - name: Publish exact files with OIDC Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist
