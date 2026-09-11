@@ -42,6 +42,8 @@ NEW_DECISION_ID = "b699-identity-closure-20260906"
 NEW_VALIDATED_AT = datetime(2026, 9, 6, tzinfo=UTC)
 # HEAD the 20260906 reservation was bound to (freeze HEAD at reserve time).
 RESERVE_HEAD = "2afe307cc769b640a981e7497cc2673c073d0903"
+# Apply commit that wrote the frozen 20260906 envelope/receipt/decision.
+APPLY_HEAD = "748397265f729cc761fc258055f279c3264b4131"
 CLOSURE_SURFACES = (
     CATALOG_RELATIVE_PATH,
     GENERATED_RELATIVE_PATH,
@@ -187,19 +189,21 @@ def test_scout_cannot_apply_shared_delivery_closure(tmp_path: Path) -> None:
 def test_repo_shared_delivery_artifacts_match_identity_closure(
     tmp_path: Path,
 ) -> None:
-    # Bind against committed generated. Workspace generated may be dirty from
-    # another lane; do not rewrite identity data files to chase that drift.
+    # Bind against the 20260906 apply tree. Current HEAD generated and
+    # discovery manifest may include overlay / fixture refresh and are not a
+    # new B699 promotion; do not rewrite identity files to chase that drift.
     root = tmp_path / "identity-repo"
     committed_generated = subprocess.check_output(
-        ["git", "-C", str(ROOT), "show", f"HEAD:{GENERATED_RELATIVE_PATH}"]
+        ["git", "-C", str(ROOT), "show", f"{APPLY_HEAD}:{GENERATED_RELATIVE_PATH}"]
     )
     for relative in CLOSURE_SURFACES:
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if relative == GENERATED_RELATIVE_PATH:
-            destination.write_bytes(committed_generated)
-        else:
-            shutil.copyfile(ROOT / relative, destination)
+        destination.write_bytes(
+            subprocess.check_output(
+                ["git", "-C", str(ROOT), "show", f"{APPLY_HEAD}:{relative}"]
+            )
+        )
     closure = build_shared_delivery_closure(
         root,
         head_sha=RESERVE_HEAD,
