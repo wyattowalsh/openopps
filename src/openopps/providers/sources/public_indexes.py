@@ -17,6 +17,7 @@ from openopps.providers.sources.source_utils import (
     optional_int,
     source_taxonomy_metadata,
 )
+from openopps.providers.sources.household_routes import household_index_provider_records
 from openopps.settings import OpenOppsSettings
 from openopps.utils import slugify
 
@@ -85,7 +86,7 @@ class PublicIndexCsvSourceAdapter:
         ]
         yield (
             boards,
-            [],
+            household_index_provider_records(source, boards),
             {
                 "total": len(boards),
                 "sourceUrl": source.url,

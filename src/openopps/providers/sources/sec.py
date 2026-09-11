@@ -7,6 +7,7 @@ import httpx
 
 from openopps.http import retrying_json_request
 from openopps.models import BoardProviderRecord, BoardRecord, SourceRecord
+from openopps.providers.sources.household_routes import household_index_provider_records
 from openopps.providers.sources.source_utils import index_board_record
 from openopps.providers.sources.source_utils import (
     optional_int,
@@ -41,7 +42,11 @@ SEC_COMPANY_TICKERS_SOURCE = SourceRecord(
 class SecCompanyTickersSourceAdapter:
     provider_id = "sec_company_tickers"
     provider_label = "SEC Company Tickers"
-    provider_description = "Official SEC public-company ticker source that discovers listed companies as detect-only boards."
+    provider_description = (
+        "Official SEC public-company ticker source that discovers listed "
+        "companies as boards and attaches jobs-capable ATS routes only from "
+        "unique packaged public ATS name matches."
+    )
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
@@ -62,7 +67,11 @@ class SecCompanyTickersSourceAdapter:
         )
         rows = _sec_rows(payload)
         boards = [_board_from_sec_row(source, row) for row in rows]
-        yield boards, [], {"total": len(boards), "sourceUrl": source.url}
+        yield (
+            boards,
+            household_index_provider_records(source, boards),
+            {"total": len(boards), "sourceUrl": source.url},
+        )
 
 
 def _sec_rows(payload: dict[str, Any] | list[Any]) -> list[dict[str, Any]]:

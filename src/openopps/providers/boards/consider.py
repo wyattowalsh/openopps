@@ -60,6 +60,7 @@ class ConsiderJobsProvider:
     provider_description = "Public Consider company job-board API."
     pull_capabilities = optional_pull_capabilities(
         list_supported=True,
+        board_scan_get_supported=True,
         interface_stability="best_effort",
     )
 

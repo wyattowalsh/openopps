@@ -2579,6 +2579,15 @@ def jobs_pull(
             rich_help_panel=PANEL_OUTPUT,
         ),
     ] = PullOutputFormat.AUTO,
+    profile: Annotated[
+        JobProfileName,
+        typer.Option(
+            "--profile",
+            help=JOB_PROFILE_HELP,
+            rich_help_panel=PANEL_OUTPUT,
+            show_default=True,
+        ),
+    ] = DEFAULT_CLI_PROFILE,
     output: Annotated[
         Path | None,
         typer.Option(
@@ -2673,6 +2682,7 @@ def jobs_pull(
             result,
             format_=format_,
             raw=raw,
+            profile=profile,
             output=output,
             pager=pager,
             quiet=quiet,

@@ -1,0 +1,9 @@
+schema: spec-driven
+created: 2026-09-11
+goal: expand-end-to-end-opportunity-coverage
+affected_areas:
+  - provider-ingestion
+  - provider-coverage
+  - storage-export
+  - cli-domain
+  - docs-product-boundary

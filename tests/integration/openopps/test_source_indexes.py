@@ -16,6 +16,7 @@ from openopps.providers.sources.rankings import (
     FORTUNE500_SOURCE,
     RankingCsvSourceAdapter,
 )
+from openopps.providers.boards import BOARD_JOB_PROVIDERS
 from openopps.providers.sources.sec import (
     SEC_COMPANY_TICKERS_SOURCE,
     SEC_COMPANY_TICKERS_URL,
@@ -54,6 +55,48 @@ async def test_sec_company_tickers_normalizes_listed_company_boards():
     assert boards[0].remote_id == "320193:AAPL"
     assert boards[0].markets == ["Nasdaq"]
     assert boards[0].raw_payload["sourceProvider"] == "sec_company_tickers"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_sec_unique_overlay_name_attaches_packaged_ats_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(SEC_COMPANY_TICKERS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "fields": ["cik", "name", "ticker", "exchange"],
+                "data": [
+                    [320193, "Apple Inc.", "AAPL", "Nasdaq"],
+                    [1849902, "Anthropic", "ANTH", "Nasdaq"],
+                ],
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in SecCompanyTickersSourceAdapter(settings).iter_boards(
+                client, SEC_COMPANY_TICKERS_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert meta["total"] == 2
+    apple = next(board for board in boards if board.name == "Apple Inc.")
+    anthropic = next(board for board in boards if board.name == "Anthropic")
+    apple_routes = [route for route in providers if route.board_key == apple.key]
+    anthropic_routes = [route for route in providers if route.board_key == anthropic.key]
+    assert apple_routes == []
+    assert len(anthropic_routes) == 1
+    route = anthropic_routes[0]
+    assert route.source_key == SEC_COMPANY_TICKERS_SOURCE.key
+    assert route.provider_id in BOARD_JOB_PROVIDERS
+    assert route.provider_id == "greenhouse"
+    assert route.board_url == "https://job-boards.greenhouse.io/anthropic"
+    assert route.token == "anthropic"
+    assert route.token != anthropic.remote_id
 
 
 @pytest.mark.asyncio

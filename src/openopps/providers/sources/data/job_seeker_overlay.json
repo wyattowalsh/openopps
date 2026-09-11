@@ -60,7 +60,7 @@
     {
       "id": "huggingface",
       "name": "Hugging Face",
-      "locator": "https://huggingface.co/careers"
+      "locator": "https://apply.workable.com/huggingface"
     },
     {
       "id": "perplexity",
@@ -152,7 +152,7 @@
     {
       "id": "deel",
       "name": "Deel",
-      "locator": "https://www.deel.com/careers"
+      "locator": "https://jobs.ashbyhq.com/deel"
     },
     {
       "id": "mercury",
@@ -242,7 +242,7 @@
     {
       "id": "neon",
       "name": "Neon",
-      "locator": "https://neon.tech/careers"
+      "locator": "https://jobs.ashbyhq.com/neon"
     },
     {
       "id": "cockroach-labs",
@@ -252,7 +252,7 @@
     {
       "id": "snyk",
       "name": "Snyk",
-      "locator": "https://snyk.io/careers"
+      "locator": "https://jobs.ashbyhq.com/snyk"
     },
     {
       "id": "groq",
@@ -312,7 +312,7 @@
     {
       "id": "loom",
       "name": "Loom",
-      "locator": "https://www.loom.com/careers"
+      "locator": "https://jobs.ashbyhq.com/loom"
     },
     {
       "id": "weights-biases",
@@ -8880,6 +8880,16 @@
       "id": "american-battery-technology",
       "name": "American Battery Technology",
       "locator": "https://apply.workable.com/americanbatterytechnologycompany/"
+    },
+    {
+      "id": "the-trade-desk",
+      "name": "The Trade Desk",
+      "locator": "https://job-boards.greenhouse.io/thetradedesk"
+    },
+    {
+      "id": "applovin",
+      "name": "AppLovin",
+      "locator": "https://job-boards.greenhouse.io/applovin"
     }
   ]
 }

@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from openopps.models import BoardProviderRecord
+from openopps.providers.sources.overlay import JOB_SEEKER_OVERLAY_SOURCE_KEY
 
 # Keys that must never ship as packaged BOARD_SOURCE_CATALOG entries while YC covers
 # startup-board discovery for v0.1.
@@ -38,10 +39,40 @@ WORKATASTARTUP_OUT_OF_SCOPE_RATIONALE = (
     "company discovery through a public Algolia-backed index."
 )
 
+LINKEDIN_UNSUPPORTED_RATIONALE = (
+    "LinkedIn and linkedin.com careers discovery are unsupported for v0.1. "
+    "Company jobs and careers pages require session or anti-bot protected surfaces rather "
+    "than stable static no-auth assets or approved search-index endpoints. OpenOpps does "
+    "not package a LinkedIn source adapter; use packaged public ATS boards and the YC "
+    "(`yc`) source for startup-board discovery instead."
+)
+
+INDEED_UNSUPPORTED_RATIONALE = (
+    "Indeed and indeed.com careers and jobs discovery are unsupported for v0.1. "
+    "Company jobs and careers pages require session or anti-bot protected aggregator login "
+    "walls rather than stable static no-auth ATS assets or approved search-index endpoints. "
+    "OpenOpps does not package an Indeed source adapter; use packaged public ATS boards "
+    "instead."
+)
+
+GLASSDOOR_UNSUPPORTED_RATIONALE = (
+    "Glassdoor and glassdoor.com careers and jobs discovery are unsupported for v0.1. "
+    "Company jobs and careers pages require session or anti-bot protected aggregator login "
+    "walls rather than stable static no-auth ATS assets or approved search-index endpoints. "
+    "OpenOpps does not package a Glassdoor source adapter; use packaged public ATS boards "
+    "instead."
+)
+
 UNSUPPORTED_SOURCE_DISCOVERY_RATIONALES: dict[str, str] = {
     "workatastartup": WORKATASTARTUP_OUT_OF_SCOPE_RATIONALE,
     "wellfound": WELLFOUND_ANGEL_UNSUPPORTED_RATIONALE,
     "angel": WELLFOUND_ANGEL_UNSUPPORTED_RATIONALE,
+    "linkedin": LINKEDIN_UNSUPPORTED_RATIONALE,
+    "linkedin.com": LINKEDIN_UNSUPPORTED_RATIONALE,
+    "indeed": INDEED_UNSUPPORTED_RATIONALE,
+    "indeed.com": INDEED_UNSUPPORTED_RATIONALE,
+    "glassdoor": GLASSDOOR_UNSUPPORTED_RATIONALE,
+    "glassdoor.com": GLASSDOOR_UNSUPPORTED_RATIONALE,
 }
 
 EDITORIAL_LABEL_AUDIT_DECISION = (
@@ -58,7 +89,10 @@ def validate_packaged_source_catalog(
     *,
     preferred_startup_source_key: str = PREFERRED_STARTUP_BOARD_SOURCE_KEY,
 ) -> None:
-    """Raise when out-of-scope source keys appear in the packaged catalog."""
+    """Raise when out-of-scope source keys appear in the packaged catalog.
+
+    `job-seeker-overlay` is allowed. This check does not grant 1780 publication.
+    """
 
     keys = set(catalog)
     blocked = keys & OUT_OF_SCOPE_PACKAGED_SOURCE_KEYS
@@ -123,6 +157,7 @@ def source_scope_summary() -> dict[str, Any]:
     return {
         "preferredStartupBoardSource": PREFERRED_STARTUP_BOARD_SOURCE_KEY,
         "preferredStartupBoardAdapter": PREFERRED_STARTUP_BOARD_ADAPTER_ID,
+        "jobSeekerOverlaySource": JOB_SEEKER_OVERLAY_SOURCE_KEY,
         "excludedPackagedSources": sorted(OUT_OF_SCOPE_PACKAGED_SOURCE_KEYS),
         "unsupportedSourceDiscovery": UNSUPPORTED_SOURCE_DISCOVERY_RATIONALES,
         "editorialLabelAudit": {

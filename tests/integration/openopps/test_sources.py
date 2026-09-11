@@ -181,8 +181,64 @@ async def test_getro_normalizes_company_boards():
     assert boards[1].domain is None
     assert boards[1].website_url is None
     assert boards[1].markets == ["Entertainment", "Broadcast Media"]
+    # Unique-name miss: these fixture companies have no packaged ATS URL.
     assert providers == []
     assert meta["total"] == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_getro_attaches_unique_packaged_overlay_ats_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.post("https://api.getro.com/api/v2/collections/8672/search/companies").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": {
+                    "count": 2,
+                    "companies": [
+                        {
+                            "id": 1,
+                            "slug": "anthropic",
+                            "name": "Anthropic",
+                            "domain": "anthropic.com",
+                            "activeJobsCount": 10,
+                        },
+                        {
+                            "id": 2,
+                            "slug": "acme-ai",
+                            "name": "Acme AI",
+                            "domain": "acme.example",
+                            "activeJobsCount": 1,
+                        },
+                    ],
+                }
+            },
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in GetroSourceAdapter(settings).iter_boards(
+                client, GETRO_SOURCE_CATALOG["accel"], page_size=12
+            )
+        ]
+
+    boards, providers, _meta = pages[0]
+    anthropic = next(board for board in boards if board.name == "Anthropic")
+    acme = next(board for board in boards if board.name == "Acme AI")
+    anthropic_routes = [route for route in providers if route.board_key == anthropic.key]
+    acme_routes = [route for route in providers if route.board_key == acme.key]
+    assert len(anthropic_routes) == 1
+    route = anthropic_routes[0]
+    assert route.source_key == GETRO_SOURCE_CATALOG["accel"].key
+    assert route.provider_id == "greenhouse"
+    assert route.support_level == "jobs"
+    assert route.board_url == "https://job-boards.greenhouse.io/anthropic"
+    assert route.token == "anthropic"
+    assert route.token != anthropic.remote_id
+    assert acme_routes == []
 
 
 @pytest.mark.asyncio
@@ -214,6 +270,7 @@ async def test_getro_falls_back_to_embedded_initial_state():
 
     boards, providers, meta = pages[0]
     assert boards[0].key == "accel:100ms-2"
+    # Unique-name miss: these fixture companies have no packaged ATS URL.
     assert providers == []
     assert meta["total"] == 581
     assert meta["partial"] is True
@@ -264,6 +321,7 @@ async def test_getro_follows_redirects_when_discovering_collection_id():
 
     boards, providers, meta = pages[0]
     assert boards[0].key == "accel:100ms-2"
+    # Unique-name miss: these fixture companies have no packaged ATS URL.
     assert providers == []
     assert meta["collectionId"] == "8672"
 
@@ -309,6 +367,7 @@ async def test_getro_rediscover_collection_id_when_metadata_is_not_digits():
     boards, providers, meta = pages[0]
     assert landing.call_count == 1
     assert boards[0].key == "accel:100ms-2"
+    # Unique-name miss: these fixture companies have no packaged ATS URL.
     assert providers == []
     assert meta["collectionId"] == "8672"
 
@@ -424,8 +483,83 @@ async def test_ycombinator_fetches_algolia_batches():
     assert boards[0].staff_count == 12
     assert boards[1].website_url is None
     assert boards[1].locations == ["Remote"]
+    # Unique-name miss: these fixture companies have no packaged ATS URL.
     assert providers == []
     assert meta["batch"] == "S24"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ycombinator_attaches_unique_packaged_overlay_ats_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://www.ycombinator.com/companies").mock(
+        return_value=httpx.Response(
+            200,
+            text='window.AlgoliaOpts = {"app":"45BWZJ1SGC","key":"search-key"}',
+        )
+    )
+    respx.post("https://45bwzj1sgc-dsn.algolia.net/1/indexes/*/queries").mock(
+        side_effect=[
+            httpx.Response(
+                200, json={"results": [{"hits": [], "facets": {"batch": {"S24": 2}}}]}
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "hits": [
+                                {
+                                    "id": 1,
+                                    "name": "Anthropic",
+                                    "slug": "anthropic",
+                                    "website": "https://www.anthropic.com",
+                                    "one_liner": "AI research.",
+                                    "team_size": 100,
+                                    "batch": "S24",
+                                    "industries": ["B2B", "Artificial Intelligence"],
+                                    "all_locations": "San Francisco",
+                                },
+                                {
+                                    "id": 2,
+                                    "name": "Acme AI",
+                                    "slug": "acme-ai",
+                                    "website": "https://acme.example",
+                                    "one_liner": "No packaged ATS locator.",
+                                    "team_size": 3,
+                                    "batch": "S24",
+                                    "industries": ["B2B"],
+                                    "all_locations": "Remote",
+                                },
+                            ]
+                        }
+                    ]
+                },
+            ),
+        ]
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in YCombinatorSourceAdapter(settings).iter_boards(
+                client, YCOMBINATOR_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, _meta = pages[0]
+    anthropic = next(board for board in boards if board.name == "Anthropic")
+    acme = next(board for board in boards if board.name == "Acme AI")
+    anthropic_routes = [route for route in providers if route.board_key == anthropic.key]
+    acme_routes = [route for route in providers if route.board_key == acme.key]
+    assert len(anthropic_routes) == 1
+    route = anthropic_routes[0]
+    assert route.source_key == YCOMBINATOR_SOURCE.key
+    assert route.provider_id == "greenhouse"
+    assert route.board_url == "https://job-boards.greenhouse.io/anthropic"
+    assert route.token == "anthropic"
+    assert route.token != anthropic.remote_id
+    assert acme_routes == []
 
 
 @pytest.mark.asyncio
@@ -594,6 +728,53 @@ async def test_venturecapitalcareers_normalizes_company_cards():
         "https://venturecapitalcareers.com/companies/cvx-ventures"
     )
     assert providers == []
+    assert meta["pageSize"] == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_venturecapitalcareers_attaches_unique_packaged_overlay_ats_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get("https://venturecapitalcareers.com/companies").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<div><div class="inline-flex">4 jobs</div></div>'
+                '<a href="/companies/anthropic-research">'
+                '<h3 class="font-heading">Anthropic</h3></a>'
+                '<p data-slot="text">AI research company.</p>'
+                '<div><div class="inline-flex">2 jobs</div></div>'
+                '<a href="/companies/acme-ventures">'
+                '<h3 class="font-heading">Acme Ventures</h3></a>'
+                '<p data-slot="text">No packaged ATS locator.</p>'
+            ),
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in VentureCapitalCareersSourceAdapter(settings).iter_boards(
+                client, VENTURE_CAPITAL_CAREERS_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    anthropic = next(board for board in boards if board.name == "Anthropic")
+    acme = next(board for board in boards if board.name == "Acme Ventures")
+    anthropic_routes = [
+        route for route in providers if route.board_key == anthropic.key
+    ]
+    acme_routes = [route for route in providers if route.board_key == acme.key]
+    assert len(anthropic_routes) == 1
+    route = anthropic_routes[0]
+    assert route.source_key == VENTURE_CAPITAL_CAREERS_SOURCE.key
+    assert route.provider_id == "greenhouse"
+    assert route.support_level == "jobs"
+    assert route.board_url == "https://job-boards.greenhouse.io/anthropic"
+    assert route.token == "anthropic"
+    assert route.token != anthropic.remote_id
+    assert acme_routes == []
     assert meta["pageSize"] == 2
 
 

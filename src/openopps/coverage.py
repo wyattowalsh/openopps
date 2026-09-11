@@ -19,6 +19,19 @@ from openopps.storage import OpenOppsStore
 
 
 EXAMPLE_LIMIT = 5
+COVERAGE_SCOPE_NOTES = {
+    "jobSeekerOverlay": (
+        "job-seeker-overlay is packaged JSON locators after sources sync; "
+        "it is not URL-pull admission."
+    ),
+    "urlPull": (
+        "URL pull is ephemeral by default and does not add catalog, overlay, "
+        "or url-pull ledger rows."
+    ),
+    "urlPullReserved": (
+        "source_key url-pull remains reserved until the G3 storage join."
+    ),
+}
 BASELINE_JOB_PROVIDER_IDS = frozenset({"ashbyhq", "greenhouse", "lever", "workday"})
 ADOPTED_V01_PROVIDER_IDS = frozenset(
     {
@@ -101,6 +114,7 @@ class CoverageReport:
             "jobs": self.jobs,
             "gaps": self.gaps,
             "dataQuality": self.data_quality,
+            "notes": dict(COVERAGE_SCOPE_NOTES),
         }
 
 
@@ -351,7 +365,9 @@ def build_source_yield_report(
             "snapshotKind": "persisted-scope",
             "note": (
                 "Offline source-yield metrics are measured from persisted SQLite records; "
-                "run source sync, route probing, and job sync before comparing source families."
+                "run source sync, route probing, and job sync before comparing source families. "
+                "Packaged overlay (job-seeker-overlay) is maintainer JSON, not URL pull. "
+                "Ephemeral jobs pull does not increase these persisted counts."
             ),
         },
         totals=totals,
@@ -439,7 +455,8 @@ def build_provider_audit_report(
             "snapshotKind": "persisted-scope",
             "note": (
                 "Measured from persisted boards in the selected scope; run source syncs "
-                "before release publication to refresh this snapshot."
+                "before release publication to refresh this snapshot. "
+                "URL pull and quarantined scout are not packaged overlay gain."
             ),
         },
         coverage={

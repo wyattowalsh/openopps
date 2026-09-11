@@ -40,6 +40,7 @@ from openopps.providers.boards.workable import (
     workable_page_budget,
     workable_token_from_url,
 )
+from openopps.providers.sources.household_routes import household_index_provider_records
 from openopps.providers.sources.source_utils import (
     load_packaged_portfolio_source_records,
     source_taxonomy_metadata,
@@ -916,7 +917,7 @@ class VentureCapitalCareersSourceAdapter:
             boards = self._boards_from_html(source, html, str(response.url))
             yield (
                 boards,
-                [],
+                household_index_provider_records(source, boards),
                 {
                     "page": page,
                     "pageSize": len(boards),
@@ -1093,7 +1094,7 @@ class YCombinatorSourceAdapter:
                 boards = self._normalize_companies(source.key, hits)
                 yield (
                     boards,
-                    [],
+                    household_index_provider_records(source, boards),
                     {
                         "applicationId": application_id,
                         "indexName": index_name,

@@ -11,7 +11,8 @@ from typing import Any
 
 import polars as pl
 
-from openopps.models import ExportFormat
+from openopps.job_profiles import DEFAULT_CLI_PROFILE, project_job
+from openopps.models import ExportFormat, JobRecord
 
 SQLITE_METADATA_TABLE = "_openopps_export_metadata"
 
@@ -22,15 +23,21 @@ def canonical_json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def _jsonable_record(record: Any) -> dict[str, Any]:
+def _jsonable_record(record: Any, *, profile: str | None = None) -> dict[str, Any]:
+    if isinstance(record, JobRecord):
+        return project_job(record, profile or DEFAULT_CLI_PROFILE)
     if hasattr(record, "model_dump"):
         return record.model_dump(mode="json")  # type: ignore[attr-defined]
     return dict(record)
 
 
-def _jsonable_records(records: Iterable[Any]) -> Iterator[dict[str, Any]]:
+def _jsonable_records(
+    records: Iterable[Any],
+    *,
+    profile: str | None = None,
+) -> Iterator[dict[str, Any]]:
     for record in records:
-        yield _jsonable_record(record)
+        yield _jsonable_record(record, profile=profile)
 
 
 def _tabular_records(
@@ -66,6 +73,7 @@ def export_records(
     *,
     sqlite_table: str = "records",
     metadata: dict[str, Any] | None = None,
+    profile: str | None = None,
 ) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     with _atomic_output_path(
@@ -75,11 +83,11 @@ def export_records(
         if format_ == ExportFormat.JSONL:
             count = 0
             with staged_output.open("w", encoding="utf-8") as handle:
-                for row in _jsonable_records(records):
+                for row in _jsonable_records(records, profile=profile):
                     handle.write(canonical_json_dumps(row) + "\n")
                     count += 1
             return count
-        rows = list(_jsonable_records(records))
+        rows = list(_jsonable_records(records, profile=profile))
         if format_ == ExportFormat.CSV:
             if not rows:
                 staged_output.write_text("", encoding="utf-8")

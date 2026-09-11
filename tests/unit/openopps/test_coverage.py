@@ -46,6 +46,9 @@ def test_coverage_report_counts_persisted_records_and_routes(tmp_path: Path):
         "total": 3,
         "percentage": 33.33,
     }
+    assert data["notes"]["urlPull"].startswith("URL pull is ephemeral")
+    assert "job-seeker-overlay" in data["notes"]["jobSeekerOverlay"]
+    assert "url-pull" in data["notes"]["urlPullReserved"]
     assert data["routes"]["total"] == 5
     assert data["routes"]["byProvider"] == {
         "greenhouse": 2,
@@ -298,6 +301,8 @@ def test_source_yield_report_counts_source_family_metrics(tmp_path: Path):
 
     assert data["snapshot"]["scope"] == {"source": "a16z"}
     assert data["snapshot"]["sourceCount"] == 1
+    assert "URL pull" in data["snapshot"]["note"]
+    assert "job-seeker-overlay" in data["snapshot"]["note"]
     assert data["totals"] == {
         "companyCandidates": 3,
         "canonicalBoards": 3,

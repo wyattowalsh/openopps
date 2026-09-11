@@ -27,6 +27,7 @@ from openopps.models import (
     utc_now,
     validate_public_https_url,
 )
+from openopps.providers.sources.household_routes import household_index_provider_records
 from openopps.settings import OpenOppsSettings
 from openopps.utils import slugify, source_board_key
 
@@ -2718,7 +2719,7 @@ class GetroSourceAdapter:
             boards = self._normalize_companies(source.key, companies)
             yield (
                 boards,
-                [],
+                household_index_provider_records(source, boards),
                 {
                     "collectionId": collection_id,
                     "page": page,

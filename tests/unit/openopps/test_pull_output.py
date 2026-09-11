@@ -588,3 +588,24 @@ def test_json_jobs_identify_profile_and_exclude_observability() -> None:
         assert "coverage_class" not in job
         assert "observability" not in job
         assert "RunMetrics" not in job
+
+
+def test_json_jobs_honor_named_profile() -> None:
+    result = _result()
+    stdout = _Stream()
+
+    write_pull_output(
+        result,
+        format_=PullOutputFormat.JSON,
+        profile="core",
+        stdout=stdout,
+    )
+    jobs = json.loads(stdout.getvalue())
+
+    assert jobs == _projected_jobs(result, profile="core")
+    assert jobs
+    for job in jobs:
+        assert job["profile"] == "core"
+        assert job["schemaVersion"] == 1
+        assert "raw_listing" not in job
+        assert "raw_detail" not in job
