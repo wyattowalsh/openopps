@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from openopps.models import BoardProviderRecord, BoardRecord
+from openopps.providers.boards.url_targets import URL_PULL_SOURCE_KEY
 from openopps.route_select import (
     dedupe_routes,
     normalize_provider_filter,
@@ -74,14 +75,19 @@ class BoardRouteRegistry:
     ) -> BoardRouteSelection:
         provider_filter = normalize_provider_filter(provider_id)
         selected_source_keys = _selected_source_keys(source_key, source_keys)
-        boards = _list_boards_for_sources(
-            self.store, selected_source_keys, board_key=board_key
+        _reject_reserved_url_pull_source_pin(selected_source_keys)
+        boards = _exclude_reserved_url_pull_boards(
+            _list_boards_for_sources(
+                self.store, selected_source_keys, board_key=board_key
+            )
         )
-        routes = _list_routes_for_sources(
-            self.store,
-            selected_source_keys,
-            board_key=board_key,
-            provider_id=provider_filter,
+        routes = _exclude_reserved_url_pull_routes(
+            _list_routes_for_sources(
+                self.store,
+                selected_source_keys,
+                board_key=board_key,
+                provider_id=provider_filter,
+            )
         )
         return select_routes_from_records(
             boards=boards,
@@ -99,6 +105,25 @@ def _selected_source_keys(
     if source_key:
         return (source_key,)
     return tuple(dict.fromkeys(source_keys or ()))
+
+
+def _reject_reserved_url_pull_source_pin(source_keys: Sequence[str]) -> None:
+    """Fail closed when catalog job-route selection pins the reserved source."""
+
+    if any(key == URL_PULL_SOURCE_KEY for key in source_keys):
+        raise ValueError(f"Unknown source: {URL_PULL_SOURCE_KEY}")
+
+
+def _exclude_reserved_url_pull_boards(
+    boards: Sequence[BoardRecord],
+) -> list[BoardRecord]:
+    return [board for board in boards if board.source_key != URL_PULL_SOURCE_KEY]
+
+
+def _exclude_reserved_url_pull_routes(
+    routes: Sequence[BoardProviderRecord],
+) -> list[BoardProviderRecord]:
+    return [route for route in routes if route.source_key != URL_PULL_SOURCE_KEY]
 
 
 def _list_boards_for_sources(

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, select
 
+from openopps.ingest import sync_jobs
 from openopps.models import (
     BoardProviderRecord,
     BoardProviderRow,
@@ -16,6 +17,7 @@ from openopps.models import (
     ProviderSupport,
     SourceRecord,
 )
+from openopps.providers.boards.url_targets import URL_PULL_SOURCE_KEY
 from openopps.providers.sources import BOARD_SOURCE_CATALOG
 from openopps.pull_models import (
     DiscoveryMethod,
@@ -29,6 +31,8 @@ from openopps.pull_models import (
     PullResult,
     PullRetrievalMechanism,
 )
+from openopps.route_registry import BoardRouteRegistry
+from openopps.route_select import route_ready
 from openopps.settings import OpenOppsSettings
 from openopps.source_resolution import resolve_effective_sources
 from openopps.storage import (
@@ -595,3 +599,107 @@ def test_no_save_port_does_not_call_store_apply(tmp_path: Path) -> None:
     assert _count(db_path, "jobs") == 0
     assert _count(db_path, "boards") == 0
     assert _count(db_path, "job_sync_runs") == 0
+
+
+def _plant_catalog_greenhouse_route(store: OpenOppsStore) -> None:
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [
+            BoardRecord(
+                key="catalog-acme",
+                source_key="manual",
+                remote_id="catalog-acme",
+                name="Catalog Acme",
+            )
+        ]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:catalog-acme:greenhouse",
+                source_key="manual",
+                board_key="catalog-acme",
+                provider_id="greenhouse",
+                support_level=ProviderSupport.JOBS,
+                token="catalog-acme",
+            )
+        ]
+    )
+
+
+def test_unscoped_job_route_select_excludes_url_pull_after_persist(
+    tmp_path: Path,
+) -> None:
+    store, _ = _store(tmp_path)
+    store.apply_url_pull_list(_list_result((_job("1"),)))
+    _plant_catalog_greenhouse_route(store)
+
+    persisted_routes = store.list_board_providers(job_capable_only=True)
+    assert any(route.source_key == URL_PULL_SOURCE_KEY for route in persisted_routes)
+    assert any(
+        route.source_key == URL_PULL_SOURCE_KEY and route_ready(route)
+        for route in persisted_routes
+    )
+    assert any(
+        board.source_key == URL_PULL_SOURCE_KEY
+        for board in store.list_boards(with_providers=False)
+    )
+
+    selection = BoardRouteRegistry(store).select(ready_only=True)
+    assert [entry.route.source_key for entry in selection.entries] == ["manual"]
+    assert all(
+        entry.route.source_key != URL_PULL_SOURCE_KEY for entry in selection.entries
+    )
+    assert all(
+        entry.board.source_key != URL_PULL_SOURCE_KEY for entry in selection.entries
+    )
+    assert all(
+        route.source_key != URL_PULL_SOURCE_KEY
+        for route in selection.missing_route_metadata
+    )
+    assert all(
+        route.source_key != URL_PULL_SOURCE_KEY for route in selection.duplicate_routes
+    )
+
+
+def test_reserved_url_pull_source_pin_fail_closes_job_route_select(
+    tmp_path: Path,
+) -> None:
+    store, _ = _store(tmp_path)
+    store.apply_url_pull_list(_list_result((_job("1"),)))
+    registry = BoardRouteRegistry(store)
+
+    with pytest.raises(ValueError, match=r"^Unknown source: url-pull$"):
+        registry.select(source_key=URL_PULL_SOURCE_KEY, ready_only=True)
+    with pytest.raises(ValueError, match=r"^Unknown source: url-pull$"):
+        registry.select(source_keys=[URL_PULL_SOURCE_KEY], ready_only=True)
+    with pytest.raises(ValueError, match=r"^Unknown source: url-pull$"):
+        registry.select(source_keys=["manual", URL_PULL_SOURCE_KEY], ready_only=True)
+
+
+async def test_unscoped_sync_jobs_does_not_ingest_url_pull_routes(
+    tmp_path: Path,
+) -> None:
+    store, _ = _store(tmp_path)
+    store.apply_url_pull_list(_list_result((_job("1"),)))
+
+    metrics = await sync_jobs(settings=store.settings, store=store)
+
+    assert metrics.job_sync_attempts == 0
+    assert metrics.jobs == 0
+
+
+async def test_sync_jobs_fail_closes_reserved_url_pull_source_pin(
+    tmp_path: Path,
+) -> None:
+    store, _ = _store(tmp_path)
+    store.apply_url_pull_list(_list_result((_job("1"),)))
+
+    with pytest.raises(ValueError, match=r"^Unknown source: url-pull$"):
+        await sync_jobs(
+            settings=store.settings,
+            store=store,
+            source_key=URL_PULL_SOURCE_KEY,
+        )
