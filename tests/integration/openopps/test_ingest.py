@@ -142,8 +142,64 @@ async def test_sync_jobs_dedupes_same_provider_route_across_sources(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_sync_jobs_reports_persisted_runs_and_deduped_jobs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from openopps.providers.base import JobFetchResult
+
+    settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
+    store = OpenOppsStore(settings)
+    store.upsert_source(
+        SourceRecord(key="manual", url="manual://source", provider_id="manual")
+    )
+    store.upsert_boards(
+        [BoardRecord(key="acme", source_key="manual", remote_id="Acme", name="Acme")]
+    )
+    store.upsert_board_providers(
+        [
+            BoardProviderRecord(
+                id="manual:acme:fake",
+                source_key="manual",
+                board_key="acme",
+                provider_id="fake",
+                support_level=ProviderSupport.JOBS,
+                token="acme",
+            )
+        ]
+    )
+    listing = JobRecord(
+        id="acme:fake:1",
+        board_key="acme",
+        provider_id="fake",
+        remote_id="1",
+        title="Engineer",
+    )
+
+    class DuplicateListingProvider:
+        async def fetch_jobs(self, *_args: object):
+            return JobFetchResult(
+                jobs=[listing, listing.model_copy()],
+                authoritative=True,
+            )
+
+    monkeypatch.setattr(
+        ingest_module,
+        "build_job_provider",
+        lambda _provider_id, _settings: DuplicateListingProvider(),
+    )
+
+    metrics = await sync_jobs(settings=settings, store=store, provider_id="fake")
+
+    assert metrics.jobs == 2
+    assert metrics.jobs_persisted == 1
+    assert metrics.job_sync_attempts == 1
+    assert metrics.job_sync_runs == 1
+    assert metrics.jobs_deduped == 1
+
+
+@pytest.mark.asyncio
 @respx.mock
-async def test_sync_jobs_reports_persisted_runs_and_deduped_jobs(tmp_path: Path):
+async def test_sync_jobs_fail_closed_on_greenhouse_duplicate_job_ids(tmp_path: Path):
     settings = OpenOppsSettings(db_url=f"sqlite:///{tmp_path / 'openopps.db'}")
     store = OpenOppsStore(settings)
     store.upsert_source(
@@ -182,11 +238,12 @@ async def test_sync_jobs_reports_persisted_runs_and_deduped_jobs(tmp_path: Path)
 
     metrics = await sync_jobs(settings=settings, store=store, provider_id="greenhouse")
 
-    assert metrics.jobs == 2
-    assert metrics.jobs_persisted == 1
+    assert metrics.jobs == 0
+    assert metrics.jobs_persisted == 0
     assert metrics.job_sync_attempts == 1
-    assert metrics.job_sync_runs == 1
-    assert metrics.jobs_deduped == 1
+    assert metrics.job_sync_runs == 0
+    assert metrics.provider_error_details == {"greenhouse": {"validation": 1}}
+    assert store.list_jobs() == []
 
 
 @pytest.mark.asyncio
