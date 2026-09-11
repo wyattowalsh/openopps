@@ -301,3 +301,61 @@ async def test_cncf_landscape_normalizes_allowed_landscape_fields_only():
     assert boards[0].website_url == "https://acme.example"
     assert boards[0].markets == ["Runtime", "Container Runtime"]
     assert "crunchbase" not in boards[0].raw_payload
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_cncf_unique_overlay_name_attaches_packaged_ats_route():
+    settings = OpenOppsSettings(cache_enabled=False)
+    respx.get(CNCF_LANDSCAPE_SOURCE.url).mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+- category:
+  name: Runtime
+  subcategories:
+    - subcategory:
+      name: Container Runtime
+      items:
+        - item:
+          name: Anthropic
+          homepage_url: https://www.anthropic.com
+          description: AI research.
+        - item:
+          name: Acme Runtime
+          homepage_url: https://job-boards.greenhouse.io/10pearls
+          description: Unmatched name with a lookalike ATS homepage.
+        - item:
+          name: Indeed
+          homepage_url: https://www.indeed.com/cmp/acme
+          description: Denied aggregator host.
+""".strip(),
+        )
+    )
+
+    async with build_async_client(settings) as client:
+        pages = [
+            page
+            async for page in CncfLandscapeSourceAdapter(settings).iter_boards(
+                client, CNCF_LANDSCAPE_SOURCE, page_size=100
+            )
+        ]
+
+    boards, providers, meta = pages[0]
+    assert meta["total"] == 3
+    anthropic = next(board for board in boards if board.name == "Anthropic")
+    unmatched = next(board for board in boards if board.name == "Acme Runtime")
+    denied = next(board for board in boards if board.name == "Indeed")
+    anthropic_routes = [route for route in providers if route.board_key == anthropic.key]
+    unmatched_routes = [route for route in providers if route.board_key == unmatched.key]
+    denied_routes = [route for route in providers if route.board_key == denied.key]
+    assert unmatched_routes == []
+    assert denied_routes == []
+    assert len(anthropic_routes) == 1
+    route = anthropic_routes[0]
+    assert route.source_key == CNCF_LANDSCAPE_SOURCE.key
+    assert route.provider_id in BOARD_JOB_PROVIDERS
+    assert route.provider_id == "greenhouse"
+    assert route.board_url == "https://job-boards.greenhouse.io/anthropic"
+    assert route.token == "anthropic"
+    assert route.token != anthropic.remote_id

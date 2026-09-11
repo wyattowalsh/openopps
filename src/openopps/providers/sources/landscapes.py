@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 import httpx
 
 from openopps.models import BoardProviderRecord, BoardRecord, SourceRecord
+from openopps.providers.sources.household_routes import household_index_provider_records
 from openopps.providers.sources.source_utils import fetch_text, index_board_record
 from openopps.providers.sources.source_utils import parse_cncf_landscape_items
 from openopps.providers.sources.source_utils import source_taxonomy_metadata
@@ -33,7 +34,11 @@ CNCF_LANDSCAPE_SOURCE = SourceRecord(
 class CncfLandscapeSourceAdapter:
     provider_id = "cncf_landscape"
     provider_label = "CNCF Landscape"
-    provider_description = "CNCF landscape source adapter that discovers cloud-native projects and vendors from public GitHub data."
+    provider_description = (
+        "CNCF landscape source adapter that discovers cloud-native projects and "
+        "vendors from public GitHub data and attaches jobs-capable ATS routes only "
+        "from unique packaged public ATS name matches."
+    )
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
@@ -48,7 +53,11 @@ class CncfLandscapeSourceAdapter:
         text = await fetch_text(client, source.url, accept="text/yaml, text/plain")
         items = parse_cncf_landscape_items(text)
         boards = [_board_from_landscape_item(source, item) for item in items]
-        yield boards, [], {"total": len(boards), "sourceUrl": source.url}
+        yield (
+            boards,
+            household_index_provider_records(source, boards),
+            {"total": len(boards), "sourceUrl": source.url},
+        )
 
 
 def _board_from_landscape_item(
