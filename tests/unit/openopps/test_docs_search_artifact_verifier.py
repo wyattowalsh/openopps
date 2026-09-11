@@ -119,6 +119,18 @@ def write_artifacts(base: Path) -> Path:
                     "chunks": [
                         {"index": 0, "file": "jobs/chunks/0000.json", "path": "/data/openopps-search/jobs/chunks/0000.json", "count": 0}
                     ],
+                    "columnar": {
+                        "layout": "columnar",
+                        "columns": ["id", "status", "descriptionSnippet", "skillTokens"],
+                        "chunks": [
+                            {
+                                "index": 0,
+                                "file": "jobs/columnar/0000.json",
+                                "path": "/data/openopps-search/jobs/columnar/0000.json",
+                                "count": 0,
+                            }
+                        ],
+                    },
                 },
                 "boards": {"file": "boards.json", "columns": [], "count": 0},
                 "providers": {"file": "providers.json", "columns": [], "count": 0},
@@ -132,6 +144,16 @@ def write_artifacts(base: Path) -> Path:
     write_json(root / "jobs-indexable-ids.json", {"count": 1, "ids": ["job-a"]})
     write_json(root / "jobs" / "latest.json", {})
     write_json(root / "jobs" / "chunks" / "0000.json", {})
+    write_json(
+        root / "jobs" / "columnar" / "0000.json",
+        {
+            "layout": "columnar",
+            "entity": "jobs",
+            "columns": ["id", "status", "descriptionSnippet", "skillTokens"],
+            "count": 0,
+            "values": [[], [], [], []],
+        },
+    )
     write_json(root / "boards.json", {})
     write_json(root / "providers.json", {})
     write_json(root / "lineage-aggregate.json", {})
