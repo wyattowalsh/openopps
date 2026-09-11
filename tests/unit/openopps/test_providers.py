@@ -702,7 +702,11 @@ async def test_workable_fetch_jobs_reuses_route_probe_listing_cache(tmp_path):
             listing_url,
             json={},
             cache_namespace="route_probe",
-            cache_identity={"provider": "workable", "route": "acme"},
+            cache_identity={
+                "provider": "workable",
+                "route": "acme",
+                "role": "membership_page",
+            },
         )
         jobs = await WorkableProvider(settings).fetch_jobs(
             client, board(), route("workable", token="acme")
