@@ -343,7 +343,7 @@ def test_just_uses_positional_transport_and_locked_kaggle_tooling() -> None:
     assert "scripts/verify_agent_plugins.py" in justfile
     assert (
         "ci-artifacts: source-policy-check kaggle-generated-diff-check "
-        "kaggle-bundle-smoke diff-check"
+        "kaggle-bundle-smoke readme-assets-check diff-check"
     ) in justfile
     assert (
         "source-policy-check:\n"
@@ -433,8 +433,8 @@ def test_python_quality_and_operational_tools_are_locked() -> None:
     groups = pyproject["dependency-groups"]
 
     assert "pip-audit==2.10.1" in groups["dev"]
-    assert "ruff==0.16.2" in groups["dev"]
-    assert "ty==0.0.71" in groups["dev"]
+    assert "ruff==0.16.5" in groups["dev"]
+    assert "ty==0.0.76" in groups["dev"]
     assert "kaggle==2.2.4" in groups["ops"]
     assert pyproject["tool"]["ruff"]["target-version"] == "py312"
     assert pyproject["tool"]["ty"]["src"]["include"] == ["src/openopps"]
@@ -454,26 +454,23 @@ def test_operator_docs_match_kaggle_and_offline_release_contract() -> None:
     assert runtime_digest_match is not None
     runtime_digest = runtime_digest_match.group(1)
 
-    operator_docs = [
-        (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
-        (REPO_ROOT / "web" / "content" / "docs" / "operations.mdx").read_text(
-            encoding="utf-8"
-        ),
-    ]
-    for document in operator_docs:
-        assert "openopps.git@main" not in document
-        assert runtime_digest in document
-        assert "dry-run by default" in document
-        assert "expected_current_version=<n>" in document
-        assert "execute=1" in document
-        assert "allow_no_rollback=1" in document
-        assert "metadata repair" in document
-        assert "separate" in document
-        assert "openopps sync --metrics-json" in document
+    # Runtime digest lives on operations.mdx, not README.
+    operations = (REPO_ROOT / "web" / "content" / "docs" / "operations.mdx").read_text(
+        encoding="utf-8"
+    )
+    assert "openopps.git@main" not in operations
+    assert runtime_digest in operations
+    assert "dry-run by default" in operations
+    assert "expected_current_version=<n>" in operations
+    assert "execute=1" in operations
+    assert "allow_no_rollback=1" in operations
+    assert "metadata repair" in operations
+    assert "separate" in operations
+    assert "openopps sync --metrics-json" in operations
 
     public_release_docs = "\n".join(
         [
-            operator_docs[1],
+            operations,
             (
                 REPO_ROOT / "web" / "content" / "docs" / "public-data-releases.mdx"
             ).read_text(encoding="utf-8"),
