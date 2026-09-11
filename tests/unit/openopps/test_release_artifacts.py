@@ -193,12 +193,12 @@ def _rewrite_wheel_member(
 
 def test_required_wheel_files_include_alembic_0005_and_reject_draft_names() -> None:
     alembic_0005 = "openopps/alembic/versions/0005_update_snapshot_ledger.py"
+    alembic_0006 = "openopps/alembic/versions/0006_url_pull_runs.py"
     assert alembic_0005 in verifier.REQUIRED_WHEEL_FILES
+    assert alembic_0006 in verifier.REQUIRED_WHEEL_FILES
     assert f"src/{alembic_0005}" in verifier.REQUIRED_SDIST_FILES
+    assert f"src/{alembic_0006}" in verifier.REQUIRED_SDIST_FILES
     assert not any(name.endswith(".draft") for name in verifier.REQUIRED_WHEEL_FILES)
-    assert not any(
-        "0006_" in name for name in verifier.REQUIRED_WHEEL_FILES
-    ), "do not require an untracked 0006 revision filename"
 
 
 def test_release_artifacts_reject_alembic_draft_in_wheel(tmp_path: Path) -> None:
@@ -241,6 +241,10 @@ def test_release_artifact_pair_passes_with_uv_control_file(tmp_path: Path) -> No
             {"openopps/alembic/versions/0005_update_snapshot_ledger.py"},
             set(),
         ),
+        (
+            {"openopps/alembic/versions/0006_url_pull_runs.py"},
+            set(),
+        ),
         (set(), {"src/openopps/cli.py"}),
         (
             set(),
@@ -253,6 +257,10 @@ def test_release_artifact_pair_passes_with_uv_control_file(tmp_path: Path) -> No
         (
             set(),
             {"src/openopps/alembic/versions/0005_update_snapshot_ledger.py"},
+        ),
+        (
+            set(),
+            {"src/openopps/alembic/versions/0006_url_pull_runs.py"},
         ),
     ],
 )

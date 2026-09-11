@@ -52,6 +52,7 @@ REQUIRED_WHEEL_FILES = {
     "openopps/providers/sources/data/source_policy_evidence.json",
     "openopps/providers/sources/data/source_policy_evidence.schema.json",
     "openopps/alembic/versions/0005_update_snapshot_ledger.py",
+    "openopps/alembic/versions/0006_url_pull_runs.py",
 }
 REQUIRED_SDIST_FILES = {
     "LICENSE",
