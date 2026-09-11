@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+from dataclasses import dataclass
 import json
 from typing import Any, cast
 from urllib.parse import urlparse
@@ -19,6 +19,21 @@ from openopps.models import (
     validate_public_https_url,
 )
 from openopps.providers.base import JobFetchResult, ProviderRouteMatch
+from openopps.providers.boards.listing import (
+    BoardListingKernelResult,
+    DetailCoverageEvidence,
+    ListingIdentityMode,
+    ListingPosting,
+    MembershipEvidence,
+    MembershipScope,
+    bounded_async_map,
+    optional_pull_attr,
+    optional_pull_capabilities,
+)
+from openopps.providers.boards.url_targets import (
+    strict_decoded_path_parts as _strict_path_parts,
+    synthetic_url_pull_board,
+)
 from openopps.providers.normalize import (
     salary_components,
     salary_display,
@@ -28,10 +43,36 @@ from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
 
 
+ProviderGetMethod = optional_pull_attr("ProviderGetMethod")
+ProviderGetResult = optional_pull_attr("ProviderGetResult")
+ensure_detail_fanout_within_budget = optional_pull_attr(
+    "ensure_detail_fanout_within_budget"
+)
+ProviderListResult = optional_pull_attr("ProviderListResult")
+ProviderPosting = optional_pull_attr("ProviderPosting", ListingPosting)
+ProviderRouteIdentity = optional_pull_attr("ProviderRouteIdentity")
+ProviderTargetKind = optional_pull_attr("ProviderTargetKind")
+ProviderUrlTarget = optional_pull_attr("ProviderUrlTarget")
+
+_RIPPLING_MAX_PAGES = 500
+
+
+@dataclass(frozen=True, slots=True)
+class RipplingListingSnapshot:
+    listings: tuple[dict[str, Any], ...]
+    pages_fetched: int
+    advertised_count: int | None
+
+
 class RipplingProvider:
     provider_id = "rippling"
     provider_label = "Rippling"
     provider_description = "Public Rippling ATS board JSON endpoints."
+    pull_capabilities = optional_pull_capabilities(
+        list_supported=True,
+        native_get_supported=True,
+        interface_stability="best_effort",
+    )
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
@@ -54,6 +95,94 @@ class RipplingProvider:
             return ProviderRouteMatch(token=parts[0], host=host, tenant=parts[0])
         return None
 
+    @staticmethod
+    def parse_url_target(url: str) -> ProviderUrlTarget | None:
+        try:
+            validate_public_https_url(url)
+            parsed = urlparse(url)
+            if (
+                parsed.netloc.casefold() != "ats.rippling.com"
+                or parsed.query
+                or parsed.fragment
+                or parsed.params
+            ):
+                return None
+            parts = _strict_path_parts(parsed.path)
+            if parts is None:
+                return None
+            if parts[:3] == ("api", "v2", "board"):
+                tail = parts[3:]
+                if len(tail) not in {2, 3} or tail[1] != "jobs":
+                    return None
+                slug = tail[0]
+                posting_id = tail[2] if len(tail) == 3 else None
+            elif len(parts) in {2, 3} and parts[1] == "jobs":
+                slug = parts[0]
+                posting_id = parts[2] if len(parts) == 3 else None
+            else:
+                return None
+            return ProviderUrlTarget(
+                provider_id=RipplingProvider.provider_id,
+                target_kind=(
+                    ProviderTargetKind.POSTING
+                    if posting_id is not None
+                    else ProviderTargetKind.BOARD
+                ),
+                url=url,
+                board_identity=slug,
+                posting_identity=posting_id,
+                route=ProviderRouteIdentity(token=slug, tenant=slug),
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def build_probe_urls(slug: str) -> tuple[str, ...]:
+        return (f"https://ats.rippling.com/{slug}/jobs",)
+
+    async def pull_list(
+        self,
+        client: httpx.AsyncClient,
+        target: ProviderUrlTarget,
+        *,
+        include_unlisted: bool,
+    ) -> ProviderListResult:
+        slug = _require_rippling_target(target, ProviderTargetKind.BOARD)
+        kernel = await self._list_public_membership(
+            client,
+            slug,
+            identity_mode="pull",
+            include_unlisted=include_unlisted,
+            detail_budget=int(self.settings.pull_provider_max_details),
+        )
+        return kernel.to_provider_list_result(target)
+
+    async def pull_get(
+        self,
+        client: httpx.AsyncClient,
+        target: ProviderUrlTarget,
+    ) -> ProviderGetResult:
+        slug = _require_rippling_target(target, ProviderTargetKind.POSTING)
+        posting_id = target.posting_identity
+        assert posting_id is not None
+        detail = await self._fetch_detail(client, slug, posting_id)
+        detail_id = _listing_id(detail)
+        if detail_id is not None and detail_id != posting_id:
+            raise ValueError("Rippling detail identity did not match the requested job")
+        board = _pull_board(target)
+        job = self._normalize(
+            board,
+            slug,
+            {},
+            detail,
+            remote_id_override=posting_id,
+        )
+        return ProviderGetResult(
+            posting=ProviderPosting(job=job, listing=None, detail=job.raw_detail),
+            method=ProviderGetMethod.NATIVE,
+            matched_identity=posting_id,
+        )
+
     async def fetch_jobs(
         self,
         client: httpx.AsyncClient,
@@ -63,23 +192,95 @@ class RipplingProvider:
         slug = rippling_slug(route)
         if not slug:
             return JobFetchResult(jobs=[], authoritative=False)
-        listings = await self._fetch_listings(client, slug)
-        semaphore = asyncio.Semaphore(self.settings.board_concurrency)
+        kernel = await self._list_public_membership(
+            client,
+            slug,
+            identity_mode="ingest",
+            include_unlisted=False,
+            detail_budget=None,
+        )
+        return kernel.to_job_fetch_result(board, provider_id=self.provider_id)
 
-        async def detail_for(listing: dict[str, Any]) -> dict[str, Any]:
+    async def _list_public_membership(
+        self,
+        client: httpx.AsyncClient,
+        slug: str,
+        *,
+        identity_mode: ListingIdentityMode,
+        include_unlisted: bool,
+        detail_budget: int | None,
+    ) -> BoardListingKernelResult:
+        if include_unlisted:
+            raise ValueError("Rippling cannot enumerate unlisted postings")
+        snapshot = await self._fetch_listing_snapshot(client, slug)
+        if detail_budget is not None:
+            ensure_detail_fanout_within_budget(
+                len(snapshot.listings),
+                maximum_details=detail_budget,
+            )
+        native_board = synthetic_url_pull_board(slug)
+
+        async def posting_for(listing: dict[str, Any]) -> ListingPosting:
+            if identity_mode == "pull":
+                job_id = _listing_id(listing)
+                if not job_id:
+                    raise ValueError("Rippling listing omitted an exact job identity")
+                detail = await self._fetch_detail(client, slug, job_id)
+                detail_id = _listing_id(detail)
+                if detail_id is not None and detail_id != job_id:
+                    raise ValueError(
+                        "Rippling detail identity did not match its listing"
+                    )
+                job = self._normalize(
+                    native_board,
+                    slug,
+                    listing,
+                    detail,
+                    remote_id_override=job_id,
+                )
+                return ListingPosting(
+                    job=job,
+                    listing=job.raw_listing,
+                    detail=job.raw_detail,
+                )
             job_id = _string(first_present(listing.get("id"), listing.get("uuid")))
-            if not job_id:
-                return {}
-            async with semaphore:
-                return await self._fetch_detail(client, slug, job_id)
+            detail = (
+                {} if not job_id else await self._fetch_detail(client, slug, job_id)
+            )
+            job = self._normalize(native_board, slug, listing, detail)
+            return ListingPosting(
+                job=job,
+                listing=job.raw_listing,
+                detail=job.raw_detail or None,
+            )
 
-        details = await asyncio.gather(*(detail_for(listing) for listing in listings))
-        return JobFetchResult(
-            jobs=[
-                self._normalize(board, slug, listing, detail)
-                for listing, detail in zip(listings, details, strict=True)
-            ],
-            authoritative=True,
+        postings = tuple(
+            await bounded_async_map(
+                snapshot.listings,
+                posting_for,
+                max_concurrency=int(self.settings.board_concurrency),
+            )
+        )
+        detail_coverage = DetailCoverageEvidence()
+        if identity_mode == "pull":
+            detail_coverage = DetailCoverageEvidence(
+                required=True,
+                requested_count=len(postings),
+                completed_count=len(postings),
+            )
+        return BoardListingKernelResult(
+            native_board_identity=slug,
+            postings=postings,
+            membership=MembershipEvidence(
+                scope=MembershipScope.LISTED,
+                authoritative=True,
+                complete=True,
+                terminal_page_seen=True,
+                pages_fetched=snapshot.pages_fetched,
+                observed_count=len(postings),
+                advertised_count=snapshot.advertised_count,
+            ),
+            detail_coverage=detail_coverage,
         )
 
     async def check_jobs(
@@ -110,6 +311,11 @@ class RipplingProvider:
     async def _fetch_listings(
         self, client: httpx.AsyncClient, slug: str
     ) -> list[dict[str, Any]]:
+        return list((await self._fetch_listing_snapshot(client, slug)).listings)
+
+    async def _fetch_listing_snapshot(
+        self, client: httpx.AsyncClient, slug: str
+    ) -> RipplingListingSnapshot:
         listings: list[dict[str, Any]] = []
         page = 0
         page_size = 100
@@ -118,11 +324,14 @@ class RipplingProvider:
         seen_pages: set[str] = set()
         seen_listing_ids: set[str] = set()
         while True:
+            if page >= _RIPPLING_MAX_PAGES:
+                raise ValueError("Rippling pagination exceeded its page budget")
             data = await self._request_json(
                 client,
                 "GET",
                 f"https://ats.rippling.com/api/v2/board/{slug}/jobs",
                 params={"page": page, "pageSize": page_size},
+                cache_identity={"role": "membership_page"},
             )
             if not isinstance(data, dict) or not isinstance(data.get("items"), list):
                 raise ValueError("Rippling board jobs endpoint returned invalid JSON")
@@ -157,7 +366,11 @@ class RipplingProvider:
                     raise ValueError("Rippling repeated pagination listing")
                 if listing_id:
                     seen_listing_ids.add(listing_id)
-            if not page_listings and page > 0:
+            if not page_listings and (
+                page > 0
+                or (total_pages is not None and page + 1 < total_pages)
+                or (total_items is not None and len(listings) < total_items)
+            ):
                 raise ValueError(
                     "Rippling incomplete pagination returned an empty page"
                 )
@@ -177,7 +390,11 @@ class RipplingProvider:
             page += 1
         if total_items is not None and len(listings) != total_items:
             raise ValueError("Rippling advertised total does not match jobs")
-        return listings
+        return RipplingListingSnapshot(
+            listings=tuple(listings),
+            pages_fetched=page + 1,
+            advertised_count=total_items,
+        )
 
     async def _fetch_detail(
         self, client: httpx.AsyncClient, slug: str, job_id: str
@@ -186,6 +403,7 @@ class RipplingProvider:
             client,
             "GET",
             f"https://ats.rippling.com/api/v2/board/{slug}/jobs/{job_id}",
+            cache_identity={"role": "detail"},
         )
         if not isinstance(data, dict):
             raise ValueError("Rippling board detail endpoint returned invalid JSON")
@@ -197,9 +415,11 @@ class RipplingProvider:
         slug: str,
         listing: dict[str, Any],
         detail: dict[str, Any],
+        *,
+        remote_id_override: str | None = None,
     ) -> JobRecord:
         merged = listing | detail
-        remote_id = str(
+        remote_id = remote_id_override or str(
             first_present(
                 merged.get("uuid"),
                 merged.get("id"),
@@ -360,3 +580,19 @@ def _consistent_total(
 def _listing_id(listing: dict[str, Any]) -> str | None:
     value = first_present(listing.get("id"), listing.get("uuid"), listing.get("url"))
     return str(value) if value is not None else None
+
+
+def _require_rippling_target(
+    target: ProviderUrlTarget,
+    kind: ProviderTargetKind,
+) -> str:
+    if target.provider_id != RipplingProvider.provider_id or target.target_kind != kind:
+        raise ValueError("Rippling pull received an incompatible target")
+    slug = target.route.tenant or target.route.token or target.board_identity
+    if slug != target.board_identity:
+        raise ValueError("Rippling target route does not match its board identity")
+    return slug
+
+
+def _pull_board(target: ProviderUrlTarget) -> BoardRecord:
+    return synthetic_url_pull_board(target.board_identity)

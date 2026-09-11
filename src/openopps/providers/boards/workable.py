@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, cast
+from urllib.parse import urlparse
 
 import httpx
 from loguru import logger
@@ -18,7 +19,21 @@ from openopps.models import (
     validate_public_https_url,
 )
 from openopps.providers.base import JobFetchResult, ProviderRouteMatch
+from openopps.providers.boards.listing import (
+    BoardListingKernelResult,
+    DetailCoverageEvidence,
+    ListingIdentityMode,
+    ListingPosting,
+    MembershipEvidence,
+    MembershipScope,
+    optional_pull_attr,
+    optional_pull_capabilities,
+)
 from openopps.providers.boards.tokens import workable_token_from_url
+from openopps.providers.boards.url_targets import (
+    strict_decoded_path_parts as _strict_path_parts,
+    synthetic_url_pull_board,
+)
 from openopps.providers.normalize import (
     salary_components,
     salary_display,
@@ -26,6 +41,13 @@ from openopps.providers.normalize import (
 )
 from openopps.settings import OpenOppsSettings
 from openopps.utils import first_present, stable_id
+
+
+ProviderListResult = optional_pull_attr("ProviderListResult")
+ProviderPosting = optional_pull_attr("ProviderPosting", ListingPosting)
+ProviderRouteIdentity = optional_pull_attr("ProviderRouteIdentity")
+ProviderTargetKind = optional_pull_attr("ProviderTargetKind")
+ProviderUrlTarget = optional_pull_attr("ProviderUrlTarget")
 
 __all__ = [
     "WorkableListingSnapshot",
@@ -92,7 +114,11 @@ class WorkablePublicClient:
             "GET",
             f"https://www.workable.com/api/accounts/{token}?details=true",
             cache_namespace=_WORKABLE_DETAILS_CACHE_NAMESPACE,
-            cache_identity={"provider": "workable", "route": token},
+            cache_identity={
+                "provider": "workable",
+                "route": token,
+                "role": "detail",
+            },
         )
         if not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
             raise ValueError(
@@ -139,7 +165,11 @@ class WorkablePublicClient:
                     url,
                     json=body,
                     cache_namespace=_WORKABLE_LISTING_CACHE_NAMESPACE,
-                    cache_identity={"provider": "workable", "route": token},
+                    cache_identity={
+                        "provider": "workable",
+                        "route": token,
+                        "role": "membership_page",
+                    },
                     cache_refresh=refresh,
                     cache_stale_on_error=False if refresh else True,
                 )
@@ -217,6 +247,11 @@ class WorkableProvider:
     provider_label = "Workable"
     provider_description = "Public Workable hosted-board JSON endpoint."
     route_concurrency = 1
+    pull_capabilities = optional_pull_capabilities(
+        list_supported=True,
+        board_scan_get_supported=True,
+        interface_stability="best_effort",
+    )
 
     def __init__(self, settings: OpenOppsSettings):
         self.settings = settings
@@ -233,6 +268,83 @@ class WorkableProvider:
         token = _token_from_url(url)
         return ProviderRouteMatch(token=token) if token else None
 
+    @staticmethod
+    def parse_url_target(url: str) -> ProviderUrlTarget | None:
+        try:
+            validate_public_https_url(url)
+            parsed = urlparse(url)
+            if parsed.query or parsed.fragment or parsed.params:
+                return None
+            host = parsed.netloc.casefold()
+            parts = _strict_path_parts(parsed.path)
+            if parts is None:
+                return None
+
+            token: str
+            posting_id: str | None = None
+            if host == "apply.workable.com":
+                if len(parts) == 1:
+                    token = parts[0]
+                elif len(parts) in {3, 4} and parts[1] == "j":
+                    if len(parts) == 4 and parts[3] != "apply":
+                        return None
+                    token, posting_id = parts[0], parts[2]
+                elif (
+                    len(parts) == 5
+                    and parts[:3] == ("api", "v3", "accounts")
+                    and parts[4] == "jobs"
+                ):
+                    token = parts[3]
+                else:
+                    return None
+            elif host == "www.workable.com":
+                if len(parts) == 3 and parts[:2] == ("api", "accounts"):
+                    token = parts[2]
+                elif (
+                    len(parts) == 6
+                    and parts[:3] == ("api", "v2", "accounts")
+                    and parts[4] == "jobs"
+                ):
+                    token, posting_id = parts[3], parts[5]
+                else:
+                    return None
+            else:
+                return None
+            return ProviderUrlTarget(
+                provider_id=WorkableProvider.provider_id,
+                target_kind=(
+                    ProviderTargetKind.POSTING
+                    if posting_id is not None
+                    else ProviderTargetKind.BOARD
+                ),
+                url=url,
+                board_identity=token,
+                posting_identity=posting_id,
+                route=ProviderRouteIdentity(token=token),
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def build_probe_urls(slug: str) -> tuple[str, ...]:
+        return (f"https://apply.workable.com/{slug}",)
+
+    async def pull_list(
+        self,
+        client: httpx.AsyncClient,
+        target: ProviderUrlTarget,
+        *,
+        include_unlisted: bool,
+    ) -> ProviderListResult:
+        token = _require_workable_target(target, ProviderTargetKind.BOARD)
+        kernel = await self._list_public_membership(
+            client,
+            token,
+            identity_mode="pull",
+            include_unlisted=include_unlisted,
+        )
+        return kernel.to_provider_list_result(target)
+
     async def fetch_jobs(
         self,
         client: httpx.AsyncClient,
@@ -242,31 +354,88 @@ class WorkableProvider:
         token = workable_token(route)
         if not token:
             raise ValueError("Workable route is missing a public board token")
+        kernel = await self._list_public_membership(
+            client,
+            token,
+            identity_mode="ingest",
+            include_unlisted=False,
+        )
+        return kernel.to_job_fetch_result(board, provider_id=self.provider_id)
+
+    async def _list_public_membership(
+        self,
+        client: httpx.AsyncClient,
+        token: str,
+        *,
+        identity_mode: ListingIdentityMode,
+        include_unlisted: bool,
+    ) -> BoardListingKernelResult:
+        if include_unlisted:
+            raise ValueError("Workable cannot enumerate unlisted postings")
         snapshot = await self._public_client.fetch_listing_snapshot(client, token)
+        detail_request_failed = False
         try:
             details_by_shortcode = await self._public_client.fetch_details_by_shortcode(
                 client, token
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional detail is non-authoritative.
             logger.warning(
-                "Workable aggregate detail enrichment failed route={} error={}",
+                "Workable URL-pull detail enrichment failed route={} error={}",
                 token,
                 type(exc).__name__,
             )
             details_by_shortcode = {}
-        return JobFetchResult(
-            jobs=[
-                self._normalize(
-                    board,
-                    token,
-                    listing,
-                    details_by_shortcode.get(
-                        _string(listing.get("shortcode")) or "", {}
-                    ),
+            detail_request_failed = True
+
+        native_board = synthetic_url_pull_board(token)
+        postings: list[ListingPosting] = []
+        completed_details = 0
+        for listing in snapshot.listings:
+            shortcode = _string(listing.get("shortcode"))
+            if identity_mode == "pull" and shortcode is None:
+                raise WorkableSnapshotError(
+                    "Workable listing omitted an exact shortcode"
                 )
-                for listing in snapshot.listings
-            ],
-            authoritative=True,
+            shortcode = shortcode or ""
+            detail = details_by_shortcode.get(shortcode, {})
+            if detail:
+                detail_shortcode = _string(detail.get("shortcode"))
+                if detail_shortcode is not None and detail_shortcode != shortcode:
+                    raise WorkableSnapshotError(
+                        "Workable detail identity did not match its listing"
+                    )
+                completed_details += 1
+            job = self._normalize(native_board, token, listing, detail)
+            postings.append(
+                ListingPosting(
+                    job=job,
+                    listing=job.raw_listing,
+                    detail=job.raw_detail or None,
+                )
+            )
+        requested_details = len(postings)
+        failed_details = requested_details - completed_details
+        if detail_request_failed:
+            completed_details = 0
+            failed_details = requested_details
+        return BoardListingKernelResult(
+            native_board_identity=token,
+            postings=tuple(postings),
+            membership=MembershipEvidence(
+                scope=MembershipScope.LISTED,
+                authoritative=True,
+                complete=True,
+                terminal_page_seen=True,
+                pages_fetched=snapshot.page_count,
+                observed_count=len(postings),
+                advertised_count=snapshot.total,
+            ),
+            detail_coverage=DetailCoverageEvidence(
+                required=False,
+                requested_count=requested_details,
+                completed_count=completed_details,
+                failed_count=failed_details,
+            ),
         )
 
     async def check_jobs(
@@ -467,3 +636,19 @@ def _posting_url(token: str, remote_id: str, *values: object) -> str:
         _string(first_present(*values))
         or f"https://apply.workable.com/{token}/j/{remote_id}"
     )
+
+
+def _require_workable_target(
+    target: ProviderUrlTarget,
+    kind: ProviderTargetKind,
+) -> str:
+    if target.provider_id != WorkableProvider.provider_id or target.target_kind != kind:
+        raise ValueError("Workable pull received an incompatible target")
+    token = target.route.token or target.board_identity
+    if token != target.board_identity:
+        raise ValueError("Workable target route does not match its board identity")
+    return token
+
+
+def _pull_board(target: ProviderUrlTarget) -> BoardRecord:
+    return synthetic_url_pull_board(target.board_identity)
