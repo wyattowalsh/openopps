@@ -4,7 +4,7 @@ The current CLI is ledger-first: users configure or discover boards, persist pro
 
 The accepted goal adds an operational URL-first workflow while retaining those contracts. It must distinguish four independent questions: whether a URL can be recognized, whether the provider can list an entire board, whether it can fetch one posting natively, and whether a complete authoritative board can safely support exact-match fallback. Interface stability and unlisted behavior are separate evidence dimensions.
 
-The repository also has an active storage migration program. The authoritative `goals/ingest-pipeline-overhaul/task-graph.yaml` currently records G3 as unmet because the D-B699 Git closeout is pending, L.1 as open, Alembic head `0004`, and `0005_update_snapshot_ledger.py.draft` as inactive. URL-pull schema work must not race or preassign the next revision.
+W6.1 (2026-09-11): G3 reservation `2e659c1` and apply `7483972` landed, L.1 activated frozen Alembic `0005_update_snapshot_ledger` (`414d5828`), and URL-pull reserved `0006_url_pull_runs` (`d8e70fce`). Live `uv run alembic heads` is `0006_url_pull_runs` only. D712 (`d464e84`) joined `OpenOppsStore` persistence behind opt-in `--save` (CLI default False). Do not describe Alembic head `0004`, `0005` `.draft`, persist-by-default, or “storage join is not enabled” as current product truth.
 
 ## Goals / Non-Goals
 
@@ -16,7 +16,7 @@ The repository also has an active storage migration program. The authoritative `
 - Prefer exact native get and use board-scan fallback only when the result is complete, authoritative, and uniquely matched.
 - Keep discovery one-page, finite, non-recursive, public-HTTPS-safe, and operationally isolated.
 - Provide consistent human and machine output with stable failures and no stdout contamination.
-- Persist successful pulls only when the user opts in with `--save` (CLI default False); keep the default and `--no-save` ephemeral for operational state.
+- Persist successful pulls only when the user opts in with `--save` (CLI default False). `--no-save` is the explicit ephemeral alias. HTTP cache remains independently governed. Persist failure exits 9.
 - Keep list application atomic and membership-scoped, and make point gets incapable of closing unrelated jobs.
 - Preserve provider-native structured listing/detail evidence without promising byte-for-byte HTTP wire replay.
 
@@ -27,7 +27,7 @@ The repository also has an active storage migration program. The authoritative `
 - Treating operational URL resolution as source scouting, source promotion, or catalog admission.
 - Inferring URL-pull support from a detector, legacy plugin, route hint, arbitrary WordPress page, or HTTP success alone.
 - Cross-namespace deduplication between operational URL-pull identities and catalog-owned boards.
-- Activating the draft Alembic `0005`, taking ownership of L.1/L.2/O.1 tables, or assigning a future revision before the storage handoff.
+- Flipping URL-pull to persist-by-default, taking ownership of L.2/O.1 tables, or inventing further Alembic revisions beyond landed `0005` then `0006`.
 - Claiming deterministic mocked provider fixtures prove current live third-party availability.
 
 ## Decisions
@@ -133,9 +133,9 @@ Membership scope is persisted. Jobs are `listed` or `direct_only`; list snapshot
 
 ### Storage gate and migration ownership
 
-Contract, resolver, registry, provider, output, CLI, and no-save service work may proceed behind a frozen persistence interface. Schema/persistence implementation remains closed until the authoritative ingest task graph records both G3 closed and L.1 landed.
+W6.1: the storage join landed. Linear revisions are `0005_update_snapshot_ledger` then `0006_url_pull_runs`. Live `uv run alembic heads` is `0006_url_pull_runs` only. D712 joined `OpenOppsStorePullPersistence` behind opt-in `--save` (default False, `--no-save` alias, persist failure exit 9). HTTP cache remains independent of operational save/no-save.
 
-At that barrier the implementer must re-read the actual Alembic head, obtain the W-STORAGE path handoff, and reserve the next linear revision. No task in this change activates `0005_update_snapshot_ledger.py.draft` or assumes the next revision is `0006`. URL-pull model/copy-table edits serialize with L.1/L.2 and O.1. O.1 retains ownership of `sync_invocations`, source/route attempts, `job_sync_runs.invocation_id`, `runId`, and conservation metrics.
+Historical planning constraint (do not read as current head): contract/resolver/CLI work proceeded behind a frozen persistence port until L.1 and the URL-pull revision reserved from the then-current linear head. O.1 still owns `sync_invocations`, source/route attempts, `job_sync_runs.invocation_id`, `runId`, and conservation metrics. Do not invent a further revision from this change.
 
 ### Plugin participation is explicit and isolated
 
@@ -179,4 +179,4 @@ external G3 + L.1 + W-STORAGE handoff --> DB migration/storage/atomicity -------
 - Reserved operational identities may duplicate catalog-backed real-world boards by design. Cross-namespace merging is deferred because it changes ownership and lifecycle semantics.
 - Bare URL rewriting changes root parsing. Regression tests must prove option values and unknown commands cannot be consumed as URLs.
 - Stable raw structured evidence increases storage/output size. Provider-native evidence remains bounded and schema-controlled; transport byte budgets apply before parsing.
-- The external storage gate may remain open after ephemeral functionality is ready. The CLI must not advertise default saved success until the schema/persistence join is actually complete, and the goal remains incomplete until that join passes.
+- D712 landed opt-in `--save`. The CLI must not advertise persist-by-default. Docs-after-join (`W801`+) and live publication remain separate.
