@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import sys
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -236,13 +238,28 @@ async def bounded_async_map(
 
 
 def load_optional_pull() -> Any:
-    """Return providers.pull when present; otherwise None."""
+    """Return providers.pull when present; otherwise None.
 
-    try:
-        from openopps.providers import pull as pull_module
-    except ModuleNotFoundError:
+    Use ``find_spec`` instead of ``from openopps.providers import pull``. Board
+    discovery imports adapters while ``providers/__init__.py`` is still running,
+    so a missing submodule would otherwise raise ``ImportError`` instead of
+    ``ModuleNotFoundError``.
+    """
+
+    cached = sys.modules.get("openopps.providers.pull")
+    if cached is not None:
+        return cached
+    spec = importlib.util.find_spec("openopps.providers.pull")
+    if spec is None or spec.loader is None:
         return None
-    return pull_module
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["openopps.providers.pull"] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop("openopps.providers.pull", None)
+        raise
+    return module
 
 
 def optional_pull_attr(name: str, default: Any = None) -> Any:

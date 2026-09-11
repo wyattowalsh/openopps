@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
 import inspect
+import sys
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,7 @@ from openopps.providers.boards.listing import (
     MembershipEvidence,
     MembershipScope,
     bind_listing_jobs,
+    load_optional_pull,
 )
 from openopps.providers.boards.rippling import RipplingProvider
 from openopps.providers.boards.teamtailor import TeamtailorProvider
@@ -60,6 +62,18 @@ def _kernel(*, native_id: str, provider_id: str) -> BoardListingKernelResult:
             observed_count=1,
         ),
     )
+
+
+def test_load_optional_pull_returns_none_when_spec_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delitem(sys.modules, "openopps.providers.pull", raising=False)
+    monkeypatch.setattr(
+        "openopps.providers.boards.listing.importlib.util.find_spec",
+        lambda _name: None,
+    )
+
+    assert load_optional_pull() is None
 
 
 def test_strict_decoded_path_parts_match_decode_url_identity_segment() -> None:
