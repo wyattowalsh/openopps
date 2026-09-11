@@ -149,6 +149,14 @@
       "supportLevel": "detect"
     },
     {
+      "description": "Packaged overlay of public employer locators. Emits boards for every row and jobs-capable ATS routes only when detect_url_matches returns a jobs-capable provider.",
+      "detectsRoutes": false,
+      "id": "job_seeker_overlay",
+      "kind": "board_source",
+      "label": "Job Seeker Overlay",
+      "supportLevel": "detect"
+    },
+    {
       "description": "Direct Lever source adapter that exposes a public job board as one route.",
       "detectsRoutes": false,
       "id": "lever_source",
@@ -181,7 +189,7 @@
       "supportLevel": "detect"
     },
     {
-      "description": "Official SEC public-company ticker source that discovers listed companies as detect-only boards.",
+      "description": "Official SEC public-company ticker source that discovers listed companies as boards and attaches jobs-capable ATS routes only from unique packaged public ATS name matches.",
       "detectsRoutes": false,
       "id": "sec_company_tickers",
       "kind": "board_source",
@@ -12589,6 +12597,21 @@
         "sourceCategory": "startup_ecosystem"
       },
       "url": "https://apply.workable.com/jmc-legal-recruitment/"
+    },
+    {
+      "key": "job-seeker-overlay",
+      "providerId": "job_seeker_overlay",
+      "taxonomy": {
+        "accessType": "packaged_json",
+        "coverageMode": "named_employers",
+        "inclusionReason": "Global knowledge-work overlay of recognizable employers with public locators. Acquisition order is work-order only across AI, software, data, product, security, finance, biotech, and other professional roles: not US-HQ-weighted and not a Jobs/Explorer ranker. ATS routes attach only when detect_url_matches returns a jobs-capable provider.",
+        "licenseStatus": "needs_review",
+        "providerType": "employer_overlay",
+        "refreshCadence": "manual",
+        "sourceAttribution": "Maintainer-owned public careers and ATS locators for job-seeker overlay employers; packaged JSON is not independently licensed.",
+        "sourceCategory": "job_seeker_coverage"
+      },
+      "url": "manual://job-seeker-overlay"
     },
     {
       "key": "jobandtalent",
@@ -25509,7 +25532,7 @@
   "stats": {
     "exportFormatCount": 4,
     "jobProviderCount": 10,
-    "sourceAdapterCount": 16,
-    "sourceRecordCount": 2870
+    "sourceAdapterCount": 17,
+    "sourceRecordCount": 2871
   }
 }

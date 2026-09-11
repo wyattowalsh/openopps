@@ -135,5 +135,8 @@ async def test_packaged_overlay_attaches_jobs_capable_routes_offline() -> None:
     assert stripe_route.provider_id == "greenhouse"
     assert stripe_route.token == "stripe"
     assert stripe_route.support_level == ProviderSupport.JOBS
+    huggingface_route = providers_by_board[huggingface.key]
+    assert huggingface_route.provider_id == "workable"
+    assert huggingface_route.token == "huggingface"
+    assert huggingface_route.support_level == ProviderSupport.JOBS
     assert valve.key not in providers_by_board
-    assert huggingface.key not in providers_by_board

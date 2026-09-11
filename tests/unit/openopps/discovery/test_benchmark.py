@@ -145,16 +145,16 @@ def test_offline_benchmark_binds_corpus_and_conserves_zero_sqlite(
     assert report.repeat_count == DEFAULT_REPEAT_COUNT == 5
     assert report.sqlite_statement_count == 0
     assert report.http_request_count == 0
-    assert report.invalid_occurrences == 2
+    assert report.invalid_occurrences == 3
     assert report.unique_candidates == 2_868
     assert report.duplicate_occurrences == 0
-    assert report.inventory["sourceCount"] == 2_870
-    assert report.inventory["adapterCount"] == 16
+    assert report.inventory["sourceCount"] == 2_871
+    assert report.inventory["adapterCount"] == 17
     assert report.collision_groups["exactKey"] == 0
-    assert report.policy_counts["evaluated"] == 2_870
+    assert report.policy_counts["evaluated"] == 2_871
     assert report.policy_counts["allowed"] == 0
     assert (
-        report.policy_counts["blocked"] + report.policy_counts["unresolved"] == 2_870
+        report.policy_counts["blocked"] + report.policy_counts["unresolved"] == 2_871
     )
     assert report.promotion["proposedRecords"] == 0
     assert (

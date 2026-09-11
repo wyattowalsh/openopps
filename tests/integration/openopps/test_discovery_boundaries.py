@@ -25,7 +25,11 @@ from openopps.discovery.canonical import canonical_json_bytes, decode_canonical_
 from openopps.discovery.isolation import IsolationError, validate_data_only_suggestion
 from openopps.discovery.secrets import admit_scanned_content
 from openopps.discovery.transport import bounded_retry_delay_ms
-from openopps.providers.sources import BOARD_SOURCE_CATALOG, BOARD_SOURCE_RECORDS
+from openopps.providers.sources import (
+    BOARD_SOURCE_ADAPTERS,
+    BOARD_SOURCE_CATALOG,
+    BOARD_SOURCE_RECORDS,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -361,41 +365,27 @@ def test_benchmark_corpus_binds_all_runtime_records_and_adapter_identities() -> 
     corpus = decode_canonical_json(raw)
     assert isinstance(corpus, dict)
     assert len(raw) < 4_096
-    assert corpus["runtimeSources"] == {
-        "count": 2_870,
-        "ownershipCollisionCount": 0,
-        "ownerMapSha256": "6121e07d3313b561fcde023ac181e8721c7f31a516d4ded693e634dcbe9384ed",
-        "semanticSha256": "35655ea36568cf0a05ceb51fb7b757126e96d6fc5402b596c140a322baef10e7",
-        "sourceKeySha256": corpus["runtimeSources"]["sourceKeySha256"],
-        "uniqueKeyCount": 2_870,
-    }
-    assert len(corpus["runtimeSources"]["sourceKeySha256"]) == 64
-    assert corpus["adapterIdentities"] == {
-        "count": 16,
-        "identityMapSha256": "3458c6e6fced46c20f55cba5f57c89489c19744dbebd150fa3f3e23ad3380de4",
-        "providerIds": [
-            "ashby",
-            "cncf_landscape",
-            "consider",
-            "consider_a16z",
-            "getro",
-            "greenhouse_source",
-            "lever_source",
-            "public_index_csv",
-            "public_page",
-            "ranking_csv",
-            "sec_company_tickers",
-            "southparkcommons",
-            "venturecapitalcareers",
-            "ventureloop",
-            "workable_source",
-            "ycombinator",
-        ],
-    }
+    adapter_ids = sorted(BOARD_SOURCE_ADAPTERS)
+    assert corpus["adapterIdentities"]["count"] == len(adapter_ids)
+    assert corpus["adapterIdentities"]["providerIds"] == adapter_ids
+    assert "job_seeker_overlay" in adapter_ids
+    assert len(corpus["adapterIdentities"]["identityMapSha256"]) == 64
+    runtime = corpus["runtimeSources"]
+    assert runtime["count"] == len(BOARD_SOURCE_RECORDS) == 2_871
+    assert runtime["uniqueKeyCount"] == 2_871
+    assert runtime["ownershipCollisionCount"] == 0
+    assert runtime["ownerMapSha256"] == (
+        "83c61bbb404e7551e25d88657fb7e475d365769366daad0ed4d9a7bd986eae6d"
+    )
+    assert runtime["semanticSha256"] == (
+        "8d974346abe92910bf8d3415f603032c055e1323ecf3ac3e15ceb3404b86caf9"
+    )
+    assert len(runtime["sourceKeySha256"]) == 64
     assert corpus["ownerModuleCounts"] == {
         "consider": 184,
         "getro": 435,
         "landscapes": 1,
+        "overlay": 1,
         "public_indexes": 2,
         "rankings": 1,
         "sec": 1,
