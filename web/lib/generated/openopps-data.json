@@ -109,7 +109,7 @@
       "supportLevel": "detect"
     },
     {
-      "description": "CNCF landscape source adapter that discovers cloud-native projects and vendors from public GitHub data.",
+      "description": "CNCF landscape source adapter that discovers cloud-native projects and vendors from public GitHub data and attaches jobs-capable ATS routes only from unique packaged public ATS name matches.",
       "detectsRoutes": false,
       "id": "cncf_landscape",
       "kind": "board_source",
