@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-09-01
+goal: Share one catalog-rebind listing kernel across fetch_jobs and pull_list without wrapping ingest in pull_list
+affected_areas:
+  - provider-ingestion
