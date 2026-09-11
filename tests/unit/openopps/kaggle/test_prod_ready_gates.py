@@ -215,10 +215,10 @@ def test_ci_kaggle_bundle_smoke_uses_pinned_canonical_just_recipe() -> None:
         encoding="utf-8"
     )
     assert (
-        "uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf"
+        "uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d"
         in workflow
     )
-    assert "tool: just@1.58.0" in workflow
+    assert "tool: just@1.56.0" in workflow
     assert "run: just ci-artifacts" in workflow
 
 
