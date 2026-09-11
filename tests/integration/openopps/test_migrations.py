@@ -15,7 +15,38 @@ from openopps.models import BoardRecord, JobRecord, SourceRecord
 from openopps.settings import OpenOppsSettings
 from openopps.storage import OpenOppsStore
 
-ALEMBIC_HEAD = "0004_job_sync_run_lifecycle"
+ALEMBIC_HEAD = "0005_update_snapshot_ledger"
+_LIVE_OPERATIONAL_TABLES: tuple[str, ...] = (
+    "sources",
+    "boards",
+    "board_providers",
+    "jobs",
+    "job_versions",
+    "job_version_locations",
+    "job_version_skills",
+    "job_version_skill_keywords",
+    "job_version_bullets",
+    "job_payload_snapshots",
+    "job_sync_runs",
+    "job_sync_observations",
+)
+_EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES: frozenset[str] = frozenset(
+    {
+        "update_snapshots",
+        "update_snapshot_sources",
+        "update_snapshot_boards",
+        "update_snapshot_board_providers",
+        "update_snapshot_jobs",
+        "update_snapshot_job_versions",
+        "update_snapshot_job_version_locations",
+        "update_snapshot_job_version_skills",
+        "update_snapshot_job_version_skill_keywords",
+        "update_snapshot_job_version_bullets",
+        "update_snapshot_job_payload_snapshots",
+        "update_snapshot_job_sync_runs",
+        "update_snapshot_job_sync_observations",
+    }
+)
 
 
 def test_init_db_runs_initial_sqlite_schema(tmp_path: Path):
@@ -33,16 +64,8 @@ def test_init_db_runs_initial_sqlite_schema(tmp_path: Path):
         }
         version = conn.execute("SELECT version_num FROM alembic_version").fetchone()
 
-    assert {
-        "sources",
-        "boards",
-        "board_providers",
-        "jobs",
-        "job_versions",
-        "job_payload_snapshots",
-        "job_sync_runs",
-        "job_sync_observations",
-    }.issubset(tables)
+    assert set(_LIVE_OPERATIONAL_TABLES) <= tables
+    assert _EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES <= tables
     assert version == (ALEMBIC_HEAD,)
 
 
@@ -419,6 +442,100 @@ def test_migration_0004_upgrades_and_downgrades_sync_run_lifecycle(tmp_path: Pat
     assert legacy == (0, "legacy failure")
 
 
+def test_migration_0005_round_trips_ledger_without_live_schema_drift(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    config = migrations_module._alembic_config(settings)
+    command.upgrade(config, "0004_job_sync_run_lifecycle")
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0004_job_sync_run_lifecycle",
+        )
+        conn.execute(
+            """
+            INSERT INTO sources (key, url, provider_id)
+            VALUES ('source-0005', 'https://example.com/jobs', 'manual')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO boards (key, source_key, remote_id, name)
+            VALUES ('board-0005', 'source-0005', 'board-0005', 'Board 0005')
+            """
+        )
+        baseline_tables = _sqlite_table_names(conn)
+        baseline_live_schema = _live_schema_manifest(conn)
+        expected_live_rows = _representative_live_rows(conn)
+
+    command.upgrade(config, ALEMBIC_HEAD)
+
+    with sqlite3.connect(db_path) as conn:
+        _assert_0005_ledger_state(
+            conn,
+            baseline_tables=baseline_tables,
+            baseline_live_schema=baseline_live_schema,
+            expected_live_rows=expected_live_rows,
+        )
+
+    command.downgrade(config, "0004_job_sync_run_lifecycle")
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0004_job_sync_run_lifecycle",
+        )
+        assert _sqlite_table_names(conn) == baseline_tables
+        assert _sqlite_table_names(conn).isdisjoint(
+            _EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES
+        )
+        assert _live_schema_manifest(conn) == baseline_live_schema
+        assert _representative_live_rows(conn) == expected_live_rows
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    command.upgrade(config, ALEMBIC_HEAD)
+
+    with sqlite3.connect(db_path) as conn:
+        _assert_0005_ledger_state(
+            conn,
+            baseline_tables=baseline_tables,
+            baseline_live_schema=baseline_live_schema,
+            expected_live_rows=expected_live_rows,
+        )
+
+
+def test_stamped_head_missing_ledger_table_fails_with_reset_guidance(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    store = OpenOppsStore(settings)
+    store.init_db()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE update_snapshot_sources")
+
+    with pytest.raises(DatabaseSchemaError, match="update_snapshot_sources"):
+        OpenOppsStore(settings).init_db()
+
+
+def test_migration_preflight_rejects_partial_ledger_before_0005(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "openopps.db"
+    settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
+    command.upgrade(
+        migrations_module._alembic_config(settings), "0004_job_sync_run_lifecycle"
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE update_snapshots (snapshot_id VARCHAR NOT NULL PRIMARY KEY)"
+        )
+
+    with pytest.raises(DatabaseSchemaError, match="update_snapshots"):
+        OpenOppsStore(settings).init_db()
+
+
 def test_migration_preflight_rejects_partial_lifecycle_schema(tmp_path: Path):
     db_path = tmp_path / "openopps.db"
     settings = OpenOppsSettings(db_url=f"sqlite:///{db_path}")
@@ -430,7 +547,9 @@ def test_migration_preflight_rejects_partial_lifecycle_schema(tmp_path: Path):
             "ALTER TABLE job_sync_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
         )
 
-    with pytest.raises(DatabaseSchemaError, match=r"job_sync_runs\.(?:authoritative|started_at)"):
+    with pytest.raises(
+        DatabaseSchemaError, match=r"job_sync_runs\.(?:authoritative|started_at)"
+    ):
         OpenOppsStore(settings).init_db()
 
 
@@ -541,6 +660,161 @@ def test_unstamped_sqlite_db_with_app_tables_fails_with_reset_guidance(
     assert "public OpenOppsDB Kaggle snapshot" in message
     assert "sources" in message
     assert str(db_path) in message
+
+
+def _sqlite_table_names(conn: sqlite3.Connection) -> set[str]:
+    return {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+
+
+def _live_schema_manifest(
+    conn: sqlite3.Connection,
+) -> tuple[tuple[str, str, str, str | None], ...]:
+    placeholders = ", ".join("?" for _ in _LIVE_OPERATIONAL_TABLES)
+    rows = conn.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+        "WHERE type IN ('table', 'index', 'trigger') "
+        f"AND tbl_name IN ({placeholders}) ORDER BY type, name",
+        _LIVE_OPERATIONAL_TABLES,
+    ).fetchall()
+    return tuple((row[0], row[1], row[2], row[3]) for row in rows)
+
+
+def _representative_live_rows(
+    conn: sqlite3.Connection,
+) -> tuple[tuple[object, ...] | None, tuple[object, ...] | None]:
+    source = conn.execute(
+        "SELECT key, url, provider_id FROM sources WHERE key = 'source-0005'"
+    ).fetchone()
+    board = conn.execute(
+        "SELECT key, source_key, remote_id, name FROM boards WHERE key = 'board-0005'"
+    ).fetchone()
+    return source, board
+
+
+def _assert_0005_ledger_state(
+    conn: sqlite3.Connection,
+    *,
+    baseline_tables: set[str],
+    baseline_live_schema: tuple[tuple[str, str, str, str | None], ...],
+    expected_live_rows: tuple[tuple[object, ...] | None, tuple[object, ...] | None],
+) -> None:
+    tables = _sqlite_table_names(conn)
+    assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+        ALEMBIC_HEAD,
+    )
+    assert tables == baseline_tables | _EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES
+    assert tables - baseline_tables == _EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES
+    assert baseline_tables <= tables
+    assert _live_schema_manifest(conn) == baseline_live_schema
+    assert _representative_live_rows(conn) == expected_live_rows
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    _assert_frozen_ledger_schema(conn)
+
+
+def _assert_frozen_ledger_schema(conn: sqlite3.Connection) -> None:
+    observed = {
+        table
+        for table in _sqlite_table_names(conn)
+        if table == "update_snapshots" or table.startswith("update_snapshot_")
+    }
+    assert observed == _EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES
+    for table_name in sorted(_EXPECTED_UPDATE_SNAPSHOT_LEDGER_TABLES):
+        assert conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone() == (0,)
+
+    assert _sqlite_column_signatures(conn, "update_snapshots") == (
+        ("snapshot_id", "VARCHAR", 1, None),
+        ("captured_at", "DATETIME", 1, None),
+        ("appended_at", "DATETIME", 1, None),
+        ("collection_status", "VARCHAR", 1, None),
+        ("validation_ok", "BOOLEAN", 1, None),
+        ("attestation", "VARCHAR", 1, None),
+        ("run_digest", "VARCHAR", 1, None),
+        ("schema_revision", "VARCHAR", 1, None),
+        ("row_counts", "JSON", 0, None),
+    )
+    assert _sqlite_primary_key(conn, "update_snapshots") == ("snapshot_id",)
+    assert _sqlite_foreign_keys(conn, "update_snapshots") == set()
+    assert _sqlite_index_column_groups(conn, "update_snapshots", unique=False) == {
+        ("appended_at",),
+        ("attestation",),
+        ("captured_at",),
+        ("collection_status",),
+        ("run_digest",),
+        ("schema_revision",),
+        ("validation_ok",),
+    }
+    assert _sqlite_index_column_groups(conn, "update_snapshots", unique=True) == set()
+
+    for live_table in _LIVE_OPERATIONAL_TABLES:
+        copy_table = f"update_snapshot_{live_table}"
+        live_columns = _sqlite_column_signatures(conn, live_table)
+        copy_columns = _sqlite_column_signatures(conn, copy_table)
+        assert copy_columns[0] == ("snapshot_id", "VARCHAR", 1, None)
+        assert {
+            name: (column_type, required)
+            for name, column_type, required, _default in copy_columns[1:]
+        } == {
+            name: (column_type, required)
+            for name, column_type, required, _default in live_columns
+        }
+        assert _sqlite_primary_key(conn, copy_table) == (
+            "snapshot_id",
+            *_sqlite_primary_key(conn, live_table),
+        )
+        assert _sqlite_foreign_keys(conn, copy_table) == {
+            ("snapshot_id", "update_snapshots", "snapshot_id")
+        }
+        live_uniques = _sqlite_index_column_groups(conn, live_table, unique=True)
+        assert _sqlite_index_column_groups(conn, copy_table, unique=True) == {
+            ("snapshot_id", *columns) for columns in live_uniques
+        }
+        assert _sqlite_index_column_groups(
+            conn, copy_table, unique=False
+        ) == _sqlite_index_column_groups(conn, live_table, unique=False)
+        assert "snapshot_id" not in {
+            column[0] for column in _sqlite_column_signatures(conn, live_table)
+        }
+
+
+def _sqlite_column_signatures(
+    conn: sqlite3.Connection, table_name: str
+) -> tuple[tuple[str, str, int, str | None], ...]:
+    rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    return tuple((row[1], row[2], row[3], row[4]) for row in rows)
+
+
+def _sqlite_primary_key(conn: sqlite3.Connection, table_name: str) -> tuple[str, ...]:
+    rows = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    keyed = sorted((row[5], row[1]) for row in rows if row[5])
+    return tuple(name for _, name in keyed)
+
+
+def _sqlite_foreign_keys(
+    conn: sqlite3.Connection, table_name: str
+) -> set[tuple[str, str, str]]:
+    rows = conn.execute(f'PRAGMA foreign_key_list("{table_name}")').fetchall()
+    return {(row[3], row[2], row[4]) for row in rows}
+
+
+def _sqlite_index_column_groups(
+    conn: sqlite3.Connection, table_name: str, *, unique: bool
+) -> set[tuple[str, ...]]:
+    groups: set[tuple[str, ...]] = set()
+    for row in conn.execute(f'PRAGMA index_list("{table_name}")').fetchall():
+        if bool(row[2]) != unique or row[3] == "pk":
+            continue
+        columns = tuple(
+            item[2]
+            for item in conn.execute(f'PRAGMA index_info("{row[1]}")').fetchall()
+        )
+        if columns:
+            groups.add(columns)
+    return groups
 
 
 def _has_sqlite_index(

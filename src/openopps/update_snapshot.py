@@ -184,9 +184,7 @@ def naive_copy_insert_sql(operational_table: str) -> str:
 def naive_copy_insert_sql_by_table() -> Mapping[str, str]:
     """Return copy INSERT SQL for every operational table in ledger order."""
 
-    return {
-        table: naive_copy_insert_sql(table) for table in OPERATIONAL_COPY_TABLES
-    }
+    return {table: naive_copy_insert_sql(table) for table in OPERATIONAL_COPY_TABLES}
 
 
 def empty_row_counts() -> dict[str, int]:
@@ -196,7 +194,7 @@ def empty_row_counts() -> dict[str, int]:
 
 
 def create_update_snapshot_ledger_tables(bind: Engine | Connection) -> None:
-    """Create the header plus twelve naïve copies (L.1 draft helper)."""
+    """Create the header plus twelve naïve ledger copies."""
 
     _header_table().create(bind, checkfirst=False)
     for model in UPDATE_SNAPSHOT_COPY_MODELS:
@@ -204,7 +202,7 @@ def create_update_snapshot_ledger_tables(bind: Engine | Connection) -> None:
 
 
 def drop_update_snapshot_ledger_tables(bind: Engine | Connection) -> None:
-    """Drop naïve copies then the header (L.1 draft helper)."""
+    """Drop the twelve naïve ledger copies, then the header."""
 
     for model in reversed(UPDATE_SNAPSHOT_COPY_MODELS):
         sqlmodel_table(model).drop(bind, checkfirst=False)

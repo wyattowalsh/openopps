@@ -66,7 +66,24 @@ LIVE_ROW_MODELS: tuple[type[SQLModel], ...] = (
     JobSyncObservationRow,
 )
 
-_DRAFT_REVISION = "0005_update_snapshot_ledger.py.draft"
+_LEDGER_REVISION = "0005_update_snapshot_ledger.py"
+_EXPECTED_LEDGER_SQLITE_TABLES = frozenset(
+    {
+        "update_snapshots",
+        "update_snapshot_sources",
+        "update_snapshot_boards",
+        "update_snapshot_board_providers",
+        "update_snapshot_jobs",
+        "update_snapshot_job_versions",
+        "update_snapshot_job_version_locations",
+        "update_snapshot_job_version_skills",
+        "update_snapshot_job_version_skill_keywords",
+        "update_snapshot_job_version_bullets",
+        "update_snapshot_job_payload_snapshots",
+        "update_snapshot_job_sync_runs",
+        "update_snapshot_job_sync_observations",
+    }
+)
 
 
 def test_mint_snapshot_id_is_cadence_neutral_and_stable_for_retries() -> None:
@@ -110,8 +127,12 @@ def test_twelve_naive_copies_and_header_are_named_distinctly() -> None:
     assert len(LEDGER_SQLITE_TABLES) == 13
     assert UPDATE_SNAPSHOT_HEADER_TABLE == "update_snapshots"
     assert UpdateSnapshotRow.__tablename__ == "update_snapshots"
-    assert UPDATE_SNAPSHOT_LEDGER_TABLES == LEDGER_SQLITE_TABLES
+    assert LEDGER_SQLITE_TABLES == _EXPECTED_LEDGER_SQLITE_TABLES
+    assert UPDATE_SNAPSHOT_LEDGER_TABLES == _EXPECTED_LEDGER_SQLITE_TABLES
     copy_names = {model.__tablename__ for model in UPDATE_SNAPSHOT_COPY_MODELS}
+    assert {UpdateSnapshotRow.__tablename__, *copy_names} == (
+        _EXPECTED_LEDGER_SQLITE_TABLES
+    )
     assert copy_names == {copy_table_name(table) for table in OPERATIONAL_COPY_TABLES}
     assert JobPayloadSnapshotRow.__tablename__ == "job_payload_snapshots"
     assert (
@@ -133,7 +154,9 @@ def test_copy_tables_are_one_to_one_with_operational_columns() -> None:
         OPERATIONAL_COPY_TABLES, LIVE_ROW_MODELS, strict=True
     ):
         copy_model = copy_model_for(operational_table)
-        live_columns = tuple(column.name for column in sqlmodel_table(live_model).columns)
+        live_columns = tuple(
+            column.name for column in sqlmodel_table(live_model).columns
+        )
         copy_columns = tuple(
             column.name
             for column in sqlmodel_table(copy_model).columns
@@ -160,7 +183,9 @@ def test_copy_foreign_keys_are_snapshot_header_only() -> None:
             for fk in sqlmodel_table(model).foreign_keys
         }
         assert fks == {("snapshot_id", "update_snapshots", "snapshot_id")}
-        referred_tables = {fk.column.table.name for fk in sqlmodel_table(model).foreign_keys}
+        referred_tables = {
+            fk.column.table.name for fk in sqlmodel_table(model).foreign_keys
+        }
         assert referred_tables.isdisjoint(LIVE_OPERATIONAL_TABLES)
 
 
@@ -208,7 +233,7 @@ def test_excluded_bookkeeping_tables_are_never_copied() -> None:
     assert EXCLUDED_FROM_LEDGER_COPY.isdisjoint(LIVE_OPERATIONAL_TABLES)
     assert "openopps_tables" in MANAGED_SQLITE_TABLES
     assert "openopps_columns" in MANAGED_SQLITE_TABLES
-    assert MANAGED_SQLITE_TABLES.isdisjoint(LEDGER_SQLITE_TABLES)
+    assert LEDGER_SQLITE_TABLES <= MANAGED_SQLITE_TABLES
     for excluded in EXCLUDED_FROM_LEDGER_COPY:
         try:
             copy_table_name(excluded)
@@ -234,22 +259,35 @@ def test_naive_copy_insert_sql_lists_original_columns_and_bind_snapshot_id() -> 
         assert "SELECT *" not in sql
 
 
-def test_alembic_head_stays_0004_while_0005_is_a_g3_draft() -> None:
+def test_alembic_head_is_0005_with_frozen_ddl() -> None:
     config = Config()
     config.set_main_option("script_location", str(migration_script_location()))
     script = ScriptDirectory.from_config(config)
-    assert script.get_current_head() == "0004_job_sync_run_lifecycle"
-    assert "0005_update_snapshot_ledger" not in set(script.get_heads())
-    draft = files("openopps").joinpath("alembic/versions") / _DRAFT_REVISION
-    assert Path(str(draft)).is_file()
-    text = Path(str(draft)).read_text(encoding="utf-8")
-    assert "G3 BLOCKER" in text
+    assert script.get_current_head() == "0005_update_snapshot_ledger"
+    assert script.get_heads() == ["0005_update_snapshot_ledger"]
+    ledger_revision = script.get_revision("0005_update_snapshot_ledger")
+    assert ledger_revision is not None
+    assert ledger_revision.down_revision == "0004_job_sync_run_lifecycle"
+    assert [item.revision for item in script.walk_revisions()] == [
+        "0005_update_snapshot_ledger",
+        "0004_job_sync_run_lifecycle",
+        "0003_jobs_current_version_fk",
+        "0002_data_model_integrity",
+        "0001_initial_app_sqlite",
+    ]
+    versions = files("openopps").joinpath("alembic/versions")
+    revision = Path(str(versions)) / _LEDGER_REVISION
+    draft = Path(str(versions)) / f"{_LEDGER_REVISION}.draft"
+    assert revision.is_file()
+    assert draft.exists() is False
+    text = revision.read_text(encoding="utf-8")
+    assert "from openopps" not in text
+    assert "import openopps" not in text
     assert 'down_revision: str | None = "0004_job_sync_run_lifecycle"' in text
-    assert "http_cache" in text
-    assert (migration_script_location() / "versions" / "0005_update_snapshot_ledger.py").exists() is False
+    assert "http_cache" not in text
 
 
-def test_draft_ledger_ddl_creates_header_and_twelve_copies_only() -> None:
+def test_runtime_ledger_helper_creates_header_and_twelve_copies_only() -> None:
     engine = create_engine("sqlite://")
     try:
         create_update_snapshot_ledger_tables(engine)
