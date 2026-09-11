@@ -342,16 +342,16 @@ def test_runtime_catalog_readback_matches_the_frozen_approved_inventory() -> Non
         packaged_catalog=packaged,
     )
     assert first == second
-    assert first.source_count == first.unique_source_count == 2_870
+    assert first.source_count == first.unique_source_count == 2_871
     assert first.runtime_semantic_sha256 == (
-        "35655ea36568cf0a05ceb51fb7b757126e96d6fc5402b596c140a322baef10e7"
+        "8d974346abe92910bf8d3415f603032c055e1323ecf3ac3e15ceb3404b86caf9"
     )
     assert first.owner_map_sha256 == (
-        "6121e07d3313b561fcde023ac181e8721c7f31a516d4ded693e634dcbe9384ed"
+        "83c61bbb404e7551e25d88657fb7e475d365769366daad0ed4d9a7bd986eae6d"
     )
-    assert first.adapter_count == 16
+    assert first.adapter_count == 17
     assert first.adapter_identity_map_sha256 == (
-        "3458c6e6fced46c20f55cba5f57c89489c19744dbebd150fa3f3e23ad3380de4"
+        "65e4f7b8fdc38c7e297be8f0466246b7bea8f2c0658279665d916e3ba01cea62"
     )
     assert packaged.fingerprint == (
         "c30f8600353399f37858f691a7b622e12364c46990c0bd93144a9346ededcb32"
